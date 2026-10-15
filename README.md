@@ -11,22 +11,24 @@ The starting idea: **the agent runs on the VM, not on the laptop.** The laptop i
 
 ## Contents
 
-1. [Why these tools](#1-why-these-tools)
-2. [Overview](#2-overview)
-3. [The picker](#3-the-picker)
-4. [Pier](#4-pier)
-5. [Security](#5-security)
-6. [Installation](#6-installation)
-7. [Day to day](#7-day-to-day)
-8. [Outages and recovery](#8-outages-and-recovery)
-9. [Files and locations](#9-files-and-locations)
-10. [Tests](#10-tests)
-11. [Known limits and what is left to check](#11-known-limits-and-what-is-left-to-check)
-12. [Ideas for later](#12-ideas-for-later)
+1. [Chapter I. Why these tools](#chapter-i-why-these-tools)
+2. [Chapter II. Overview](#chapter-ii-overview)
+3. [Chapter III. The picker](#chapter-iii-the-picker)
+4. [Chapter IV. Pier](#chapter-iv-pier)
+5. [Chapter V. Security](#chapter-v-security)
+6. [Chapter VI. Installation](#chapter-vi-installation)
+7. [Chapter VII. Day to day](#chapter-vii-day-to-day)
+8. [Chapter VIII. Outages and recovery](#chapter-viii-outages-and-recovery)
+9. [Chapter IX. Files and locations](#chapter-ix-files-and-locations)
+10. [Chapter X. Tests](#chapter-x-tests)
+11. [Chapter XI. Known limits and what is left to check](#chapter-xi-known-limits-and-what-is-left-to-check)
+12. [Chapter XII. Ideas for later](#chapter-xii-ideas-for-later)
 
 ---
 
-## 1. Why these tools
+## Chapter I. Why these tools
+
+### Part I. What was missing
 
 Without them, working with Pi on the VM meant:
 
@@ -43,13 +45,15 @@ Three problems remained that SSH does not solve:
 
 The picker solves the first points of the list, and Pier the rest.
 
-### Why the folder is chosen before Pi starts
+### Part II. Why the folder is chosen before Pi starts
 
 That is what the picker is for. Pi reads its configuration, its instructions (`AGENTS.md`) and its memory **at startup**, and its Hindsight memory is filed **by folder name**. Starting Pi in one folder and then moving to another would make it work with another project's context. So the working folder is always fixed before Pi starts.
 
 ---
 
-## 2. Overview
+## Chapter II. Overview
+
+### Part I. The pieces
 
 ```
    Laptop (Windows)                                   Linux VM (Debian 13)
@@ -65,7 +69,9 @@ That is what the picker is for. Pi reads its configuration, its instructions (`A
                                                     └────────────────────────────────┘
 ```
 
-- **One SSH connection.** Pier's terminals, uploads and shares all go through it: the password is asked once. Every terminal, call or share opens a "channel" on it, and OpenSSH limits how many per connection (`MaxSessions`, 10 by default): past that the VM refuses, and Pier opens another connection by itself (with the password kept in memory). To avoid it, set `MaxSessions 30` on the VM (see [Network and encryption](#network-and-encryption)).
+### Part II. How they work together
+
+- **One SSH connection.** Pier's terminals, uploads and shares all go through it: the password is asked once. Every terminal, call or share opens a "channel" on it, and OpenSSH limits how many per connection (`MaxSessions`, 10 by default): past that the VM refuses, and Pier opens another connection by itself (with the password kept in memory). To avoid it, set `MaxSessions 30` on the VM (see [Network and encryption](#part-ii-network-and-encryption)).
 - **No port open on the VM.** Pier runs the picker over SSH with options (`pi-pick --api …`), and the picker answers in JSON.
 - **One command stays open** (`pi-pick --api watch`) and sends Pier what changes, when it changes: Pier does not poll the VM.
 - **Pi runs in tmux,** one tmux session per Pi, on a tmux server reserved for Pier. So it survives disconnections. **Several Pis can run in the same project,** each in its own conversation.
@@ -76,11 +82,11 @@ That is what the picker is for. Pi reads its configuration, its instructions (`A
 
 ---
 
-## 3. The picker
+## Chapter III. The picker
 
 A single-file Python program, **with no dependencies**: only the standard library. It is used directly over SSH (`ssh pi`) and is also Pier's engine.
 
-### The screen
+### Part I. The screen
 
 - At the top, an ASCII logo and the version, when the terminal has at least 30 rows.
 - The current path, then the list of non-hidden folders.
@@ -88,9 +94,9 @@ A single-file Python program, **with no dependencies**: only the standard librar
 - At the top of your home, the **recent projects**.
 - From 110 columns, a **preview panel**: latest commits, whether `AGENTS.md` or `.pi` exist, the start of the README.
 - At the bottom, a reminder of the keys, which adapts to the width.
-- Folders where Pi may not run (see [Security](#5-security)), such as `~/bin`, are not listed, found or offered at all.
+- Folders where Pi may not run (see [Security](#chapter-v-security)), such as `~/bin`, are not listed, found or offered at all.
 
-### Keys
+### Part II. Keys
 
 | Key | Action |
 |---|---|
@@ -113,7 +119,7 @@ A single-file Python program, **with no dependencies**: only the standard librar
 | `?` | help |
 | `q` / `Esc` | quit (Esc first clears a filter or a search) |
 
-### Pi in tmux
+### Part III. Pi in tmux
 
 When you start Pi, the picker opens it in a **tmux session of the project's own**. This tmux server is reserved for Pier and does not touch your own sessions.
 
@@ -124,9 +130,9 @@ When you start Pi, the picker opens it in a **tmux session of the project's own*
 - When tmux is not installed, the picker offers to install it (with `sudo`, which asks for your password itself), or to start Pi without tmux.
 - **Extended keys** are on for this tmux server (`extended-keys`, in `csi-u` form, as Pi recommends): Shift+Enter makes a new line in Pi.
 - **This tmux server has its own configuration,** written by the picker to `~/.local/state/pi-dir-picker/tmux.conf`; your `~/.tmux.conf` is not read. It is applied again whenever a Pi opens, to a server started earlier too. It serves the "plain ssh" way (the picker in Windows Terminal): the mouse belongs to tmux (the wheel scrolls back through the history tmux keeps, a drag selects and copies), what tmux or Pi copies reaches the terminal's clipboard (OSC 52), and the bottom bar uses only palette colours (grey text, no background).
-- **In Pier, Pi does not go through tmux's screen** (see [Terminals](#terminals)): Pier attaches in "control mode". tmux keeps Pi alive but draws nothing; it passes Pi's output on as it is, and Pier displays it. So in the picker started by Pier, `p` (and `N`, `c`, `r`) opens Pi **in a Pier tab** instead of attaching to it itself.
+- **In Pier, Pi does not go through tmux's screen** (see [Terminals](#part-iv-terminals)): Pier attaches in "control mode". tmux keeps Pi alive but draws nothing; it passes Pi's output on as it is, and Pier displays it. So in the picker started by Pier, `p` (and `N`, `c`, `r`) opens Pi **in a Pier tab** instead of attaching to it itself.
 
-### Pi in "regular" mode (recommended)
+### Part IV. Pi in "regular" mode (recommended)
 
 Since version 1.0, Pi starts in "fullscreen" mode: it takes the mouse, scrolls and selects by itself, and shows "Copied!" when it copies. Over SSH, each notch of the wheel then makes Pi redraw the whole screen on the VM, which is not smooth, and its selection bypasses Pier's. In **regular** mode, Pi writes to the terminal like an ordinary program: the wheel, the selection and copying are Pier's. You lose Pi's scrollbar, its search in the conversation and jumping between messages.
 
@@ -138,11 +144,11 @@ In `~/.pi/agent/settings.json` on the VM:
 
 To go back to fullscreen mode, `"tuiMode": "fullscreen"` (the wheel is smoother there with `"fullscreenWheelScrollLines": 3`).
 
-### The sandbox
+### Part V. The sandbox
 
-By default, Pi runs in **bubblewrap**. See [Security](#5-security).
+By default, Pi runs in **bubblewrap**. See [Security](#chapter-v-security).
 
-### Configuration
+### Part VI. Configuration
 
 Optional, in `~/.config/pi-dir-picker/config.toml`. A commented template is in [config.example.toml](config.example.toml).
 
@@ -163,9 +169,11 @@ Optional, in `~/.config/pi-dir-picker/config.toml`. A commented template is in [
 
 Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the PATH, and `PI_PICKER_SANDBOX=0`, which turns the sandbox off (the test suite uses it).
 
-### The API for Pier
+### Part VII. The API for Pier
 
 The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 11 today): Pier recognises a picker that is too old and updates it.
+
+#### A. The commands
 
 | Command | Purpose |
 |---|---|
@@ -187,24 +195,26 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `--attach-control DIR [ARGS]` | the same in tmux's control mode, for Pier's Pi tabs |
 | `--pi-update [ARGS]` | `pi update` in a Pier terminal (see Setup) |
 
-**The `watch` command.** Before, each Pier tab asked for its state again every 2.5 to 15 seconds, each time with a new SSH command starting Python. Now one command stays open for the whole connection. Pier tells it what it follows (the projects, a conversation's activity, a project's setup, its restore points, the conversations, the contents of Context, the log), and it sends a part **only when it changed**. It looks at the size and time of the files concerned first: a Pi starting, finishing or changing a file shows within a second, and nothing travels when nothing moves. A tab is followed only while it is shown. Pi's conversation files, which keep growing, are read again only from where the last reading stopped, and a part whose inputs keep moving (a working Pi) is rebuilt at most every few seconds. If the connection drops, Pier opens it again by itself.
+#### B. The `watch` command
+
+Before, each Pier tab asked for its state again every 2.5 to 15 seconds, each time with a new SSH command starting Python. Now one command stays open for the whole connection. Pier tells it what it follows (the projects, a conversation's activity, a project's setup, its restore points, the conversations, the contents of Context, the log), and it sends a part **only when it changed**. It looks at the size and time of the files concerned first: a Pi starting, finishing or changing a file shows within a second, and nothing travels when nothing moves. A tab is followed only while it is shown. Pi's conversation files, which keep growing, are read again only from where the last reading stopped, and a part whose inputs keep moving (a working Pi) is rebuilt at most every few seconds. If the connection drops, Pier opens it again by itself.
 
 ---
 
-## 4. Pier
+## Chapter IV. Pier
 
 Pier used to be called **devbox** (the name was already taken by a well-known tool). Whatever holds data kept the old name, so that nothing is lost: the settings and logs folder (`app.devbox.client`), the interface's preferences, and on the VM the restore points and the history of the instructions (`.pi/devbox-history`).
 
 A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 6.5 MB.
 
-### Connecting
+### Part I. Connecting
 
 - **First start:** address, port, user, and an optional **bastion** (with its own port and user).
 - **Password:** asked once, kept **in memory only** and never written to disk. It is used to reconnect by itself when the PC went to sleep. It is forgotten as soon as the address or the user changes.
 - **Server fingerprint:** checked as `ssh` does. On first contact, Pier shows it for you to confirm, and only that key can be trusted. If it changes later, **the connection is refused before the password is sent**.
 - **The connection settings** are changed from the login screen ("change connection"), not from the Settings.
 
-### The picker, shipped with Pier
+### Part II. The picker, shipped with Pier
 
 The exe contains the picker (`pi-dir-picker.py`, built in at compile time). At each connection, Pier compares the VM's version with its own:
 
@@ -214,7 +224,7 @@ The exe contains the picker (`pi-dir-picker.py`, built in at compile time). At e
 
 The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
 
-### The workspace
+### Part III. The workspace
 
 Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Layout > **Panels** puts them on the left):
 
@@ -223,7 +233,11 @@ Three zones, **left, centre and right**. By default, to keep it simple, **the te
 - **Context**: what it was given;
 - **Setup**: the project's configuration.
 
-The **Logs** tab is a diagnostics option (Settings > Diagnostics > **Logs tab**). An older layout takes this one once; **Reset layout** brings it back. After that, any tab can go to any zone:
+The **Logs** tab is a diagnostics option (Settings > Diagnostics > **Logs tab**). An older layout takes this one once; **Reset layout** brings it back.
+
+#### A. Going anywhere, arranging freely
+
+After that, any tab can go to any zone:
 
 - **The palette, Ctrl+Shift+K**, from anywhere, terminals included (or **search** in the top bar): type a few letters to go anywhere.
   - **tabs and panels:** an open tab, or a closed panel to open again;
@@ -243,12 +257,15 @@ The **Logs** tab is a diagnostics option (Settings > Diagnostics > **Logs tab**)
   - **Collapse this side**;
   - for a terminal, **New**, **Restart** and **Clear scrollback**;
   - **Close** and **Close the other tabs here**.
+
+#### B. What stays put
+
 - **The picker** is the main tab: it is pinned and never closes.
 - **The chosen tab is always fully visible:** in a narrow side, the tab bar scrolls to it.
 - **The layout is kept** from one connection to the next. "Reset layout" puts the tabs back in their default places without restarting the terminals.
 - **At the top**, Pier shows the Pi in use (`session · ~/work #2 · working`). The panels follow its project automatically.
 
-### Terminals
+### Part IV. Terminals
 
 They are real terminals on the VM, going through the SSH connection already open.
 
@@ -269,7 +286,7 @@ They are real terminals on the VM, going through the SSH connection already open
 - **As responsive as plain ssh:** the connection turns off Nagle's algorithm, as OpenSSH does for interactive sessions (otherwise each key could wait up to 200 ms), and what the VM sends at once is handed to the terminal in one message, instead of one per SSH packet. While a divider is dragged, only the final size reaches the VM. With detailed logs, Pier notes the VM's response time to keys (`ui.term-latency`, median and 90th percentile).
 - **Drawn by the graphics card** (WebGL): scrolling a long history stays smooth. Without WebGL, or when the graphics card loses its context, the terminal falls back to the classic renderer by itself. Setting in Settings > Terminals.
 
-### The Context tab: everything given to Pi
+### Part V. The Context tab: everything given to Pi
 
 You give something with **Ctrl+V**, **drag and drop**, the **Add files… / Add a folder…** buttons, or **Ctrl+Alt+V** from any application. Pier then does what is needed:
 
@@ -287,7 +304,7 @@ The panel lists, **project by project**, everything that was given: images (with
 
 The list is read on the VM: it is there again after a reconnection. The `.pi-images`, `.pi-files` and `.pi-shared` folders each contain a `.gitignore` with `*`, so that nothing gets committed by accident, without touching the project's own `.gitignore`.
 
-### Live shares
+### Part VI. Live shares
 
 The folder stays **on the PC**. The VM sees it **live** in the project's `.pi-shared/<name>`, and nothing is copied.
 
@@ -297,9 +314,11 @@ The folder stays **on the PC**. The VM sees it **live** in the project's `.pi-sh
 - **A share stops** when you click ×, on disconnecting, when Pier quits, and, by default, when the project's Pi ends.
 - **After a disconnection,** shares come back **paused**, with a **resume** button. They can also resume by themselves, as set in the Settings. After a silent reconnection they start again by themselves.
 
-### Hand off and Take back: Pi carries on, PC off
+### Part VII. Hand off and Take back: Pi carries on, PC off
 
 Pi runs on the VM and does not need the PC, **except for live shares**.
+
+#### A. Hand off
 
 **Hand off** (button at the top) turns each live share into **a copy on the VM, exactly at the same place**. Pi thus keeps its files at the same paths, even in the middle of a task:
 - a read-only share becomes a read-only copy;
@@ -307,12 +326,14 @@ Pi runs on the VM and does not need the PC, **except for live shares**.
 
 Then Pier disconnects, and the PC can be switched off.
 
+#### B. Take back
+
 **Take back**, on your return, from Context:
 - **download** saves Pi's version in a **new folder** next to the original, `mockups (from Pi)`: nothing is overwritten. The download is capped (600 MB received, 2 GB unpacked), links and special files are skipped, and every file gets the "came from the Internet" mark, so Windows warns before opening or running it;
 - **share live** shares the original folder live again, in place of the copy;
 - **×** deletes the copy.
 
-### The Activity tab: what the agent does
+### Part VIII. The Activity tab: what the agent does
 
 Everything is read from **Pi's session log**, which it writes as it goes (`~/.pi/agent/sessions/--<project path>--/*.jsonl`).
 
@@ -325,7 +346,9 @@ Everything is read from **Pi's session log**, which it writes as it goes (`~/.pi
 - **What is not possible:** knowing what Pi **will** read next. Pi decides as it goes.
 - **Restore:** the restore points, see below.
 
-### Restore points: undoing what Pi did
+### Part IX. Restore points: undoing what Pi did
+
+#### A. Using them
 
 The project is saved **when Pi starts**, **when each prompt arrives** (before Pi acts) and **when Pi stops working**. **Activity > Restore** lists these points: "Pi started", "before “add tests”", "Pi finished working".
 
@@ -336,7 +359,8 @@ The project is saved **when Pi starts**, **when each prompt arrives** (before Pi
 - **Save a restore point now** makes one by hand, with a name if you like.
 - Pier refuses to restore **while Pi is working**. Pi is not told: tell it what you undid.
 
-How it works:
+#### B. How it works
+
 - The points are kept **outside the project**, in a git repository of their own per project (`~/.local/state/pi-dir-picker/checkpoints/`). **The project's git is never touched**, and Pi, in its sandbox, does not see that folder.
 - git stores each version of a file once: a point costs only what changed. The latest 50 points are kept per project.
 - That repository reads none of your git configuration: no hook, filter or fsmonitor runs.
@@ -344,7 +368,9 @@ How it works:
 - A point identical to the previous one is not a duplicate: it replaces it and takes over its name. Each point in the list is thus a different state.
 - The first question of a **new** session is a special case: Pi only writes its session with its first answer, when its tools start. That question is therefore attached to the "Pi started" point, which does hold the state from before.
 
-### Logs: what happened, to understand a problem
+### Part X. Logs: what happened, to understand a problem
+
+#### A. The two logs
 
 Pier and the picker each write a log, **one line per event**, in the same format and in UTC:
 
@@ -360,9 +386,11 @@ Pier and the picker each write a log, **one line per event**, in the same format
 - **Detailed logs** (Settings) adds the detail lines, on both sides: the reads repeated every few seconds, terminal sizes, the steps of the SSH connection.
 - The logs rotate at 5 MB (PC) and 1 MB (VM), keeping 3 files.
 
+#### B. The Logs tab
+
 **The Logs tab** (shown with Settings > Diagnostics > **Logs tab**) shows both logs live, **newest at the top**, with a filter by level and by text. **Copy a report** puts a full report on the clipboard: versions, connection (never a password), settings, and the end of both logs. That is what to send when something goes wrong.
 
-### The Conversations tab: the one place for conversations
+### Part XI. The Conversations tab: the one place for conversations
 
 Every conversation of Pi on the VM, **grouped by project**. The project of the Pi in use comes first, marked ●, and stays open. Then the projects where a Pi runs, then the others, from the most recent to the oldest. Past the first three, a project is folded; **▾** unfolds it, and Pier remembers.
 
@@ -383,7 +411,7 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
 
 Pier reads Pi's sessions folder (`~/.pi/agent/sessions`). The view is only updated while it is shown, at most every 5 seconds while Pi works.
 
-### The Setup tab: a project's configuration, as in Claude Projects
+### Part XII. The Setup tab: a project's configuration, as in Claude Projects
 
 For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top says how many conversations the project has, with **open them in Conversations**.
 
@@ -409,14 +437,14 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
   The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pi-dir-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add a package or an MCP server on the VM: `pi install npm:…`, `pi mcp add …`.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).
 
-### Notifications and shortcut
+### Part XIII. Notifications and shortcut
 
 - **A Windows notification** when a Pi goes from "working" to "idle", for every Pi started. Nothing shows when Pier is already in front.
 - **Ctrl+Alt+V,** from any application: sends the clipboard's image or files to Pi. When another program already uses it, the Settings say so.
 - **One Pier at a time:** starting it again brings the running one forward (even minimised to the notification area) instead of opening a second one.
 - **Closing the window** leaves Pier in the notification area. To quit it: right-click the icon, then Quit.
 
-### Settings (once connected)
+### Part XIV. Settings (once connected)
 
 The categories in a column on the left, the page on the right; the window opens again on the last page shown.
 
@@ -437,13 +465,15 @@ The categories in a column on the left, the page on the right; the window opens 
 
 ---
 
-## 5. Security
+## Chapter V. Security
+
+### Part I. What is in place
 
 | Topic | What is in place |
 |---|---|
 | **Password** | Kept in memory only, never written to disk, forgotten when the address or user changes. It can never end up in a URL: the forms cannot be submitted to an address. |
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
-| **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#network-and-encryption). |
+| **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
 | **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run/user` is hidden (no session bus, no systemd), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
 | **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. |
@@ -457,16 +487,17 @@ The categories in a column on the left, the page on the right; the window opens 
 | **The interface itself** | No remote content: the page only loads its own files (strict CSP), and can only reach Pier's commands, the file chooser and notifications. |
 | **Logs** | Never a password, nor what is typed in a terminal or into Pi. |
 
-Things to know:
+#### A. Things to know
+
 - **The executable is not signed:** Windows shows a warning on first start.
 - **The sandbox hides `~/.ssh`,** so Pi cannot `git push` over SSH, unless you add `sandbox_read = ["~/.ssh"]`. Pi could then read the keys.
 - **`~/.pi` is shared by every project** and writable by Pi. A Pi manipulated in one project could add a package, an extension or an MCP server that the Pis of other projects will load, and `pi update` installs those packages outside the sandbox. Setup shows the list of packages: look at it before updating.
 
-### Network and encryption
+### Part II. Network and encryption
 
 **No TLS in Pier, on purpose.** Pier only talks to the VM over **SSH**: no web server, no HTTP API, no certificate to manage. SSH encrypts and authenticates everything itself: terminals, commands, `watch`, files sent, shares (sshfs goes through the same connection). The only TLS in the system is **Pi's, to its model provider** (HTTPS, handled by Pi on the VM).
 
-**The layers, from the outside in:**
+#### A. The layers, from the outside in
 
 1. **WireGuard** (ChaCha20-Poly1305, Curve25519): the VM can only be reached through the tunnel.
 2. **SSH**, inside the tunnel, with what Pier accepts to negotiate:
@@ -483,7 +514,9 @@ Things to know:
 3. **The server's fingerprint**, pinned on first contact: a fake server on the way never gets the password.
 4. **With a bastion:** the connection to the VM is encrypted **end to end through it**. The bastion passes encrypted bytes: it sees neither the VM's password nor what is exchanged. Its fingerprint is checked the same way.
 
-**What could be set up on the VM** (none of it needs an SSH key):
+#### B. What could be set up on the VM
+
+None of it needs an SSH key.
 
 1. **Accept SSH only through WireGuard,** with the firewall rather than `ListenAddress`: if the tunnel does not come up at boot, sshd is not left without an address, and the hypervisor console stays available. With nftables (adapt `wg0`):
 
@@ -535,12 +568,15 @@ Things to know:
 
 6. **Limiting where Pi can send data.** The sandbox hides your files, but Pi keeps network access (it must reach its model). An instruction hidden in a file Pi reads could make it send code elsewhere. A possible answer: an HTTPS proxy with a list of allowed domains (the provider's, npm, GitHub…), and the firewall blocking the rest for Pi. Heavier to set up.
 
-**On the PC:**
+#### C. On the PC
+
 - **The password** stays in memory while Pier runs (to reconnect by itself). It could be wiped from memory as soon as it is no longer needed, at the price of asking for it again at each outage.
 - **`known_hosts.json`** (the accepted fingerprints) is in your Windows profile, readable by you only. A malicious program on the PC could change it, but it could also read what you type: that is beyond Pier's reach.
 - **To distribute Pier to others:** sign the executable (Authenticode) and publish its SHA-256, so they know it is the right one. The picker needs no signature of its own: it is inside the exe, and travels over the verified SSH connection.
 
-### Audit of 14 October 2026
+### Part III. Audit of 14 October 2026
+
+#### A. What was fixed
 
 A full review (security on the PC, security on the VM, stability, performance) was made; what it confirmed was fixed (picker 4.11 and later):
 
@@ -552,7 +588,8 @@ A full review (security on the PC, security on the VM, stability, performance) w
 - **Stability:** silent reconnection for up to 15 minutes after the PC sleeps, Pi tabs reattaching and shares restarting; a dead connection no longer freezes the app; a big paste no longer blocks the other terminals; unsaved Setup text can no longer go to another project; the watch no longer restarts in a loop; dead sshfs mounts are seen and unmounted; an unreadable file no longer stops restore points, and a restore no longer loses its point.
 - **Performance:** `git status` at most every 3 seconds per project, parts rebuilt at most every few seconds while Pi works, npm versions asked in the background, Pi's tool calls kept compact, tmux control mode decoded in linear time, resizing sent once the drag ends, the Logs tab no longer redrawn at each line.
 
-**Still known:**
+#### B. Still known
+
 - **`~/.pi` shared by every project** (see above).
 - **One-off calls to the VM** (opening a folder, a diff) start Python each time. They could go through the watch.
 - **Without tmux**, a Pi started by hand in the picker could inject keys into the picker's terminal (TIOCSTI). Pier always starts Pi in tmux.
@@ -560,9 +597,9 @@ A full review (security on the PC, security on the VM, stability, performance) w
 
 ---
 
-## 6. Installation
+## Chapter VI. Installation
 
-### On the VM
+### Part I. On the VM
 
 ```bash
 sudo apt install tmux bubblewrap sshfs git
@@ -584,7 +621,7 @@ grep -q npm-global ~/.profile || echo 'PATH="$HOME/.npm-global/bin:$PATH"' >> ~/
 export PATH="$HOME/.npm-global/bin:$PATH" && npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 ```
 
-### On the PC: `~/.ssh/config`
+### Part II. On the PC: `~/.ssh/config`
 
 ```
 Host pi pi-sh
@@ -601,7 +638,7 @@ Host pi
 
 `ssh pi` opens the picker, and `ssh pi-sh` a normal shell (for scp, rsync…). With a bastion, add `ProxyJump bastion` under `Host pi pi-sh`.
 
-### Pier
+### Part III. Pier
 
 The compiled executable is `client/src-tauri/target/release/pier.exe`. Nothing to install: WebView2 is already there on Windows 10 and 11.
 
@@ -616,14 +653,16 @@ Quit Pier before building again (also from the notification area): Windows does 
 
 ---
 
-## 7. Day to day
+## Chapter VII. Day to day
 
-**Without Pier, just over SSH:**
+### Part I. Without Pier, over SSH
+
 1. `ssh pi` opens the picker.
 2. Select a project, then `p`: Pi starts in it.
 3. `Ctrl-b d` goes back to the picker, and Pi carries on. `q` quits.
 
-**With Pier:**
+### Part II. With Pier
+
 1. Start Pier, then type your password.
 2. The picker opens in the centre: `p` on a project (or **new** / **last** in Conversations, or Ctrl+Shift+K and a few letters).
 3. A screenshot (Win+Shift+S), then Ctrl+V in Pier: the image is in Pi, you write your question.
@@ -632,11 +671,15 @@ Quit Pier before building again (also from the notification area): Windows does 
 6. In the evening, if the task is long: **hand off**, then switch the PC off.
 7. The next day: connect again. The result is in **Activity**, and **Take back** is in **Context**.
 
-**To start a new project:** the **Setup** tab, then **let Pi write it** for a first `AGENTS.md`. Adjust it afterwards; every following session benefits.
+### Part III. Starting a new project
+
+The **Setup** tab, then **let Pi write it** for a first `AGENTS.md`. Adjust it afterwards; every following session benefits.
 
 ---
 
-## 8. Outages and recovery
+## Chapter VIII. Outages and recovery
+
+### Part I. What happens, and what to do
 
 | What stops | Consequence | What to do |
 |---|---|---|
@@ -648,9 +691,9 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 
 ---
 
-## 9. Files and locations
+## Chapter IX. Files and locations
 
-**On the VM:**
+### Part I. On the VM
 
 | Path | Contents |
 |---|---|
@@ -672,7 +715,9 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 | `~/.pi/agent/sessions/` | Pi's sessions (read by Activity and Conversations) |
 | `~/.pi/hindsight.key` | the Hindsight memory key (keep it `chmod 600`) |
 
-**On the PC** (Pier's configuration folder, `%APPDATA%\app.devbox.client` on Windows):
+### Part II. On the PC
+
+Pier's configuration folder, `%APPDATA%\app.devbox.client` on Windows:
 
 | File | Contents |
 |---|---|
@@ -682,7 +727,7 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 
 The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1.log`, `pier.2.log`). The display preferences (layout, theme…) are kept by the app itself.
 
-**In this repository:**
+### Part III. In this repository
 
 | Path | Purpose |
 |---|---|
@@ -695,33 +740,43 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 ---
 
-## 10. Tests
+## Chapter X. Tests
 
-- **The picker:** several hundred checks of the logic and the API (several Pis per project and `watch`, restore points with real git, the log, conversations, labels, versions, the audit's protections), run on Windows with a simulated curses module. Plus the `pi-dir-picker-tests.py` suite, to run **on the VM**: it drives the picker in a real tmux terminal and checks the real bubblewrap sandbox, restore points around a real `--exec-pi`, two Pis in one project with real tmux, and what Setup lists.
+### Part I. The picker
 
-  ```powershell
-  scp C:\Users\leo\Downloads\pi-tui\pi-dir-picker.py C:\Users\leo\Downloads\pi-tui\pi-dir-picker-tests.py pi-sh:pi-tui/
-  ```
+Several hundred checks of the logic and the API (several Pis per project and `watch`, restore points with real git, the log, conversations, labels, versions, the audit's protections), run on Windows with a simulated curses module. Plus the `pi-dir-picker-tests.py` suite, to run **on the VM**: it drives the picker in a real tmux terminal and checks the real bubblewrap sandbox, restore points around a real `--exec-pi`, two Pis in one project with real tmux, and what Setup lists.
 
-  ```powershell
-  ssh -t pi-sh "python3 -B ~/pi-tui/pi-dir-picker-tests.py"
-  ```
+```powershell
+scp C:\Users\leo\Downloads\pi-tui\pi-dir-picker.py C:\Users\leo\Downloads\pi-tui\pi-dir-picker-tests.py pi-sh:pi-tui/
+```
 
-  If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -p ~/pi-tui"`.
+```powershell
+ssh -t pi-sh "python3 -B ~/pi-tui/pi-dir-picker-tests.py"
+```
 
-- **Pier:** 44 Rust tests (`cargo test`), including:
-  - Pi tabs in tmux control mode against a local SSH server (decoding `%output`, keys as raw bytes, sizes, end, Pi unable to fake Pier's messages, caps);
-  - `watch` against a local SSH server (lines cut across two packets, round trip, end);
-  - the connection against a real local SSH server: first contact, wrong password, changed fingerprint, bastion, a server with old algorithms refused (without the password leaving);
-  - shares end to end (the simulated VM can neither leave the folder nor write when read-only), path confinement, archives, filtering Pi's arguments and update targets, quoting for any login shell;
-  - the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused).
-- **The interface** was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection.
+If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -p ~/pi-tui"`.
+
+### Part II. Pier
+
+44 Rust tests (`cargo test`), including:
+
+- Pi tabs in tmux control mode against a local SSH server (decoding `%output`, keys as raw bytes, sizes, end, Pi unable to fake Pier's messages, caps);
+- `watch` against a local SSH server (lines cut across two packets, round trip, end);
+- the connection against a real local SSH server: first contact, wrong password, changed fingerprint, bastion, a server with old algorithms refused (without the password leaving);
+- shares end to end (the simulated VM can neither leave the folder nor write when read-only), path confinement, archives, filtering Pi's arguments and update targets, quoting for any login shell;
+- the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused).
+
+### Part III. The interface
+
+It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection.
 
 ---
 
-## 11. Known limits and what is left to check
+## Chapter XI. Known limits and what is left to check
 
-**To check on the real VM** (tested only locally or in simulation):
+### Part I. To check on the real VM
+
+Tested only locally or in simulation so far:
 - the real bubblewrap sandbox (its own `/dev`, `/run/user` hidden), and access to shared folders (sshfs) from it;
 - git run in its own sandbox for Activity and diffs;
 - really unmounting sshfs during a Hand off, while Pi works;
@@ -733,7 +788,8 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 - `pi update` started from Setup, and asking npm for the latest versions from the VM;
 - silent reconnection after the PC sleeps.
 
-**Limits:**
+### Part II. Limits
+
 - **Two Pis changing the same files** in one project step on each other: nothing prevents it. Several Pis suit separate tasks (the code and the docs). A project's restore points are shared by its Pis.
 - **A `/new` or `/resume` typed in Pi:** each Pi started by Pier says so itself (its extension). Without it (a Pi started earlier, or `track_sessions = false`), the picker guesses by looking for the recent file no other Pi holds; two Pis of the same project doing `/new` in the same second can then be mixed up.
 - **The name of a very big conversation** (images, hundreds of MB) is looked for in its last 4 MB only the first time: a name given at the start of such a conversation, never given again, may not show.
@@ -745,10 +801,12 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 ---
 
-## 12. Ideas for later
+## Chapter XII. Ideas for later
+
+### Part I. Possible next steps
 
 - **A notification on the phone** when Pi is done, sent by the VM itself (ntfy), so even with the PC off.
-- **SSH limited to the WireGuard tunnel,** sshd hardened, fail2ban, a WireGuard `PresharedKey`: see [Network and encryption](#network-and-encryption).
+- **SSH limited to the WireGuard tunnel,** sshd hardened, fail2ban, a WireGuard `PresharedKey`: see [Network and encryption](#part-ii-network-and-encryption).
 - **A second factor (TOTP)** in Pier.
 - **macOS and Linux versions** built by GitHub Actions, and signing the executable.
 - **Several VMs** saved, chosen at login.
