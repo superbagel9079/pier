@@ -60,6 +60,11 @@ pub fn install_script(remote_command: &str, version: &str) -> Result<String, Str
     let expected = sh_quote(version);
     // No backslash anywhere: the script goes through the user's shell (bash, zsh or
     // fish) inside single quotes.
+    //
+    // The picker itself goes to NAME.lib/pi_dir_picker.py, and NAME is a small launcher
+    // importing it: Python then keeps it compiled (__pycache__) instead of compiling its
+    // 5000 lines at every call, which cost about 100 ms each. NAME.previous is always a
+    // whole picker, which runs by itself.
     Ok(format!(
         r#"set -e
 dest={dest}
@@ -69,14 +74,17 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 3
 fi
 mkdir -p "$(dirname "$dest")"
+lib="$dest.lib"
+new="$lib.pier-new.$$"
 tmp="$dest.pier-new.$$"
-cleanup() {{ rm -f "$tmp"; }}
+cleanup() {{ rm -rf "$tmp" "$new"; }}
 trap cleanup EXIT
-cat > "$tmp"
-chmod 755 "$tmp"
-# Run as the picker command will run it: through its first line, which catches a
-# broken one (Windows line ends after python3).
-if ! got="$("$tmp" --version 2>&1)"; then
+mkdir -p "$new"
+cat > "$new/pi_dir_picker.py"
+chmod 755 "$new/pi_dir_picker.py"
+# Run through its first line, which catches a broken one (Windows line ends after
+# python3).
+if ! got="$("$new/pi_dir_picker.py" --version 2>&1)"; then
   echo "the new picker does not start on the VM: $got" >&2
   exit 4
 fi
@@ -84,9 +92,33 @@ if [ "$got" != "$expected" ]; then
   echo "the new picker says it is $got instead of $expected" >&2
   exit 5
 fi
-if [ -f "$dest" ] && [ ! -L "$dest" ]; then
+cat > "$tmp" <<PIER_LAUNCHER
+#!/usr/bin/env python3
+# pi-pick, installed by Pier: it runs the picker kept in $lib as a module, so that
+# Python compiles it once rather than at every call.
+import os
+import sys
+sys.path.insert(0, "$lib")
+import pi_dir_picker
+pi_dir_picker.SCRIPT = os.path.realpath(__file__)
+pi_dir_picker.entry()
+PIER_LAUNCHER
+chmod 755 "$tmp"
+if [ -f "$lib/pi_dir_picker.py" ]; then
+  cp -p "$lib/pi_dir_picker.py" "$dest.previous" 2>/dev/null || true
+elif [ -f "$dest" ] && [ ! -L "$dest" ]; then
   cp -p "$dest" "$dest.previous" 2>/dev/null || true
 fi
+rm -rf "$lib.old"
+if [ -d "$lib" ]; then mv "$lib" "$lib.old"; fi
+mv "$new" "$lib"
+if ! got="$("$tmp" --version 2>&1)" || [ "$got" != "$expected" ]; then
+  rm -rf "$lib"
+  if [ -d "$lib.old" ]; then mv "$lib.old" "$lib"; fi
+  echo "the picker's launcher does not start on the VM: $got" >&2
+  exit 6
+fi
+rm -rf "$lib.old"
 mv -f "$tmp" "$dest"
 trap - EXIT
 echo "$dest"
@@ -129,6 +161,7 @@ mod tests {
         let script = install_script("~/bin/pi-pick", "3.9").unwrap();
         assert!(script.contains("dest=\"$HOME\"/'bin/pi-pick'"), "{script}");
         assert!(script.contains("expected='3.9'"));
+        assert!(script.contains("lib=\"$dest.lib\"") && script.contains("import pi_dir_picker"), "the launcher and its module");
         assert!(!script.contains('\\'), "no backslash may reach the user's shell");
         assert!(install_script("/opt/tools/pi-pick", "3.9").unwrap().contains("dest='/opt/tools/pi-pick'"));
         for bad in ["python3 ~/pi.py", "~/bin/pi-pick; rm -rf ~", "bin/pi-pick", "~/../etc/x", "~/bin/", "~/a/~b", "$HOME/x", "~/bin/pi pick"] {

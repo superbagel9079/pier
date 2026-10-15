@@ -373,6 +373,53 @@ def hardening_test():
     (project / ".pi-files").symlink_to(outside)
     walked = picker(f"m.remove_entry({str(home)!r}, {str(project / '.pi-files' / 'keep')!r})")
     check("remove: never through a link on the way", (outside / "keep" / "f").exists() and "Error" in walked, walked)
+
+    # Writing: a folder swapped for a link leading out is refused, nothing lands there.
+    wrote = picker(f"m.save_new({str(project / '.pi-files')!r}, 'x.png', b'data', {str(project)!r})")
+    check("write: never through a link out of the project", not (outside / "x.png").exists() and "Error" in wrote, wrote)
+    (project / ".pi-files").unlink()
+
+    # A FIFO left where the picker reads does not block it.
+    fifo = project / "AGENTS.md"
+    fifo.unlink()
+    os.mkfifo(fifo)
+    began = time.monotonic()
+    blocked = picker(f"print(m.read_text({str(fifo)!r}, root={str(project)!r}))")
+    check("read: a FIFO is not waited on", blocked == "None" and time.monotonic() - began < 10, blocked)
+    fifo.unlink()
+
+    # The git jail: the project only, unless its .git file names a real git folder.
+    (project / ".git").write_text(f"gitdir: {home / '.ssh'}\n")
+    (home / ".ssh").mkdir()
+    (home / ".ssh" / "HEAD").write_text("ref: refs/heads/main\n")
+    check("git jail: a .git file naming ~/.ssh adds nothing",
+          picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project)]))
+    main_git = home / "main" / ".git"
+    (main_git / "worktrees" / "w").mkdir(parents=True)
+    (main_git / "HEAD").write_text("ref: refs/heads/main\n")
+    (main_git / "worktrees" / "w" / "HEAD").write_text("ref: refs/heads/w\n")
+    (main_git / "worktrees" / "w" / "commondir").write_text("../..\n")
+    (project / ".git").write_text(f"gitdir: {main_git / 'worktrees' / 'w'}\n")
+    check("git jail: a worktree gets its main repository's .git",
+          picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project), str(main_git)]))
+    (project / ".git").unlink()
+
+    # A folder copy is unpacked out of Pi's reach, then moved into .pi-files.
+    import io
+    import tarfile
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w") as tar:
+        info = tarfile.TarInfo("mock/a.txt")
+        info.size = 5
+        tar.addfile(info, io.BytesIO(b"hello"))
+    upload = subprocess.run([sys.executable, "-B", str(APP), "--api", "upload-dir", "mock", str(project)],
+                            input=archive.getvalue(), env=env, capture_output=True, timeout=30)
+    saved = json.loads(upload.stdout or b"{}").get("saved") or ""
+    check("upload-dir: the copy lands in .pi-files",
+          saved.startswith(str(project / ".pi-files")) and (Path(saved) / "mock" / "a.txt").read_text() == "hello",
+          upload.stdout[-300:] + upload.stderr[-300:])
+    incoming = home / ".local" / "state" / "pi-dir-picker" / "incoming"
+    check("upload-dir: nothing left in the private folder", not incoming.exists() or not any(incoming.iterdir()))
     cleanup(str(work))
 
 

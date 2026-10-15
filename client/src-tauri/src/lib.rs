@@ -519,6 +519,13 @@ async fn api_call(app: AppHandle, state: State<'_, AppState>, args: Vec<String>)
         return Err(format!("command not allowed: {command}"));
     }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    // What is typed into Pi goes on stdin ("-"): on the command line, any user of the VM
+    // could read it (ps), and a line holds 128 KB at most.
+    if let ["type", text, rest @ ..] = args.as_slice() {
+        let mut moved = vec!["type", "-"];
+        moved.extend_from_slice(rest);
+        return api(&app, &state, &moved, text.as_bytes()).await;
+    }
     api(&app, &state, &args, &[]).await
 }
 
@@ -694,9 +701,13 @@ async fn checkpoint_create(app: AppHandle, state: State<'_, AppState>, project: 
 /// Puts the project back as it was at a restore point: all of it, or `files`.
 #[tauri::command]
 async fn checkpoint_restore(app: AppHandle, state: State<'_, AppState>, project: String, id: String, files: Vec<String>) -> Result<Value, String> {
-    let mut args = vec!["restore", project.as_str(), id.as_str()];
-    args.extend(files.iter().map(String::as_str));
-    api(&app, &state, &args, &[]).await
+    // The files, one per line on stdin: hundreds of them would not fit on a command line.
+    if files.iter().any(|f| f.contains('\n')) {
+        return Err("a file name with a line break cannot be restored one by one".into());
+    }
+    let list = files.join("\n");
+    let args = if files.is_empty() { vec!["restore", project.as_str(), id.as_str()] } else { vec!["restore", project.as_str(), id.as_str(), "-"] };
+    api(&app, &state, &args, list.as_bytes()).await
 }
 
 // --- terminals ----------------------------------------------------------------------

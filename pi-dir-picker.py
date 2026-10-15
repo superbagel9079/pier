@@ -50,7 +50,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.15"
+VERSION = "4.16"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -361,7 +361,8 @@ def within(path, root):
 # following links: a link or a folder swapped in between a check and its use cannot
 # send it elsewhere. Not on Windows (the simulated tests), which has no dir_fd.
 DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-SAFE_FD = os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd and os.scandir in os.supports_fd
+SAFE_FD = (os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd and os.replace in os.supports_dir_fd
+           and os.scandir in os.supports_fd)
 
 
 def open_dir_walk(root, path):
@@ -414,6 +415,42 @@ def open_regular(path, root=None, follow=True):
         pass
     os.close(fd)
     return None
+
+
+def open_plain(path, root=None, follow=True):
+    """open(path, "rb"), for a plain file only (see open_regular); OSError otherwise."""
+    fd = open_regular(path, root, follow)
+    if fd is None:
+        raise OSError(f"not a plain file: {path}")
+    return os.fdopen(fd, "rb")
+
+
+def sessions_root():
+    """Pi's sessions folder: the session files read outside the sandbox stay in it."""
+    return os.path.realpath(os.path.join(agent_dir(), "sessions"))
+
+
+def open_folder(root, folder):
+    """A descriptor on folder, really inside root, opened from root down without
+    following links (see open_dir_walk). ApiError when it leads elsewhere."""
+    real_root, real = os.path.realpath(root), os.path.realpath(folder)
+    if not within(real, real_root):
+        raise ApiError(f"refusing to write outside {pretty_path(real_root, home_dir())}: {os.path.basename(folder)}")
+    try:
+        return open_dir_walk(real_root, real)
+    except OSError as exc:
+        raise ApiError(f"{os.path.basename(folder)} changed while writing in it: {exc.strerror or exc}")
+
+
+NEW_FILE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+
+
+def write_new_at(dir_fd, name, data, mode):
+    """Create name in the folder dir_fd with data (bytes); FileExistsError if it is there."""
+    fd = os.open(name, NEW_FILE, mode, dir_fd=dir_fd)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+        os.fchmod(handle.fileno(), mode)
 
 
 def remove_tree_at(dir_fd, name, device):
@@ -519,11 +556,10 @@ def git_dir(path):
     dot = os.path.join(path, ".git")
     if os.path.isdir(dot):
         return dot
-    try:
-        with open(dot, encoding="utf-8", errors="replace") as handle:
-            first = handle.readline().strip()
-    except OSError:
+    text = read_text(dot, 4096)
+    if text is None:
         return None
+    first = text.split("\n", 1)[0].strip()
     if first.startswith("gitdir:"):
         return os.path.normpath(os.path.join(path, first[7:].strip()))
     return None
@@ -534,11 +570,10 @@ def git_branch(path):
     directory = git_dir(path)
     if directory is None:
         return None
-    try:
-        with open(os.path.join(directory, "HEAD"), encoding="utf-8", errors="replace") as handle:
-            head = handle.read().strip()
-    except OSError:
+    head = read_text(os.path.join(directory, "HEAD"), 4096)
+    if head is None:
         return None
+    head = head.strip()
     if head.startswith("ref:"):
         ref = head[4:].strip()
         return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
@@ -619,15 +654,46 @@ def git_jail(path):
     bwrap = shutil.which("bwrap")
     if not bwrap:
         return None
-    directory = git_dir(path)
-    top = os.path.realpath(os.path.dirname(directory) if directory else path)
     home = os.path.realpath(home_dir())
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
             "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
         args += ["--tmpfs", home]
-    args += ["--ro-bind", top, top, "--unshare-all", "--die-with-parent", "--new-session", "--"]
+    for folder in git_jail_folders(path):
+        args += ["--ro-bind", folder, folder]
+    args += ["--unshare-all", "--die-with-parent", "--new-session", "--"]
     return args
+
+
+def git_jail_folders(path):
+    """What the git jail shows: the project, and nothing else unless its repository
+    lives elsewhere (a worktree, a submodule). The .git file saying where is Pi's to
+    write: only a real git folder inside another repository's .git is then added (and,
+    for a worktree, the main repository's .git it shares)."""
+    project = os.path.realpath(path)
+    folders = [project]
+    directory = git_dir(path)
+    if not directory:
+        return folders
+    real = os.path.realpath(directory)
+    if within(real, project):
+        return folders
+
+    def a_git_folder(folder):
+        inside_dot_git = (os.sep + ".git" + os.sep) in (folder + os.sep)
+        return inside_dot_git and os.path.isfile(os.path.join(folder, "HEAD")) and not os.path.islink(folder)
+
+    if not a_git_folder(real):
+        return folders
+    folders.append(real)
+    common = read_text(os.path.join(real, "commondir"), 4096)
+    if common and common.strip():
+        shared = os.path.realpath(os.path.join(real, common.strip()))
+        if shared not in folders and not within(real, shared) and a_git_folder(shared):
+            folders.append(shared)
+        elif within(real, shared) and real != shared and a_git_folder(shared):
+            folders[-1] = shared  # the worktree's folder is inside it: the whole .git
+    return folders
 
 
 def git_run(path, *args):
@@ -678,10 +744,8 @@ def readme_lines(path, count=8):
     for name in names:
         full = os.path.join(path, name)
         if name.lower().startswith("readme") and os.path.isfile(full):
-            try:
-                with open(full, encoding="utf-8", errors="replace") as handle:
-                    text = handle.read(4096)
-            except OSError:
+            text = read_text(full, 4096, root=path)  # no FIFO to hang the screen on
+            if text is None:
                 return []
             lines = (line.strip().lstrip("#").strip() for line in text.splitlines())
             return [line for line in lines if line][:count]
@@ -863,8 +927,29 @@ def pi_refusal(project, home, config=None):
 
 
 def openable(path, home, config=None):
-    """A folder that can be offered as a project: Pi may run there."""
-    return pi_refusal(path, home, config) is None
+    """A folder that can be offered as a project: Pi may run there. For the lists only:
+    the guarded folders are resolved once in a while (see guarded_folders), and
+    exec_pi checks again, exactly, before Pi starts."""
+    config = config or load_config(home)[0]
+    if not sandbox_wanted(config):
+        return True
+    real = os.path.realpath(path)
+    return not any(within(guarded, real) or within(real, guarded) for guarded in guarded_folders(home))
+
+
+_GUARDED = {}  # home -> (when, the folders of SANDBOX_REFUSED, resolved)
+GUARDED_FRESH = 30.0
+
+
+def guarded_folders(home):
+    """SANDBOX_REFUSED resolved, kept a little: a search checks thousands of folders, and
+    resolving the six for each one made every key typed in it slow."""
+    now = time.monotonic()
+    cached = _GUARDED.get(home)
+    if cached is None or now - cached[0] > GUARDED_FRESH:
+        cached = (now, [os.path.realpath(os.path.join(home, path[2:])) for path in SANDBOX_REFUSED])
+        _GUARDED[home] = cached
+    return cached[1]
 
 
 def sandbox_refusal(project, home):
@@ -1467,10 +1552,10 @@ def pier_extension():
 def pier_state(slot):
     """What the Pi of a tmux session last said: {"file", "working"}, or None (no word
     from it: an older Pi, or one started before Pier gave the extension)."""
+    text = read_text(pier_state_path(slot), 64 * 1024, root=pier_dir())
     try:
-        with open(pier_state_path(slot), encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
+        data = json.loads(text) if text is not None else None
+    except ValueError:
         return None
     if not isinstance(data, dict):
         return None
@@ -1639,10 +1724,12 @@ def checkpoint_init(project):
         os.makedirs(store, mode=0o700, exist_ok=True)
         checkpoint_git(project, "init", "-q")
         log("info", "checkpoint.init", project=project, store=store)
-    # A lock left by a git that was killed would block every later point.
+    # A lock left by a git that was killed would block every later point. Every git
+    # that writes here runs under CheckpointLock, held now: one found is stale, at once
+    # (without flock, only after 10 minutes).
     lock = os.path.join(store, "index.lock")
     try:
-        if time.time() - os.stat(lock).st_mtime > 600:
+        if fcntl or time.time() - os.stat(lock).st_mtime > 600:
             os.remove(lock)
             log("warn", "checkpoint.stale-lock", project=project)
     except OSError:
@@ -1912,7 +1999,7 @@ class PromptWatcher(threading.Thread):
             start = 0
         if size == start:
             return
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             handle.seek(start)
             chunk = handle.read(size - start)
         end = chunk.rfind(b"\n")
@@ -2139,6 +2226,24 @@ def atomic_write(path, text, root, mode=0o600):
     folder = os.path.dirname(path)
     if not within(os.path.realpath(folder), os.path.realpath(root)):
         raise ApiError(f"refusing to write outside {pretty_path(root, home_dir())}: {os.path.basename(path)}")
+    if SAFE_FD:
+        # Through the folder's descriptor: swapped for a link after the check above, it
+        # still cannot send the file elsewhere.
+        data = text.encode("utf-8") if isinstance(text, str) else text
+        dir_fd = open_folder(root, folder)
+        tmp = f".pier-{os.urandom(6).hex()}.tmp"
+        try:
+            write_new_at(dir_fd, tmp, data, mode)
+            os.replace(tmp, os.path.basename(path), src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dir_fd)
+            except OSError:
+                pass
+            raise
+        finally:
+            os.close(dir_fd)
+        return
     fd, tmp = tempfile.mkstemp(dir=folder, prefix=".pier-", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as handle:
@@ -2153,8 +2258,18 @@ def atomic_write(path, text, root, mode=0o600):
         raise
 
 
-def create_new(path, text, mode=0o644):
-    """Create path with text if it does not exist; a link there is not followed."""
+def create_new(path, text, mode=0o644, root=None):
+    """Create path with text if it does not exist; a link there is not followed. With
+    root (the project), its folder is reached from root without following links."""
+    if root is not None and SAFE_FD:
+        dir_fd = open_folder(root, os.path.dirname(path))
+        try:
+            write_new_at(dir_fd, os.path.basename(path), text.encode("utf-8"), mode)
+        except FileExistsError:
+            return False
+        finally:
+            os.close(dir_fd)
+        return True
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
     except FileExistsError:
@@ -2177,7 +2292,7 @@ def safe_folder(project, rel):
 def ignored_dir(project, name):
     """project/name, created with its own .gitignore so nothing in it gets committed."""
     folder = safe_folder(project, name)
-    create_new(os.path.join(folder, ".gitignore"), "*\n")
+    create_new(os.path.join(folder, ".gitignore"), "*\n", root=project)
     return folder
 
 
@@ -2186,11 +2301,21 @@ def type_into_pi(pi, text):
     text = "".join(ch for ch in text if ch.isprintable())
     # send-keys takes a pane: "=name:" is the session's active pane, "=" makes the
     # match exact. Without the colon, tmux reads the target as a window name.
-    return run_quiet(tmux_cmd("send-keys", "-t", f"={pi['name']}:", "-l", text))
+    # "--": a text starting with "-" is text, not an option of send-keys.
+    return run_quiet(tmux_cmd("send-keys", "-t", f"={pi['name']}:", "-l", "--", text))
 
 
-def save_new(folder, filename, data):
+def save_new(folder, filename, data, root):
+    """folder/filename created with data, folder reached from root (the project)
+    without following links."""
     saved = os.path.join(folder, filename)
+    if SAFE_FD:
+        dir_fd = open_folder(root, folder)
+        try:
+            write_new_at(dir_fd, filename, data, 0o600)
+        finally:
+            os.close(dir_fd)
+        return saved
     fd = os.open(saved, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as handle:
         handle.write(data)
@@ -2228,7 +2353,7 @@ def api_paste_image(home, target, data):
         raise ApiError("not a PNG, JPEG, GIF or WebP image")
     project, session = target_project(home, target, pi_sessions())
     filename = f"{stamp()}.{kind}"
-    saved = save_new(ignored_dir(project, IMAGE_DIR), filename, data)
+    saved = save_new(ignored_dir(project, IMAGE_DIR), filename, data, project)
     return delivered(project, home, saved, f"@{IMAGE_DIR}/{filename}", session)
 
 
@@ -2238,7 +2363,7 @@ def api_paste_file(home, name, target, data):
         raise ApiError(f"file larger than {FILE_MAX_BYTES // (1024 * 1024)} MB")
     project, session = target_project(home, target, pi_sessions())
     filename = f"{stamp()}-{safe_name(name, 'file')}"
-    saved = save_new(ignored_dir(project, FILES_DIR), filename, data)
+    saved = save_new(ignored_dir(project, FILES_DIR), filename, data, project)
     return delivered(project, home, saved, f"@{FILES_DIR}/{filename}", session)
 
 
@@ -2503,7 +2628,7 @@ def read_session(path):
         usage = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "cost": 0.0, "turns": 0, "model": None,
                  "days": {}}
         last = None  # "user", "toolResult", or the stop reason of the last assistant message
-    with open(path, "rb") as handle:
+    with open_plain(path, sessions_root()) as handle:
         handle.seek(offset)
         for raw in handle:
             if not raw.endswith(b"\n"):
@@ -2554,7 +2679,7 @@ def session_edits(session):
     """The writes and edits of a session file with their whole arguments, and which
     tool calls finished (with an error or not): for api_diff, read once per diff."""
     calls, finished = {}, {}
-    with open(session, "rb") as handle:
+    with open_plain(session, sessions_root()) as handle:
         for raw in handle:
             if b'"role":"toolResult"' in raw:
                 found = re.search(rb'"toolCallId":"([^"]+)"', raw)
@@ -2577,7 +2702,7 @@ def session_edits(session):
 
 def session_tail(path, offset):
     try:
-        with open(path, "rb") as handle:
+        with open_plain(path, sessions_root()) as handle:
             handle.seek(max(0, offset - _TAIL))
             return handle.read(min(offset, _TAIL))
     except OSError:
@@ -2636,7 +2761,7 @@ def session_working(session):
 
 def session_working_now(session):
     try:
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             handle.seek(max(0, size - 256 * 1024))
@@ -2731,7 +2856,7 @@ def api_diff(home, file, path, conversation=""):
         if status == "??":
             untracked = True
             try:
-                with open(full, "rb") as handle:
+                with open_plain(full, project) as handle:
                     data = handle.read(DIFF_MAX_BYTES)
                 diff = "".join(f"+{line}\n" for line in data.decode("utf-8", "replace").splitlines())
             except OSError:
@@ -2920,10 +3045,10 @@ HANDOFF_MARKS = ".handed-off.json"
 def handoff_marks(shared):
     """{folder name: {"mode", "at"}} for the shares of a project's .pi-shared that were
     handed off: their folder now holds a copy instead of a mount."""
+    text = read_text(os.path.join(shared, HANDOFF_MARKS), 1024 * 1024, root=os.path.dirname(shared))
     try:
-        with open(os.path.join(shared, HANDOFF_MARKS), encoding="utf-8") as handle:
-            marks = json.load(handle)
-    except (OSError, ValueError):
+        marks = json.loads(text) if text is not None else {}
+    except ValueError:
         return {}
     return marks if isinstance(marks, dict) else {}
 
@@ -2948,15 +3073,43 @@ def extract_tar(stream, dest):
     return count
 
 
-def read_only_tree(path):
+def private_staging():
+    """A fresh folder of the picker's own (in its state folder, which Pi never sees),
+    where an archive is unpacked before it is moved into a project: Pi cannot swap
+    anything inside it while tarfile writes there."""
+    base = os.path.join(os.path.dirname(state_path(home_dir())), "incoming")
+    os.makedirs(base, mode=0o700, exist_ok=True)
+    return tempfile.mkdtemp(dir=base)
+
+
+def move_into(source, folder, name, root):
+    """Rename source (a folder of ours) to folder/name, folder reached from root without
+    following links. False when they are on different file systems (the caller copies)."""
+    if not SAFE_FD:
+        os.rename(source, os.path.join(folder, name))
+        return True
+    dir_fd = open_folder(root, folder)
+    try:
+        os.rename(source, name, dst_dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno == 18:  # EXDEV
+            return False
+        raise
+    finally:
+        os.close(dir_fd)
+    return True
+
+
+def read_only_tree(path, keep_top=False):
     """Removes write permission everywhere under path: a read-only share stays read-only
-    once it is a copy."""
+    once it is a copy. Only on a folder of the picker's own (see private_staging)."""
     for root, dirs, files in os.walk(path, topdown=False):
         for name in files + dirs:
             full = os.path.join(root, name)
             if not os.path.islink(full):
                 os.chmod(full, os.lstat(full).st_mode & ~0o222)
-    os.chmod(path, os.stat(path).st_mode & ~0o222)
+    if not keep_top:
+        os.chmod(path, os.stat(path).st_mode & ~0o222)
 
 
 def writable_tree(path):
@@ -2978,28 +3131,57 @@ def api_handoff(home, mount, mode, stream):
     mount = share_mountpoint(home, mount)
     shared = os.path.dirname(mount)
     name = os.path.basename(mount)
-    staging = os.path.join(shared, f".handoff-{name}-{stamp()}")
-    os.makedirs(staging, mode=0o700)
+    staging = private_staging()
     try:
         count = extract_tar(stream, staging)
         entries = os.listdir(staging)
         # Pier packs the folder under its own name: unpack that level away.
         inner = os.path.join(staging, entries[0]) if len(entries) == 1 and os.path.isdir(os.path.join(staging, entries[0])) else staging
+        if mode != "rw":
+            # Here, where Pi reaches nothing; the top folder last, once it is in place
+            # (moving a folder needs it writable).
+            read_only_tree(inner, keep_top=True)
         if is_mounted(mount):
             tool = shutil.which("fusermount3") or shutil.which("fusermount")
             if not tool or not run_quiet([tool, "-u", "-z", mount]):
                 raise ApiError("could not unmount the share")
-        if os.path.isdir(mount):
-            os.rmdir(mount)
-        os.rename(inner, mount)
+        project = os.path.dirname(shared)
+        dir_fd = open_folder(project, shared) if SAFE_FD else None
+        try:
+            if dir_fd is None:
+                if os.path.isdir(mount):
+                    os.rmdir(mount)
+                os.rename(inner, mount)
+            else:
+                try:
+                    os.rmdir(name, dir_fd=dir_fd)
+                except FileNotFoundError:
+                    pass
+                try:
+                    os.rename(inner, name, dst_dir_fd=dir_fd)
+                except OSError as exc:
+                    if exc.errno != 18:  # EXDEV: another file system, copied instead
+                        raise
+                    shutil.copytree(inner, mount, symlinks=True)
+            if mode != "rw":
+                if dir_fd is None:
+                    os.chmod(mount, os.stat(mount).st_mode & ~0o222)
+                else:
+                    top = os.open(name, DIR_FLAGS, dir_fd=dir_fd)
+                    try:
+                        os.fchmod(top, stat.S_IMODE(os.fstat(top).st_mode) & ~0o222)
+                    finally:
+                        os.close(top)
+        finally:
+            if dir_fd is not None:
+                os.close(dir_fd)
     except (ApiError, OSError, Exception) as exc:
         writable_tree(staging) if os.path.isdir(staging) else None
         shutil.rmtree(staging, ignore_errors=True)
         raise ApiError(str(exc)) if not isinstance(exc, ApiError) else exc
     if os.path.isdir(staging):
+        writable_tree(staging)
         shutil.rmtree(staging, ignore_errors=True)
-    if mode != "rw":
-        read_only_tree(mount)
     with marks_lock(shared):
         marks = handoff_marks(shared)
         marks[name] = {"mode": "rw" if mode == "rw" else "ro", "at": int(time.time())}
@@ -3033,15 +3215,18 @@ def api_upload_dir(home, name, target, stream):
     project, session = target_project(home, target, pi_sessions())
     folder = ignored_dir(project, FILES_DIR)
     dest = os.path.join(folder, f"{stamp()}-{safe_name(name, 'folder')}")
-    os.makedirs(dest, mode=0o700)
+    staging = private_staging()
     try:
-        count = extract_tar(stream, dest)
+        count = extract_tar(stream, staging)
+        if not move_into(staging, folder, os.path.basename(dest), project):
+            shutil.copytree(staging, dest, symlinks=True)  # another file system: copied
     except ApiError as exc:
-        shutil.rmtree(dest, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
         raise ApiError(f"{exc}: share it live instead")
     except Exception as exc:  # noqa: BLE001 - nothing half-made stays
-        shutil.rmtree(dest, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
         raise ApiError(f"{type(exc).__name__}: {exc}" if not isinstance(exc, (tarfile.TarError, OSError)) else str(exc))
+    shutil.rmtree(staging, ignore_errors=True)  # gone already when it was moved
     relative = f"{FILES_DIR}/{os.path.basename(dest)}"
     typed = session is not None and type_into_pi(session, relative + "/ ")
     return {"saved": dest, "project": project, "label": pretty_path(project, home),
@@ -3120,10 +3305,10 @@ def startup_files(project, home):
 
 def trust_decision(project):
     """True, False, or None (never decided), as Pi reads ~/.pi/agent/trust.json."""
+    text = read_text(os.path.join(agent_dir(), "trust.json"), 4 * 1024 * 1024)
     try:
-        with open(os.path.join(agent_dir(), "trust.json"), encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
+        data = json.loads(text) if text is not None else None
+    except ValueError:
         return None
     if not isinstance(data, dict):
         return None
@@ -3174,7 +3359,7 @@ _HISTORY = {}  # history file -> ((size, mtime), text)
 def first_prompt(session):
     """The first thing the user asked in a session file, for a readable list."""
     try:
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             for raw in handle:
                 if b'"role":"user"' not in raw:
                     continue
@@ -3213,7 +3398,7 @@ def session_name_of(session):
         # name given lately is; reading hundreds of MB would stall the watch.
         offset, name = max(0, st.st_size - NAME_SCAN_COLD), None
     try:
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             handle.seek(offset)
             rest = b""
             while True:
@@ -3530,7 +3715,7 @@ def folder_project(folder):
         names = []
     for name in names[:3]:
         try:
-            with open(os.path.join(folder, name), "rb") as handle:
+            with open_plain(os.path.join(folder, name), sessions_root()) as handle:
                 header = json.loads(handle.readline(64 * 1024))
             if isinstance(header, dict) and isinstance(header.get("cwd"), str):
                 project = header["cwd"]
@@ -3865,9 +4050,9 @@ def api_write_text(home, path, which, data):
     previous = read_text(target, root=project) if os.path.isfile(target) else None
     if previous is not None and previous != text:
         history = safe_folder(project, HISTORY_DIR)
-        create_new(os.path.join(history, ".gitignore"), "*\n")
+        create_new(os.path.join(history, ".gitignore"), "*\n", root=project)
         # Nanoseconds, zero-padded: names sort in saving order even within one second.
-        create_new(os.path.join(history, f"{which}-{time.time_ns():020d}.md"), previous, 0o600)
+        create_new(os.path.join(history, f"{which}-{time.time_ns():020d}.md"), previous, 0o600, root=project)
         old = sorted((n for n in os.listdir(history) if n.startswith(which + "-")), reverse=True)
         for name in old[HISTORY_KEEP:]:
             os.remove(os.path.join(history, name))
@@ -3890,12 +4075,40 @@ API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped",
 def api_log_fields(command, rest):
     """The arguments of a call, for the log: what is typed into Pi only as its length."""
     if command == "type":
-        return {"chars": len(rest[0]) if rest else 0, "target": rest[1] if len(rest) > 1 else None}
+        chars = "stdin" if rest and rest[0] == "-" else len(rest[0]) if rest else 0
+        return {"chars": chars, "target": rest[1] if len(rest) > 1 else None}
+    if command == "restore" and rest[2:3] == ["-"]:
+        return {"args": [a[:200] for a in rest[:2]], "files": "stdin"}
     return {"args": [a[:200] for a in rest]} if rest else {}
 
 
 def stdin_bytes(limit):
     return sys.stdin.buffer.read(limit + 1)
+
+
+# What an argument "-" stands for: text sent on stdin rather than on the command line,
+# where any user of the VM could read it (ps, /proc), and which holds 128 KB at most.
+TYPED_MAX_BYTES = 1024 * 1024
+
+
+def stdin_text(limit):
+    data = stdin_bytes(limit)
+    if len(data) > limit:
+        raise ApiError(f"more than {limit // 1024} KB sent")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ApiError("what was sent is not UTF-8")
+
+
+def typed_text(arg):
+    return stdin_text(TYPED_MAX_BYTES) if arg == "-" else arg
+
+
+def restore_files(args):
+    if args[:1] == ["-"]:
+        return [line for line in stdin_text(TYPED_MAX_BYTES).split("\n") if line]
+    return [f for f in args if f]
 
 
 # Every API command: (home, config, a = the arguments, padded with "") -> reply.
@@ -3905,7 +4118,7 @@ API_COMMANDS = {
     "ls": lambda home, config, a: api_ls(home, a[0]),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
-    "type": lambda home, config, a: api_type(home, a[0], a[1], a[2]),
+    "type": lambda home, config, a: api_type(home, typed_text(a[0]), a[1], a[2]),
     "shares": lambda home, config, a: api_shares(home),
     "share-prepare": lambda home, config, a: api_share_prepare(home, a[0], a[1]),
     "share-stop": lambda home, config, a: api_share_stop(home, a[0]),
@@ -3922,7 +4135,7 @@ API_COMMANDS = {
     "checkpoints": lambda home, config, a: api_checkpoints(home, a[0], config),
     "checkpoint": lambda home, config, a: api_checkpoint(home, a[0], a[1]),
     "checkpoint-diff": lambda home, config, a: api_checkpoint_diff(home, a[0], a[1], a[2]),
-    "restore": lambda home, config, a: api_restore(home, a[0], a[1], [f for f in a[2:] if f]),
+    "restore": lambda home, config, a: api_restore(home, a[0], a[1], restore_files(a[2:])),
     "stop": lambda home, config, a: api_stop(home, a[0], a[1]),
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
@@ -3991,11 +4204,15 @@ def run_api(args):
 WATCH_TICK = 1.0
 # The longest a part goes without being looked at again; most also look at what they
 # read (file sizes and times) and refresh as soon as that moves.
-WATCH_EVERY = {"projects": 1, "contexts": 4, "activity": 3, "setup": 15, "checkpoints": 10, "log": 1,
+# projects and activity watch what they read (see watch_signature), so the period only
+# catches what leaves no trace there: a Pi started without Pier's extension, a file
+# changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
+# tmux, each one of activity runs git status in its jail: not every second for nothing.
+WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
                "conversations": 10}
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
-WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2}
+WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2, "activity": 1.5}
 
 
 def watch_signature(kind, value, home):
@@ -4006,9 +4223,15 @@ def watch_signature(kind, value, home):
             return st.st_size, st.st_mtime_ns
         except OSError:
             return None
+    if kind == "projects":
+        # A Pi started by Pier, ending, working or idle: its extension rewrites its file
+        # in ~/.pi/pier/pis. Recent projects: the state file.
+        return stat(os.path.join(pier_dir(), "pis")), stat(state_path(home))
     if kind == "activity" and isinstance(value, dict):
         project = value.get("project") or ""
-        return stat(value.get("file") or latest_session_file(project) or ""), stat(session_dir(project))
+        directory = git_dir(project) if project else None
+        index = stat(os.path.join(directory, "index")) if directory else None  # a commit, an add
+        return stat(value.get("file") or latest_session_file(project) or ""), stat(session_dir(project)), index
     if kind == "setup":
         folder = session_dir(value)
         try:
@@ -4429,7 +4652,7 @@ class Picker:
         scored = []
         for path, hay, label in self.index:
             score = match_score(needle, hay)
-            if score is not None and openable(path, self.home, self.config):
+            if score is not None:
                 scored.append((score, path, label))
         scored.sort(key=lambda item: item[0])
         return [make_entry("found", path, label) for _, path, label in scored[:SEARCH_SHOWN]]
@@ -4441,7 +4664,10 @@ class Picker:
         self.draw()
         self.message = ""
         self.index = []
+        # Folders Pi may not run in are left out here, once, rather than at each key.
         for path in walk_dirs(self.home, self.config["search_depth"], self.ignore):
+            if not openable(path, self.home, self.config):
+                continue
             rel = os.path.relpath(path, self.home)
             self.index.append((path, rel.casefold(), clean(rel)))
 
@@ -5268,7 +5494,9 @@ Pick a directory under your home and start Pi in it. Press ? inside for the keys
 Settings: ~/.config/pi-dir-picker/config.toml"""
 
 
-if __name__ == "__main__":
+def entry():
+    """The command line. Run as a script, or through the launcher Pier installs
+    (~/bin/pi-pick importing this file as a module, so that Python keeps it compiled)."""
     if len(sys.argv) >= 3 and sys.argv[1] == "--exec-pi":
         sys.exit(exec_pi(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--api":
@@ -5301,3 +5529,7 @@ if __name__ == "__main__":
     except Exception as exc:
         log("error", "picker.crash", trace=traceback.format_exc(), err=f"{type(exc).__name__}: {exc}")
         raise
+
+
+if __name__ == "__main__":
+    entry()
