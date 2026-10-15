@@ -280,7 +280,7 @@ They are real terminals on the VM, going through the SSH connection already open
 - **Right-click** opens Pier's menu: Copy, Paste, Select all, Clear scrollback, Restart, New terminal. Also in Pi's tmux.
 - **Ctrl+ and Ctrl-** make the terminals' text bigger or smaller, **Ctrl+0** goes back to the default size.
 - **Pi tabs talk to tmux in "control mode"** (`tmux -C`), like iTerm2 on the Mac: tmux keeps Pi alive on the VM (it survives disconnections) but draws nothing; it passes Pi's output on as it is, and Pier's terminal shows it as if Pi ran on the PC. With Pi in regular mode, **the whole conversation is in Pier's history**: the wheel scrolls it on the PC, without a round trip to the VM, and the selection, Ctrl+Shift+C and the right-click menu are Pier's. On opening, Pier makes Pi redraw (two sizes in a row), which brings back the conversation already written. No tmux bar in these tabs, but **`Ctrl-b d` detaches** as in tmux (the tab closes, Pi carries on; `Ctrl-b` followed by another key reaches Pi as typed). Closing the tab detaches too. **When Pi ends** (`Ctrl+D`, `/exit`), its tab closes with it. **When the connection drops**, the tab stays and comes back by itself once Pier is reconnected.
-- **When Pi copies by itself,** the text reaches the PC's clipboard, only right after a key typed in that tab: a program on the VM may **write** to the clipboard then, and never **read** it.
+- **When Pi copies by itself,** the text reaches the PC's clipboard only within 2 seconds of a key pressed or a click in that tab, once per key or click, and a note shows the start of what was copied: a program on the VM may **write** to the clipboard then, and never **read** it. The terminal's own automatic replies (cursor position, mouse reports) do not count as a key.
 - **Links** shown by a program (OSC 8) are never opened, only copied, to paste in a browser after reading them.
 - **A program that takes the mouse** (Pi in fullscreen mode, `htop`…) receives the clicks; **Shift+drag** still selects in Pier.
 - **As responsive as plain ssh:** the connection turns off Nagle's algorithm, as OpenSSH does for interactive sessions (otherwise each key could wait up to 200 ms), and what the VM sends at once is handed to the terminal in one message, instead of one per SSH packet. While a divider is dragged, only the final size reaches the VM. With detailed logs, Pier notes the VM's response time to keys (`ui.term-latency`, median and 90th percentile).
@@ -474,16 +474,16 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Password** | Kept in memory only, never written to disk, forgotten when the address or user changes. It can never end up in a URL: the forms cannot be submitted to an address. |
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
-| **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run/user` is hidden (no session bus, no systemd), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
+| **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
-| **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. |
+| **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. `~/.pi` is Pi's to write: a link put in place of the key is not followed (only a plain file is read). |
 | **Shared folders** | Confined to the folder chosen: no `..`, no link leaving it, no tricky Windows path; what cannot be checked is refused. Read-only by default, and a confirmation for writing. |
 | **Archives received** (folder copies) | Extracted with Python's safety filter: no path leaving, no dangerous link, no special file. Size and number of files capped. |
 | **git on a project** | Run in a sandbox of its own: a project's `.git/config` is Pi's to write, and a filter declared there could otherwise run as you. In there, git only reads the repository, without network. No fsmonitor, no external diff program, no `textconv`. |
-| **Picker writes in folders Pi controls** | Through a temporary file with an unpredictable name; a folder replaced by a link to elsewhere is refused. A file removed by a restore is removed without following links. What a Pi says (its conversation) is accepted only if it is one of Pi's conversation files. |
+| **Picker writes in folders Pi controls** | Through a temporary file with an unpredictable name; a folder replaced by a link to elsewhere is refused. A file removed by a restore, and whatever Context takes back (×, Clear), is removed walking down from home without following links: a folder swapped for a link meanwhile stops it. Setup does not read an `AGENTS.md` or `SYSTEM.md` that leads out of the project, and never copies one into its history. What a Pi says (its conversation) is accepted only if it is one of Pi's conversation files. |
 | **What the interface may ask of the VM** | Only a closed list of commands. Pi's arguments are filtered: only `--new`, `--continue`, `--session` with a session file and `--slot` with a tmux session name are accepted. |
 | **Commands sent to the VM** | Each argument is quoted for the shell, and the whole line travels in base64 and is run by `/bin/sh`, whatever the login shell (fish reads quotes differently). All paths are checked to stay in home. |
-| **What the VM sends the PC** | A program on the VM can fill the clipboard (OSC 52) only right after a key typed in its tab. Links are never opened. An answer is limited to 64 MB, and a tmux line to 8 MB. Pi cannot fake Pier's own messages in its output. |
+| **What the VM sends the PC** | A program on the VM can fill the clipboard (OSC 52) only right after a real key or click in its tab, once per key or click, and the note shows what. Links are never opened. An answer is limited to 64 MB, and a tmux line to 8 MB. Pi cannot fake Pier's own messages in its output. |
 | **The interface itself** | No remote content: the page only loads its own files (strict CSP), and can only reach Pier's commands, the file chooser and notifications. |
 | **Logs** | Never a password, nor what is typed in a terminal or into Pi. |
 
@@ -592,7 +592,6 @@ A full review (security on the PC, security on the VM, stability, performance) w
 
 - **`~/.pi` shared by every project** (see above).
 - **One-off calls to the VM** (opening a folder, a diff) start Python each time. They could go through the watch.
-- **Without tmux**, a Pi started by hand in the picker could inject keys into the picker's terminal (TIOCSTI). Pier always starts Pi in tmux.
 - **The order of very fast keystrokes** is guaranteed only by the order of the calls. A sequence number would make it certain.
 
 ---
@@ -777,7 +776,7 @@ It was checked in a browser with a fake backend (which also simulates `watch` an
 ### Part I. To check on the real VM
 
 Tested only locally or in simulation so far:
-- the real bubblewrap sandbox (its own `/dev`, `/run/user` hidden), and access to shared folders (sshfs) from it;
+- the real bubblewrap sandbox (its own `/dev`, `/run` hidden, the TIOCSTI filter), and access to shared folders (sshfs) from it;
 - git run in its own sandbox for Activity and diffs;
 - really unmounting sshfs during a Hand off, while Pi works;
 - really resuming a session with `--continue` and `--session`;

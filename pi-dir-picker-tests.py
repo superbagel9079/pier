@@ -286,6 +286,11 @@ def sandbox_test():
         'echo ok > /usr/local/escape.txt 2>/dev/null && echo escaped > escape.out || echo blocked > escape.out\n'
         'echo written > inside.out\n'
         'touch "$HOME/.pi/state" && echo pi-state-ok > pistate.out\n'
+        # The filter against typing into the terminal (TIOCSTI) is loaded, /run is hidden
+        # (system sockets), and names still resolve.
+        "grep '^Seccomp:' /proc/self/status | tr -d ' \\t' > seccomp.out\n"
+        'if [ -e /run/user ] || [ -e /run/dbus ]; then echo visible > run.out; else echo hidden > run.out; fi\n'
+        'cat /etc/resolv.conf > /dev/null 2>&1 && echo ok > resolv.out || echo unreadable > resolv.out\n'
     )
     fake.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_BIN", "PI_PICKER_SANDBOX")}
@@ -300,7 +305,75 @@ def sandbox_test():
     check("sandbox: nothing written outside the project", out("escape.out") == "blocked" and not (home / "escape.txt").exists(),
           out("escape.out"))
     check("sandbox: ~/.pi stays writable for pi's own state", out("pistate.out") == "pi-state-ok", out("pistate.out"))
+    check("sandbox: the TIOCSTI filter is loaded", out("seccomp.out") == "Seccomp:2", out("seccomp.out"))
+    check("sandbox: /run is hidden", out("run.out") == "hidden", out("run.out"))
+    check("sandbox: /etc/resolv.conf still readable", out("resolv.out") == "ok", out("resolv.out"))
     shutil.rmtree(work, ignore_errors=True)
+
+
+def hardening_test():
+    """What the picker reads or deletes outside the sandbox, in places Pi can write:
+    links there never lead it elsewhere."""
+    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    project = home / "proj"
+    (project / ".pi-files" / "copy" / "ro").mkdir(parents=True)
+    (home / ".pi").mkdir()
+    secret = home / "secret.txt"
+    secret.write_text("private\n")
+    env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_CODING_AGENT_DIR")}
+    env["HOME"] = str(home)
+
+    def picker(code):
+        script = ("import importlib.util, json, os, sys\n"
+                  f"spec = importlib.util.spec_from_file_location('picker', {str(APP)!r})\n"
+                  "m = importlib.util.module_from_spec(spec)\n"
+                  "spec.loader.exec_module(m)\n" + code)
+        run = subprocess.run([sys.executable, "-B", "-c", script], env=env, capture_output=True, text=True, timeout=30)
+        return run.stdout.strip() + run.stderr.strip()[-300:]
+
+    # The Hindsight key: a link put in its place is not read.
+    key = home / ".pi" / "hindsight.key"
+    key.symlink_to(secret)
+    check("hindsight key: a link is not followed", picker(f"print(m.read_hindsight_key({str(home)!r})[0])") == "None")
+    key.unlink()
+    key.write_text("k-123\n")
+    key.chmod(0o600)
+    check("hindsight key: the file itself is read", picker(f"print(m.read_hindsight_key({str(home)!r})[0])") == "k-123")
+
+    # Setup: an AGENTS.md leading out of the project is neither shown nor kept in history.
+    (project / "AGENTS.md").symlink_to(secret)
+    setup = subprocess.run([sys.executable, "-B", str(APP), "--api", "setup", str(project)],
+                           env=env, capture_output=True, text=True, timeout=30)
+    shown = json.loads(setup.stdout or "{}").get("texts", {}).get("instructions", {}).get("text")
+    check("setup: a link out of the project is not read", shown == "", setup.stdout[-300:] + setup.stderr[-300:])
+    subprocess.run([sys.executable, "-B", str(APP), "--api", "write-text", str(project), "instructions"],
+                   input="new instructions\n", env=env, capture_output=True, text=True, timeout=30)
+    history = project / ".pi" / "devbox-history"
+    kept = "".join(p.read_text() for p in history.glob("*.md")) if history.is_dir() else ""
+    check("setup: saving keeps nothing of the link's target", "private" not in kept and secret.read_text() == "private\n", kept)
+    check("setup: saving replaces the link with the file",
+          not (project / "AGENTS.md").is_symlink() and (project / "AGENTS.md").read_text() == "new instructions\n")
+    inner = home / "proj2"
+    inner.mkdir()
+    (inner / "CLAUDE.md").write_text("inside\n")
+    (inner / "AGENTS.md").symlink_to("CLAUDE.md")
+    check("setup: a link inside the project is still read",
+          picker(f"print(m.read_text({str(inner / 'AGENTS.md')!r}, root={str(inner)!r}))") == "inside")
+
+    # Removing: a read-only copy goes; a folder on the way swapped for a link stops it.
+    (project / ".pi-files" / "copy" / "ro" / "f").write_text("x")
+    (project / ".pi-files" / "copy" / "ro").chmod(0o500)
+    removed = picker(f"print(json.dumps(m.api_remove({str(home)!r}, {str(project / '.pi-files' / 'copy')!r})))")
+    check("remove: a copy with read-only folders goes", not (project / ".pi-files" / "copy").exists(), removed)
+    outside = home / "outside"
+    (outside / "keep").mkdir(parents=True)
+    (outside / "keep" / "f").write_text("keep")
+    shutil.rmtree(project / ".pi-files")
+    (project / ".pi-files").symlink_to(outside)
+    walked = picker(f"m.remove_entry({str(home)!r}, {str(project / '.pi-files' / 'keep')!r})")
+    check("remove: never through a link on the way", (outside / "keep" / "f").exists() and "Error" in walked, walked)
+    cleanup(str(work))
 
 
 def checkpoint_test():
@@ -656,6 +729,7 @@ def main():
 
     back_to_back_children()
     sandbox_test()
+    hardening_test()
     checkpoint_test()
     multi_pi_test()
     resources_test()

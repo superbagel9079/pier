@@ -29,6 +29,8 @@ import re
 import shlex
 import shutil
 import signal
+import stat
+import struct
 import subprocess
 import tempfile
 import sys
@@ -48,7 +50,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.14"
+VERSION = "4.15"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -354,6 +356,110 @@ def within(path, root):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
+# Pi writes in the project and in ~/.pi, so whatever the picker (outside the sandbox)
+# reads or deletes there is reached through file descriptors, folder by folder, without
+# following links: a link or a folder swapped in between a check and its use cannot
+# send it elsewhere. Not on Windows (the simulated tests), which has no dir_fd.
+DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+SAFE_FD = os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd and os.scandir in os.supports_fd
+
+
+def open_dir_walk(root, path):
+    """A descriptor on the folder path (already resolved, inside root), opened from root
+    down without following any link. OSError when one is met on the way."""
+    rel = os.path.relpath(path, root)
+    fd = os.open(root, DIR_FLAGS)
+    try:
+        for part in ([] if rel == "." else rel.split(os.sep)):
+            nxt = os.open(part, DIR_FLAGS, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def open_regular(path, root=None, follow=True):
+    """A read-only descriptor on path when it is a plain file, else None: a FIFO, a
+    device or a folder Pi left there can neither block nor feed the picker.
+    root: path may go through links that stay inside root (AGENTS.md -> CLAUDE.md), and
+    is then opened from root down without following any (a swap meanwhile fails).
+    follow=False: path itself must not be a link."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    if not follow or root is not None:
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        if root is None:
+            fd = os.open(path, flags)
+        else:
+            root = os.path.realpath(root)
+            real = os.path.realpath(path)
+            if real == root or not within(real, root):
+                return None
+            if not SAFE_FD:
+                fd = os.open(real, flags)
+            else:
+                parent = open_dir_walk(root, os.path.dirname(real))
+                try:
+                    fd = os.open(os.path.basename(real), flags, dir_fd=parent)
+                finally:
+                    os.close(parent)
+    except OSError:
+        return None
+    try:
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            return fd
+    except OSError:
+        pass
+    os.close(fd)
+    return None
+
+
+def remove_tree_at(dir_fd, name, device):
+    """Remove name in the folder dir_fd: a file, a link (the link itself), or a folder
+    and all it holds, made writable on the way (a read-only copy). Never follows a
+    link, and never enters another file system (a mount inside)."""
+    st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(st.st_mode):
+        os.unlink(name, dir_fd=dir_fd)
+        return
+    fd = os.open(name, DIR_FLAGS, dir_fd=dir_fd)
+    try:
+        st = os.fstat(fd)
+        if st.st_dev != device:
+            raise ApiError(f"something is mounted in {name}: stop that share first")
+        os.fchmod(fd, stat.S_IMODE(st.st_mode) | 0o700)
+        with os.scandir(fd) as entries:
+            names = [entry.name for entry in entries]
+        for inner in names:
+            remove_tree_at(fd, inner, device)
+    finally:
+        os.close(fd)
+    os.rmdir(name, dir_fd=dir_fd)
+
+
+def remove_entry(root, full):
+    """Remove full (resolved, inside root) and all it holds, walking down from root
+    without following links: a folder on the way swapped for a link meanwhile stops it."""
+    if not within(full, root) or full == root:
+        raise ApiError("refusing to remove that")
+    if not SAFE_FD:
+        if os.path.isdir(full) and not os.path.islink(full):
+            writable_tree(full)
+            shutil.rmtree(full)
+        else:
+            os.remove(full)
+        return
+    parent = open_dir_walk(root, os.path.dirname(full))
+    try:
+        remove_tree_at(parent, os.path.basename(full), os.fstat(parent).st_dev)
+    except RecursionError:
+        raise ApiError(f"too many folders inside {os.path.basename(full)} to remove it")
+    finally:
+        os.close(parent)
+
+
 def list_dirs(path, ignore=()):
     """Non-hidden subdirectories of path, sorted case-insensitively.
 
@@ -439,9 +545,70 @@ def git_branch(path):
     return head[:7] or None
 
 
-# Where the user's session bus and systemd sockets live, hidden in the sandboxes (when
-# the system has it: a missing folder would make bwrap fail).
-RUN_USER_HIDDEN = ("--tmpfs", "/run/user") if os.path.isdir("/run/user") else ()
+def run_hidden():
+    """bwrap arguments hiding /run in the sandboxes: a read-only mount does not stop a
+    program from connecting to a socket, and /run holds the system's (D-Bus, systemd,
+    the user's session bus in /run/user, docker or others depending on the VM). Only
+    what /etc/resolv.conf points to comes back, read-only, so names still resolve."""
+    if not os.path.isdir("/run"):
+        return []
+    args = ["--tmpfs", "/run"]
+    resolv = os.path.realpath("/etc/resolv.conf")
+    if within(resolv, "/run") and os.path.isfile(resolv):
+        folder = os.path.dirname(resolv)
+        args += ["--ro-bind", folder, folder]
+    return args
+
+
+# ioctls that push characters into a terminal's input, as if typed: TIOCSTI, and
+# TIOCLINUX (its paste, on a console). Pi in its sandbox must not type into the
+# terminal it runs in (without tmux, the user's own). --new-session would stop it too,
+# but it takes the terminal away from Pi, which then misses window size changes.
+TIOCSTI, TIOCLINUX = 0x5412, 0x541C
+# machine -> (its AUDIT_ARCH, ioctl's number, the lowest number that is not native)
+SECCOMP_ARCHES = {"x86_64": (0xC000003E, 16, 0x40000000), "aarch64": (0xC00000B7, 29, 0xFFFFFFFF)}
+
+
+def tiocsti_filter():
+    """A seccomp program (classic BPF, as bwrap --seccomp reads it) failing those ioctls
+    with EPERM, and every system call of another architecture (32-bit calls on a 64-bit
+    system would get round the check). None on a machine not known here."""
+    machine = os.uname().machine if hasattr(os, "uname") else ""
+    if machine not in SECCOMP_ARCHES or sys.byteorder != "little":
+        return None
+    arch, ioctl, foreign = SECCOMP_ARCHES[machine]
+    load, jeq, jge, ret = 0x20, 0x15, 0x35, 0x06
+    allow, deny = 0x7FFF0000, 0x00050000 | 1  # SECCOMP_RET_ALLOW, SECCOMP_RET_ERRNO | EPERM
+    # seccomp_data: nr at 0, arch at 4, args from 16 (8 bytes each; the low half of
+    # args[1], the request, at 24: the kernel reads it as 32 bits).
+    program = [
+        (load, 0, 0, 4),
+        (jeq, 1, 0, arch),
+        (ret, 0, 0, deny),          # another architecture
+        (load, 0, 0, 0),
+        (jge, 6, 0, foreign),       # x32 calls: to the last line, deny
+        (jeq, 1, 0, ioctl),
+        (ret, 0, 0, allow),         # not an ioctl
+        (load, 0, 0, 24),
+        (jeq, 2, 0, TIOCSTI),
+        (jeq, 1, 0, TIOCLINUX),
+        (ret, 0, 0, allow),
+        (ret, 0, 0, deny),
+    ]
+    return b"".join(struct.pack("<HBBI", *line) for line in program)
+
+
+def seccomp_pipe():
+    """The filter on the read end of a pipe, inheritable, for bwrap --seccomp FD; None
+    when there is none for this machine."""
+    program = tiocsti_filter()
+    if program is None:
+        return None
+    read, write = os.pipe()
+    os.write(write, program)  # a few hundred bytes: well within a pipe's buffer
+    os.close(write)
+    os.set_inheritable(read, True)
+    return read
 
 
 def git_jail(path):
@@ -456,7 +623,7 @@ def git_jail(path):
     top = os.path.realpath(os.path.dirname(directory) if directory else path)
     home = os.path.realpath(home_dir())
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
-            "--tmpfs", "/home", *RUN_USER_HIDDEN]
+            "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
         args += ["--tmpfs", home]
     args += ["--ro-bind", top, top, "--unshare-all", "--die-with-parent", "--new-session", "--"]
@@ -641,12 +808,20 @@ def child_env(home):
 
 
 def read_hindsight_key(home):
-    """(key or None, warning or None). The warning flags a key file others can read."""
+    """(key or None, warning or None). The warning flags a key file others can read.
+
+    ~/.pi is Pi's to write: a link put there in place of the key would make the picker,
+    outside the sandbox, read any file and hand it to Pi. Only a plain file is read."""
     path = os.path.join(home, ".pi", "hindsight.key")
+    fd = open_regular(path, follow=False)
+    if fd is None:
+        if os.path.islink(path):
+            log("warn", "hindsight.key-refused", why="a link, not a file")
+        return None, None
     try:
-        with open(path, encoding="utf-8") as handle:
+        with os.fdopen(fd, "rb") as handle:
             mode = os.fstat(handle.fileno()).st_mode
-            key = handle.read().strip()
+            key = handle.read(4096).decode("utf-8", "replace").strip()
     except OSError:
         return None, None
     warning = None
@@ -740,7 +915,7 @@ def sandbox_argv(argv, project, home, config, env):
     # reach); /run/user: the user's session bus and systemd would start programs
     # outside the sandbox.
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-            "--tmpfs", "/tmp", "--tmpfs", "/home", *RUN_USER_HIDDEN]
+            "--tmpfs", "/tmp", "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
         args += ["--tmpfs", home]
     args += ["--dir", home]
@@ -893,15 +1068,30 @@ def exec_pi(path, extra):
         watcher = PromptWatcher(project, file, os.environ.get("PI_PICKER_SLOT"))
         watcher.start()
     log("info", "pi.start", project=project, sandbox=sandbox_wanted(config), args=list(extra), pi=pi_exe)
+    sandboxed = sandbox_wanted(config)
+
+    def launch(command):
+        # In the sandbox, the filter stopping Pi from typing into its terminal (see
+        # tiocsti_filter): a fresh pipe each time, bwrap reads it to the end.
+        fd = seccomp_pipe() if sandboxed else None
+        if fd is not None:
+            command = [command[0], "--seccomp", str(fd), *command[1:]]
+        try:
+            child = subprocess.Popen(command, cwd=path, env=env, pass_fds=() if fd is None else (fd,))
+        finally:
+            if fd is not None:
+                os.close(fd)
+        return wait_child(child)
+
     previous = ignore_terminal_signals()
     started = time.monotonic()
     try:
-        status = wait_child(subprocess.Popen(argv, cwd=path, env=env))
+        status = launch(argv)
         if status and tracked and time.monotonic() - started < 2:
             # Likely a Pi too old for --extension: once more without it.
             log("warn", "pi.without-extension", project=project, status=status)
             env.pop("PIER_STATE", None)
-            status = wait_child(subprocess.Popen(plain, cwd=path, env=env))
+            status = launch(plain)
     except OSError as exc:
         print(f"cannot run pi: {exc.strerror or exc}")
         log("error", "pi.cannot-run", project=project, err=str(exc))
@@ -2692,19 +2882,20 @@ def api_remove(home, path):
             marks = handoff_marks(shared)
             if name not in marks or is_mounted(full) or not os.path.isdir(full):
                 raise ApiError(f"not a handed-off copy: {path}")
-            writable_tree(full)
-            shutil.rmtree(full)
+            remove_entry(home, full)
             del marks[name]
             save_handoff_marks(shared, marks)
         return {"removed": full}
     if not within(full, home) or parent not in (IMAGE_DIR, FILES_DIR) or os.path.basename(full) == ".gitignore":
         raise ApiError(f"not something sent: {path}")
+    # The checks above read paths Pi can change meanwhile (.pi-files swapped for a link
+    # to home): the removal itself walks down from home without following links.
     if os.path.isdir(full) and parent == FILES_DIR:
         if any(within(m, full) for m in mounted_paths()):
             raise ApiError(f"a folder is mounted inside {path}: stop that share first")
-        shutil.rmtree(full)
+        remove_entry(home, full)
     elif os.path.isfile(full):
-        os.remove(full)
+        remove_entry(home, full)
     else:
         raise ApiError(f"not something sent: {path}")
     return {"removed": full}
@@ -2885,9 +3076,14 @@ def context_file_in(directory):
     return None
 
 
-def read_text(path, limit=TEXT_MAX_BYTES):
+def read_text(path, limit=TEXT_MAX_BYTES, root=None):
+    """At most limit bytes of a plain file, as text; None otherwise. With root (the
+    project), a link leading out of it is not followed: see open_regular."""
+    fd = open_regular(path, root)
+    if fd is None:
+        return None
     try:
-        with open(path, "rb") as handle:
+        with os.fdopen(fd, "rb") as handle:
             return handle.read(limit).decode("utf-8", "replace")
     except OSError:
         return None
@@ -2966,7 +3162,7 @@ def history_entries(project, which):
         key = (st.st_size, st.st_mtime_ns)
         cached = _HISTORY.get(path)
         if not cached or cached[0] != key:
-            cached = (key, read_text(path, 64 * 1024) or "")
+            cached = (key, read_text(path, 64 * 1024, root=project) or "")
             remember(_HISTORY, path, cached, 512)
         entries.append({"path": path, "at": int(st.st_mtime), "text": cached[1]})
     return entries
@@ -3630,7 +3826,8 @@ def api_setup(home, path):
     texts = {}
     for which in EDITABLE:
         target = editable_path(project, which)
-        text = read_text(target) if os.path.isfile(target) else None
+        # A link leading out of the project (AGENTS.md -> ~/.config/...) is not read.
+        text = read_text(target, root=project) if os.path.isfile(target) else None
         texts[which] = {"path": target, "name": os.path.relpath(target, project), "exists": text is not None,
                         "text": text or "", "history": history_entries(project, which)}
     for which, name in (("append", "APPEND_SYSTEM.md"), ("system", "SYSTEM.md")):
@@ -3663,7 +3860,9 @@ def api_write_text(home, path, which, data):
     target = editable_path(project, which)
     if not within(os.path.realpath(os.path.dirname(target)), project):
         raise ApiError("refusing to write outside the project")
-    previous = read_text(target) if os.path.isfile(target) else None
+    # Never the content of a link leading out of the project: it would be copied into
+    # the history, where Pi reads it. Saving replaces such a link with the file itself.
+    previous = read_text(target, root=project) if os.path.isfile(target) else None
     if previous is not None and previous != text:
         history = safe_folder(project, HISTORY_DIR)
         create_new(os.path.join(history, ".gitignore"), "*\n")
