@@ -1,0 +1,4 @@
+xterm.js 6.0.0 and @xterm/addon-fit 0.11.0, from the npm registry, sha512 checked
+against the registry metadata on 2026-10-11. @xterm/addon-webgl 0.19.0, from the npm
+registry, sha512 checked against the registry metadata on 2026-10-12 (lib/addon-webgl.js
+only). MIT licensed, see LICENSE-*.

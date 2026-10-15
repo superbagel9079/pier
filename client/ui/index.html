@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pier</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="topbar">
+    <span class="logo">Pier</span>
+    <span id="status" class="dim">not connected</span>
+    <span id="target" class="dim" hidden></span>
+    <nav>
+      <button id="btn-palette" class="link" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)">search <kbd>Ctrl Shift K</kbd></button>
+      <button id="btn-handoff" class="link" hidden title="Let Pi keep working with this computer off">hand off</button>
+      <button id="btn-prefs" class="link" hidden>settings</button>
+      <button id="btn-disconnect" class="link" hidden>disconnect</button>
+    </nav>
+  </header>
+
+  <!-- The palette (Ctrl+Shift+K): anything, by a few letters. -->
+  <div id="palette" class="overlay palette" hidden>
+    <div class="palette-box" role="dialog" aria-label="Go to">
+      <input id="palette-input" type="text" placeholder="a tab, a project, a conversation, a setting…" spellcheck="false" autocomplete="off">
+      <ul id="palette-list"></ul>
+      <p class="hint">↑ ↓ to choose, Enter to go, Esc to close. Ctrl+Shift+K, from anywhere.</p>
+    </div>
+  </div>
+
+  <!-- Connected: three docks; any tab can live in any of them. -->
+  <main id="workspace" hidden>
+    <aside class="dock side" id="dock-left" data-dock="left">
+      <div class="dock-head">
+        <div class="tabs" role="tablist"></div>
+        <button class="icon add" title="Add a tab">+</button>
+        <button class="icon collapse" title="Collapse"></button>
+      </div>
+      <div class="panes"></div>
+    </aside>
+    <div class="splitter" data-dock="left" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+    <section class="dock" id="dock-center" data-dock="center">
+      <div class="dock-head">
+        <div class="tabs" role="tablist"></div>
+        <button class="icon add" title="Add a tab">+</button>
+      </div>
+      <div class="panes"></div>
+    </section>
+    <div class="splitter" data-dock="right" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+    <aside class="dock side" id="dock-right" data-dock="right">
+      <div class="dock-head">
+        <div class="tabs" role="tablist"></div>
+        <button class="icon add" title="Add a tab">+</button>
+        <button class="icon collapse" title="Collapse"></button>
+      </div>
+      <div class="panes"></div>
+    </aside>
+  </main>
+
+  <!-- Not connected: where the VM is, the password, the fingerprint. -->
+  <section id="connect">
+    <div id="view-setup" hidden>
+      <h1>Connect to your VM</h1>
+      <form id="setup-form" method="dialog" autocomplete="off">
+        <div class="row">
+          <label>Address <input name="host" required placeholder="192.168.1.20 or vm.example.org"></label>
+          <label class="narrow">Port <input name="port" type="number" min="1" max="65535" value="22" required></label>
+        </div>
+        <label>User <input name="user" required></label>
+        <label class="check"><input name="use_bastion" type="checkbox"> Go through a bastion (jump host)</label>
+        <fieldset id="bastion-fields" disabled hidden>
+          <div class="row">
+            <label>Bastion <input name="bastion_host" placeholder="bastion.example.org"></label>
+            <label class="narrow">Port <input name="bastion_port" type="number" min="1" max="65535" value="22"></label>
+          </div>
+          <label>User on the bastion <input name="bastion_user"></label>
+        </fieldset>
+        <details>
+          <summary>Advanced</summary>
+          <label>Picker command on the VM <input name="remote_command" value="~/bin/pi-pick"></label>
+        </details>
+        <p id="setup-error" class="error" hidden></p>
+        <div class="actions"><button type="submit">Save</button></div>
+      </form>
+    </div>
+
+    <div id="view-login" hidden>
+      <h1>Log in</h1>
+      <p id="login-target" class="dim"></p>
+      <form id="login-form" method="dialog" autocomplete="off">
+        <label id="bastion-password-label" hidden>Bastion password <input name="bastion_password" type="password"></label>
+        <label>VM password <input name="password" type="password" required></label>
+        <p class="hint">Kept in memory while Pier runs, never written to disk.</p>
+        <p id="login-error" class="error" hidden></p>
+        <div class="actions">
+          <button type="submit" id="btn-connect">Connect</button>
+          <button type="button" id="btn-edit-connection" class="link">change connection</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="view-picker" hidden>
+      <h1 id="picker-title">The picker on the VM</h1>
+      <p id="picker-text"></p>
+      <p id="picker-detail" class="hint"></p>
+      <p id="picker-error" class="error" hidden></p>
+      <div class="actions">
+        <button id="btn-picker-install">Install it</button>
+        <button id="btn-picker-cancel" class="secondary">Disconnect</button>
+      </div>
+    </div>
+
+    <div id="view-trust" hidden>
+      <h1 id="trust-title">First contact</h1>
+      <p id="trust-text"></p>
+      <pre id="trust-fingerprint"></pre>
+      <p class="hint">To check it, on the machine itself:<br><code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code></p>
+      <div class="actions">
+        <button id="btn-trust">Trust it</button>
+        <button id="btn-untrust" class="secondary">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preferences, while connected. The connection itself is changed from the login screen. -->
+  <div id="prefs" class="overlay" hidden>
+    <div class="dialog" role="dialog" aria-labelledby="prefs-title">
+      <h1 id="prefs-title">Settings</h1>
+      <div class="prefs-tabs" role="tablist">
+        <button role="tab" data-page="layout">Layout</button>
+        <button role="tab" data-page="appearance">Appearance</button>
+        <button role="tab" data-page="terminals">Terminals</button>
+        <button role="tab" data-page="behavior">Behavior</button>
+        <button role="tab" data-page="picker">Picker</button>
+        <button role="tab" data-page="diagnostics">Diagnostics</button>
+        <button role="tab" data-page="connection">Connection</button>
+      </div>
+
+      <div class="prefs-pages">
+      <section class="prefs-page" data-page="layout" role="tabpanel">
+      <div class="grid">
+        <label for="prefs-side">Panels (Conversations, Activity, Context, Setup)</label>
+        <select id="prefs-side"><option value="right">on the right</option><option value="left">on the left</option></select>
+      </div>
+      <p class="hint">The terminals stay in the middle. Each tab can still go anywhere: drag it onto another bar, use its ⋯ menu, or choose here.</p>
+      <div id="prefs-layout" class="grid"></div>
+      <div class="actions"><button id="prefs-reset" class="secondary">Reset layout</button></div>
+      </section>
+
+      <section class="prefs-page" data-page="appearance" role="tabpanel" hidden>
+      <div class="grid">
+        <label for="prefs-theme">Theme</label>
+        <select id="prefs-theme"></select>
+        <label for="prefs-font">Terminal font size</label>
+        <input id="prefs-font" type="number" min="8" max="28">
+      </div>
+      <div id="theme-swatches" class="swatches" aria-hidden="true"></div>
+      <div class="actions">
+        <button id="theme-import" class="secondary">Import a VS Code or Zed theme…</button>
+        <button id="theme-customize" class="secondary">Customize…</button>
+        <button id="theme-delete" class="link" hidden>delete this theme</button>
+        <input id="theme-file" type="file" accept=".json,application/json" multiple hidden>
+      </div>
+      <p class="hint">VS Code: a theme's .json, found in its "themes" folder (on GitHub, or in ~/.vscode/extensions on a computer that has it). Zed: a theme .json from zed.dev/themes or ~/.config/zed/themes. A Zed file can hold several themes: all are added.</p>
+      <p id="theme-error" class="error" hidden></p>
+      <div id="theme-editor" class="theme-editor" hidden>
+        <label>Name <input id="theme-name"></label>
+        <div id="theme-colors" class="color-grid"></div>
+        <details>
+          <summary>Terminal colors</summary>
+          <div id="theme-terminal" class="color-grid"></div>
+        </details>
+        <div class="actions">
+          <button id="theme-save">Save theme</button>
+          <button id="theme-cancel" class="secondary">Cancel</button>
+        </div>
+      </div>
+
+      </section>
+
+      <section class="prefs-page" data-page="behavior" role="tabpanel" hidden>
+      <label class="check"><input id="prefs-shortcut" type="checkbox"> <span><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> sends the clipboard's image from anywhere</span></label>
+      <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an old devbox in the tray?), then turn this off and on again.</p>
+      <label class="check"><input id="prefs-autostop" type="checkbox"> <span>Stop a share when the Pi of its project ends</span></label>
+      <label class="check"><input id="prefs-notify" type="checkbox"> <span>Notify me when a Pi finishes working (while Pier is in the background)</span></label>
+      <label class="check"><input id="prefs-clear" type="checkbox"> <span>When a project's Pi ends, also delete the images, files and folder copies given to it</span></label>
+      <label class="check"><input id="prefs-resume" type="checkbox"> <span>After reconnecting, resume the shares of projects whose Pi still runs (otherwise they wait, paused)</span></label>
+      </section>
+
+      <section class="prefs-page" data-page="terminals" role="tabpanel" hidden>
+      <div class="grid">
+        <label for="prefs-copykeys">Copy and paste in terminals</label>
+        <select id="prefs-copykeys">
+          <option value="linux">Ctrl+Shift+C / Ctrl+Shift+V (Linux)</option>
+          <option value="windows">Ctrl+C on a selection / Ctrl+V (Windows)</option>
+        </select>
+        <label for="prefs-copymode">Copying in terminals</label>
+        <select id="prefs-copymode">
+          <option value="key">select, then Ctrl+Shift+C</option>
+          <option value="select">as soon as text is selected</option>
+        </select>
+      </div>
+      <p class="hint">Linux: Ctrl+C always interrupts the program and Ctrl+V goes to it. Right click: copy, paste, select all, clear. Ctrl+ and Ctrl- change the text size, Ctrl+0 resets it. Pi scrolls and selects smoothly in its regular mode ("tuiMode": "regular" in ~/.pi/agent/settings.json).</p>
+      <label class="check"><input id="prefs-focus" type="checkbox"> <span>Focus follows the mouse: the terminal or panel under the pointer gets the keyboard, without a click</span></label>
+      <label class="check"><input id="prefs-gpu" type="checkbox"> <span>Draw terminals with the graphics card (smooth scrolling). Turn it off if text looks wrong; terminals opened after the change use it.</span></label>
+      </section>
+
+      <section class="prefs-page" data-page="picker" role="tabpanel" hidden>
+      <p class="hint">The picker is the program on the VM that Pier talks to (pi-pick): it lists projects, starts the Pis and keeps their history.</p>
+      <p id="prefs-picker" class="dim"></p>
+      <label class="check"><input id="prefs-autoupdate" type="checkbox"> <span>Update the picker on the VM by itself when this Pier carries a newer one</span></label>
+      <div class="actions"><button id="prefs-reinstall" class="secondary">Install Pier's picker on the VM again</button></div>
+      <p id="prefs-picker-note" class="notice" hidden></p>
+      </section>
+
+      <section class="prefs-page" data-page="diagnostics" role="tabpanel" hidden>
+      <label class="check"><input id="prefs-logtab" type="checkbox"> <span>Logs tab: Pier's log and the VM's, live, with a filter</span></label>
+      <label class="check"><input id="prefs-debug" type="checkbox"> <span>Detailed logs: every call, here and on the VM. For tracking a problem down; the log grows faster.</span></label>
+      <p class="hint">Pier's log: <code id="prefs-logpath">?</code><br>The picker's, on the VM: <code>~/.local/state/pi-dir-picker/picker.log</code></p>
+      <div class="actions wrap">
+        <button id="prefs-report" class="secondary">Copy a report</button>
+        <button id="prefs-report-save" class="secondary">Save a report…</button>
+        <button id="prefs-logfolder" class="link">open the log folder</button>
+      </div>
+      <p class="hint">A report holds the versions, the connection (never a password), and the end of both logs: what is needed to understand a problem.</p>
+      <p id="prefs-diag-note" class="notice" hidden></p>
+      </section>
+
+      <section class="prefs-page" data-page="connection" role="tabpanel" hidden>
+      <p id="prefs-connection" class="dim"></p>
+      <p class="hint">To change the address, port or bastion: disconnect, then "change connection" on the login screen.</p>
+      </section>
+      </div>
+
+      <div class="actions end"><button id="prefs-close">Done</button></div>
+    </div>
+  </div>
+
+  <!-- A folder was given: share it live, or copy it. -->
+  <div id="give-folder" class="overlay" hidden>
+    <div class="dialog" role="dialog" aria-labelledby="give-folder-title">
+      <h1 id="give-folder-title">Give <span id="give-folder-name"></span> to Pi</h1>
+      <p id="give-folder-path" class="dim small"></p>
+      <div class="choices-list">
+        <button id="give-folder-ro" class="choice"><strong>Share live, read-only</strong><span>Pi reads the folder on this computer as it is now and as it changes. Nothing is copied. Stops when you stop it or disconnect.</span></button>
+        <button id="give-folder-rw" class="choice"><strong>Share live, read and write</strong><span>The same, and Pi's changes are made to the folder on this computer.</span></button>
+        <button id="give-folder-copy" class="choice"><strong>Copy into the project</strong><span>A snapshot in the project's .pi-files: Pi can change it freely, the original is never touched. Up to 200 MB.</span></button>
+      </div>
+      <div class="actions end"><button id="give-folder-cancel" class="secondary">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Hand off: Pi keeps working on the VM with this computer off. -->
+  <div id="handoff" class="overlay" hidden>
+    <div class="dialog" role="dialog" aria-labelledby="handoff-title">
+      <h1 id="handoff-title">Hand off to Pi</h1>
+      <p>Pi runs on the VM and keeps working with this computer off. Only folders shared live depend on this computer: each becomes a copy on the VM, at the same place, so Pi keeps its files even in the middle of a task.</p>
+      <ul id="handoff-shares" class="handoff-list"></ul>
+      <p id="handoff-none" class="dim">No folder is shared live: there is nothing to copy, this computer can be turned off as it is.</p>
+      <label class="check"><input id="handoff-disconnect" type="checkbox" checked> <span>Disconnect when done</span></label>
+      <p class="hint">No notification can reach you while Pier is off: log in again to see what Pi did, in Activity. Take back a copy from Context.</p>
+      <p id="handoff-error" class="error" hidden></p>
+      <div class="actions end">
+        <button id="handoff-cancel" class="secondary">Cancel</button>
+        <button id="handoff-go">Hand off</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="menu" class="menu" role="menu" hidden></div>
+  <div id="drag-ghost" class="drag-ghost" hidden></div>
+
+  <!-- Tab templates, cloned for each tab. -->
+  <template id="tpl-context">
+    <div class="pane-context">
+      <div class="drop" tabindex="0">
+        <p class="big">Paste or drop images, files and folders</p>
+        <p class="buttons"><button class="secondary add-files">Add files…</button> <button class="secondary add-folder">Add a folder…</button></p>
+        <p class="dim small">Images and files land in the Pi you are using; for a folder, Pier asks whether to share it live or copy it. From anywhere else, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>.</p>
+      </div>
+      <p class="notice" hidden></p>
+      <p class="error" hidden></p>
+      <div class="projects"></div>
+      <p class="hint">× takes anything back: images, files and copies are deleted from the VM, a share is stopped (your folder stays as it is). Shares are paused when you disconnect and listed here to resume.</p>
+    </div>
+  </template>
+
+  <template id="tpl-conversations">
+    <div class="pane-conversations">
+      <div class="toolbar">
+        <input class="conversation-filter" type="search" placeholder="search every conversation" spellcheck="false">
+        <label class="check small"><input class="show-archived" type="checkbox"> archived</label>
+      </div>
+      <p class="hint count"></p>
+      <p class="error" hidden></p>
+      <ul class="sessions all-conversations"></ul>
+    </div>
+  </template>
+
+  <template id="tpl-setup">
+    <div class="pane-setup">
+      <div class="toolbar">
+        <select class="setup-project" title="The project to set up"></select>
+        <button class="link follow" hidden>back to the Pi in use</button>
+        <span class="state dim small"></span>
+      </div>
+      <p class="notice" hidden></p>
+      <p class="error" hidden></p>
+      <p class="setup-summary small"></p>
+
+      <div class="box-instructions">
+        <h2>Instructions <span class="file-name dim small"></span></h2>
+        <p class="hint">Read by Pi at the start of every session in this project, like a project's instructions in Claude.</p>
+        <textarea class="editor" spellcheck="false" rows="12"></textarea>
+        <div class="editor-bar">
+          <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
+          <span class="bar-tools"><button class="link insert" title="Add a ready-made section to fill in: commands, conventions, git rules…">add a section ▾</button> <button class="link ask-pi" title="Pi reads the project and writes this file itself: the request is typed into Pi, press Enter there">let Pi write it</button> <button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
+          <span class="bar-buttons"><button class="secondary revert">Revert</button><button class="save">Save</button></span>
+        </div>
+        <ul class="history-list" hidden></ul>
+      </div>
+
+      <h2>What Pi reads at startup</h2>
+      <ol class="startup"></ol>
+      <p class="trust dim small"></p>
+
+      <h2>What Pi loads</h2>
+      <p class="hint">Packages, extensions, skills, prompt templates and MCP servers, yours (user) and this project's. To add one on the VM: <code>pi install npm:…</code>, <code>pi mcp add …</code>.</p>
+      <ul class="startup resources"></ul>
+
+      <details class="advanced">
+        <summary>Advanced: Pi's system prompt</summary>
+        <div class="box-append">
+          <h3>Added to the system prompt <span class="file-name dim small"></span></h3>
+          <p class="hint global-note" hidden></p>
+        <textarea class="editor" spellcheck="false" rows="5"></textarea>
+        <div class="editor-bar">
+          <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
+          <span class="bar-tools"><button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
+          <span class="bar-buttons"><button class="secondary revert">Revert</button><button class="save">Save</button></span>
+        </div>
+        <ul class="history-list" hidden></ul>
+        </div>
+        <div class="box-system">
+          <h3>Replaces the system prompt <span class="file-name dim small"></span></h3>
+          <p class="hint">Replaces Pi's own instructions entirely, including how it uses its tools. Leave it empty unless you know why you need it.</p>
+          <p class="hint global-note" hidden></p>
+        <textarea class="editor" spellcheck="false" rows="5"></textarea>
+        <div class="editor-bar">
+          <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
+          <span class="bar-tools"><button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
+          <span class="bar-buttons"><button class="secondary revert">Revert</button><button class="save">Save</button></span>
+        </div>
+        <ul class="history-list" hidden></ul>
+        </div>
+      </details>
+    </div>
+  </template>
+
+  <template id="tpl-project">
+    <div class="pane-project">
+      <div class="toolbar">
+        <span class="root"></span>
+        <select class="which-pi" hidden title="Several Pis run here: whose work to show"></select>
+        <span class="agent dim"></span>
+        <span class="switch" role="group">
+          <button class="mode active" data-mode="activity">Activity</button><button class="mode" data-mode="files">Files</button><button class="mode" data-mode="restore" title="Undo what Pi did: the project as it was before a prompt">Restore</button>
+        </span>
+      </div>
+      <p class="usage" hidden></p>
+      <p class="error" hidden></p>
+      <div class="view-activity"></div>
+      <div class="view-files" hidden>
+        <div class="toolbar">
+          <label class="check small"><input type="checkbox" class="show-hidden"> hidden</label>
+          <span class="legend dim small">◐ reading · ● read · ✎ modifying · ✓ modified · ! failed · M/A/?? git</span>
+          <button class="link refresh">refresh</button>
+        </div>
+        <ul class="tree" role="tree"></ul>
+      </div>
+      <div class="view-restore" hidden>
+        <p class="notice restore-note" hidden></p>
+        <ul class="points"></ul>
+        <div class="toolbar save-row">
+          <input class="point-name" placeholder="name (optional)" maxlength="120">
+          <button class="secondary save-point">Save a restore point now</button>
+          <button class="link refresh-points">refresh</button>
+        </div>
+        <p class="hint">The project is saved when Pi starts, as each prompt arrives and when Pi stops working. Going back removes the files created since and puts the others as they were; what is there now is saved first, so it can be undone too. Not saved: what your .gitignore leaves out (node_modules, build output, .env…), what you gave Pi (.pi-images, .pi-files, shares), and files over 50 MB. Pi is not told: say what you undid.</p>
+      </div>
+      <p class="hint files-hint">Double-click a file to mention it in Pi (<code>@path</code>).</p>
+    </div>
+  </template>
+
+  <template id="tpl-logs">
+    <div class="pane-logs">
+      <div class="toolbar">
+        <span class="switch" role="group"><button class="mode active" data-source="devbox" title="This computer: connection, calls to the VM, terminals, shares, the interface">Pier</button><button class="mode" data-source="vm" title="The picker on the VM: what each call did, Pi starting and stopping, restore points">VM</button></span>
+        <select class="level" title="Lowest level shown">
+          <option value="3">everything</option>
+          <option value="2" selected>info and above</option>
+          <option value="1">warnings and errors</option>
+          <option value="0">errors only</option>
+        </select>
+        <input class="search" type="search" placeholder="filter" spellcheck="false">
+        <label class="check small"><input type="checkbox" class="follow" checked> follow</label>
+        <button class="link copy-report" title="Versions, connection and the end of both logs, on the clipboard">copy a report</button>
+      </div>
+      <p class="error" hidden></p>
+      <p class="hint debug-hint" hidden>Detailed logs are off: debug lines are not written. Turn them on in Settings, Diagnostics.</p>
+      <div class="log-lines"></div>
+      <p class="hint">Times are local here; in the files they are UTC. A call to the VM has the same req=… in both logs.</p>
+    </div>
+  </template>
+
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script src="vendor/addon-webgl.js"></script>
+  <script src="themes.js"></script>
+  <script src="js/backend.js"></script>
+  <script src="js/mock.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/vm.js"></script>
+  <script src="js/connect.js"></script>
+  <script src="js/workspace.js"></script>
+  <script src="js/prefs.js"></script>
+  <script src="js/terminal.js"></script>
+  <script src="js/context.js"></script>
+  <script src="js/project.js"></script>
+  <script src="js/diff.js"></script>
+  <script src="js/conversations.js"></script>
+  <script src="js/setup.js"></script>
+  <script src="js/logs.js"></script>
+  <script src="js/palette.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

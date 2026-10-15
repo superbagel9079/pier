@@ -1,0 +1,50 @@
+# pi-dir-picker settings. Copy to ~/.config/pi-dir-picker/config.toml and keep only
+# what you change: every key is optional, the values below are the defaults.
+
+# Directory shown first, inside your home directory.
+start = "~"
+
+# Directory names never listed nor searched, e.g. ["snap", "Downloads"].
+ignore = []
+
+# How many levels below home the search (f) looks into.
+search_depth = 4
+
+# How Pi is started. A string is split like a shell would: "pi --model sonnet".
+pi_command = ["pi"]
+
+# Arguments added by c (continue the last session) and r (choose a saved session).
+continue_args = ["--continue"]
+resume_args = ["--resume"]
+
+# Run Pi inside tmux so it survives a dropped SSH connection.
+tmux = true
+
+# Recent projects listed at the top of your home directory; 0 hides them.
+recent_count = 8
+
+# Side panel (git log, README, Pi files) when the terminal is 110 columns or wider.
+preview = true
+
+# Run Pi in a bubblewrap sandbox (sudo apt install bubblewrap). Inside, Pi sees the
+# system read-only and, of your home, only its project (read-write), ~/.pi, the
+# folders Pi and node run from, and ~/.gitconfig. Your other projects, ~/.ssh and the
+# rest stay invisible. If bubblewrap is missing, Pi refuses to start: set this to
+# false to run it unconfined instead.
+sandbox = true
+
+# Extra paths Pi may read, or read and write, inside the sandbox.
+# For example, to let it push with git over SSH: sandbox_read = ["~/.ssh"]
+sandbox_read = []
+sandbox_write = []
+
+# Restore points: the project is saved when Pi starts, before each prompt and when Pi
+# stops working, so that Pier (Activity > Restore) can undo what Pi did. They
+# are kept outside the project, in ~/.local/state/pi-dir-picker/checkpoints (git is
+# needed; files your .gitignore leaves out, and files over 50 MB, are not saved).
+checkpoints = true
+
+# Each Pi started here tells Pier which conversation it holds and whether it works,
+# through a small extension given on its command line (~/.pi/pier/pier-session.ts;
+# nothing is added to Pi's settings). Off: Pier guesses from the session files.
+track_sessions = true
