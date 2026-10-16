@@ -36,13 +36,13 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 14;
+const API_VERSION: u64 = 15;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals"];
+const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees"];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -1074,6 +1074,15 @@ async fn pr_merge(app: AppHandle, state: State<'_, AppState>, project: String, n
     api(&app, &state, &["pr-merge", &project, &number.to_string(), &method], &[]).await
 }
 
+/// A Pi's worktree removed (its branch stays).
+#[tauri::command]
+async fn worktree_remove(app: AppHandle, state: State<'_, AppState>, project: String, name: String) -> Result<Value, String> {
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err(format!("not a worktree: {name}"));
+    }
+    api(&app, &state, &["worktree-remove", &project, &name], &[]).await
+}
+
 /// The user's answer to a request of Pi (merge, create a repository).
 #[tauri::command]
 async fn approval_answer(app: AppHandle, state: State<'_, AppState>, id: String, approve: bool) -> Result<Value, String> {
@@ -1714,6 +1723,7 @@ pub fn run() {
             repo_create,
             pr_merge,
             approval_answer,
+            worktree_remove,
             checkpoint_create,
             checkpoint_restore,
             stop_pi,

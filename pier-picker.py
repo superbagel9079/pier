@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.22"
+VERSION = "4.23"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -72,6 +72,7 @@ DEFAULTS = {
     "network_limit": True,             # in the sandbox, Pi reaches only NETWORK_ALLOW and network_allow
     "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
     "git_tools": True,                 # Pi gets git tools for the forge (push, pull requests), through the picker
+    "worktrees": True,                 # a second Pi in a git project works in a worktree of its own (.pi-worktrees)
 }
 
 # Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its
@@ -1009,7 +1010,7 @@ def sandbox_refusal(project, home):
     return None
 
 
-def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None):
+def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None, workdir=None):
     """argv wrapped in bubblewrap, or None when bwrap is missing.
 
     Inside, Pi sees the whole system read-only, and of the home directory only:
@@ -1064,7 +1065,7 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
                  "--ro-bind", PICKER_MODULE, f"{NET_DIR}/picker.py"]
         argv = ["python3", "-B", f"{NET_DIR}/picker.py", "--net-bridge", f"{NET_DIR}/net.sock",
                 *network.local_ports(), "--", *argv]
-    args += ["--unshare-pid", "--unshare-ipc", "--die-with-parent", "--chdir", project, "--", *argv]
+    args += ["--unshare-pid", "--unshare-ipc", "--die-with-parent", "--chdir", workdir or project, "--", *argv]
     return args
 
 
@@ -1455,6 +1456,9 @@ def exec_pi(path, extra):
                 pass
     network = None  # the proxy of a sandbox whose network is limited (see NetProxy)
     broker = None   # Pi's git tools ask it (see GitBroker)
+    # A Pi beside another in the project works in its own worktree (see make_worktree).
+    worktree = worktree_of(os.path.realpath(path), os.environ.get("PIER_WORKTREE"))
+    workdir = worktree or path
     if config["git_tools"]:
         git_extension = pier_git_extension()
         if git_extension:
@@ -1487,8 +1491,8 @@ def exec_pi(path, extra):
             env["PIER_GIT_SOCKET"] = f"{NET_DIR}/git.sock"  # where the sandbox sees it
         # Refuse rather than run unconfined: a sandbox that silently goes away
         # protects nothing.
-        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network, git_socket)
-        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network, git_socket)
+        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir)
+        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir)
         if argv is None:
             print(SANDBOX_MISSING)
             log("error", "pi.sandbox-missing", project=path)
@@ -1519,7 +1523,7 @@ def exec_pi(path, extra):
         if fd is not None:
             command = [command[0], "--seccomp", str(fd), *command[1:]]
         try:
-            child = subprocess.Popen(command, cwd=path, env=env, pass_fds=() if fd is None else (fd,))
+            child = subprocess.Popen(command, cwd=workdir, env=env, pass_fds=() if fd is None else (fd,))
         finally:
             if fd is not None:
                 os.close(fd)
@@ -1544,6 +1548,8 @@ def exec_pi(path, extra):
         network.close()
     if broker:
         broker.close()
+    if worktree:
+        end_worktree(os.path.realpath(path), worktree)
     if env.get("PIER_STATE"):
         try:
             os.remove(env["PIER_STATE"])
@@ -1719,12 +1725,169 @@ def open_pi(project, extra, env, home, width, height):
                 return pi["name"], False
     for _ in range(4):
         name = free_slot(project, home, sessions)
-        if start_pi_session(project, extra, env, home, width, height, name):
+        # Another Pi works in the folder: this one gets a worktree of its own, on its branch.
+        worktree = make_worktree(project, name, home) if pis else None
+        if start_pi_session(project, extra, env, home, width, height, name, worktree=worktree):
             return name, True
         # Another call took that name meanwhile: look again.
         forget_pi_sessions()
         sessions = pi_sessions()
     raise ApiError("tmux could not start the session")
+
+
+# --- worktrees: several Pis in one git project ---------------------------------------------
+#
+# Two Pis in the same folder step on each other's files. In a git project, the first Pi
+# works in the folder itself, and every other one in a worktree of its own,
+# .pi-worktrees/<its tmux session>, on a branch pi/agent-N-...: they come together by
+# merges or pull requests, as a team does. The worktree has links to the project's
+# .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
+# removed when its Pi ends without having changed or committed anything; otherwise it
+# stays, listed in Setup > Git, until the user removes it.
+
+WORKTREE_DIR = ".pi-worktrees"
+
+
+def git_head(project):
+    try:
+        return jailed_git(git_jail(project), "-C", os.path.realpath(project), "rev-parse", "--verify", "-q", "HEAD").strip() or None
+    except ApiError:
+        return None
+
+
+def make_worktree(project, slot, home):
+    """A worktree for the Pi of tmux session slot, or None (not a git project, no commit
+    yet, worktrees turned off, or git refusing)."""
+    config, _ = load_config(home)
+    if not config["worktrees"] or not git_dir(project):
+        return None
+    base = git_head(project)
+    if not base:
+        return None
+    tidy_worktrees(project)
+    folder = ignored_dir(project, WORKTREE_DIR)
+    name = slot if not os.path.lexists(os.path.join(folder, slot)) else f"{slot}-{stamp()}"
+    path = os.path.join(folder, name)
+    base_name = session_name(project, home)  # the first Pi's session; the others add -N
+    suffix = slot[len(base_name) + 1:] if slot.startswith(base_name + "-") else ""
+    n = int(suffix) if suffix.isdigit() else 1
+    branch = f"pi/agent-{n}-{stamp()}"  # stamp: the time and a random part, never twice
+    try:
+        jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "worktree", "add", "-q", "-b", branch, path, base)
+    except ApiError as exc:
+        log("warn", "worktree.failed", project=project, slot=slot, err=str(exc))
+        return None
+    # What is given to Pi lives in the project: reached through links from the worktree,
+    # left out of git (the common info/exclude serves every worktree).
+    for given in (IMAGE_DIR, FILES_DIR, SHARE_DIR):
+        target = os.path.join(path, given)
+        if not os.path.lexists(target):
+            try:
+                os.symlink(os.path.join("..", "..", given), target)
+            except OSError:
+                pass
+    directory = git_dir(project)
+    exclude = os.path.join(directory, "info", "exclude") if directory and os.path.isdir(directory) else None
+    if exclude:
+        current = read_text(exclude, 64 * 1024, root=project) or ""
+        wanted = [f"/{given}" for given in (IMAGE_DIR, FILES_DIR, SHARE_DIR)] + [f"/{WORKTREE_DIR}/"]
+        missing = [w for w in wanted if w not in current.split("\n")]
+        if missing:
+            os.makedirs(os.path.dirname(exclude), exist_ok=True)
+            try:
+                atomic_write(exclude, current + ("" if not current or current.endswith("\n") else "\n")
+                             + "# written by pier-picker: what Pi is given, and the Pis' worktrees\n" + "\n".join(missing) + "\n",
+                             project, 0o644)
+            except ApiError:
+                pass
+    log("info", "worktree.made", project=project, slot=slot, path=path, branch=branch)
+    return path
+
+
+def worktree_of(project, path):
+    """path if it is one of the project's Pi worktrees, else None."""
+    if not path:
+        return None
+    real, folder = os.path.realpath(path), os.path.realpath(os.path.join(project, WORKTREE_DIR))
+    return real if within(real, folder) and real != folder and os.path.isdir(real) else None
+
+
+def worktree_state(project, path):
+    """(changed files, commits not in the project's checked-out branch)."""
+    jail = git_jail(project)
+    try:
+        dirty = len([l for l in jailed_git(jail, "-C", path, "status", "--porcelain").splitlines() if l.strip()])
+        ahead = int(jailed_git(jail, "-C", path, "rev-list", "--count", f"{git_head(project) or 'HEAD'}..HEAD").strip() or 0)
+    except (ApiError, ValueError):
+        return None, None
+    return dirty, ahead
+
+
+def end_worktree(project, path):
+    """When its Pi ends: an untouched worktree goes, with its branch; one with work stays."""
+    dirty, ahead = worktree_state(project, path)
+    if dirty or ahead or dirty is None:
+        log("info", "worktree.kept", project=project, path=path, changed=dirty, commits=ahead)
+        return False
+    try:
+        branch = jailed_git(git_jail(project), "-C", path, "branch", "--show-current").strip()
+        jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "worktree", "remove", "--force", path)
+        if PI_BRANCH_RE.fullmatch(branch or ""):
+            jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "branch", "-D", branch)
+    except ApiError as exc:
+        log("warn", "worktree.remove-failed", project=project, path=path, err=str(exc))
+        return False
+    log("info", "worktree.removed", project=project, path=path, why="its Pi ended without changes")
+    return True
+
+
+def tidy_worktrees(project):
+    """The untouched worktrees of Pis that no longer run, removed (see end_worktree)."""
+    folder = os.path.join(project, WORKTREE_DIR)
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    running = {name for name, info in read_pi_sessions().items() if info.get("path") == project}
+    for name in names:
+        path = worktree_of(project, os.path.join(folder, name))
+        if path and not any(name == slot or name.startswith(slot + "-") for slot in running):
+            end_worktree(project, path)
+
+
+def api_worktrees(home, path):
+    """The Pis' worktrees of a project: branch, changes, commits ahead, whether its Pi runs."""
+    project = resolve_inside(home, path)
+    folder = os.path.join(project, WORKTREE_DIR)
+    running = {name for name, info in read_pi_sessions().items() if info.get("path") == project}
+    out = []
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        names = []
+    for name in names:
+        path = os.path.join(folder, name)
+        if name.startswith(".") or not os.path.isdir(path) or os.path.islink(path) or not os.path.exists(os.path.join(path, ".git")):
+            continue
+        try:
+            branch = jailed_git(git_jail(project), "-C", path, "branch", "--show-current").strip()
+        except ApiError:
+            branch = None
+        dirty, ahead = worktree_state(project, path)
+        out.append({"name": name, "path": path, "branch": branch, "changed": dirty, "ahead": ahead,
+                    "running": any(name == slot or name.startswith(slot + "-") for slot in running)})
+    return {"project": project, "worktrees": out}
+
+
+def api_worktree_remove(home, path, name):
+    """A worktree removed from Pier (its branch stays: it may hold work to merge)."""
+    project = resolve_inside(home, path)
+    target = worktree_of(project, os.path.join(project, WORKTREE_DIR, name or ""))
+    if not target or "/" in (name or ""):
+        raise ApiError(f"not one of the Pis' worktrees: {name}")
+    jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "worktree", "remove", "--force", target)
+    log("info", "worktree.removed", project=project, path=target, why="removed from Pier")
+    return {"removed": name}
 
 
 def api_stop(home, path, slot):
@@ -1736,17 +1899,20 @@ def api_stop(home, path, slot):
     for pi in pis:
         run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"))
         forget_pi_sessions()
+    # Killed with its session, a Pi cannot clean its worktree up itself: done here.
+    tidy_worktrees(project)
     return {"project": project, "stopped": len(pis)}
 
 
-def start_pi_session(path, extra, env, home, width, height, name=None):
+def start_pi_session(path, extra, env, home, width, height, name=None, worktree=None):
     """A detached tmux session running Pi in path, styled to stay discreet. False on failure.
     PI_PICKER_SLOT tells --exec-pi its session name, to record its conversation there."""
     name = name or session_name(path, home)
     command = [sys.executable, SCRIPT, "--exec-pi", path, *extra]
     # -f: a server started here reads Pier's config, not ~/.tmux.conf (see tmux_conf).
     conf = write_tmux_conf(load_config(home)[0])
-    if not run_quiet(tmux_cmd("-f", conf, "new-session", "-d", "-s", name, "-c", path, "-e", f"PI_PICKER_SLOT={name}",
+    where = ["-e", f"PIER_WORKTREE={worktree}"] if worktree else []
+    if not run_quiet(tmux_cmd("-f", conf, "new-session", "-d", "-s", name, "-c", path, "-e", f"PI_PICKER_SLOT={name}", *where,
                               "-x", str(width), "-y", str(height), *command), env):
         log("error", "tmux.new-session-failed", project=path, session=name)
         return False
@@ -1967,7 +2133,7 @@ CHECKPOINT_TOTAL_MAX = 1024 * 1024 * 1024
 CHECKPOINT_TIMEOUT = 120
 CHECKPOINT_POLL = 0.3
 CHECKPOINT_GC_EVERY = 25
-CHECKPOINT_EXCLUDE = ("/.pi-images/", "/.pi-files/", "/.pi-shared/", "/.pi/devbox-history/",
+CHECKPOINT_EXCLUDE = ("/.pi-images/", "/.pi-files/", "/.pi-shared/", "/.pi-worktrees/", "/.pi/devbox-history/",
                       "node_modules/", "__pycache__/", ".venv/", ".mypy_cache/", ".pytest_cache/")
 # Points that only mark time passing: one with the same files as the point before it
 # replaces it, so that every point in the list is a different state.
@@ -2491,7 +2657,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 14
+API_VERSION = 15
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -5732,7 +5898,7 @@ def api_write_text(home, path, which, data):
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
-             "skill-read", "gallery", "forges", "repo", "approvals"}
+             "skill-read", "gallery", "forges", "repo", "approvals", "worktrees"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -5824,6 +5990,8 @@ API_COMMANDS = {
     "pr-merge": lambda home, config, a: api_pr_merge(home, a[0], a[1], a[2]),
     "approvals": lambda home, config, a: api_approvals(home),
     "approval-answer": lambda home, config, a: api_approval_answer(home, a[0], a[1]),
+    "worktrees": lambda home, config, a: api_worktrees(home, a[0]),
+    "worktree-remove": lambda home, config, a: api_worktree_remove(home, a[0], a[1]),
     "copy-diff": lambda home, config, a: api_copy_diff(home, a[0], a[1], stdin_bytes(COPY_DIFF_MAX)),
 }
 

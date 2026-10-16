@@ -61,3 +61,11 @@ network_limit = true
 # name below it), "127.0.0.1:8080" (a service on the VM itself, such as a local gateway).
 # For example: network_allow = ["bifrost.example.org", ".hindsight.example", "127.0.0.1:8080"]
 network_allow = []
+
+# Pi gets git tools for the forge connected in Pier (Setup > Git): push its pi/...
+# branches, open pull requests. The token stays with the picker; merging waits for you.
+git_tools = true
+
+# In a git project, a Pi started beside another works in a worktree of its own
+# (.pi-worktrees/<its session>), on a branch pi/agent-N-...
+worktrees = true

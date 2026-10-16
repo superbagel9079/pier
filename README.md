@@ -166,6 +166,8 @@ Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [co
 | `sandbox_read`, `sandbox_write` | more folders Pi may read, or write | `[]` |
 | `checkpoints` | restore points before each prompt | `true` |
 | `track_sessions` | each Pi tells Pier which conversation it holds (an extension Pier gives it) | `true` |
+| `git_tools` | Pi gets git tools for the forge (push, pull requests), through the picker (see [Git](#part-xiii-git-pi-with-a-repository-as-a-developer)) | `true` |
+| `worktrees` | in a git project, a Pi beside another works in a worktree of its own | `true` |
 | `network_limit` | in the sandbox, Pi reaches only its model providers, npm, GitHub, PyPI and `network_allow` (see [Security](#chapter-v-security)) | `true` |
 | `network_allow` | more places Pi may reach: `"host"`, `"host:port"`, `".domain"`, `"127.0.0.1:8080"` | `[]` |
 
@@ -173,7 +175,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 14 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 15 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -189,6 +191,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `activity`, `diff` | what Pi reads and changes, its diffs, its cost |
 | `setup`, `write-text` | a project's instructions, what Pi reads at startup and what it loads |
 | `resources`, `toggle-resource`, `skill-new`, `skill-read`, `skill-write`, `skill-delete`, `skill-import`, `gallery` | skills, extensions and prompts: listed with their state, turned on or off, local skills made, edited, put in the bin or imported; the gallery |
+| `worktrees`, `worktree-remove` | the Pis' worktrees of a project, and removing one |
 | `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
@@ -488,7 +491,17 @@ Pi gets git tools (from a small extension, `~/.pi/pier/pier-git.ts`, like the on
 
 You can also merge yourself from the list of pull requests, at any time.
 
-#### C. Why the token is safe
+#### C. Several Pis: one worktree each
+
+Two Pis in the same folder would step on each other's files. In a git project, the first Pi works in the folder itself, and every other one in a **worktree** of its own, `.pi-worktrees/<its tmux session>`, on a branch `pi/agent-N-…`: each works on its branch, and they come together by merges or pull requests, as a team does.
+
+- What is given to a Pi (`.pi-images`, `.pi-files`, `.pi-shared`) is reached from its worktree through links, so pasted images and files work as before.
+- When its Pi ends (or is stopped) without having changed or committed anything, the worktree goes, with its branch. Otherwise it stays, listed in **Setup > Git > Pis' worktrees** (its branch, the files changed, the commits ahead), until you **remove** it; its branch stays either way.
+- `.pi-worktrees` is left out of git (its own `.gitignore`, and the repository's `info/exclude`) and of the restore points.
+- `worktrees = false` in the picker's config turns this off.
+- Known: the worktree holds its own copy of the project's `AGENTS.md`, so a Pi there reads it twice (the worktree's and the folder's); and Activity shows its files under `.pi-worktrees/…`.
+
+#### D. Why the token is safe
 
 The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. git receives the token in its environment, never on a command line, and it is never written to a log.
 
@@ -872,7 +885,7 @@ Tested only locally or in simulation so far (the sandbox, its network and git's 
 
 ### Part II. Limits
 
-- **Two Pis changing the same files** in one project step on each other: nothing prevents it. Several Pis suit separate tasks (the code and the docs). A project's restore points are shared by its Pis.
+- **Two Pis changing the same files:** in a git project (with at least one commit), every Pi beside the first works in a worktree of its own (see [Git](#part-xiii-git-pi-with-a-repository-as-a-developer)), so they no longer step on each other. In a folder without git, nothing prevents it: several Pis there suit separate tasks (the code and the docs). A project's restore points are shared by its Pis, and cover the folder itself, not the worktrees.
 - **A `/new` or `/resume` typed in Pi:** each Pi started by Pier says so itself (its extension). Without it (a Pi started earlier, or `track_sessions = false`), the picker guesses by looking for the recent file no other Pi holds; two Pis of the same project doing `/new` in the same second can then be mixed up.
 - **The name of a very big conversation** (images, hundreds of MB) is looked for in its last 4 MB only the first time: a name given at the start of such a conversation, never given again, may not show.
 - **What Pi will read next** cannot be known in advance.

@@ -604,6 +604,62 @@ print(json.dumps(out))
 '''
 
 
+def worktree_test():
+    """Two Pis in a git project, with real tmux: the second works in a worktree of its own,
+    on its branch, and its untouched worktree goes once they are stopped."""
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    project = home / "repo"
+    project.mkdir(parents=True)
+    git = lambda *a: subprocess.run(["git", "-C", str(project), "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                                    check=True, capture_output=True, text=True).stdout
+    git("init", "-q", "-b", "main")
+    (project / "a.txt").write_text("a")
+    git("add", ".")
+    git("commit", "-qm", "one")
+    tools = home / ".local" / "bin"
+    tools.mkdir(parents=True)
+    fake = tools / "pi"
+    fake.write_text('#!/bin/sh\npwd > "$HOME/pwd-$PI_PICKER_SLOT"\nsleep 60\n')
+    fake.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_BIN")}
+    env.update(HOME=str(home), PATH=f"{tools}:/usr/bin:/bin", PI_PICKER_SANDBOX="0", PI_PICKER_TMUX_SOCKET=PI_SOCKET)
+    script = (
+        "import importlib.util, json\n"
+        f"spec = importlib.util.spec_from_file_location('picker', {str(APP)!r})\n"
+        "m = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(m)\n"
+        "home = m.home_dir()\n"
+        "env = m.child_env(home)\n"
+        f"first = m.open_pi({str(project)!r}, [], env, home, 80, 24)\n"
+        f"second = m.open_pi({str(project)!r}, ['--new'], env, home, 80, 24)\n"
+        "print(json.dumps([first, second]))\n"
+    )
+    tmux("kill-server", socket=PI_SOCKET)
+    run = subprocess.run([sys.executable, "-B", "-c", script], capture_output=True, text=True, env=env, timeout=30)
+    try:
+        first, second = json.loads(run.stdout)
+    except ValueError:
+        check("worktrees: two Pis start", False, run.stdout[-300:] + run.stderr[-600:])
+        cleanup(str(work))
+        return
+    time.sleep(2.0)
+    read = lambda slot: (home / f"pwd-{slot}").read_text().strip() if (home / f"pwd-{slot}").exists() else "nothing"
+    tree = project / ".pi-worktrees" / second[0]
+    check("worktrees: the first Pi works in the folder", read(first[0]) == str(project), read(first[0]))
+    check("worktrees: the second in a worktree of its own", read(second[0]) == str(tree), read(second[0]))
+    branch = subprocess.run(["git", "-C", str(tree), "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+    check("worktrees: on a pi/agent-2 branch", branch.startswith("pi/agent-2-"), branch)
+    check("worktrees: what is given to Pi reachable", (tree / ".pi-images").is_symlink())
+    check("worktrees: the project's git status stays clean", git("status", "--porcelain").strip() == "", git("status", "--porcelain"))
+    subprocess.run([sys.executable, "-B", str(APP), "--api", "stop", str(project), ""], env=env, capture_output=True, timeout=30)
+    time.sleep(1.0)
+    check("worktrees: an untouched one goes when the Pis stop", not tree.exists() and "pi/agent-2" not in git("branch"),
+          (tree.exists(), git("branch")))
+    tmux("kill-server", socket=PI_SOCKET)
+    cleanup(str(work))
+
+
 def git_broker_test():
     """The git broker on the real system: pushes through git's jail and the mirror, pull
     requests and a merge only once approved, against a made-up forge (a local server)
@@ -989,6 +1045,7 @@ def main():
     multi_pi_test()
     resources_test()
     git_broker_test()
+    worktree_test()
 
     home, screens, work = session([])
     send("Escape")

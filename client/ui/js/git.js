@@ -32,6 +32,7 @@ function makeGitManager(box, currentProject) {
     showError(error, "");
     try {
       data = await backend.api(["repo", project]);
+      data.worktrees = (await backend.api(["worktrees", project]).catch(() => ({ worktrees: [] }))).worktrees;
     } catch (e) {
       showError(error, String(e));
       return;
@@ -94,6 +95,13 @@ function makeGitManager(box, currentProject) {
       body.append(ul);
     }
 
+    if (data.worktrees?.length) {
+      body.append(el("h2", { textContent: `Pis' worktrees · ${data.worktrees.length}` }));
+      const ul = el("ul", { className: "resource-items" });
+      for (const w of data.worktrees) ul.append(worktreeRow(w));
+      body.append(ul, el("p", { className: "hint", textContent: "A Pi beside another in this project works in a worktree of its own, on its branch: an untouched one goes when its Pi ends, one with work stays here until you remove it. Its branch stays either way." }));
+    }
+
     body.append(el("h2", { textContent: "Forge accounts" }));
     const accounts = el("ul", { className: "resource-items" });
     for (const f of data.forges) {
@@ -108,6 +116,17 @@ function makeGitManager(box, currentProject) {
     addAccount.addEventListener("click", () => accountDialog());
     body.append(el("div", { className: "toolbar" }, addAccount),
       el("p", { className: "hint", textContent: "The token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merging and creating a repository only once you approve them here." }));
+  }
+
+  function worktreeRow(w) {
+    const facts = [w.running ? "its Pi runs" : "its Pi ended", w.changed ? `${w.changed} changed file${w.changed > 1 ? "s" : ""}` : "",
+      w.ahead ? `${w.ahead} commit${w.ahead > 1 ? "s" : ""} ahead` : "", w.changed === 0 && !w.ahead ? "nothing new" : ""].filter(Boolean);
+    const remove = action("remove", "Remove the worktree (its branch stays)", async () => {
+      const lost = w.changed ? ` Its ${w.changed} uncommitted change${w.changed > 1 ? "s are" : " is"} lost.` : "";
+      if (!(await ask(`Remove the worktree ${w.name}?${lost} Its branch ${w.branch || ""} stays.`))) return;
+      try { await backend.worktreeRemove(currentProject(), w.name); load(); } catch (e) { showError(error, String(e)); }
+    });
+    return line(w.branch || w.name, facts.join(" · "), w.path, ...(w.running ? [] : [remove]));
   }
 
   function approvalRow(a) {

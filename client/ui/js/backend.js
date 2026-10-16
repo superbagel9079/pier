@@ -71,6 +71,7 @@ function realBackend() {
     repoCreate: (project, forge, name, priv, description) => invoke("repo_create", { project, forge, name, private: priv, description }),
     prMerge: (project, number, method) => invoke("pr_merge", { project, number, method }),
     approvalAnswer: (id, approve) => invoke("approval_answer", { id, approve }),
+    worktreeRemove: (project, name) => invoke("worktree_remove", { project, name }),
     termWrite: (id, data) => invoke("term_write", { id, data }).catch(() => {}),
     termResize: (id, cols, rows) => invoke("term_resize", { id, cols, rows }).catch(() => {}),
     termClose: (id) => invoke("term_close", { id }).catch(() => {}),
