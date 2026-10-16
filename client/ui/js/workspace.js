@@ -62,7 +62,8 @@ const workspace = (() => {
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);
       const collapse = $(".collapse", dock.el);
-      collapse.textContent = dock.peek ? "📌" : (name === "right") === dock.collapsed ? "‹" : "›";
+      if (dock.peek) collapse.replaceChildren(pinIcon());
+      else collapse.textContent = (name === "right") === dock.collapsed ? "‹" : "›";
       collapse.title = dock.peek ? "Keep this side open (otherwise it folds back when you go back to the terminals)"
         : dock.collapsed ? "Expand" : "Collapse";
     }
@@ -294,7 +295,7 @@ const workspace = (() => {
   /** A click on a tab shows it. Collapsing a side is its own button (‹ ›) or the
    *  tab's right-click menu: a click meant to look at a tab never hides the panel.
    *  On a collapsed side, the click unfolds it for a look ("peek"): it folds back once
-   *  you are back on the terminals (see foldPeeks), unless you keep it open (📌). */
+   *  you are back on the terminals (see foldPeeks), unless you keep it open (the pin button). */
   function clickTab(tab) {
     const dock = docks[tab.dock];
     if (dock.side && dock.collapsed) dock.peek = true;
@@ -411,6 +412,20 @@ const workspace = (() => {
 
   // --- side controls ---
 
+  /** A pin, drawn in the text's colour like the other icons (never a coloured emoji). */
+  function pinIcon() {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    for (const [k, v] of Object.entries({ viewBox: "0 0 16 16", width: "13", height: "13", fill: "none", stroke: "currentColor",
+      "stroke-width": "1.4", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+    for (const d of ["M5.5 2h5", "M6.5 2v4L4.5 8.5h7L9.5 6V2", "M8 8.5V14"]) {
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
   // Back on the terminals, a side unfolded for a look folds again: as soon as the
   // pointer is there when the focus follows the mouse, at the next click otherwise.
   const center = docks.center.el;
@@ -424,7 +439,7 @@ const workspace = (() => {
     $(".add", dock.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));
     if (!dock.side) continue;
     $(".collapse", dock.el).addEventListener("click", () => {
-      if (dock.peek) { keepOpen(name); return; } // 📌: the look becomes the layout
+      if (dock.peek) { keepOpen(name); return; } // the pin: the look becomes the layout
       dock.collapsed = !dock.collapsed;
       render(name);
       if (!dock.collapsed) dock.active?.onShow?.();

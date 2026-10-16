@@ -255,7 +255,7 @@ After that, any tab can go to any zone:
 - **The width of the sides** is set by dragging the divider; it is kept for each side. A double click on the divider restores the usual width.
 - **Tabs share the bar:** their names shorten ("…", the full name on hover) before the bar scrolls. The active tab keeps its whole name, and only it and the one under the pointer show ×. Everything else (rename, move, collapse, close) is in the right-click menu.
 - **The sides collapse** with the ‹/› button or a tab's right-click menu (Collapse this side). A click on a tab only shows it; it never collapses the side.
-- **On a collapsed side, a click on a tab unfolds it for a look.** It folds back once you are back on the terminals: as soon as the pointer is over them when the focus follows the mouse (Settings > Terminals), at your next click on them otherwise. **📌** (in place of ‹/› while it is unfolded), or Keep this side open in the tab's right-click menu, keeps it open instead. The layout saved stays collapsed until then.
+- **On a collapsed side, a click on a tab unfolds it for a look.** It folds back once you are back on the terminals: as soon as the pointer is over them when the focus follows the mouse (Settings > Terminals), at your next click on them otherwise. **the pin button** (in place of ‹/› while it is unfolded), or Keep this side open in the tab's right-click menu, keeps it open instead. The layout saved stays collapsed until then.
 - **Right-clicking a tab** offers:
   - **Rename** (the name is kept);
   - **Move** to the left, the centre or the right;
