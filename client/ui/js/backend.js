@@ -55,9 +55,15 @@ function realBackend() {
       output.onmessage = (message) => {
         onBytes(message instanceof ArrayBuffer ? new Uint8Array(message) : Uint8Array.from(message));
       };
-      return invoke("term_open", { kind, cols, rows, output, project: params?.project ?? null, args: params?.args ?? null });
+      // An "update" tab can run pi install / pi remove instead (params.termKind "package").
+      return invoke("term_open", { kind: params?.termKind ?? kind, cols, rows, output, project: params?.project ?? null, args: params?.args ?? null });
     },
     writeText: (project, which, text) => invoke("write_text", { project, which, text }),
+    resourceToggle: (scope, project, kind, source, rel, on) => invoke("resource_toggle", { scope, project, kind, source, rel, on }),
+    skillCreate: (scope, project, name, description) => invoke("skill_create", { scope, project, name, description }),
+    skillSave: (scope, project, name, text) => invoke("skill_save", { scope, project, name, text }),
+    skillDelete: (scope, project, name) => invoke("skill_delete", { scope, project, name }),
+    skillImport: (scope, project, path) => invoke("skill_import", { scope, project, path }),
     termWrite: (id, data) => invoke("term_write", { id, data }).catch(() => {}),
     termResize: (id, cols, rows) => invoke("term_resize", { id, cols, rows }).catch(() => {}),
     termClose: (id) => invoke("term_close", { id }).catch(() => {}),

@@ -36,13 +36,13 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 12;
+const API_VERSION: u64 = 13;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff"];
+const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery"];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -740,16 +740,34 @@ fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
 
 /// `pi update` run by the picker in a terminal: Pi itself, --all, --extensions, or one
 /// package (npm:…, git:…, https://…). Nothing else reaches the command line.
+/// A package source Pier passes to `pi update`, `pi install` or `pi remove`.
+fn package_source(s: &str) -> bool {
+    (s.starts_with("npm:") || s.starts_with("git:") || s.starts_with("https://"))
+        && s.len() <= 200
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || "@/._:+~-".contains(c))
+}
+
 fn update_command(args: &[String]) -> Result<String, String> {
-    let source = |s: &str| {
-        (s.starts_with("npm:") || s.starts_with("git:") || s.starts_with("https://"))
-            && s.len() <= 200
-            && s.chars().all(|c| c.is_ascii_alphanumeric() || "@/._:+~-".contains(c))
-    };
+    let source = package_source;
     match args {
         [] => Ok("--pi-update".into()),
         [flag] if flag == "--all" || flag == "--extensions" || source(flag) => Ok(format!("--pi-update {}", sh_quote(flag))),
         _ => Err("unsupported update".into()),
+    }
+}
+
+/// `pi install` / `pi remove` run by the picker in a terminal, in Pi's sandbox: for the
+/// user ("user") or a project (its path, checked to be in home on the VM).
+fn package_command(args: &[String]) -> Result<String, String> {
+    match args {
+        [action, scope, source]
+            if (action == "install" || action == "remove")
+                && (scope == "user" || (scope.starts_with('/') && scope.len() < 4096 && !scope.chars().any(char::is_control)))
+                && package_source(source) =>
+        {
+            Ok(format!("--pi-package {} {} {}", sh_quote(action), sh_quote(scope), sh_quote(source)))
+        }
+        _ => Err("unsupported package command".into()),
     }
 }
 
@@ -778,6 +796,7 @@ async fn term_open(
         "shell" => None,
         "pi" => Some(remote(&settings, &request, &attach_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
         "update" => Some(remote(&settings, &request, &update_command(args.as_deref().unwrap_or(&[]))?)),
+        "package" => Some(remote(&settings, &request, &package_command(args.as_deref().unwrap_or(&[]))?)),
         other => return Err(format!("unknown terminal: {other}")),
     };
     let exit_app = app.clone();
@@ -974,6 +993,62 @@ async fn share_stop(app: AppHandle, state: State<'_, AppState>, id: u32, forget:
         api(&app, &state, &["share-stop", &share.mountpoint], &[]).await?;
     }
     Ok(())
+}
+
+// --- skills, extensions, prompts (Setup) -----------------------------------------------
+
+fn resource_scope(scope: &str) -> Result<(), String> {
+    if scope == "user" || scope == "project" { Ok(()) } else { Err(format!("unknown scope: {scope}")) }
+}
+
+/// Turns a skill, an extension or a prompt on or off, as `pi config` does.
+#[tauri::command]
+async fn resource_toggle(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, kind: String, source: String, rel: String, on: bool) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    if !["skills", "extensions", "prompts"].contains(&kind.as_str()) {
+        return Err(format!("unknown kind: {kind}"));
+    }
+    api(&app, &state, &["toggle-resource", &scope, &project, &kind, &source, &rel, if on { "1" } else { "0" }], &[]).await
+}
+
+/// A new local skill, from a template.
+#[tauri::command]
+async fn skill_create(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String, description: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    api(&app, &state, &["skill-new", &scope, &project, &name, &description], &[]).await
+}
+
+/// A local skill's SKILL.md, saved.
+#[tauri::command]
+async fn skill_save(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String, text: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    api(&app, &state, &["skill-write", &scope, &project, &name], text.as_bytes()).await
+}
+
+/// A local skill, moved to the picker's bin on the VM.
+#[tauri::command]
+async fn skill_delete(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    api(&app, &state, &["skill-delete", &scope, &project, &name], &[]).await
+}
+
+/// Largest skill folder sent from this computer.
+const SKILL_MAX_BYTES: u64 = 20 * 1024 * 1024;
+
+/// A skill folder of this computer (it holds a SKILL.md), copied into the skills.
+#[tauri::command]
+async fn skill_import(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, path: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    let root = PathBuf::from(&path);
+    if !root.join("SKILL.md").is_file() {
+        return Err(format!("{path} holds no SKILL.md: it is not a skill folder"));
+    }
+    let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "skill".into());
+    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, SKILL_MAX_BYTES))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(message)?;
+    api(&app, &state, &["skill-import", &scope, &project, &name], &packed.0).await
 }
 
 /// Saves one of the project's texts for Pi: "instructions" (AGENTS.md), "append"
@@ -1579,6 +1654,11 @@ pub fn run() {
             takeback_diff,
             takeback_apply,
             write_text,
+            resource_toggle,
+            skill_create,
+            skill_save,
+            skill_delete,
+            skill_import,
             checkpoint_create,
             checkpoint_restore,
             stop_pi,
@@ -1654,6 +1734,21 @@ mod tests {
             assert!(attach_command("/x", &bad).is_err(), "{bad:?}");
         }
         assert!(attach_command("", &[]).is_err());
+    }
+
+    #[test]
+    fn package_arguments() {
+        assert_eq!(package_command(&["install".into(), "user".into(), "npm:pi-tools".into()]).unwrap(), "--pi-package 'install' 'user' 'npm:pi-tools'");
+        assert!(package_command(&["remove".into(), "/home/leo/work".into(), "git:github.com/u/r@v1".into()]).is_ok());
+        for bad in [
+            vec!["exec".to_string(), "user".into(), "npm:x".into()],
+            vec!["install".into(), "home".into(), "npm:x".into()],
+            vec!["install".into(), "user".into(), "npm:x; rm -rf ~".into()],
+            vec!["install".into(), "user".into(), "/tmp/evil".into()],
+            vec!["install".into(), "/a\nb".into(), "npm:x".into()],
+        ] {
+            assert!(package_command(&bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

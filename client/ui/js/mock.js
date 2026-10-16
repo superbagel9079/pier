@@ -56,6 +56,7 @@ function mockBackend() {
   let shares = [];
   let kept = [];
   let handed = [];
+  let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,
     pinned: Boolean(mockLabels[path]?.pinned), archived: Boolean(mockLabels[path]?.archived) });
@@ -126,6 +127,22 @@ function mockBackend() {
     trustHost: async () => { trusted = true; },
     disconnect: async () => {},
     async api(args) {
+      if (args[0] === "resources") {
+        const item = (kind, name, scope, source, enabled, editable) => ({ name, scope, source, enabled, editable,
+          rel: source ? `${kind}/${name}/SKILL.md` : `${kind}/${name}${kind === "skills" ? "/SKILL.md" : kind === "prompts" ? ".md" : ".ts"}`,
+          description: `${name}, a demo ${kind.slice(0, -1)}`, path: `/home/leo/.pi/agent/${kind}/${name}` });
+        return { project: args[1], packages: [{ source: "npm:pi-hindsight", scope: "user", version: "0.4.2", installed: true }],
+          skills: [...mockSkills.map((s) => item("skills", s.name, s.scope, null, s.enabled, true)), item("skills", "recall", "user", "npm:pi-hindsight", true, false)],
+          extensions: [item("extensions", "memory", "user", "npm:pi-hindsight", true, false)],
+          prompts: [item("prompts", "review", "user", null, true, false)] };
+      }
+      if (args[0] === "gallery") {
+        return { query: args[1], results: [
+          { name: "pi-hindsight", source: "npm:pi-hindsight", version: "0.4.2", publisher: "vectorize", description: "Long-term memory for Pi" },
+          { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", description: "Code review skills" },
+        ].filter((p) => !args[1] || p.name.includes(args[1]) || p.description.toLowerCase().includes(args[1].toLowerCase())) };
+      }
+      if (args[0] === "skill-read") return { name: args[3], text: `---\nname: ${args[3]}\ndescription: demo\n---\n\n# ${args[3]}\n` };
       if (args[0] === "projects") {
         const pis = pisNow();
         const work = { path: "/home/leo/work", label: "~/work", running: pis.length > 0, working: pis.some((p) => p.working), pis };
@@ -265,6 +282,26 @@ function mockBackend() {
  </header>
 ` }),
     takebackApply: async (path, local, take, remove) => ({ taken: take, deleted: remove, skipped: [], backup: take.length || remove.length ? `${local} (before Pi's changes 2026-10-16 10-32)` : null }),
+    resourceToggle: async (scope, project, kind, source, rel, on) => {
+      const skill = mockSkills.find((s) => rel === `skills/${s.name}/SKILL.md`);
+      if (skill) skill.enabled = on;
+      return { rel, enabled: on };
+    },
+    skillCreate: async (scope, project, name) => {
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) throw "a skill's name: 1 to 64 lowercase letters, digits and single hyphens (my-skill)";
+      mockSkills.push({ name, scope, enabled: true });
+      return { name };
+    },
+    skillSave: async () => ({ saved: "SKILL.md" }),
+    skillDelete: async (scope, project, name) => {
+      mockSkills = mockSkills.filter((s) => s.name !== name);
+      return { name, kept: `/home/leo/.local/state/pier-picker/trash/20261016-${scope}-${name}` };
+    },
+    skillImport: async (scope, project, path) => {
+      const name = path.split(/[\\/]/).pop().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      mockSkills.push({ name, scope, enabled: true });
+      return { name };
+    },
     async removeUpload(path) {
       for (const key of ["images", "files", "copies"]) given[key] = given[key].filter((i) => i.path !== path);
       handed = handed.filter((h) => h.mountpoint !== path);

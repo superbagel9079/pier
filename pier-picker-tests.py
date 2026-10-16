@@ -564,6 +564,66 @@ def resources_test():
           [s["name"] for s in r["skills"]] == ["notes"] and [p["name"] for p in r["prompts"]] == ["review"]
           and [m["name"] for m in r["mcp"]] == ["github"], r)
     check("the default model", r["model"].get("defaultModel") == "m", r["model"])
+
+    # Managing them: on and off as `pi config` writes it, local skills, a package's skill.
+    pkg = agent / "npm" / "node_modules" / "pi-hindsight"
+    (pkg / "skills" / "recall").mkdir(parents=True)
+    (pkg / "skills" / "recall" / "SKILL.md").write_text("---\nname: recall\n---\n")
+
+    def api(*args, data=None):
+        run = subprocess.run([sys.executable, "-B", str(APP), "--api", *args], input=data, env=env,
+                             capture_output=True, timeout=30)
+        try:
+            return json.loads(run.stdout)
+        except ValueError:
+            return {"error": run.stdout.decode(errors="replace") + run.stderr.decode(errors="replace")}
+
+    listed = api("resources", str(project))
+    names = {(s["name"], s["source"]): s for s in listed.get("skills", [])}
+    check("resources: local and package skills, loaded", names.get(("notes", None), {}).get("enabled")
+          and names.get(("recall", "npm:pi-hindsight"), {}).get("enabled"), listed)
+    api("toggle-resource", "user", str(project), "skills", "npm:pi-hindsight", "skills/recall/SKILL.md", "0")
+    api("toggle-resource", "project", str(project), "skills", "", "skills/notes/SKILL.md", "0")
+    settings = json.loads((agent / "settings.json").read_text())
+    check("resources: a package's skill off, as pi config writes it",
+          {"source": "npm:pi-hindsight", "skills": ["-skills/recall/SKILL.md"]} in settings.get("packages", []), settings)
+    check("resources: a local skill off, in the project's settings",
+          json.loads((project / ".pi" / "settings.json").read_text()).get("skills") == ["-skills/notes/SKILL.md"])
+    listed = api("resources", str(project))
+    check("resources: both listed off", not any(s["enabled"] for s in listed.get("skills", [])), listed.get("skills"))
+    made = api("skill-new", "user", str(project), "my-skill", "does things")
+    check("skills: a new one from the template", (agent / "skills" / "my-skill" / "SKILL.md").read_text().startswith("---\nname: my-skill")
+          if (agent / "skills" / "my-skill" / "SKILL.md").exists() else False, made)
+    check("skills: a bad name refused", "error" in api("skill-new", "user", str(project), "Bad Name", ""))
+    api("skill-write", "user", str(project), "my-skill", data=b"---\nname: my-skill\n---\nnew\n")
+    check("skills: saved", api("skill-read", "user", str(project), "my-skill").get("text", "").endswith("new\n"))
+    binned = api("skill-delete", "user", str(project), "my-skill")
+    check("skills: put in the bin, recoverable", not (agent / "skills" / "my-skill").exists()
+          and Path(binned.get("kept", "/nonexistent")).joinpath("SKILL.md").exists(), binned)
+    import io
+    import tarfile
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w") as tar:
+        for name, body in (("Shared Skill/SKILL.md", b"---\nname: shared\n---\n"), ("Shared Skill/notes.md", b"x")):
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            tar.addfile(info, io.BytesIO(body))
+    imported = api("skill-import", "project", str(project), "Shared Skill", data=archive.getvalue())
+    check("skills: imported under the name it declares", (project / ".pi" / "skills" / "shared" / "notes.md").exists(), imported)
+
+    # pi install, run by the picker: a fake pi records what it was asked.
+    tools = home / ".local" / "bin"
+    tools.mkdir(parents=True)
+    (tools / "pi").write_text('#!/bin/sh\necho "$@" > "$HOME/.pi/pi-args.txt"\n')
+    (tools / "pi").chmod(0o755)
+    env2 = dict(env, PATH=f"{tools}:/usr/bin:/bin", PI_PICKER_SANDBOX="0")
+    subprocess.run([sys.executable, "-B", str(APP), "--pi-package", "install", str(project), "npm:pi-review"],
+                   stdin=subprocess.DEVNULL, env=env2, capture_output=True, timeout=30)
+    args = (home / ".pi" / "pi-args.txt").read_text().strip() if (home / ".pi" / "pi-args.txt").exists() else "nothing"
+    check("packages: pi install -l for a project", args == "install -l npm:pi-review", args)
+    refused = subprocess.run([sys.executable, "-B", str(APP), "--pi-package", "install", "user", "npm:x;rm"],
+                             stdin=subprocess.DEVNULL, env=env2, capture_output=True, text=True, timeout=30)
+    check("packages: a source that is not one refused", refused.returncode == 2, refused.stdout[-200:])
     cleanup(work)
 
 

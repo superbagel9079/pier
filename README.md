@@ -173,7 +173,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 12 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 13 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -188,6 +188,8 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `handoff`, `--download` | Hand off and Take back |
 | `activity`, `diff` | what Pi reads and changes, its diffs, its cost |
 | `setup`, `write-text` | a project's instructions, what Pi reads at startup and what it loads |
+| `resources`, `toggle-resource`, `skill-new`, `skill-read`, `skill-write`, `skill-delete`, `skill-import`, `gallery` | skills, extensions and prompts: listed with their state, turned on or off, local skills made, edited, put in the bin or imported; the gallery |
+| `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
 | `checkpoints`, `checkpoint`, `checkpoint-diff`, `restore` | restore points: list, make one, what changed since, go back |
 | `log` | the end of the picker's log |
@@ -435,12 +437,21 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
   The tab also says whether the project is **trusted** in Pi. Untrusted, the files of `.pi/` are ignored.
 - **What Pi loads**: what Pi loads besides itself, yours (`~/.pi/agent`) and the project's (`.pi/`):
   - **Pi itself**, its version and the latest published one, with **update** when a newer one exists;
-  - the **packages** of `settings.json` (`npm:…`, `git:…` or a path), with their version, or "not installed". An npm package behind gets **update**, and **update all packages** appears when there are several;
-  - the **extensions**, **skills** and **prompts** (their folders, and the paths given in `settings.json`);
+  - the **packages** of `settings.json` (`npm:…`, `git:…` or a path), with their version, or "not installed". An npm package behind gets **update**, and **update all packages** appears when there are several; **remove** runs `pi remove`;
+  - the **skills**, **extensions** and **prompts**, yours and the project's, local or from a package, each with a **checkbox**: unchecked, Pi leaves it out at its next start (nothing is deleted). Pier writes it as `pi config` does, `-skills/name/SKILL.md` in the list of `settings.json` (or of the package's entry there);
   - the **MCP servers**, which Pi 1.x connects itself: `~/.pi/agent/mcp.json` (yours) and the project's `.pi/mcp.json` (read only once the project is trusted), with their type (stdio or http) and whether they are off;
   - the default model.
 
-  The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pier-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add a package or an MCP server on the VM: `pi install npm:…`, `pi mcp add …`.
+  The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pier-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add an MCP server on the VM: `pi mcp add …`.
+
+  Below the list, for you (every project) or for this project only:
+  - **Install a package…**: a source (`npm:…`, `git:…`, `https://…`), installed by `pi install` (`-l` for the project) in a tab where it runs, visible;
+  - **Browse the gallery…**: the packages tagged `pi-package` on npm (those of pi.dev/packages), searched from the VM, with **install**;
+  - **New skill…**: a skill of your own, made from a template (`name` and `description` in its front matter), then opened to edit;
+  - **Import a skill…**: a folder of this computer holding a `SKILL.md`, copied into the skills (under the name it declares);
+  - a local skill has **edit** (its `SKILL.md`, Ctrl+S saves) and **×**, which puts it in a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
+
+  A package's extensions run code with your rights when Pi starts, and skills can tell Pi to do anything: look at a package before installing it. `pi install` and `pi remove` run in Pi's sandbox (when it is on), network limited as Pi's: npm's install scripts see `~/.pi` and the project only. A package from a site outside `network_allow` needs it added there first.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).
 
 ### Part XIII. Notifications and shortcut

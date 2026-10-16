@@ -545,3 +545,17 @@ details label { margin-top: 8px; }
 .takeback-list .rel { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .takeback-diff { flex-basis: 100%; }
 .takeback-diff .diff { content-visibility: auto; }
+
+/* Skills, extensions and prompts (Setup) */
+.resource-head { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; margin: 8px 0; }
+.resource-lists h3 { margin: 12px 0 4px; font-size: 12px; }
+.resource-items li { display: flex; align-items: center; gap: 8px; }
+.resource-items li > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+.resource-items .row-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.resource-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.resource-panel { border: 1px solid var(--line); padding: 10px; margin-bottom: 12px; }
+.resource-panel h3 { margin: 0 0 8px; font-size: 12px; }
+.resource-panel .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.resource-panel .toolbar input { flex: 1; min-width: 160px; }
+.gallery li { display: flex; align-items: center; gap: 8px; }
+.gallery li > .dim { flex: 1; min-width: 0; }

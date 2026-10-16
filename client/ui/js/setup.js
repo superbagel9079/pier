@@ -46,6 +46,7 @@ function makeSetup(tab) {
   let chosen = null;      // a project picked in the list, else the Pi in use
   let shownProjects = ""; // what the project list holds now
   const editors = {};
+  const manager = makeResourceManager($$(".resource-manager"), () => data?.project || project());
 
   const project = () => chosen || target?.path || select.value || "";
 
@@ -262,13 +263,16 @@ function makeSetup(tab) {
       const behind = p.installed !== false && newer(p.latest, p.version);
       outdated += behind ? 1 : 0;
       const detail = p.installed === false ? "not installed" : behind ? `v${p.version} → ${p.latest}` : p.version ? `v${p.version}` : "";
-      list.append(row("package", p.scope, name, detail, [p.source, p.description].filter(Boolean).join(": "),
-        behind ? update(name, [p.source], `pi update ${p.source}, in a terminal`) : null));
+      const remove = link("remove", `pi remove ${p.source}, in a terminal (in Pi's sandbox)`, async () => {
+        if (!(await ask(`Remove the package ${name}? Pi stops loading its skills and extensions at its next start.`))) return;
+        openPackageTerminal("remove", p.scope === "project" ? data.project : "user", p.source, name, () => manager.load());
+      });
+      const actions = el("span", { className: "row-actions" }, ...(behind ? [update(name, [p.source], `pi update ${p.source}, in a terminal`)] : []), remove);
+      list.append(row("package", p.scope, name, detail, [p.source, p.description].filter(Boolean).join(": "), actions));
     }
     if (outdated > 1) list.append(el("li", { className: "note small" }, update("all packages", ["--extensions"], "pi update --extensions, in a terminal")));
-    for (const [kind, label] of [["extensions", "extension"], ["skills", "skill"], ["prompts", "prompt"]]) {
-      for (const item of r[kind]) list.append(row(label, item.scope, item.name, "", `from ${item.from}`));
-    }
+    // Skills, extensions and prompts: in the manager below the list (resources.js).
+    manager.loadFor(data.project);
     for (const server of r.mcp) {
       list.append(row("MCP", server.scope, server.name, [server.kind, server.enabled ? "" : "off"].filter(Boolean).join(" · "),
         [server.description, `in ${server.from}`].filter(Boolean).join(" · ")));
