@@ -280,6 +280,7 @@ function setTermFont(raw) {
   note.hidden = !name || fontInstalled(name);
   note.textContent = `"${name}" is not installed on this computer: the terminals use Cascadia Mono meanwhile.`;
   for (const tab of workspace.tabs()) tab.applyFont?.();
+  applyCodeFont();
   fillTermFonts();
 }
 

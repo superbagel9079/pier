@@ -55,6 +55,13 @@ function applyTermPadding() {
 }
 applyTermPadding();
 
+/** What is code in the panels (paths, branches, logs, diffs) is written in the terminal's
+ *  font: a CSS variable, set again when that font changes. */
+function applyCodeFont() {
+  document.documentElement.style.setProperty("--code", termFontFamily());
+}
+applyCodeFont();
+
 function savePrefs() {
   try { localStorage.setItem("devbox.prefs", JSON.stringify(prefs)); } catch { /* storage off */ }
 }
