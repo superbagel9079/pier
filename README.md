@@ -455,7 +455,7 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
 The categories in a column on the left, the page on the right; the window opens again on the last page shown.
 
 - **Layout:** which side the panels go to (Panels), where each tab lives, and Reset layout.
-- **Appearance:** theme and terminal font size. Built-in themes: Pier dark/light (or "follow the system"), One Dark, Dracula, Nord, Gruvbox, Tokyo Night, Catppuccin Mocha, Solarized dark/light, GitHub Light. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
+- **Appearance:** theme, and for the terminals: font size, font (any monospaced font installed on this computer; the list offers the usual ones found here, and a font missing falls back to Cascadia Mono, with a note), and the space around their text (0 to 40 px). Built-in themes: Pier dark/light (or "follow the system"), One Dark, Dracula, Nord, Gruvbox, Tokyo Night, Catppuccin Mocha, Solarized dark/light, GitHub Light. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
   - **Import a VS Code or Zed theme…:** takes the `.json` of a VS Code theme (the extension's `themes/` folder, comments accepted) or a Zed theme (zed.dev/themes, `~/.config/zed/themes`; a Zed file can hold several themes, all are added). Missing colours are derived from the others.
   - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes.
 - **Terminals:** the copy and paste keys, copying on selection or with Ctrl+Shift+C, focus following the mouse, drawing by the graphics card.

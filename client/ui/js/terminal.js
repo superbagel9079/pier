@@ -41,7 +41,7 @@ function makeTerminal(tab, kind) {
   if (kind === "update" && tab.params) tab.title = `pi update · ${tab.params.label}`;
   tab.pane.classList.add("terminal");
   const term = new window.Terminal({
-    fontFamily: '"Cascadia Mono", Consolas, ui-monospace, monospace',
+    fontFamily: termFontFamily(),
     fontSize: prefs.fontSize,
     cursorBlink: true,
     scrollback: 5000,
@@ -81,7 +81,11 @@ function makeTerminal(tab, kind) {
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
   tab.refit = () => { if (visible()) { try { fit.fit(); } catch { /* not laid out yet */ } } };
   tab.applyTheme = () => { term.options.theme = terminalTheme(); };
-  tab.applyFont = () => { term.options.fontSize = prefs.fontSize; tab.refit(); };
+  tab.applyFont = () => {
+    term.options.fontFamily = termFontFamily();
+    term.options.fontSize = prefs.fontSize;
+    tab.refit();
+  };
 
   async function start() {
     ended = false;

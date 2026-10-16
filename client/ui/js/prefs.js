@@ -32,6 +32,9 @@ function openPrefs() {
   }
   fillThemes();
   $("#prefs-font").value = prefs.fontSize;
+  $("#prefs-termfont").value = prefs.termFont || "";
+  $("#prefs-padding").value = prefs.termPadding;
+  fillTermFonts();
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -232,6 +235,48 @@ $("#prefs-font").addEventListener("change", (e) => {
   e.target.value = prefs.fontSize;
   savePrefs();
   for (const tab of workspace.tabs()) tab.applyFont?.();
+});
+// Monospaced fonts often installed: offered in the list, and only those found here.
+const TERM_FONT_CHOICES = ["Cascadia Mono", "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "Fira Mono",
+  "Source Code Pro", "Hack", "Iosevka", "IBM Plex Mono", "Roboto Mono", "Ubuntu Mono", "DejaVu Sans Mono",
+  "Liberation Mono", "Noto Sans Mono", "Menlo", "SF Mono", "Monaco", "Courier New"];
+
+function fontInstalled(name) {
+  // A font the system lacks measures as the fallback does: compared with two of them.
+  const probe = (family) => {
+    const span = el("span", { textContent: "mmmmmmmmmmlli10OO" });
+    span.style.cssText = `position:absolute;visibility:hidden;font-size:40px;font-family:${family}`;
+    document.body.append(span);
+    const width = span.getBoundingClientRect().width;
+    span.remove();
+    return width;
+  };
+  const safe = name.replace(/["'`;\\{}<>]/g, "");
+  return ["monospace", "serif"].some((base) => probe(`"${safe}", ${base}`) !== probe(base));
+}
+
+function fillTermFonts() {
+  const list = $("#prefs-termfont-list");
+  if (list.childElementCount) return;
+  for (const name of TERM_FONT_CHOICES) if (fontInstalled(name)) list.append(el("option", { value: name }));
+}
+
+$("#prefs-termfont").addEventListener("change", (e) => {
+  const name = e.target.value.replace(/["'`;\\{}<>]/g, "").trim().slice(0, 60);
+  e.target.value = name;
+  prefs.termFont = name;
+  savePrefs();
+  const note = $("#prefs-termfont-note");
+  note.hidden = !name || fontInstalled(name);
+  note.textContent = `"${name}" is not installed on this computer: the terminals use Cascadia Mono meanwhile.`;
+  for (const tab of workspace.tabs()) tab.applyFont?.();
+});
+$("#prefs-padding").addEventListener("change", (e) => {
+  prefs.termPadding = Math.min(40, Math.max(0, Math.round(Number(e.target.value) || 0)));
+  e.target.value = prefs.termPadding;
+  savePrefs();
+  applyTermPadding();
+  for (const tab of workspace.tabs()) tab.refit?.();
 });
 $("#prefs-shortcut").addEventListener("change", async (e) => {
   prefs.shortcut = e.target.checked;
