@@ -11,9 +11,11 @@ The key pair is made with `cargo tauri signer generate`. The public half is in
 off the repository, on the computer that made it and in the repository's secrets:
 
 ```bash
-gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/pier-updater.key
-gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""
+gh secret set TAURI_SIGNING_PRIVATE_KEY -R superbagel9079/pier < ~/.tauri/pier-updater.key
 ```
+
+The key has no password: `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is only needed for a key
+made with one (GitHub refuses an empty secret; the workflow passes an empty value itself).
 
 Keep a copy of the private key somewhere safe. Without it, no new version can reach the
 Piers already installed: they would have to be installed again by hand, with a new key.
