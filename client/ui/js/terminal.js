@@ -38,10 +38,10 @@ document.addEventListener("paste", () => { lastPasteEvent = performance.now(); }
 
 function makeTerminal(tab, kind) {
   if (kind === "pi" && tab.params) tab.title = `pi · ${tab.params.label}`;
-  if (kind === "update" && tab.params) tab.title = `pi update · ${tab.params.label}`;
+  if (kind === "update" && tab.params) tab.title = tab.params.termKind === "package" ? `pi ${tab.params.label}` : `pi update · ${tab.params.label}`;
   tab.pane.classList.add("terminal");
   const term = new window.Terminal({
-    fontFamily: '"Cascadia Mono", Consolas, ui-monospace, monospace',
+    fontFamily: termFontFamily(),
     fontSize: prefs.fontSize,
     cursorBlink: true,
     scrollback: 5000,
@@ -65,7 +65,12 @@ function makeTerminal(tab, kind) {
   let ended = false;
   let closed = false;
   let starts = 0;          // which start() is current: a late answer of an older one is dropped
-  let lastKeyAt = 0;       // the clipboard is only set by a program shortly after a key
+  // The clipboard is set by a program only just after the user acted in this tab: a
+  // key pressed or a mouse button released (real DOM events). Not onData: xterm.js
+  // also fires it for its own answers (cursor position, device attributes, focus and
+  // mouse reports), which the program on the VM can ask for at will. One copy per act.
+  let actedAt = 0;
+  let ignoredLoggedAt = 0;
   let dropped = false;     // the connection went away under this terminal
   let startedAt = 0;
   const latency = latencyMeter(kind);
@@ -75,8 +80,23 @@ function makeTerminal(tab, kind) {
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
   tab.refit = () => { if (visible()) { try { fit.fit(); } catch { /* not laid out yet */ } } };
-  tab.applyTheme = () => { term.options.theme = terminalTheme(); };
-  tab.applyFont = () => { term.options.fontSize = prefs.fontSize; tab.refit(); };
+  // The padding around the text, and the leftover below the last row, take the
+  // terminal's own background, as in kitty or foot: no band of another colour.
+  tab.applyTheme = () => {
+    const theme = terminalTheme();
+    term.options.theme = theme;
+    tab.pane.style.backgroundColor = theme.background;
+    term.element.style.backgroundColor = theme.background;
+    // The scrolling layer covers the padding too, and xterm.css paints it black.
+    const viewport = term.element.querySelector(".xterm-viewport");
+    if (viewport) viewport.style.backgroundColor = theme.background;
+  };
+  tab.applyTheme();
+  tab.applyFont = () => {
+    term.options.fontFamily = termFontFamily();
+    term.options.fontSize = prefs.fontSize;
+    tab.refit();
+  };
 
   async function start() {
     ended = false;
@@ -134,7 +154,15 @@ function makeTerminal(tab, kind) {
       try { await navigator.clipboard.writeText(text); } catch { flashStatus("could not copy: see the log", tab.pane); return; }
     }
     uiLog("debug", "term-copy", { chars: text.length, how });
-    flashStatus(`copied ${text.length} character${text.length === 1 ? "" : "s"}`, tab.pane);
+    const count = `${text.length} character${text.length === 1 ? "" : "s"}`;
+    if (how === "osc52") {
+      // Copied by the program, not by Pier: show what, so a surprise is seen.
+      const start = text.replace(/\s+/g, " ").trim();
+      const preview = start.length > 48 ? `${start.slice(0, 48)}…` : start;
+      flashStatus(`the program copied ${count}: “${preview}”`, tab.pane);
+    } else {
+      flashStatus(`copied ${count}`, tab.pane);
+    }
   }
 
   function copySelection() {
@@ -145,6 +173,10 @@ function makeTerminal(tab, kind) {
   }
 
   // Copy on select, when that is the setting.
+  // Captured: xterm.js stops the event when the program takes the mouse.
+  tab.pane.addEventListener("pointerup", (event) => {
+    if (event.isTrusted) actedAt = performance.now();
+  }, true);
   tab.pane.addEventListener("mouseup", () => {
     if (prefs.copyMode === "select" && term.hasSelection()) {
       const text = term.getSelection();
@@ -158,13 +190,19 @@ function makeTerminal(tab, kind) {
   const decoder = new TextDecoder();
   term.parser.registerOscHandler(52, (data) => {
     const payload = data.slice(data.indexOf(";") + 1);
-    if (!payload || payload === "?" || payload.length > 8 * 1024 * 1024) return true;
-    // Only right after a key typed in this tab (Pi's copy command, a yank in vim): a
-    // program on the VM cannot change this computer's clipboard behind your back.
-    if (performance.now() - lastKeyAt > 3000) {
-      uiLog("info", "term-osc52-ignored", { kind, why: "no key typed just before" });
+    if (!payload || payload === "?" || payload.length > 2 * 1024 * 1024) return true;
+    // Only right after a key typed or a click in this tab (Pi's copy command, a yank in
+    // vim, tmux's copy on mouse release), and once per act: a program on the VM cannot
+    // change this computer's clipboard behind your back.
+    const now = performance.now();
+    if (now - actedAt > 2000) {
+      if (now - ignoredLoggedAt > 10000) {
+        ignoredLoggedAt = now;
+        uiLog("info", "term-osc52-ignored", { kind, why: "no key typed or click just before" });
+      }
       return true;
     }
+    actedAt = 0;
     try {
       const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
       const text = decoder.decode(bytes);
@@ -284,6 +322,9 @@ function makeTerminal(tab, kind) {
   }
 
   term.attachCustomKeyEventHandler((event) => {
+    if (event.type === "keydown" && event.isTrusted && !["Control", "Shift", "Alt", "Meta"].includes(event.key)) {
+      actedAt = performance.now();
+    }
     // Ctrl+Shift+K opens the palette (see palette.js): not a key for the program.
     if (event.ctrlKey && event.shiftKey && event.code === "KeyK") return false;
     if (tmuxKeys(event)) return false;
@@ -297,7 +338,6 @@ function makeTerminal(tab, kind) {
   });
 
   term.onData((data) => {
-    lastKeyAt = performance.now();
     if (ended) {
       if (data === "\r") tab.restart();
       return;
@@ -355,6 +395,7 @@ function makeTerminal(tab, kind) {
       return;
     }
     if (kind === "update") {
+      tab.params?.onDone?.();
       workspace.close(tab);
       return;
     }

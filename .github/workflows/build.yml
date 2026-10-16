@@ -1,0 +1,171 @@
+# Pier for Windows, macOS and Linux.
+#
+# Every push and pull request: the tests (Rust, and the picker compiled), then Pier
+# built on the three systems, kept as artifacts of the run. A tag "v*" (git tag v0.3.0
+# && git push --tags) also publishes them as a GitHub release, with their SHA-256.
+#
+# Signing is optional: without these secrets the files are built unsigned (Windows and
+# macOS then warn on first start).
+#   Windows (Authenticode): WINDOWS_CERTIFICATE (the .pfx in base64), WINDOWS_CERTIFICATE_PASSWORD
+#   macOS (Developer ID, notarized): APPLE_CERTIFICATE (.p12 in base64), APPLE_CERTIFICATE_PASSWORD,
+#     APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (an app-specific password), APPLE_TEAM_ID
+
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+      - name: Rust tests
+        working-directory: client/src-tauri
+        run: cargo test --locked
+      - name: The picker compiles (Python 3.12, as on the VM)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m py_compile pier-picker.py pier-picker-tests.py
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+            bundles: nsis
+          - os: macos-latest
+            name: macos-universal
+            bundles: app,dmg
+            target: universal-apple-darwin
+          - os: ubuntu-22.04
+            name: linux-x64
+            bundles: deb,appimage
+    runs-on: ${{ matrix.os }}
+    # Secrets cannot be tested in "if:"; their copies in env can (empty when not set).
+    env:
+      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries for Tauri (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+          key: ${{ matrix.name }}
+      - name: Tauri's command line
+        run: cargo install tauri-cli --version "^2.12" --locked
+      - name: Apple signing keychain (only with the secrets)
+        if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
+        env:
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p build build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p build build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k build build.keychain
+          rm certificate.p12
+      - name: Build
+        working-directory: client/src-tauri
+        shell: bash
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # Without a signing identity, Tauri must not try to sign: the empty ones go.
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          args=(--bundles "${{ matrix.bundles }}")
+          if [ -n "${{ matrix.target }}" ]; then args+=(--target "${{ matrix.target }}"); fi
+          cargo tauri build "${args[@]}"
+      - name: Sign for Windows (only with the secrets)
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "certificate.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object FullName -like "*x64*" | Select-Object -Last 1
+          $files = @("client/src-tauri/target/release/pier.exe") + (Get-ChildItem client/src-tauri/target/release/bundle/nsis/*.exe).FullName
+          foreach ($file in $files) {
+            & $signtool.FullName sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 $file
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          Remove-Item $pfx
+      - name: Gather the files, with their SHA-256
+        shell: bash
+        run: |
+          mkdir -p out
+          release=client/src-tauri/target/${{ matrix.target || 'release' }}
+          if [ -n "${{ matrix.target }}" ]; then release="$release/release"; fi
+          case "${{ runner.os }}" in
+            Windows) cp "$release/pier.exe" "out/pier-${{ matrix.name }}.exe"; cp "$release"/bundle/nsis/*.exe out/ ;;
+            macOS) cp "$release"/bundle/dmg/*.dmg out/ ;;
+            Linux) cp "$release"/bundle/deb/*.deb "$release"/bundle/appimage/*.AppImage out/ ;;
+          esac
+          cd out
+          for f in *; do
+            if command -v sha256sum >/dev/null; then sha256sum "$f"; else shasum -a 256 "$f"; fi
+          done > "SHA256SUMS-${{ matrix.name }}.txt"
+          cat "SHA256SUMS-${{ matrix.name }}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pier-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          draft: true
+          generate_release_notes: true

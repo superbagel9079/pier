@@ -44,7 +44,25 @@ function makeSetup(tab) {
   const select = $$(".setup-project");
   let data = null;
   let chosen = null;      // a project picked in the list, else the Pi in use
+  let shownProjects = ""; // what the project list holds now
   const editors = {};
+  const manager = makeResourceManager($$(".resource-manager"), () => data?.project || project(), () => { if (data) renderSummary(); });
+  const gitManager = makeGitManager($$(".git-manager"), () => data?.project || project());
+  const packageTools = makePackageTools($$(".package-tools"), () => data?.project || project(), () => manager.load());
+
+  // The four pages; the one chosen is remembered.
+  function showPage(page, initial = false) {
+    if (!["instructions", "skills", "packages", "git", "advanced"].includes(page)) page = "instructions";
+    for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.classList.toggle("active", b.dataset.page === page);
+    for (const section of tab.pane.querySelectorAll(".setup-page")) section.hidden = section.dataset.page !== page;
+    if (prefs.setupPage !== page) { prefs.setupPage = page; savePrefs(); }
+    // At creation the project is not known yet: the setup's arrival loads them (onSetup).
+    if (initial) return;
+    if (page === "packages") packageTools.shown();
+    if (page === "git") gitManager.shown();
+  }
+  for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
+  showPage(prefs.setupPage, true);
 
   const project = () => chosen || target?.path || select.value || "";
 
@@ -56,9 +74,15 @@ function makeSetup(tab) {
     for (const p of [...projects.running, ...projects.recent]) if (!options.some((o) => o.path === p.path)) options.push(p);
     // A project opened from Conversations may be neither running nor recent.
     if (chosen && !options.some((o) => o.path === chosen)) options.push({ path: chosen, label: chosen.replace(/^\/home\/[^/]+/, "~"), running: false });
-    select.innerHTML = "";
-    for (const p of options) select.add(new Option(`${p.running ? "[pi] " : ""}${p.label}`, p.path));
-    if (project()) select.value = project();
+    // Rebuilt only when the list itself changes: the projects arrive again each time a
+    // Pi starts or stops working, and rebuilding closed the list while one chose in it.
+    const key = JSON.stringify(options.map((p) => [p.path, p.label, Boolean(p.running)]));
+    if (key !== shownProjects) {
+      shownProjects = key;
+      select.innerHTML = "";
+      for (const p of options) select.add(new Option(`${p.running ? "[pi] " : ""}${p.label}`, p.path));
+    }
+    if (project() && select.value !== project()) select.value = project();
     // Following the Pi in use, or kept on a project chosen in the list.
     const follow = $$(".follow");
     follow.hidden = !chosen;
@@ -94,11 +118,24 @@ function makeSetup(tab) {
     return b;
   }
 
+  /** One line on what the project holds, and the counts on the page buttons. */
   function renderSummary() {
     const box = $$(".setup-summary");
     const n = data.conversations ?? 0;
+    const r = data.resources || {};
+    const managed = manager.data();
+    const skills = managed ? managed.skills : r.skills || [];
+    const off = managed ? skills.filter((s) => !s.enabled).length : 0;
+    const packages = (r.packages || []).length;
+    const facts = [
+      r.pi?.version && `Pi ${r.pi.version}`,
+      `${packages} package${packages === 1 ? "" : "s"}`,
+      `${skills.length} skill${skills.length === 1 ? "" : "s"}${off ? ` (${off} off)` : ""}`,
+      (r.mcp || []).length && `${r.mcp.length} MCP`,
+      `${n} conversation${n === 1 ? "" : "s"}`,
+    ].filter(Boolean);
     box.replaceChildren(
-      el("span", { className: "dim", textContent: `${n} conversation${n === 1 ? "" : "s"}` }),
+      el("span", { className: "dim", textContent: facts.join(" · ") }),
       link("open them in Conversations", "Its Pis and conversations: new, continue, stop", () => {
         const conversations = workspace.find("conversations") || workspace.add("conversations", "left");
         conversations?.focusProject?.(data.project);
@@ -229,10 +266,13 @@ function makeSetup(tab) {
     return false;
   }
 
-  /** What Pi loads besides itself (see pi_resources in the picker). */
+  /** Pi and its packages (Packages), MCP servers and the model (Advanced). Skills,
+   *  extensions and prompts are the manager's (Skills page, resources.js). */
   function renderResources() {
     const list = $$(".resources");
+    const advanced = $$(".advanced-list");
     list.innerHTML = "";
+    advanced.innerHTML = "";
     const r = data.resources;
     if (!r) return;
     const row = (kind, scope, name, detail, title, action) => el("li", { title: title || "" },
@@ -243,11 +283,16 @@ function makeSetup(tab) {
     const update = (label, args, title) => link("update", title, () => {
       workspace.add("update", workspace.find("main")?.dock || "center", { params: { label, args } });
     });
+    // Packages: compact rows, as on the Skills page.
+    const line = (name, detail, title, ...actions) => el("li", { title: title || "" },
+      el("span", { className: "name ellipsis", textContent: name }),
+      el("span", { className: "dim small ellipsis", textContent: detail || "" }),
+      actions.length ? el("span", { className: "row-actions" }, ...actions) : null);
     if (r.pi?.version) {
       const behind = newer(r.pi.latest, r.pi.version);
-      list.append(row("pi", "user", `Pi ${r.pi.version}`, behind ? `${r.pi.latest} available` : r.pi.latest ? "up to date" : "",
+      list.append(line(`Pi ${r.pi.version}`, behind ? `${r.pi.latest} available` : r.pi.latest ? "up to date" : "",
         "Pi itself. Running Pis keep their version until they restart.",
-        behind ? update("Pi", [], "pi update, in a terminal") : null));
+        ...(behind ? [update("Pi", [], "pi update, in a terminal")] : [])));
     }
     let outdated = 0;
     for (const p of r.packages) {
@@ -255,24 +300,30 @@ function makeSetup(tab) {
       const behind = p.installed !== false && newer(p.latest, p.version);
       outdated += behind ? 1 : 0;
       const detail = p.installed === false ? "not installed" : behind ? `v${p.version} → ${p.latest}` : p.version ? `v${p.version}` : "";
-      list.append(row("package", p.scope, name, detail, [p.source, p.description].filter(Boolean).join(": "),
-        behind ? update(name, [p.source], `pi update ${p.source}, in a terminal`) : null));
+      const remove = link("remove", `pi remove ${p.source}, in a terminal (in Pi's sandbox)`, async () => {
+        if (!(await ask(`Remove the package ${name}? Pi stops loading its skills and extensions at its next start.`))) return;
+        openPackageTerminal("remove", p.scope === "project" ? data.project : "user", p.source, name, () => manager.load());
+      });
+      list.append(line(name, [p.scope === "project" ? "this project" : "", detail].filter(Boolean).join(" · "),
+        [p.source, p.description].filter(Boolean).join(": "),
+        ...(behind ? [update(name, [p.source], `pi update ${p.source}, in a terminal`)] : []), remove));
     }
     if (outdated > 1) list.append(el("li", { className: "note small" }, update("all packages", ["--extensions"], "pi update --extensions, in a terminal")));
-    for (const [kind, label] of [["extensions", "extension"], ["skills", "skill"], ["prompts", "prompt"]]) {
-      for (const item of r[kind]) list.append(row(label, item.scope, item.name, "", `from ${item.from}`));
-    }
+    manager.loadFor(data.project);
+    if (prefs.setupPage === "git") gitManager.shown();
+    if (prefs.setupPage === "packages") packageTools.shown();
+    packageTools.installed(r.packages);
+    if (!r.packages.length) list.append(el("li", { className: "dim small note", textContent: "No package yet: install one, or find one in the gallery below." }));
     for (const server of r.mcp) {
-      list.append(row("MCP", server.scope, server.name, [server.kind, server.enabled ? "" : "off"].filter(Boolean).join(" · "),
+      advanced.append(row("MCP", server.scope, server.name, [server.kind, server.enabled ? "" : "off"].filter(Boolean).join(" · "),
         [server.description, `in ${server.from}`].filter(Boolean).join(" · ")));
     }
     const m = r.model || {};
     if (m.defaultModel) {
       const model = [m.defaultProvider, m.defaultModel].filter(Boolean).join(" / ");
-      list.append(row("model", "user", model, m.defaultThinkingLevel ? `thinking ${m.defaultThinkingLevel}` : "", `Pi's default model, from settings.json: ${model}`));
+      advanced.append(row("model", "user", model, m.defaultThinkingLevel ? `thinking ${m.defaultThinkingLevel}` : "", `Pi's default model, from settings.json: ${model}`));
     }
-    if (!list.children.length) list.append(el("li", { className: "dim small note", textContent: "Nothing added: Pi runs with its built-in tools only." }));
-    else if (!r.mcp.length) list.append(el("li", { className: "dim small note", textContent: "No MCP server: add one with pi mcp add on the VM." }));
+    if (!r.mcp.length) advanced.prepend(el("li", { className: "dim small note", textContent: "No MCP server: add one with pi mcp add on the VM." }));
   }
 
   function renderStartup() {
@@ -287,7 +338,7 @@ function makeSetup(tab) {
       );
       list.append(li);
     }
-    if (!data.startup.length) list.append(el("li", { className: "dim small", textContent: "No instructions file anywhere: Pi starts with its defaults only." }));
+    if (!data.startup.length) list.append(el("li", { className: "dim small note", textContent: "No instructions file anywhere: Pi starts with its defaults only." }));
     const trust = $$(".trust");
     trust.textContent = data.trusted === true
       ? "This project is trusted: Pi also reads its .pi/ settings and system prompt files."
@@ -322,7 +373,9 @@ function makeSetup(tab) {
   };
   tab.onProjects = (projects) => fillProjects(projects);
   const unlisten = vm.on("setup", onSetup);
-  tab.onClose = () => { unlisten(); vm.follow({ setup: null }); };
+  // A request of Pi (merge, new repository): the Git page shows it at once.
+  const unlistenApprovals = vm.on("approvals", () => { if (prefs.setupPage === "git" && tab.shown !== false) gitManager.load(); });
+  tab.onClose = () => { unlisten(); unlistenApprovals(); vm.follow({ setup: null }); };
   tab.onVisible = (shown) => { if (shown) load(); else vm.follow({ setup: null }); };
   fillProjects().then(load);
 }

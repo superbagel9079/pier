@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-const SKIP: &[&str] = &[".git", "node_modules", "target", "__pycache__", ".venv", "venv", ".DS_Store", "Thumbs.db"];
+pub const SKIP: &[&str] = &[".git", "node_modules", "target", "__pycache__", ".venv", "venv", ".DS_Store", "Thumbs.db"];
 
 /// The archive, and how many files it holds. Fails past `max_bytes` of file content.
 pub fn tar_folder(root: &Path, max_bytes: u64) -> Result<(Vec<u8>, usize)> {

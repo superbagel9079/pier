@@ -14,6 +14,7 @@ const KINDS = {
   pi: { title: "pi", terminal: true },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
+  takeback: { title: "take back", make: (tab) => makeTakeBack(tab) },
   logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
 };
 const DOCKS = ["left", "center", "right"];
@@ -61,8 +62,10 @@ const workspace = (() => {
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);
       const collapse = $(".collapse", dock.el);
-      collapse.textContent = (name === "right") === dock.collapsed ? "‹" : "›";
-      collapse.title = dock.collapsed ? "Expand" : "Collapse";
+      if (dock.peek) collapse.replaceChildren(pinIcon());
+      else collapse.textContent = (name === "right") === dock.collapsed ? "‹" : "›";
+      collapse.title = dock.peek ? "Keep this side open (otherwise it folds back when you go back to the terminals)"
+        : dock.collapsed ? "Expand" : "Collapse";
     }
     const bar = $(".tabs", dock.el);
     bar.innerHTML = "";
@@ -76,12 +79,15 @@ const workspace = (() => {
       if (tab.shown !== !tab.pane.hidden) {
         tab.shown = !tab.pane.hidden;
         tab.onVisible?.(tab.shown);
+        // Only a terminal just shown is fitted here; the others follow their size on
+        // their own (a ResizeObserver in terminal.js). Fitting every terminal at every
+        // redraw reflowed all their histories.
+        if (tab.shown) tab.refit?.();
       }
     }
     const panes = $(".panes", dock.el);
     $(":scope > .empty", panes)?.remove();
     if (!dock.tabs.length) panes.append(emptyDock(name));
-    for (const t of tabs()) t.refit?.();
   }
 
   function renderAll() {
@@ -113,7 +119,8 @@ const workspace = (() => {
     const dock = docks[tab.dock];
     const items = [["Rename…", () => rename(tab)], null];
     for (const name of DOCKS) items.push([`Move to the ${DOCK_NAMES[name]}`, () => move(tab, name), tab.dock === name]);
-    if (dock.side) items.push(["Collapse this side", () => { dock.collapsed = true; render(tab.dock); save(); }, dock.collapsed]);
+    if (dock.side && dock.peek) items.push(["Keep this side open", () => keepOpen(tab.dock)]);
+    if (dock.side) items.push(["Collapse this side", () => { dock.peek = false; dock.collapsed = true; render(tab.dock); save(); }, dock.collapsed]);
     if (KINDS[tab.kind].terminal) {
       items.push(null,
         [`New ${tab.kind} terminal`, () => add(tab.kind, tab.dock)],
@@ -286,10 +293,32 @@ const workspace = (() => {
   }
 
   /** A click on a tab shows it. Collapsing a side is its own button (‹ ›) or the
-   *  tab's right-click menu: a click meant to look at a tab never hides the panel. */
+   *  tab's right-click menu: a click meant to look at a tab never hides the panel.
+   *  On a collapsed side, the click unfolds it for a look ("peek"): it folds back once
+   *  you are back on the terminals (see foldPeeks), unless you keep it open (the pin button). */
   function clickTab(tab) {
+    const dock = docks[tab.dock];
+    if (dock.side && dock.collapsed) dock.peek = true;
     show(tab);
     save();
+  }
+
+  function keepOpen(name) {
+    docks[name].peek = false;
+    render(name);
+    save();
+  }
+
+  /** The sides unfolded for a look, folded again. */
+  function foldPeeks() {
+    for (const name of DOCKS) {
+      const dock = docks[name];
+      if (!dock.peek) continue;
+      dock.peek = false;
+      dock.collapsed = true;
+      render(name);
+      save();
+    }
   }
 
 
@@ -383,17 +412,58 @@ const workspace = (() => {
 
   // --- side controls ---
 
+  /** A pin, drawn in the text's colour like the other icons (never a coloured emoji). */
+  function pinIcon() {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    for (const [k, v] of Object.entries({ viewBox: "0 0 16 16", width: "13", height: "13", fill: "none", stroke: "currentColor",
+      "stroke-width": "1.4", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+    for (const d of ["M5.5 2h5", "M6.5 2v4L4.5 8.5h7L9.5 6V2", "M8 8.5V14"]) {
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", d);
+      svg.append(path);
+    }
+    return svg;
+  }
+
+  // Back on the terminals, a side unfolded for a look folds again: as soon as the
+  // pointer is there when the focus follows the mouse, at the next click otherwise.
+  const center = docks.center.el;
+  center.addEventListener("pointerenter", (e) => {
+    if (prefs.focusFollowsMouse && e.buttons === 0) foldPeeks();
+  });
+  center.addEventListener("pointerdown", () => foldPeeks(), true);
+
   for (const name of DOCKS) {
     const dock = docks[name];
     $(".add", dock.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));
     if (!dock.side) continue;
     $(".collapse", dock.el).addEventListener("click", () => {
+      if (dock.peek) { keepOpen(name); return; } // the pin: the look becomes the layout
       dock.collapsed = !dock.collapsed;
       render(name);
       if (!dock.collapsed) dock.active?.onShow?.();
       save();
     });
+    // Dragging the divider changes one width per frame, at most. The terminals are not
+    // fitted here: their ResizeObserver does it once the size rests (terminal.js), so a
+    // drag no longer reflows every history at every pixel.
     let resizing = false;
+    let frame = 0;
+    let lastX = 0;
+    const applyWidth = () => {
+      frame = 0;
+      const box = $("#workspace").getBoundingClientRect();
+      const width = name === "left" ? lastX - box.left : box.right - lastX;
+      dock.width = Math.round(Math.min(box.width * 0.6, Math.max(220, width)));
+      dock.el.style.setProperty("--width", `${dock.width}px`);
+    };
+    const stopResizing = () => {
+      if (!resizing) return;
+      resizing = false;
+      dock.splitter.classList.remove("dragging");
+      save();
+    };
     dock.splitter.addEventListener("pointerdown", (e) => {
       resizing = true;
       dock.splitter.classList.add("dragging");
@@ -401,22 +471,16 @@ const workspace = (() => {
     });
     dock.splitter.addEventListener("pointermove", (e) => {
       if (!resizing) return;
-      const box = $("#workspace").getBoundingClientRect();
-      const width = name === "left" ? e.clientX - box.left : box.right - e.clientX;
-      dock.width = Math.round(Math.min(box.width * 0.6, Math.max(220, width)));
-      dock.el.style.setProperty("--width", `${dock.width}px`);
-      for (const t of tabs()) t.refit?.();
+      lastX = e.clientX;
+      if (!frame) frame = requestAnimationFrame(applyWidth);
     });
-    dock.splitter.addEventListener("pointerup", () => {
-      resizing = false;
-      dock.splitter.classList.remove("dragging");
-      save();
-    });
+    dock.splitter.addEventListener("pointerup", stopResizing);
+    dock.splitter.addEventListener("pointercancel", stopResizing);
+    dock.splitter.addEventListener("lostpointercapture", stopResizing);
     // A double click on the divider: back to the usual width.
     dock.splitter.addEventListener("dblclick", () => {
       dock.width = defaultLayout()[name]?.width || (name === "left" ? 320 : 400);
       dock.el.style.setProperty("--width", `${dock.width}px`);
-      for (const t of tabs()) t.refit?.();
       save();
     });
     dock.splitter.title = "Drag to resize; double-click for the usual width";
@@ -428,7 +492,7 @@ const workspace = (() => {
     const saved = {};
     for (const name of DOCKS) {
       const dock = docks[name];
-      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
+      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed || Boolean(dock.peek), width: dock.width };
     }
     // Names given by the user, for the tabs that come back at the next connection.
     saved.knowsSetup = true;

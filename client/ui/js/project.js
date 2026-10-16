@@ -252,8 +252,8 @@ function makeProject(tab) {
       const f = activity.files[rel];
       const badge = $(":scope > .node > .badge", li);
       const git = $(":scope > .node > .git", li);
-      badge.textContent = f ? STATES[f.state].mark : li.classList.contains("dir") && touchedDirs.has(rel) ? "•" : "";
-      badge.className = "badge" + (f && STATES[f.state].live ? " live-dot" : "");
+      badge.textContent = f ? (STATES[f.state]?.mark ?? "?") : li.classList.contains("dir") && touchedDirs.has(rel) ? "•" : "";
+      badge.className = "badge" + (f && STATES[f.state]?.live ? " live-dot" : "");
       git.textContent = activity.git[rel] || "";
     }
   }
@@ -312,7 +312,7 @@ function makeProject(tab) {
     pointsData = data;
     const notes = [];
     if (!pointsData.git) notes.push("git is missing on the VM, and restore points need it: sudo apt install git.");
-    else if (!pointsData.enabled) notes.push("Restore points are turned off on the VM (checkpoints = false in ~/.config/pi-dir-picker/config.toml).");
+    else if (!pointsData.enabled) notes.push("Restore points are turned off on the VM (checkpoints = false in ~/.config/pier-picker/config.toml).");
     if (notes.length) note(notes.join(" "));
     renderPoints();
   }
@@ -354,7 +354,7 @@ function makeProject(tab) {
       }
       const list = el("ul", { className: "changes" });
       for (const change of diff.changes) {
-        const [mark, title] = CHANGE_MARKS[change.change];
+        const [mark, title] = CHANGE_MARKS[change.change] || ["?", String(change.change)];
         const row = el("li");
         row.title = title;
         const actions = el("span", { className: "row-actions" });

@@ -1,8 +1,8 @@
-# pi-tui: the picker and Pier
+# Pier and its picker
 
 Two tools for working with **Pi**, a command-line coding agent, installed on a remote Linux VM and used from a laptop.
 
-- **The picker** (`pi-dir-picker.py`, installed on the VM as `~/bin/pi-pick`): a terminal screen to choose a folder and start Pi in it.
+- **The picker** (`pier-picker.py`, installed on the VM as `~/bin/pi-pick`): a terminal screen to choose a folder and start Pi in it.
 - **Pier** (`client/`): a desktop app for Windows, macOS and Linux. One window holds the VM's terminal, sending images and files to Pi, sharing folders from the PC, and following what the agent does.
 
 The starting idea: **the agent runs on the VM, not on the laptop.** The laptop is only a window onto the VM, as a browser is for Claude. You can close it, switch it off, lose the Wi-Fi: Pi carries on.
@@ -129,7 +129,7 @@ When you start Pi, the picker opens it in a **tmux session of the project's own*
 - The tmux bar is discreet and recalls `ctrl-b d`. It shows `[sandbox]` when the sandbox is on.
 - When tmux is not installed, the picker offers to install it (with `sudo`, which asks for your password itself), or to start Pi without tmux.
 - **Extended keys** are on for this tmux server (`extended-keys`, in `csi-u` form, as Pi recommends): Shift+Enter makes a new line in Pi.
-- **This tmux server has its own configuration,** written by the picker to `~/.local/state/pi-dir-picker/tmux.conf`; your `~/.tmux.conf` is not read. It is applied again whenever a Pi opens, to a server started earlier too. It serves the "plain ssh" way (the picker in Windows Terminal): the mouse belongs to tmux (the wheel scrolls back through the history tmux keeps, a drag selects and copies), what tmux or Pi copies reaches the terminal's clipboard (OSC 52), and the bottom bar uses only palette colours (grey text, no background).
+- **This tmux server has its own configuration,** written by the picker to `~/.local/state/pier-picker/tmux.conf`; your `~/.tmux.conf` is not read. It is applied again whenever a Pi opens, to a server started earlier too. It serves the "plain ssh" way (the picker in Windows Terminal): the mouse belongs to tmux (the wheel scrolls back through the history tmux keeps, a drag selects and copies), what tmux or Pi copies reaches the terminal's clipboard (OSC 52), and the bottom bar uses only palette colours (grey text, no background).
 - **In Pier, Pi does not go through tmux's screen** (see [Terminals](#part-iv-terminals)): Pier attaches in "control mode". tmux keeps Pi alive but draws nothing; it passes Pi's output on as it is, and Pier displays it. So in the picker started by Pier, `p` (and `N`, `c`, `r`) opens Pi **in a Pier tab** instead of attaching to it itself.
 
 ### Part IV. Pi in "regular" mode (recommended)
@@ -150,7 +150,7 @@ By default, Pi runs in **bubblewrap**. See [Security](#chapter-v-security).
 
 ### Part VI. Configuration
 
-Optional, in `~/.config/pi-dir-picker/config.toml`. A commented template is in [config.example.toml](config.example.toml).
+Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [config.example.toml](config.example.toml).
 
 | Key | Purpose | Default |
 |---|---|---|
@@ -166,12 +166,16 @@ Optional, in `~/.config/pi-dir-picker/config.toml`. A commented template is in [
 | `sandbox_read`, `sandbox_write` | more folders Pi may read, or write | `[]` |
 | `checkpoints` | restore points before each prompt | `true` |
 | `track_sessions` | each Pi tells Pier which conversation it holds (an extension Pier gives it) | `true` |
+| `git_tools` | Pi gets git tools for the forge (push, pull requests), through the picker (see [Git](#part-xiii-git-pi-with-a-repository-as-a-developer)) | `true` |
+| `worktrees` | in a git project, a Pi beside another works in a worktree of its own | `true` |
+| `network_limit` | in the sandbox, Pi reaches only its model providers, npm, GitHub, PyPI and `network_allow` (see [Security](#chapter-v-security)) | `true` |
+| `network_allow` | more places Pi may reach: `"host"`, `"host:port"`, `".domain"`, `"127.0.0.1:8080"` | `[]` |
 
 Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the PATH, and `PI_PICKER_SANDBOX=0`, which turns the sandbox off (the test suite uses it).
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 11 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 15 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -186,6 +190,10 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `handoff`, `--download` | Hand off and Take back |
 | `activity`, `diff` | what Pi reads and changes, its diffs, its cost |
 | `setup`, `write-text` | a project's instructions, what Pi reads at startup and what it loads |
+| `resources`, `toggle-resource`, `skill-new`, `skill-read`, `skill-write`, `skill-delete`, `skill-import`, `gallery` | skills, extensions and prompts: listed with their state, turned on or off, local skills made, edited, put in the bin or imported; the gallery |
+| `worktrees`, `worktree-remove` | the Pis' worktrees of a project, and removing one |
+| `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
+| `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
 | `checkpoints`, `checkpoint`, `checkpoint-diff`, `restore` | restore points: list, make one, what changed since, go back |
 | `log` | the end of the picker's log |
@@ -197,15 +205,17 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 
 #### B. The `watch` command
 
-Before, each Pier tab asked for its state again every 2.5 to 15 seconds, each time with a new SSH command starting Python. Now one command stays open for the whole connection. Pier tells it what it follows (the projects, a conversation's activity, a project's setup, its restore points, the conversations, the contents of Context, the log), and it sends a part **only when it changed**. It looks at the size and time of the files concerned first: a Pi starting, finishing or changing a file shows within a second, and nothing travels when nothing moves. A tab is followed only while it is shown. Pi's conversation files, which keep growing, are read again only from where the last reading stopped, and a part whose inputs keep moving (a working Pi) is rebuilt at most every few seconds. If the connection drops, Pier opens it again by itself.
+Before, each Pier tab asked for its state again every 2.5 to 15 seconds, each time with a new SSH command starting Python. Now one command stays open for the whole connection. Pier tells it what it follows (the projects, a conversation's activity, a project's setup, its restore points, the conversations, the contents of Context, the log), and it sends a part **only when it changed**. It looks at the size and time of the files concerned first: a Pi started by Pier starting, finishing or changing a file shows within a second, and nothing travels when nothing moves. What leaves no such trace is caught by a slower round: a Pi started without Pier's extension (within 5 seconds), a file changed on disk by a command rather than by Pi's tools (within 10 seconds). While a Pi works, its activity is rebuilt at most every 1.5 seconds. A tab is followed only while it is shown. Pi's conversation files, which keep growing, are read again only from where the last reading stopped, and a part whose inputs keep moving (a working Pi) is rebuilt at most every few seconds. If the connection drops, Pier opens it again by itself.
 
 ---
 
 ## Chapter IV. Pier
 
+The picker used to be called **pi-dir-picker**. Its folders on the VM (`~/.config/pi-dir-picker`, `~/.local/state/pi-dir-picker`) move to the new name by themselves the first time a newer picker runs, and a link stays at the old place for the Pis started before. Its tmux server keeps the old name for as long as it runs (Pis started before stay found), and takes the new one when it next starts.
+
 Pier used to be called **devbox** (the name was already taken by a well-known tool). Whatever holds data kept the old name, so that nothing is lost: the settings and logs folder (`app.devbox.client`), the interface's preferences, and on the VM the restore points and the history of the instructions (`.pi/devbox-history`).
 
-A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 6.5 MB.
+A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 7 MB.
 
 ### Part I. Connecting
 
@@ -216,13 +226,13 @@ A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and Java
 
 ### Part II. The picker, shipped with Pier
 
-The exe contains the picker (`pi-dir-picker.py`, built in at compile time). At each connection, Pier compares the VM's version with its own:
+The exe contains the picker (`pier-picker.py`, built in at compile time). At each connection, Pier compares the VM's version with its own:
 
 - **The picker is missing** (first connection): Pier offers to install it, where the picker command points (`~/bin/pi-pick` by default). The VM only needs Python 3.
 - **It is older**: Pier updates it by itself, unless that setting is turned off in the Settings.
 - **It is newer than Pier**: Pier says so, and still offers to install its own version.
 
-The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
+The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. The picker itself goes to `pi-pick.lib/pier_picker.py`, and `pi-pick` is a small launcher that imports it: Python then keeps it compiled, instead of compiling its 5000 lines at every call (about 60 to 100 ms saved on each call Pier makes). `pi-pick.previous` is always a whole picker, which runs by itself. A picker copied by hand to `~/bin/pi-pick` still works as before. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
 
 ### Part III. The workspace
 
@@ -251,6 +261,7 @@ After that, any tab can go to any zone:
 - **The width of the sides** is set by dragging the divider; it is kept for each side. A double click on the divider restores the usual width.
 - **Tabs share the bar:** their names shorten ("…", the full name on hover) before the bar scrolls. The active tab keeps its whole name, and only it and the one under the pointer show ×. Everything else (rename, move, collapse, close) is in the right-click menu.
 - **The sides collapse** with the ‹/› button or a tab's right-click menu (Collapse this side). A click on a tab only shows it; it never collapses the side.
+- **On a collapsed side, a click on a tab unfolds it for a look.** It folds back once you are back on the terminals: as soon as the pointer is over them when the focus follows the mouse (Settings > Terminals), at your next click on them otherwise. **the pin button** (in place of ‹/› while it is unfolded), or Keep this side open in the tab's right-click menu, keeps it open instead. The layout saved stays collapsed until then.
 - **Right-clicking a tab** offers:
   - **Rename** (the name is kept);
   - **Move** to the left, the centre or the right;
@@ -280,7 +291,7 @@ They are real terminals on the VM, going through the SSH connection already open
 - **Right-click** opens Pier's menu: Copy, Paste, Select all, Clear scrollback, Restart, New terminal. Also in Pi's tmux.
 - **Ctrl+ and Ctrl-** make the terminals' text bigger or smaller, **Ctrl+0** goes back to the default size.
 - **Pi tabs talk to tmux in "control mode"** (`tmux -C`), like iTerm2 on the Mac: tmux keeps Pi alive on the VM (it survives disconnections) but draws nothing; it passes Pi's output on as it is, and Pier's terminal shows it as if Pi ran on the PC. With Pi in regular mode, **the whole conversation is in Pier's history**: the wheel scrolls it on the PC, without a round trip to the VM, and the selection, Ctrl+Shift+C and the right-click menu are Pier's. On opening, Pier makes Pi redraw (two sizes in a row), which brings back the conversation already written. No tmux bar in these tabs, but **`Ctrl-b d` detaches** as in tmux (the tab closes, Pi carries on; `Ctrl-b` followed by another key reaches Pi as typed). Closing the tab detaches too. **When Pi ends** (`Ctrl+D`, `/exit`), its tab closes with it. **When the connection drops**, the tab stays and comes back by itself once Pier is reconnected.
-- **When Pi copies by itself,** the text reaches the PC's clipboard, only right after a key typed in that tab: a program on the VM may **write** to the clipboard then, and never **read** it.
+- **When Pi copies by itself,** the text reaches the PC's clipboard only within 2 seconds of a key pressed or a click in that tab, once per key or click, and a note shows the start of what was copied: a program on the VM may **write** to the clipboard then, and never **read** it. The terminal's own automatic replies (cursor position, mouse reports) do not count as a key.
 - **Links** shown by a program (OSC 8) are never opened, only copied, to paste in a browser after reading them.
 - **A program that takes the mouse** (Pi in fullscreen mode, `htop`…) receives the clicks; **Shift+drag** still selects in Pier.
 - **As responsive as plain ssh:** the connection turns off Nagle's algorithm, as OpenSSH does for interactive sessions (otherwise each key could wait up to 200 ms), and what the VM sends at once is handed to the terminal in one message, instead of one per SSH packet. While a divider is dragged, only the final size reaches the VM. With detailed logs, Pier notes the VM's response time to keys (`ui.term-latency`, median and 90th percentile).
@@ -329,6 +340,7 @@ Then Pier disconnects, and the PC can be switched off.
 #### B. Take back
 
 **Take back**, on your return, from Context:
+- **review changes** opens a tab that compares Pi's copy with your folder, file by file (by their SHA-256, on both sides): **changed**, **new** and **deleted** by Pi. A click on a file shows its difference (yours `-`, Pi's `+`). Check what to bring back, then **Bring back the checked files**: only those are written into your folder. Changed and new files come checked, files Pi deleted do not. Every file replaced or deleted is first moved to a folder next to yours, `mockups (before Pi's changes 2026-10-16 10-32)`: nothing is lost. Links in the copy are never brought back, nor names Windows would read otherwise (`C:x`, `a:b`, `NUL`…), and every file brought back gets the "came from the Internet" mark;
 - **download** saves Pi's version in a **new folder** next to the original, `mockups (from Pi)`: nothing is overwritten. The download is capped (600 MB received, 2 GB unpacked), links and special files are skipped, and every file gets the "came from the Internet" mark, so Windows warns before opening or running it;
 - **share live** shares the original folder live again, in place of the copy;
 - **×** deletes the copy.
@@ -361,7 +373,7 @@ The project is saved **when Pi starts**, **when each prompt arrives** (before Pi
 
 #### B. How it works
 
-- The points are kept **outside the project**, in a git repository of their own per project (`~/.local/state/pi-dir-picker/checkpoints/`). **The project's git is never touched**, and Pi, in its sandbox, does not see that folder.
+- The points are kept **outside the project**, in a git repository of their own per project (`~/.local/state/pier-picker/checkpoints/`). **The project's git is never touched**, and Pi, in its sandbox, does not see that folder.
 - git stores each version of a file once: a point costs only what changed. The latest 50 points are kept per project.
 - That repository reads none of your git configuration: no hook, filter or fsmonitor runs.
 - **Not saved:** what `.gitignore` leaves out (node_modules, build, `.env`…), what was given to Pi (`.pi-images`, `.pi-files`, the shares), files over 50 MB, and files that cannot be read (they are skipped, the rest is saved).
@@ -380,7 +392,7 @@ Pier and the picker each write a log, **one line per event**, in the same format
 ```
 
 - **On the PC** (`%LOCALAPPDATA%\app.devbox.client\logs\pier.log`): connection and reconnections, every call to the VM (duration, error), terminals opened and closed, shares, Hand off, picker installation, interface errors and every error message shown.
-- **On the VM** (`~/.local/state/pi-dir-picker/picker.log`): every API command, Pi starting and stopping (with its exit status), restore points, crashes **with their traceback**.
+- **On the VM** (`~/.local/state/pier-picker/picker.log`): every API command, Pi starting and stopping (with its exit status), restore points, crashes **with their traceback**.
 - **A call carries the same `req=…` in both logs:** an action can be followed end to end.
 - **Never in the logs:** passwords, what is typed in a terminal, what is typed into Pi (only its length), file contents.
 - **Detailed logs** (Settings) adds the detail lines, on both sides: the reads repeated every few seconds, terminal sizes, the steps of the SSH connection.
@@ -405,7 +417,7 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
   - its date and its number of messages;
   - what it cost: in dollars when the model has a price in Pi, else in tokens (for the 300 most recent);
   - its category.
-- **Actions:** **continue** starts a Pi on it. **⋯** gives it a **name** and a **category**, **pins** it or **archives** it: it leaves the lists, but can still be found by the search and with the **archived** box. Pier keeps these in `~/.local/state/pi-dir-picker/labels.json`; Pi's files are not touched.
+- **Actions:** **continue** starts a Pi on it. **⋯** gives it a **name** and a **category**, **pins** it or **archives** it: it leaves the lists, but can still be found by the search and with the **archived** box. Pier keeps these in `~/.local/state/pier-picker/labels.json`; Pi's files are not touched.
 - **Recovery after an outage:** if the VM restarted while Pi was working, the project shows a **continue where it stopped** banner.
 - **The search** covers every conversation of every project (name, question, category), archived ones included.
 
@@ -413,7 +425,14 @@ Pier reads Pi's sessions folder (`~/.pi/agent/sessions`). The view is only updat
 
 ### Part XII. The Setup tab: a project's configuration, as in Claude Projects
 
-For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top says how many conversations the project has, with **open them in Conversations**.
+For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top sums the project up (Pi's version, packages, skills and how many are off, MCP servers, conversations, with **open them in Conversations**), then four pages, the one chosen being remembered:
+
+- **Instructions:** `AGENTS.md` and, folded, what Pi reads at startup;
+- **Skills:** skills, extensions and prompt templates, with a filter and **+ Add**;
+- **Packages:** Pi, the packages, **Install a package…** and the gallery;
+- **Advanced:** MCP servers, the default model, and Pi's system prompt.
+
+What each page holds:
 
 - **Instructions (`AGENTS.md`)**, read at the start of each session. The editor offers:
   - a **token counter** (this text is read again at every session);
@@ -429,27 +448,76 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
   The tab also says whether the project is **trusted** in Pi. Untrusted, the files of `.pi/` are ignored.
 - **What Pi loads**: what Pi loads besides itself, yours (`~/.pi/agent`) and the project's (`.pi/`):
   - **Pi itself**, its version and the latest published one, with **update** when a newer one exists;
-  - the **packages** of `settings.json` (`npm:…`, `git:…` or a path), with their version, or "not installed". An npm package behind gets **update**, and **update all packages** appears when there are several;
-  - the **extensions**, **skills** and **prompts** (their folders, and the paths given in `settings.json`);
+  - the **packages** of `settings.json` (`npm:…`, `git:…` or a path), with their version, or "not installed". An npm package behind gets **update**, and **update all packages** appears when there are several; **remove** runs `pi remove`;
+  - the **skills**, **extensions** and **prompts**, yours and the project's, local or from a package, each with a **checkbox**: unchecked, Pi leaves it out at its next start (nothing is deleted). Pier writes it as `pi config` does, `-skills/name/SKILL.md` in the list of `settings.json` (or of the package's entry there);
   - the **MCP servers**, which Pi 1.x connects itself: `~/.pi/agent/mcp.json` (yours) and the project's `.pi/mcp.json` (read only once the project is trusted), with their type (stdio or http) and whether they are off;
   - the default model.
 
-  The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pi-dir-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add a package or an MCP server on the VM: `pi install npm:…`, `pi mcp add …`.
+  The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pier-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add an MCP server on the VM: `pi mcp add …`.
+
+  On the Skills page, one line each, under "Yours" and "This project"; a skill left out has its name dimmed. **+ Add** offers, each asking for you (every project) or this project only:
+  - **New skill…**: a skill of your own, made from a template (`name` and `description` in its front matter), then opened to edit;
+  - **Import a skill from this computer…**: a folder holding a `SKILL.md`, copied into the skills (under the name it declares);
+  - **Install a package…**: as on the Packages page.
+
+  A local skill has **⋯** (shown under the pointer): **Edit its SKILL.md…** (Ctrl+S saves) and **Put it in the bin**, a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
+
+  On the Packages page: **Install a package…**, a source (`npm:…`, `git:…`, `https://…`) installed by `pi install` (`-l` for the project) in a tab where it runs, visible; and the **gallery**, the packages tagged `pi-package` on npm (those of pi.dev/packages), searched from the VM as you type, with **install**.
+
+  A package's extensions run code with your rights when Pi starts, and skills can tell Pi to do anything: look at a package before installing it. `pi install` and `pi remove` run in Pi's sandbox (when it is on), network limited as Pi's: npm's install scripts see `~/.pi` and the project only. A package from a site outside `network_allow` needs it added there first.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).
 
-### Part XIII. Notifications and shortcut
+### Part XIII. Git: Pi with a repository, as a developer
+
+A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea / Forgejo**, in **Setup > Git**. Pi then works as a developer of the team: it commits, branches and merges locally as it likes (that is plain git, in its sandbox), pushes its branches and opens pull requests by itself, and asks when something more is needed.
+
+#### A. Connecting
+
+- **Connect an account…**: the forge, its address, and a token. GitHub: a fine-grained token limited to the repositories Pi works on, with *Contents* and *Pull requests* in read and write (*Administration* too, to let Pi create repositories). GitLab: a token with the `api` scope (a project access token limits it to one project). Gitea / Forgejo: a token with read and write on repositories. Pier checks it with the forge before keeping it.
+- **Connect a repository…** (`owner/name`) or **Create a repository…** (private by default). The project becomes a git repository if it is not one yet.
+- The page then shows the repository, the branch checked out, the **open pull requests** with their checks (✓ passed, ✗ failed, … running), and for each one **copy link** and **merge ▾** (merge, squash and merge, rebase and merge).
+
+#### B. What Pi can do, and what waits for you
+
+Pi gets git tools (from a small extension, `~/.pi/pier/pier-git.ts`, like the one that says which conversation it holds): `git_repo_info`, `git_push`, `git_pull`, `open_pull_request`, `list_pull_requests`, `pull_request_status`, `request_merge`, `create_repository`.
+
+| Pi asks to | What happens |
+|---|---|
+| push a branch | only branches named `pi/…` (the default branch only while the repository is still empty), never forced: a rewritten branch is refused by the forge |
+| fetch | the forge's branches land in `origin/*` in the project; Pi merges or rebases itself |
+| open, list, read pull requests | done at once |
+| **merge** a pull request | **never by itself**: the request appears in **Setup > Git > Waiting for you**, with a Windows notification, and is done only when you click **approve**. So "merge it" said to Pi works, and an instruction hidden in a file cannot merge anything |
+| create a repository | the same: waits for your approval |
+
+You can also merge yourself from the list of pull requests, at any time.
+
+#### C. Several Pis: one worktree each
+
+Two Pis in the same folder would step on each other's files. In a git project, the first Pi works in the folder itself, and every other one in a **worktree** of its own, `.pi-worktrees/<its tmux session>`, on a branch `pi/agent-N-…`: each works on its branch, and they come together by merges or pull requests, as a team does.
+
+- What is given to a Pi (`.pi-images`, `.pi-files`, `.pi-shared`) is reached from its worktree through links, so pasted images and files work as before.
+- When its Pi ends (or is stopped) without having changed or committed anything, the worktree goes, with its branch. Otherwise it stays, listed in **Setup > Git > Pis' worktrees** (its branch, the files changed, the commits ahead), until you **remove** it; its branch stays either way.
+- `.pi-worktrees` is left out of git (its own `.gitignore`, and the repository's `info/exclude`) and of the restore points.
+- `worktrees = false` in the picker's config turns this off.
+- Known: the worktree holds its own copy of the project's `AGENTS.md`, so a Pi there reads it twice (the worktree's and the folder's); and Activity shows its files under `.pi-worktrees/…`.
+
+#### D. Why the token is safe
+
+The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. git receives the token in its environment, never on a command line, and it is never written to a log.
+
+### Part XIV. Notifications and shortcut
 
 - **A Windows notification** when a Pi goes from "working" to "idle", for every Pi started. Nothing shows when Pier is already in front.
 - **Ctrl+Alt+V,** from any application: sends the clipboard's image or files to Pi. When another program already uses it, the Settings say so.
 - **One Pier at a time:** starting it again brings the running one forward (even minimised to the notification area) instead of opening a second one.
 - **Closing the window** leaves Pier in the notification area. To quit it: right-click the icon, then Quit.
 
-### Part XIV. Settings (once connected)
+### Part XV. Settings (once connected)
 
 The categories in a column on the left, the page on the right; the window opens again on the last page shown.
 
 - **Layout:** which side the panels go to (Panels), where each tab lives, and Reset layout.
-- **Appearance:** theme and terminal font size. Built-in themes: Pier dark/light (or "follow the system"), One Dark, Dracula, Nord, Gruvbox, Tokyo Night, Catppuccin Mocha, Solarized dark/light, GitHub Light. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
+- **Appearance:** theme, and for the terminals: font size, font (any monospaced font installed on this computer; the list offers the usual ones found here, and a font missing falls back to Cascadia Mono, with a note), and the space around their text (0 to 40 px, 8 by default; the scrollbar stays against the edge). Built-in themes: Pier dark/light (or "follow the system"), One Dark, Dracula, Nord, Gruvbox, Tokyo Night, Catppuccin Mocha, Solarized dark/light, GitHub Light. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
   - **Import a VS Code or Zed theme…:** takes the `.json` of a VS Code theme (the extension's `themes/` folder, comments accepted) or a Zed theme (zed.dev/themes, `~/.config/zed/themes`; a Zed file can hold several themes, all are added). Missing colours are derived from the others.
   - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes.
 - **Terminals:** the copy and paste keys, copying on selection or with Ctrl+Shift+C, focus following the mouse, drawing by the graphics card.
@@ -474,16 +542,18 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Password** | Kept in memory only, never written to disk, forgotten when the address or user changes. It can never end up in a URL: the forms cannot be submitted to an address. |
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
-| **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run/user` is hidden (no session bus, no systemd), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
+| **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
+| **Pi and git** | Pi pushes only `pi/…` branches, never forced, and opens pull requests; merging or creating a repository waits for the user's approval in Pier. The forge's token never enters the sandbox: the picker holds it and pushes from a mirror of its own, after fetching Pi's commits in git's jail. |
+| **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only its model providers, npm, GitHub, PyPI and what `network_allow` adds, through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
-| **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. |
+| **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. `~/.pi` is Pi's to write: a link put in place of the key is not followed (only a plain file is read). |
 | **Shared folders** | Confined to the folder chosen: no `..`, no link leaving it, no tricky Windows path; what cannot be checked is refused. Read-only by default, and a confirmation for writing. |
 | **Archives received** (folder copies) | Extracted with Python's safety filter: no path leaving, no dangerous link, no special file. Size and number of files capped. |
-| **git on a project** | Run in a sandbox of its own: a project's `.git/config` is Pi's to write, and a filter declared there could otherwise run as you. In there, git only reads the repository, without network. No fsmonitor, no external diff program, no `textconv`. |
-| **Picker writes in folders Pi controls** | Through a temporary file with an unpredictable name; a folder replaced by a link to elsewhere is refused. A file removed by a restore is removed without following links. What a Pi says (its conversation) is accepted only if it is one of Pi's conversation files. |
+| **git on a project** | Run in a sandbox of its own: a project's `.git/config` is Pi's to write, and a filter declared there could otherwise run as you. In there, git only reads the repository, without network. No fsmonitor, no external diff program, no `textconv`. That sandbox shows the project only; the `.git` file of a worktree or a submodule (Pi's to write too) can add only a real git folder inside another repository's `.git`. |
+| **Picker writes in folders Pi controls** | Through a temporary file with an unpredictable name, in a folder reached through file descriptors from the project down, without following links: a folder replaced by a link to elsewhere, even meanwhile, is refused. A folder copy or a Hand off is unpacked in the picker's own folder, out of Pi's reach, then moved in. What the picker reads there (conversations, what a Pi says, git's files, a README) must be a plain file, never a FIFO or a device, and a conversation file must stay in Pi's sessions folder. A file removed by a restore, and whatever Context takes back (×, Clear), is removed walking down from home without following links: a folder swapped for a link meanwhile stops it. Setup does not read an `AGENTS.md` or `SYSTEM.md` that leads out of the project, and never copies one into its history. What a Pi says (its conversation) is accepted only if it is one of Pi's conversation files. |
 | **What the interface may ask of the VM** | Only a closed list of commands. Pi's arguments are filtered: only `--new`, `--continue`, `--session` with a session file and `--slot` with a tmux session name are accepted. |
-| **Commands sent to the VM** | Each argument is quoted for the shell, and the whole line travels in base64 and is run by `/bin/sh`, whatever the login shell (fish reads quotes differently). All paths are checked to stay in home. |
-| **What the VM sends the PC** | A program on the VM can fill the clipboard (OSC 52) only right after a key typed in its tab. Links are never opened. An answer is limited to 64 MB, and a tmux line to 8 MB. Pi cannot fake Pier's own messages in its output. |
+| **Commands sent to the VM** | Each argument is quoted for the shell, and the whole line travels in base64 and is run by `/bin/sh`, whatever the login shell (fish reads quotes differently). All paths are checked to stay in home. What is typed into Pi, and the files of a restore, go on the command's input instead: on its command line, any user of the VM could read them (`ps`), and a line holds 128 KB at most. |
+| **What the VM sends the PC** | A program on the VM can fill the clipboard (OSC 52) only right after a real key or click in its tab, once per key or click, and the note shows what. Links are never opened. An answer is limited to 64 MB, and a tmux line to 8 MB. Pi cannot fake Pier's own messages in its output. |
 | **The interface itself** | No remote content: the page only loads its own files (strict CSP), and can only reach Pier's commands, the file chooser and notifications. |
 | **Logs** | Never a password, nor what is typed in a terminal or into Pi. |
 
@@ -566,7 +636,7 @@ None of it needs an SSH key.
 
 5. **A second factor (TOTP code)** for SSH, with `libpam-google-authenticator`. **Pier does not handle it yet:** today it answers the password to every hidden question of the server. It would need to ask for the code separately (a small possible change).
 
-6. **Limiting where Pi can send data.** The sandbox hides your files, but Pi keeps network access (it must reach its model). An instruction hidden in a file Pi reads could make it send code elsewhere. A possible answer: an HTTPS proxy with a list of allowed domains (the provider's, npm, GitHub…), and the firewall blocking the rest for Pi. Heavier to set up.
+6. **Where Pi can send data** is limited by the picker itself, without root (`network_limit`, on by default): Pi's sandbox has no network of its own, and a relay inside passes its connections to a proxy outside, which lets through only the places allowed (its model providers, npm, GitHub, PyPI, and `network_allow`). An instruction hidden in a file Pi reads can no longer make it send code anywhere else. What is refused is written to the picker's log (`net.blocked host=…`, in the Logs tab): add the host to `network_allow` if Pi needs it (a gateway such as Bifrost, Hindsight's server). Pi, npm, git and curl follow the proxy; Node needs version 24 or newer for that, and with an older Node the network stays open (the picker says so when Pi starts). A firewall rule would also cover a program that ignores the proxy, but needs root.
 
 #### C. On the PC
 
@@ -591,9 +661,19 @@ A full review (security on the PC, security on the VM, stability, performance) w
 #### B. Still known
 
 - **`~/.pi` shared by every project** (see above).
-- **One-off calls to the VM** (opening a folder, a diff) start Python each time. They could go through the watch.
-- **Without tmux**, a Pi started by hand in the picker could inject keys into the picker's terminal (TIOCSTI). Pier always starts Pi in tmux.
+- **One-off calls to the VM** (opening a folder, a diff) start Python each time, now kept compiled (about 60 to 100 ms less each). They could go through the watch.
 - **The order of very fast keystrokes** is guaranteed only by the order of the calls. A sequence number would make it certain.
+
+### Part IV. Audit of 15 October 2026
+
+A second full review (security, CPU, memory, smoothness), in [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md). Fixed in pier-picker 4.15 to 4.20, and checked by the test suite on the VM:
+
+- **Links planted by Pi:** in `~/.pi` and in the project, everything the picker reads or writes outside the sandbox (the Hindsight key, `AGENTS.md`, conversations, what each Pi says, copies, the × and Clear of Context) goes through file descriptors, without following links; FIFOs and devices are never read. Folder copies and Hand offs are unpacked out of Pi's reach, then moved in.
+- **The sandbox:** `/run` hidden (system sockets), a seccomp filter refusing `TIOCSTI` and `TIOCLINUX` (Pi cannot type into its terminal), git's jail limited to the project, and the network limited to an allowlist (`network_limit`).
+- **The clipboard (OSC 52):** a program on the VM fills it only right after a real key or click, once per key or click; the terminal's automatic replies no longer count as a key.
+- **The command line:** what is typed into Pi, and the files of a restore, go on the command's input, not where other users of the VM could read them.
+- **Smoothness:** the Logs tab, dragging a divider, the Setup list and the searches no longer redraw everything; the watch rebuilds less when nothing moves; the picker is kept compiled.
+- **Found by the suite on the VM:** the link protections were silently off under Linux (a Python detail), and tmux never recorded which conversation each Pi held when two ran in one project. Both fixed.
 
 ---
 
@@ -608,7 +688,7 @@ sudo apt install tmux bubblewrap sshfs git
 **Pier installs the picker itself** at the first connection, then keeps it up to date. To use it over SSH without Pier before that, copy it by hand (the VM uses port 2222 and the name `pi-sh` defined in `~/.ssh/config`):
 
 ```powershell
-scp C:\Users\leo\Downloads\pi-tui\pi-dir-picker.py pi-sh:bin/pi-pick
+scp C:\Users\leo\Downloads\pier\pier-picker.py pi-sh:bin/pi-pick
 ```
 
 Python 3.12 or newer is needed, for receiving folders; Debian 13 has Python 3.13. git is used for restore points.
@@ -645,11 +725,13 @@ The compiled executable is `client/src-tauri/target/release/pier.exe`. Nothing t
 To build it (Rust and Visual Studio Build Tools, installed with Chocolatey):
 
 ```powershell
-cd C:\Users\leo\Downloads\pi-tui\client\src-tauri
+cd C:\Users\leo\Downloads\pier\client\src-tauri
 cargo tauri build --no-bundle
 ```
 
-Quit Pier before building again (also from the notification area): Windows does not allow replacing a running program. The macOS and Linux versions will be built with GitHub Actions.
+Quit Pier before building again (also from the notification area): Windows does not allow replacing a running program.
+
+**GitHub Actions** (`.github/workflows/build.yml`) runs the tests and builds Pier for Windows (installer and exe), macOS (universal `.dmg`) and Linux (`.deb`, AppImage) at every push, kept as the run's artifacts with their SHA-256. A tag `v…` (`git tag v0.3.0`, `git push --tags`) also prepares a draft GitHub release with them. Signing is optional: with the secrets listed at the top of the workflow (an Authenticode certificate for Windows, a Developer ID for macOS, notarized), the files are signed; without them they are not, and Windows and macOS warn on first start. The macOS and Linux versions are built there only, not yet tried by hand.
 
 ---
 
@@ -697,14 +779,16 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 
 | Path | Contents |
 |---|---|
-| `~/bin/pi-pick` | the picker |
-| `~/.config/pi-dir-picker/config.toml` | its configuration (optional) |
-| `~/.local/state/pi-dir-picker/state.json` | recent projects, sorting (readable by you only) |
-| `~/.local/state/pi-dir-picker/picker.log` | the picker's log (`.1`, `.2`: the previous ones) |
-| `~/.local/state/pi-dir-picker/checkpoints/` | the restore points, one git repository per project |
-| `~/.local/state/pi-dir-picker/labels.json` | names, categories, pinned and archived conversations (Pier) |
-| `~/.local/state/pi-dir-picker/versions.json` | latest versions of Pi and the packages, asked of npm at most every 6 hours |
-| `~/.local/state/pi-dir-picker/tmux.conf` | the configuration of the Pis' tmux server (rewritten by the picker) |
+| `~/bin/pi-pick` | the picker's launcher (installed by Pier), or the picker itself (copied by hand) |
+| `~/bin/pi-pick.lib/` | the picker, as Pier installs it, and its compiled form (`__pycache__`) |
+| `~/.local/state/pier-picker/incoming/` | where a folder copy or a Hand off is unpacked, out of Pi's reach, before it is moved into the project |
+| `~/.config/pier-picker/config.toml` | its configuration (optional) |
+| `~/.local/state/pier-picker/state.json` | recent projects, sorting (readable by you only) |
+| `~/.local/state/pier-picker/picker.log` | the picker's log (`.1`, `.2`: the previous ones) |
+| `~/.local/state/pier-picker/checkpoints/` | the restore points, one git repository per project |
+| `~/.local/state/pier-picker/labels.json` | names, categories, pinned and archived conversations (Pier) |
+| `~/.local/state/pier-picker/versions.json` | latest versions of Pi and the packages, asked of npm at most every 6 hours |
+| `~/.local/state/pier-picker/tmux.conf` | the configuration of the Pis' tmux server (rewritten by the picker) |
 | `~/.pi/pier/pier-session.ts` | the extension Pier gives each Pi it starts (`--extension`) |
 | `~/.pi/pier/pis/<tmux session>.json` | what each Pi says: its conversation, whether it works (deleted when it stops) |
 | `~/bin/pi-pick.previous` | the picker's version from before Pier's last update |
@@ -731,8 +815,8 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 | Path | Purpose |
 |---|---|
-| `pi-dir-picker.py` | the picker and its API |
-| `pi-dir-picker-tests.py` | the test suite, to run on the VM, in a real tmux terminal |
+| `pier-picker.py` | the picker and its API |
+| `pier-picker-tests.py` | the test suite, to run on the VM, in a real tmux terminal |
 | `config.example.toml` | the picker's configuration template |
 | `client/ui/` | Pier's interface: `index.html`, `style.css`, `themes.js`, xterm.js in `vendor/` |
 | `client/ui/js/` | its code, one file per part: `core.js` (preferences, log, helpers), `vm.js` (the VM's state, received through `watch`), `connect.js`, `workspace.js` (the three zones and their tabs), `prefs.js`, `terminal.js`, `context.js`, `project.js` (Activity), `diff.js`, `conversations.js`, `setup.js`, `logs.js`, `palette.js`, `backend.js` (the Rust side), `mock.js` (a fake VM to try the interface in a browser), `main.js` |
@@ -744,31 +828,41 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 ### Part I. The picker
 
-Several hundred checks of the logic and the API (several Pis per project and `watch`, restore points with real git, the log, conversations, labels, versions, the audit's protections), run on Windows with a simulated curses module. Plus the `pi-dir-picker-tests.py` suite, to run **on the VM**: it drives the picker in a real tmux terminal and checks the real bubblewrap sandbox, restore points around a real `--exec-pi`, two Pis in one project with real tmux, and what Setup lists.
+The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 16 October 2026, picker 4.20): it drives the picker in a real tmux terminal, and checks with the real programs:
+
+- the screen and its keys, starting Pi (directly and in tmux), the Hindsight key, two Pis in one project and the API that lists them;
+- the real bubblewrap sandbox: what Pi sees, its own `/dev`, `/run` hidden, the TIOCSTI filter, and its network (no direct connection, the proxy refusing what is not allowed);
+- the protections against links and FIFOs Pi could plant (Hindsight key, Setup, removals, writes, the git jail), folder copies;
+- restore points around a real `--exec-pi`, the log, what Setup lists, and moving the folders of the old name (pi-dir-picker).
+
+When `/tmp` is mounted `noexec` (a hardened VM), the suite works in `~/.cache/pier-picker-tests` instead: its fake Pi must be able to run.
 
 ```powershell
-scp C:\Users\leo\Downloads\pi-tui\pi-dir-picker.py C:\Users\leo\Downloads\pi-tui\pi-dir-picker-tests.py pi-sh:pi-tui/
+scp C:\Users\leo\Downloads\pier\pier-picker.py C:\Users\leo\Downloads\pier\pier-picker-tests.py pi-sh:pi-tui/
 ```
 
 ```powershell
-ssh -t pi-sh "python3 -B ~/pi-tui/pi-dir-picker-tests.py"
+ssh -t pi-sh "python3 -B ~/pi-tui/pier-picker-tests.py"
 ```
 
 If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -p ~/pi-tui"`.
 
 ### Part II. Pier
 
-44 Rust tests (`cargo test`), including:
+47 Rust tests (`cargo test`), including:
 
 - Pi tabs in tmux control mode against a local SSH server (decoding `%output`, keys as raw bytes, sizes, end, Pi unable to fake Pier's messages, caps);
 - `watch` against a local SSH server (lines cut across two packets, round trip, end);
 - the connection against a real local SSH server: first contact, wrong password, changed fingerprint, bastion, a server with old algorithms refused (without the password leaving);
 - shares end to end (the simulated VM can neither leave the folder nor write when read-only), path confinement, archives, filtering Pi's arguments and update targets, quoting for any login shell;
-- the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused).
+- the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused);
+- take back file by file: comparing by content, names from the VM that Windows would read otherwise, bringing files back with a backup, a path climbing out refused.
+
+GitHub Actions runs them at every push, then builds Pier for Windows, macOS and Linux (see [Pier](#part-iii-pier)).
 
 ### Part III. The interface
 
-It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection.
+It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection; then take back file by file, the clipboard only after a real key, the Logs tab under thousands of lines, dragging a divider, and a collapsed side unfolded for a look.
 
 ---
 
@@ -776,21 +870,22 @@ It was checked in a browser with a fake backend (which also simulates `watch` an
 
 ### Part I. To check on the real VM
 
-Tested only locally or in simulation so far:
-- the real bubblewrap sandbox (its own `/dev`, `/run/user` hidden), and access to shared folders (sshfs) from it;
-- git run in its own sandbox for Activity and diffs;
-- really unmounting sshfs during a Hand off, while Pi works;
+Tested only locally or in simulation so far (the sandbox, its network and git's jail are now checked by the suite on the VM):
+- access to shared folders (sshfs) from the sandbox;
+- the network allowlist with the real Pi: Node 24 or newer, its providers (Bifrost, OpenRouter, Claude Max…), Hindsight, `pi update` through the proxy;
+- really unmounting sshfs during a Hand off, while Pi works, and take back file by file on a real copy;
 - really resuming a session with `--continue` and `--session`;
 - Ctrl+V of files copied in Explorer, and Windows notifications;
 - installing and updating the picker by Pier on the real VM;
 - restore points during a real Pi session (in particular the delay between a prompt arriving and Pi's first change);
 - the tracking extension (`~/.pi/pier/pier-session.ts`) with the real Pi 1.x, in the sandbox: the conversation followed after `/new`, `/resume`, `/fork`, and "working" going back down at the end;
 - `pi update` started from Setup, and asking npm for the latest versions from the VM;
-- silent reconnection after the PC sleeps.
+- silent reconnection after the PC sleeps;
+- the macOS and Linux builds of GitHub Actions, never started by hand.
 
 ### Part II. Limits
 
-- **Two Pis changing the same files** in one project step on each other: nothing prevents it. Several Pis suit separate tasks (the code and the docs). A project's restore points are shared by its Pis.
+- **Two Pis changing the same files:** in a git project (with at least one commit), every Pi beside the first works in a worktree of its own (see [Git](#part-xiii-git-pi-with-a-repository-as-a-developer)), so they no longer step on each other. In a folder without git, nothing prevents it: several Pis there suit separate tasks (the code and the docs). A project's restore points are shared by its Pis, and cover the folder itself, not the worktrees.
 - **A `/new` or `/resume` typed in Pi:** each Pi started by Pier says so itself (its extension). Without it (a Pi started earlier, or `track_sessions = false`), the picker guesses by looking for the recent file no other Pi holds; two Pis of the same project doing `/new` in the same second can then be mixed up.
 - **The name of a very big conversation** (images, hundreds of MB) is looked for in its last 4 MB only the first time: a name given at the start of such a conversation, never given again, may not show.
 - **What Pi will read next** cannot be known in advance.
@@ -808,7 +903,6 @@ Tested only locally or in simulation so far:
 - **A notification on the phone** when Pi is done, sent by the VM itself (ntfy), so even with the PC off.
 - **SSH limited to the WireGuard tunnel,** sshd hardened, fail2ban, a WireGuard `PresharedKey`: see [Network and encryption](#part-ii-network-and-encryption).
 - **A second factor (TOTP)** in Pier.
-- **macOS and Linux versions** built by GitHub Actions, and signing the executable.
+- **Signing certificates** for the GitHub Actions builds (the workflow is ready for them).
 - **Several VMs** saved, chosen at login.
-- **Bringing Pi's changes back** from a copy to the original folder, with a diff to choose, rather than downloading a whole copy.
 - **A disposable "clean room"** where Pi can try things without touching the real project or system.

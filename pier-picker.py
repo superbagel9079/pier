@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # subject: TUI directory picker browsing the home directory (non-hidden directories only) that launches Pi in the chosen directory, inside tmux so Pi survives a dropped SSH connection.
-# verified: v4.4, 2026-10-13: picker logic, restore points (real git), several Pis per project and the watch stream checked on Windows (python 3.14, curses stubbed, tmux faked); the tmux suite (pi-dir-picker-tests.py) still has to be run on the Debian host.
+# verified: v4.20, 2026-10-16: the tmux suite (pier-picker-tests.py) passes entirely on the Debian host, sandbox, network and link protections included.
 # tech: python, curses, git, tmux, pi
 #
 # Standard library only.
-# Evidence is produced by pi-dir-picker-tests.py, which drives this program through a real pty.
+# Evidence is produced by pier-picker-tests.py, which drives this program through a real pty.
 #
 # Files:
-#   ~/.config/pi-dir-picker/config.toml      optional settings, see DEFAULTS
-#   ~/.local/state/pi-dir-picker/state.json  recent projects and the sort order
-#   ~/.local/state/pi-dir-picker/picker.log  what happened, see "logging"
-#   ~/.local/state/pi-dir-picker/checkpoints/ restore points of the projects, see "restore points"
-#   ~/.local/state/pi-dir-picker/tmux.conf   the config of Pi's tmux server, see tmux_conf
+#   ~/.config/pier-picker/config.toml      optional settings, see DEFAULTS
+#   ~/.local/state/pier-picker/state.json  recent projects and the sort order
+#   ~/.local/state/pier-picker/picker.log  what happened, see "logging"
+#   ~/.local/state/pier-picker/checkpoints/ restore points of the projects, see "restore points"
+#   ~/.local/state/pier-picker/tmux.conf   the config of Pi's tmux server, see tmux_conf
 # Environment:
 #   PI_BIN                 path of the pi executable when it is not found on PATH
 #   PI_PICKER_TMUX_SOCKET  tmux socket holding the Pi sessions (the tests use their own)
@@ -28,7 +28,10 @@ import queue
 import re
 import shlex
 import shutil
+import socket
 import signal
+import stat
+import struct
 import subprocess
 import tempfile
 import sys
@@ -48,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.14"
+VERSION = "4.23"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -66,7 +69,23 @@ DEFAULTS = {
     "sandbox_write": [],               # extra paths Pi may also write in the sandbox
     "checkpoints": True,               # save the project before each prompt, to undo what Pi did
     "track_sessions": True,            # Pi tells Pier which conversation it holds (an extension Pier gives it)
+    "network_limit": True,             # in the sandbox, Pi reaches only NETWORK_ALLOW and network_allow
+    "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
+    "git_tools": True,                 # Pi gets git tools for the forge (push, pull requests), through the picker
+    "worktrees": True,                 # a second Pi in a git project works in a worktree of its own (.pi-worktrees)
 }
+
+# Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its
+# model providers, npm and GitHub (packages, git over https). The rest is refused and
+# logged (net.blocked): add what you need to network_allow in config.toml.
+NETWORK_ALLOW = (
+    ".anthropic.com", "claude.ai",          # Claude, Claude Max sign-in
+    "openrouter.ai", ".openrouter.ai",
+    "api.deepseek.com",
+    "registry.npmjs.org", ".npmjs.org",     # pi install npm:..., pi update
+    "github.com", ".github.com", ".githubusercontent.com",
+    "pypi.org", "files.pythonhosted.org",
+)
 
 # One path segment: starts with a letter or a digit (no hidden directory, no name that
 # reads as an option), then letters, digits, "_", "." or "-". Accented letters allowed.
@@ -92,7 +111,20 @@ USER_PATH = ("~/.npm-global/bin", "~/.local/bin", "~/bin", "~/.bun/bin")
 SYSTEM_PATH = ("/usr/local/bin",)
 EXTRA_PATH = USER_PATH + SYSTEM_PATH
 
-TMUX_SOCKET = os.environ.get("PI_PICKER_TMUX_SOCKET", "pi-dir-picker")
+# The picker was called pi-dir-picker. Its folders are moved to the new name the first
+# time it runs (see migrate_old_name); its tmux server keeps the old name for as long
+# as it runs, so that the Pis started before are still found.
+OLD_NAME = "pi-dir-picker"
+
+
+def tmux_socket():
+    if os.environ.get("PI_PICKER_TMUX_SOCKET"):
+        return os.environ["PI_PICKER_TMUX_SOCKET"]
+    folder = os.path.join(os.environ.get("TMUX_TMPDIR") or "/tmp", f"tmux-{os.getuid()}") if hasattr(os, "getuid") else ""
+    return OLD_NAME if folder and os.path.exists(os.path.join(folder, OLD_NAME)) else "pier-picker"
+
+
+TMUX_SOCKET = tmux_socket()
 INSTALLERS = (
     ("apt-get", ["apt-get", "install", "-y", "tmux"]),
     ("dnf", ["dnf", "install", "-y", "tmux"]),
@@ -166,7 +198,7 @@ CTRL_U = "\x15"
 
 def config_path(home):
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
-    return os.path.join(base, "pi-dir-picker", "config.toml")
+    return os.path.join(base, "pier-picker", "config.toml")
 
 
 def load_config(home):
@@ -205,7 +237,22 @@ def load_config(home):
 
 def state_path(home):
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(home, ".local", "state")
-    return os.path.join(base, "pi-dir-picker", "state.json")
+    return os.path.join(base, "pier-picker", "state.json")
+
+
+def migrate_old_name(home):
+    """~/.config/pi-dir-picker and ~/.local/state/pi-dir-picker (restore points, labels,
+    recent projects, log) moved to the new name, once. A link is left at the old place:
+    a Pi started by an older picker still writes there."""
+    for new in (os.path.dirname(config_path(home)), os.path.dirname(state_path(home))):
+        old = os.path.join(os.path.dirname(new), OLD_NAME)
+        if os.path.lexists(new) or not os.path.isdir(old) or os.path.islink(old):
+            continue
+        try:
+            os.rename(old, new)
+            os.symlink(new, old)
+        except OSError:
+            pass  # another picker moved it meanwhile, or it cannot be: the old place stays
 
 
 def load_state(home):
@@ -238,7 +285,7 @@ def save_state(home, state):
 
 # --- logging -------------------------------------------------------------------------
 #
-# One line per event, in ~/.local/state/pi-dir-picker/picker.log, readable by its owner
+# One line per event, in ~/.local/state/pier-picker/picker.log, readable by its owner
 # only:
 #   2026-10-12T14:32:01.123Z INFO  api.paste-image pid=4242 req=7f3a-12 ms=41 saved=...
 # Times are UTC, like Pier's own log, so the two read side by side; req is the id
@@ -354,6 +401,149 @@ def within(path, root):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
+# Pi writes in the project and in ~/.pi, so whatever the picker (outside the sandbox)
+# reads or deletes there is reached through file descriptors, folder by folder, without
+# following links: a link or a folder swapped in between a check and its use cannot
+# send it elsewhere. Not on Windows (the simulated tests), which has no dir_fd.
+DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+# os.replace takes src_dir_fd/dst_dir_fd wherever os.rename does (both are renameat),
+# but only os.rename is listed in supports_dir_fd.
+SAFE_FD = (os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd and os.rename in os.supports_dir_fd
+           and os.scandir in os.supports_fd)
+
+
+def open_dir_walk(root, path):
+    """A descriptor on the folder path (already resolved, inside root), opened from root
+    down without following any link. OSError when one is met on the way."""
+    rel = os.path.relpath(path, root)
+    fd = os.open(root, DIR_FLAGS)
+    try:
+        for part in ([] if rel == "." else rel.split(os.sep)):
+            nxt = os.open(part, DIR_FLAGS, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def open_regular(path, root=None, follow=True):
+    """A read-only descriptor on path when it is a plain file, else None: a FIFO, a
+    device or a folder Pi left there can neither block nor feed the picker.
+    root: path may go through links that stay inside root (AGENTS.md -> CLAUDE.md), and
+    is then opened from root down without following any (a swap meanwhile fails).
+    follow=False: path itself must not be a link."""
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    if not follow or root is not None:
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        if root is None:
+            fd = os.open(path, flags)
+        else:
+            root = os.path.realpath(root)
+            real = os.path.realpath(path)
+            if real == root or not within(real, root):
+                return None
+            if not SAFE_FD:
+                fd = os.open(real, flags)
+            else:
+                parent = open_dir_walk(root, os.path.dirname(real))
+                try:
+                    fd = os.open(os.path.basename(real), flags, dir_fd=parent)
+                finally:
+                    os.close(parent)
+    except OSError:
+        return None
+    try:
+        if stat.S_ISREG(os.fstat(fd).st_mode):
+            return fd
+    except OSError:
+        pass
+    os.close(fd)
+    return None
+
+
+def open_plain(path, root=None, follow=True):
+    """open(path, "rb"), for a plain file only (see open_regular); OSError otherwise."""
+    fd = open_regular(path, root, follow)
+    if fd is None:
+        raise OSError(f"not a plain file: {path}")
+    return os.fdopen(fd, "rb")
+
+
+def sessions_root():
+    """Pi's sessions folder: the session files read outside the sandbox stay in it."""
+    return os.path.realpath(os.path.join(agent_dir(), "sessions"))
+
+
+def open_folder(root, folder):
+    """A descriptor on folder, really inside root, opened from root down without
+    following links (see open_dir_walk). ApiError when it leads elsewhere."""
+    real_root, real = os.path.realpath(root), os.path.realpath(folder)
+    if not within(real, real_root):
+        raise ApiError(f"refusing to write outside {pretty_path(real_root, home_dir())}: {os.path.basename(folder)}")
+    try:
+        return open_dir_walk(real_root, real)
+    except OSError as exc:
+        raise ApiError(f"{os.path.basename(folder)} changed while writing in it: {exc.strerror or exc}")
+
+
+NEW_FILE = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+
+
+def write_new_at(dir_fd, name, data, mode):
+    """Create name in the folder dir_fd with data (bytes); FileExistsError if it is there."""
+    fd = os.open(name, NEW_FILE, mode, dir_fd=dir_fd)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+        os.fchmod(handle.fileno(), mode)
+
+
+def remove_tree_at(dir_fd, name, device):
+    """Remove name in the folder dir_fd: a file, a link (the link itself), or a folder
+    and all it holds, made writable on the way (a read-only copy). Never follows a
+    link, and never enters another file system (a mount inside)."""
+    st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    if not stat.S_ISDIR(st.st_mode):
+        os.unlink(name, dir_fd=dir_fd)
+        return
+    fd = os.open(name, DIR_FLAGS, dir_fd=dir_fd)
+    try:
+        st = os.fstat(fd)
+        if st.st_dev != device:
+            raise ApiError(f"something is mounted in {name}: stop that share first")
+        os.fchmod(fd, stat.S_IMODE(st.st_mode) | 0o700)
+        with os.scandir(fd) as entries:
+            names = [entry.name for entry in entries]
+        for inner in names:
+            remove_tree_at(fd, inner, device)
+    finally:
+        os.close(fd)
+    os.rmdir(name, dir_fd=dir_fd)
+
+
+def remove_entry(root, full):
+    """Remove full (resolved, inside root) and all it holds, walking down from root
+    without following links: a folder on the way swapped for a link meanwhile stops it."""
+    if not within(full, root) or full == root:
+        raise ApiError("refusing to remove that")
+    if not SAFE_FD:
+        if os.path.isdir(full) and not os.path.islink(full):
+            writable_tree(full)
+            shutil.rmtree(full)
+        else:
+            os.remove(full)
+        return
+    parent = open_dir_walk(root, os.path.dirname(full))
+    try:
+        remove_tree_at(parent, os.path.basename(full), os.fstat(parent).st_dev)
+    except RecursionError:
+        raise ApiError(f"too many folders inside {os.path.basename(full)} to remove it")
+    finally:
+        os.close(parent)
+
+
 def list_dirs(path, ignore=()):
     """Non-hidden subdirectories of path, sorted case-insensitively.
 
@@ -413,11 +603,10 @@ def git_dir(path):
     dot = os.path.join(path, ".git")
     if os.path.isdir(dot):
         return dot
-    try:
-        with open(dot, encoding="utf-8", errors="replace") as handle:
-            first = handle.readline().strip()
-    except OSError:
+    text = read_text(dot, 4096)
+    if text is None:
         return None
+    first = text.split("\n", 1)[0].strip()
     if first.startswith("gitdir:"):
         return os.path.normpath(os.path.join(path, first[7:].strip()))
     return None
@@ -428,20 +617,80 @@ def git_branch(path):
     directory = git_dir(path)
     if directory is None:
         return None
-    try:
-        with open(os.path.join(directory, "HEAD"), encoding="utf-8", errors="replace") as handle:
-            head = handle.read().strip()
-    except OSError:
+    head = read_text(os.path.join(directory, "HEAD"), 4096)
+    if head is None:
         return None
+    head = head.strip()
     if head.startswith("ref:"):
         ref = head[4:].strip()
         return ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ref
     return head[:7] or None
 
 
-# Where the user's session bus and systemd sockets live, hidden in the sandboxes (when
-# the system has it: a missing folder would make bwrap fail).
-RUN_USER_HIDDEN = ("--tmpfs", "/run/user") if os.path.isdir("/run/user") else ()
+def run_hidden():
+    """bwrap arguments hiding /run in the sandboxes: a read-only mount does not stop a
+    program from connecting to a socket, and /run holds the system's (D-Bus, systemd,
+    the user's session bus in /run/user, docker or others depending on the VM). Only
+    what /etc/resolv.conf points to comes back, read-only, so names still resolve."""
+    if not os.path.isdir("/run"):
+        return []
+    args = ["--tmpfs", "/run"]
+    resolv = os.path.realpath("/etc/resolv.conf")
+    if within(resolv, "/run") and os.path.isfile(resolv):
+        folder = os.path.dirname(resolv)
+        args += ["--ro-bind", folder, folder]
+    return args
+
+
+# ioctls that push characters into a terminal's input, as if typed: TIOCSTI, and
+# TIOCLINUX (its paste, on a console). Pi in its sandbox must not type into the
+# terminal it runs in (without tmux, the user's own). --new-session would stop it too,
+# but it takes the terminal away from Pi, which then misses window size changes.
+TIOCSTI, TIOCLINUX = 0x5412, 0x541C
+# machine -> (its AUDIT_ARCH, ioctl's number, the lowest number that is not native)
+SECCOMP_ARCHES = {"x86_64": (0xC000003E, 16, 0x40000000), "aarch64": (0xC00000B7, 29, 0xFFFFFFFF)}
+
+
+def tiocsti_filter():
+    """A seccomp program (classic BPF, as bwrap --seccomp reads it) failing those ioctls
+    with EPERM, and every system call of another architecture (32-bit calls on a 64-bit
+    system would get round the check). None on a machine not known here."""
+    machine = os.uname().machine if hasattr(os, "uname") else ""
+    if machine not in SECCOMP_ARCHES or sys.byteorder != "little":
+        return None
+    arch, ioctl, foreign = SECCOMP_ARCHES[machine]
+    load, jeq, jge, ret = 0x20, 0x15, 0x35, 0x06
+    allow, deny = 0x7FFF0000, 0x00050000 | 1  # SECCOMP_RET_ALLOW, SECCOMP_RET_ERRNO | EPERM
+    # seccomp_data: nr at 0, arch at 4, args from 16 (8 bytes each; the low half of
+    # args[1], the request, at 24: the kernel reads it as 32 bits).
+    program = [
+        (load, 0, 0, 4),
+        (jeq, 1, 0, arch),
+        (ret, 0, 0, deny),          # another architecture
+        (load, 0, 0, 0),
+        (jge, 6, 0, foreign),       # x32 calls: to the last line, deny
+        (jeq, 1, 0, ioctl),
+        (ret, 0, 0, allow),         # not an ioctl
+        (load, 0, 0, 24),
+        (jeq, 2, 0, TIOCSTI),
+        (jeq, 1, 0, TIOCLINUX),
+        (ret, 0, 0, allow),
+        (ret, 0, 0, deny),
+    ]
+    return b"".join(struct.pack("<HBBI", *line) for line in program)
+
+
+def seccomp_pipe():
+    """The filter on the read end of a pipe, inheritable, for bwrap --seccomp FD; None
+    when there is none for this machine."""
+    program = tiocsti_filter()
+    if program is None:
+        return None
+    read, write = os.pipe()
+    os.write(write, program)  # a few hundred bytes: well within a pipe's buffer
+    os.close(write)
+    os.set_inheritable(read, True)
+    return read
 
 
 def git_jail(path):
@@ -452,15 +701,46 @@ def git_jail(path):
     bwrap = shutil.which("bwrap")
     if not bwrap:
         return None
-    directory = git_dir(path)
-    top = os.path.realpath(os.path.dirname(directory) if directory else path)
     home = os.path.realpath(home_dir())
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
-            "--tmpfs", "/home", *RUN_USER_HIDDEN]
+            "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
         args += ["--tmpfs", home]
-    args += ["--ro-bind", top, top, "--unshare-all", "--die-with-parent", "--new-session", "--"]
+    for folder in git_jail_folders(path):
+        args += ["--ro-bind", folder, folder]
+    args += ["--unshare-all", "--die-with-parent", "--new-session", "--"]
     return args
+
+
+def git_jail_folders(path):
+    """What the git jail shows: the project, and nothing else unless its repository
+    lives elsewhere (a worktree, a submodule). The .git file saying where is Pi's to
+    write: only a real git folder inside another repository's .git is then added (and,
+    for a worktree, the main repository's .git it shares)."""
+    project = os.path.realpath(path)
+    folders = [project]
+    directory = git_dir(path)
+    if not directory:
+        return folders
+    real = os.path.realpath(directory)
+    if within(real, project):
+        return folders
+
+    def a_git_folder(folder):
+        inside_dot_git = (os.sep + ".git" + os.sep) in (folder + os.sep)
+        return inside_dot_git and os.path.isfile(os.path.join(folder, "HEAD")) and not os.path.islink(folder)
+
+    if not a_git_folder(real):
+        return folders
+    folders.append(real)
+    common = read_text(os.path.join(real, "commondir"), 4096)
+    if common and common.strip():
+        shared = os.path.realpath(os.path.join(real, common.strip()))
+        if shared not in folders and not within(real, shared) and a_git_folder(shared):
+            folders.append(shared)
+        elif within(real, shared) and real != shared and a_git_folder(shared):
+            folders[-1] = shared  # the worktree's folder is inside it: the whole .git
+    return folders
 
 
 def git_run(path, *args):
@@ -511,10 +791,8 @@ def readme_lines(path, count=8):
     for name in names:
         full = os.path.join(path, name)
         if name.lower().startswith("readme") and os.path.isfile(full):
-            try:
-                with open(full, encoding="utf-8", errors="replace") as handle:
-                    text = handle.read(4096)
-            except OSError:
+            text = read_text(full, 4096, root=path)  # no FIFO to hang the screen on
+            if text is None:
                 return []
             lines = (line.strip().lstrip("#").strip() for line in text.splitlines())
             return [line for line in lines if line][:count]
@@ -641,12 +919,20 @@ def child_env(home):
 
 
 def read_hindsight_key(home):
-    """(key or None, warning or None). The warning flags a key file others can read."""
+    """(key or None, warning or None). The warning flags a key file others can read.
+
+    ~/.pi is Pi's to write: a link put there in place of the key would make the picker,
+    outside the sandbox, read any file and hand it to Pi. Only a plain file is read."""
     path = os.path.join(home, ".pi", "hindsight.key")
+    fd = open_regular(path, follow=False)
+    if fd is None:
+        if os.path.islink(path):
+            log("warn", "hindsight.key-refused", why="a link, not a file")
+        return None, None
     try:
-        with open(path, encoding="utf-8") as handle:
+        with os.fdopen(fd, "rb") as handle:
             mode = os.fstat(handle.fileno()).st_mode
-            key = handle.read().strip()
+            key = handle.read(4096).decode("utf-8", "replace").strip()
     except OSError:
         return None, None
     warning = None
@@ -688,8 +974,29 @@ def pi_refusal(project, home, config=None):
 
 
 def openable(path, home, config=None):
-    """A folder that can be offered as a project: Pi may run there."""
-    return pi_refusal(path, home, config) is None
+    """A folder that can be offered as a project: Pi may run there. For the lists only:
+    the guarded folders are resolved once in a while (see guarded_folders), and
+    exec_pi checks again, exactly, before Pi starts."""
+    config = config or load_config(home)[0]
+    if not sandbox_wanted(config):
+        return True
+    real = os.path.realpath(path)
+    return not any(within(guarded, real) or within(real, guarded) for guarded in guarded_folders(home))
+
+
+_GUARDED = {}  # home -> (when, the folders of SANDBOX_REFUSED, resolved)
+GUARDED_FRESH = 30.0
+
+
+def guarded_folders(home):
+    """SANDBOX_REFUSED resolved, kept a little: a search checks thousands of folders, and
+    resolving the six for each one made every key typed in it slow."""
+    now = time.monotonic()
+    cached = _GUARDED.get(home)
+    if cached is None or now - cached[0] > GUARDED_FRESH:
+        cached = (now, [os.path.realpath(os.path.join(home, path[2:])) for path in SANDBOX_REFUSED])
+        _GUARDED[home] = cached
+    return cached[1]
 
 
 def sandbox_refusal(project, home):
@@ -703,7 +1010,7 @@ def sandbox_refusal(project, home):
     return None
 
 
-def sandbox_argv(argv, project, home, config, env):
+def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None, workdir=None):
     """argv wrapped in bubblewrap, or None when bwrap is missing.
 
     Inside, Pi sees the whole system read-only, and of the home directory only:
@@ -740,7 +1047,7 @@ def sandbox_argv(argv, project, home, config, env):
     # reach); /run/user: the user's session bus and systemd would start programs
     # outside the sandbox.
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
-            "--tmpfs", "/tmp", "--tmpfs", "/home", *RUN_USER_HIDDEN]
+            "--tmpfs", "/tmp", "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
         args += ["--tmpfs", home]
     args += ["--dir", home]
@@ -749,13 +1056,302 @@ def sandbox_argv(argv, project, home, config, env):
     for path in sorted(mounts, key=lambda m: (m.count(os.sep), m)):
         if os.path.exists(path):
             args += ["--bind" if mounts[path] == "rw" else "--ro-bind", path, path]
-    args += ["--unshare-pid", "--unshare-ipc", "--die-with-parent", "--chdir", project, "--", *argv]
+    if git_socket:
+        # The git broker's socket (GitBroker): Pi's git tools ask it, the token stays out here.
+        args += ["--dir", NET_DIR, "--bind", git_socket, f"{NET_DIR}/git.sock"]
+    if network is not None:
+        # No network of its own: only the relay below, to the proxy outside (NetProxy).
+        args += ["--unshare-net", "--dir", NET_DIR, "--bind", network.socket, f"{NET_DIR}/net.sock",
+                 "--ro-bind", PICKER_MODULE, f"{NET_DIR}/picker.py"]
+        argv = ["python3", "-B", f"{NET_DIR}/picker.py", "--net-bridge", f"{NET_DIR}/net.sock",
+                *network.local_ports(), "--", *argv]
+    args += ["--unshare-pid", "--unshare-ipc", "--die-with-parent", "--chdir", workdir or project, "--", *argv]
     return args
+
+
+# --- the network Pi may reach -----------------------------------------------------------
+#
+# With network_limit, Pi's sandbox has a network of its own with nothing in it
+# (--unshare-net): Pi cannot connect anywhere by itself. Inside, a small relay of this
+# file (--net-bridge) listens on 127.0.0.1:3128 and passes each connection, through a
+# Unix socket bound into the sandbox, to NetProxy, which runs out here and accepts only
+# HTTP CONNECT to the places allowed. Pi, npm, git and curl use it through the usual
+# HTTPS_PROXY variables (NODE_USE_ENV_PROXY for Node's own fetch). Refused attempts are
+# logged as net.blocked, with the host: add it to network_allow if Pi needs it.
+# An address on the VM itself ("127.0.0.1:8080", a local gateway) is relayed too: the
+# relay listens on that port inside, and NetProxy connects to it out here.
+
+NET_DIR = "/tmp/.pier-net"
+NET_PROXY_PORT = 3128
+PICKER_MODULE = os.path.realpath(__file__)
+
+
+def parse_allow(entries):
+    """Entries of network_allow: (host or ".suffix", port or None) pairs."""
+    rules = []
+    for entry in entries:
+        entry = entry.strip().lower().rstrip(".")
+        if not entry:
+            continue
+        host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")
+        if port and not port.isdigit():
+            continue
+        rules.append(("127.0.0.1" if host == "localhost" else host, int(port) if port else None))
+    return rules
+
+
+def allowed(rules, host, port):
+    host = host.lower().rstrip(".")
+    for rule_host, rule_port in rules:
+        if rule_port is None and port not in (80, 443):
+            continue
+        if rule_port is not None and port != rule_port:
+            continue
+        if rule_host.startswith("."):
+            if host.endswith(rule_host) or host == rule_host[1:]:
+                return True
+        elif host == rule_host:
+            return True
+    return False
+
+
+def node_major(env):
+    """The major version of the node Pi runs on, None when there is none."""
+    node = shutil.which("node", path=env.get("PATH"))
+    if not node:
+        return None
+    try:
+        out = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5).stdout
+        return int(out.strip().lstrip("v").split(".")[0])
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def relay(a, b):
+    """Copies a to b until a closes, then closes b's sending side."""
+    try:
+        while True:
+            data = a.recv(65536)
+            if not data:
+                break
+            b.sendall(data)
+    except OSError:
+        pass
+    try:
+        b.shutdown(socket.SHUT_WR)
+    except OSError:
+        pass
+
+
+def relay_both(a, b):
+    other = threading.Thread(target=relay, args=(b, a), daemon=True)
+    other.start()
+    relay(a, b)
+    other.join()
+    for s in (a, b):
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+class NetProxy:
+    """The proxy Pi's sandbox reaches through its Unix socket: CONNECT host:port to the
+    places allowed, nothing else."""
+
+    def __init__(self, project, rules):
+        self.project = project
+        self.rules = rules
+        folder = os.path.join(os.path.dirname(state_path(home_dir())), "net")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        self.socket = os.path.join(folder, f"{os.getpid()}.sock")
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(self.socket)
+        os.chmod(self.socket, 0o600)
+        self.server.listen(64)
+        self.blocked = {}  # host -> when it was last logged
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def local_ports(self):
+        """The ports of the VM itself allowed ("127.0.0.1:8080"): the relay listens there."""
+        return [str(port) for host, port in self.rules if port and host in ("127.0.0.1", "localhost")]
+
+    def serve(self):
+        while True:
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.handle, args=(client,), daemon=True).start()
+
+    def handle(self, client):
+        try:
+            client.settimeout(30)
+            head = b""
+            while b"\r\n\r\n" not in head and len(head) < 8192:
+                chunk = client.recv(4096)
+                if not chunk:
+                    client.close()
+                    return
+                head += chunk
+            line = head.split(b"\r\n", 1)[0].decode("latin-1")
+            parts = line.split()
+            target = parts[1] if len(parts) == 3 and parts[0].upper() == "CONNECT" else ""
+            host, _, port = target.rpartition(":")
+            host = host.strip("[]")
+            if not host or not port.isdigit():
+                client.sendall(b"HTTP/1.1 405 Only CONNECT\r\nContent-Length: 0\r\n\r\n")
+                client.close()
+                return
+            port = int(port)
+            if not allowed(self.rules, host, port):
+                now = time.monotonic()
+                if now - self.blocked.get(host, -1e9) > 60:
+                    self.blocked[host] = now
+                    log("warn", "net.blocked", project=self.project, host=host, port=port,
+                        hint="add it to network_allow in ~/.config/pier-picker/config.toml")
+                client.sendall(b"HTTP/1.1 403 Not allowed by network_allow\r\nContent-Length: 0\r\n\r\n")
+                client.close()
+                return
+            try:
+                upstream = socket.create_connection((host, port), timeout=15)
+            except OSError as exc:
+                client.sendall(f"HTTP/1.1 502 {exc.strerror or 'unreachable'}\r\nContent-Length: 0\r\n\r\n".encode("latin-1", "replace"))
+                client.close()
+                return
+            upstream.settimeout(None)
+            client.settimeout(None)
+            client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            rest = head.split(b"\r\n\r\n", 1)[1]
+            if rest:
+                upstream.sendall(rest)
+            relay_both(client, upstream)
+        except OSError:
+            try:
+                client.close()
+            except OSError:
+                pass
+
+    def close(self):
+        try:
+            self.server.close()
+        except OSError:
+            pass
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+
+
+def net_bridge(args):
+    """--net-bridge SOCKET [PORT...] -- PROGRAM...: inside Pi's sandbox. Listens on
+    127.0.0.1:3128 (the proxy) and on the local ports allowed, passes each connection to
+    SOCKET, then runs PROGRAM and ends with it."""
+    if "--" not in args or not args:
+        print("usage: --net-bridge SOCKET [PORT...] -- PROGRAM", file=sys.stderr)
+        return 2
+    split = args.index("--")
+    path, ports, program = args[0], [int(p) for p in args[1:split] if p.isdigit()], args[split + 1:]
+
+    def listen(port, forward):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", port))
+        server.listen(64)
+
+        def accept():
+            while True:
+                try:
+                    client, _ = server.accept()
+                except OSError:
+                    return
+                threading.Thread(target=forward, args=(client, port), daemon=True).start()
+
+        threading.Thread(target=accept, daemon=True).start()
+
+    def to_proxy(client, port):
+        upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            upstream.connect(path)
+        except OSError:
+            client.close()
+            return
+        relay_both(client, upstream)
+
+    def to_local(client, port):
+        # A port of the VM itself: asked of the proxy as CONNECT 127.0.0.1:PORT.
+        upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            upstream.connect(path)
+            upstream.sendall(f"CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n".encode())
+            answer = b""
+            while b"\r\n\r\n" not in answer and len(answer) < 4096:
+                chunk = upstream.recv(4096)
+                if not chunk:
+                    break
+                answer += chunk
+            if b" 200 " not in answer.split(b"\r\n", 1)[0]:
+                raise OSError("refused")
+        except OSError:
+            client.close()
+            upstream.close()
+            return
+        relay_both(client, upstream)
+
+    try:
+        listen(NET_PROXY_PORT, to_proxy)
+        for port in ports:
+            if port != NET_PROXY_PORT:
+                listen(port, to_local)
+    except OSError as exc:
+        print(f"Pier: the network relay could not start ({exc})", file=sys.stderr)
+        return 1
+    # The terminal's signals are Pi's: Ctrl+C reaches it, and the relay stays up.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        child = subprocess.Popen(program)
+    except OSError as exc:
+        print(f"cannot run {program[0]}: {exc.strerror or exc}", file=sys.stderr)
+        return 127
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda number, _frame: child.send_signal(number))
+    while True:
+        try:
+            return child.wait()
+        except InterruptedError:
+            continue
+
+
+def network_plan(config, env, project):
+    """A NetProxy for Pi in project, or (None, why) when Pi's network is not limited."""
+    if not config["network_limit"]:
+        return None, None
+    major = node_major(env)
+    if major is not None and major < 24:
+        # Node's fetch follows HTTPS_PROXY only from Node 24 on (NODE_USE_ENV_PROXY):
+        # limited, Pi could not reach its model at all.
+        return None, f"network not limited: Node {major} found, Node 24 or newer is needed (or set network_limit = false)"
+    rules = parse_allow(list(NETWORK_ALLOW) + list(config["network_allow"]))
+    return NetProxy(project, rules), None
+
+
+def proxy_env(env):
+    """The variables that send Pi, npm, git and curl through the relay."""
+    url = f"http://127.0.0.1:{NET_PROXY_PORT}"
+    for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        env[name] = url
+    env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+    env["NODE_USE_ENV_PROXY"] = "1"
+    return env
 
 
 SANDBOX_MISSING = ("bubblewrap is not installed, and Pi is set to run in a sandbox. "
                    "Install it (sudo apt install bubblewrap), "
-                   "or set sandbox = false in ~/.config/pi-dir-picker/config.toml")
+                   "or set sandbox = false in ~/.config/pier-picker/config.toml")
 
 
 def tmux_cmd(*args):
@@ -858,6 +1454,21 @@ def exec_pi(path, extra):
                 os.remove(env["PIER_STATE"])  # what an earlier Pi of that name said
             except OSError:
                 pass
+    network = None  # the proxy of a sandbox whose network is limited (see NetProxy)
+    broker = None   # Pi's git tools ask it (see GitBroker)
+    # A Pi beside another in the project works in its own worktree (see make_worktree).
+    worktree = worktree_of(os.path.realpath(path), os.environ.get("PIER_WORKTREE"))
+    workdir = worktree or path
+    if config["git_tools"]:
+        git_extension = pier_git_extension()
+        if git_extension:
+            try:
+                broker = GitBroker(os.path.realpath(path))
+            except OSError as exc:
+                log("warn", "git.broker-failed", project=path, err=str(exc))
+        if broker:
+            tracked = tracked + ["--extension", git_extension]
+            env["PIER_GIT_SOCKET"] = broker.socket
     plain = argv + list(extra)
     argv = argv + tracked + list(extra)
     if sandbox_wanted(config):
@@ -869,10 +1480,19 @@ def exec_pi(path, extra):
             return 1
         for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
             env.pop(key, None)
+        network, unlimited = network_plan(config, env, os.path.realpath(path)) if shutil.which("bwrap") else (None, None)
+        if unlimited:
+            print(f"Pier: {unlimited}")
+            log("warn", "pi.network-unlimited", project=path, why=unlimited)
+        if network:
+            proxy_env(env)
+        git_socket = broker.socket if broker else None
+        if broker:
+            env["PIER_GIT_SOCKET"] = f"{NET_DIR}/git.sock"  # where the sandbox sees it
         # Refuse rather than run unconfined: a sandbox that silently goes away
         # protects nothing.
-        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env)
-        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env)
+        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir)
+        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir)
         if argv is None:
             print(SANDBOX_MISSING)
             log("error", "pi.sandbox-missing", project=path)
@@ -892,22 +1512,44 @@ def exec_pi(path, extra):
         file = extra[extra.index("--session") + 1] if "--session" in extra[:-1] else None
         watcher = PromptWatcher(project, file, os.environ.get("PI_PICKER_SLOT"))
         watcher.start()
-    log("info", "pi.start", project=project, sandbox=sandbox_wanted(config), args=list(extra), pi=pi_exe)
+    log("info", "pi.start", project=project, sandbox=sandbox_wanted(config), network="limited" if network else "open",
+        args=list(extra), pi=pi_exe)
+    sandboxed = sandbox_wanted(config)
+
+    def launch(command):
+        # In the sandbox, the filter stopping Pi from typing into its terminal (see
+        # tiocsti_filter): a fresh pipe each time, bwrap reads it to the end.
+        fd = seccomp_pipe() if sandboxed else None
+        if fd is not None:
+            command = [command[0], "--seccomp", str(fd), *command[1:]]
+        try:
+            child = subprocess.Popen(command, cwd=workdir, env=env, pass_fds=() if fd is None else (fd,))
+        finally:
+            if fd is not None:
+                os.close(fd)
+        return wait_child(child)
+
     previous = ignore_terminal_signals()
     started = time.monotonic()
     try:
-        status = wait_child(subprocess.Popen(argv, cwd=path, env=env))
+        status = launch(argv)
         if status and tracked and time.monotonic() - started < 2:
             # Likely a Pi too old for --extension: once more without it.
             log("warn", "pi.without-extension", project=project, status=status)
             env.pop("PIER_STATE", None)
-            status = wait_child(subprocess.Popen(plain, cwd=path, env=env))
+            status = launch(plain)
     except OSError as exc:
         print(f"cannot run pi: {exc.strerror or exc}")
         log("error", "pi.cannot-run", project=project, err=str(exc))
         status = 1
     if watcher:
         watcher.stop()
+    if network:
+        network.close()
+    if broker:
+        broker.close()
+    if worktree:
+        end_worktree(os.path.realpath(path), worktree)
     if env.get("PIER_STATE"):
         try:
             os.remove(env["PIER_STATE"])
@@ -1083,12 +1725,169 @@ def open_pi(project, extra, env, home, width, height):
                 return pi["name"], False
     for _ in range(4):
         name = free_slot(project, home, sessions)
-        if start_pi_session(project, extra, env, home, width, height, name):
+        # Another Pi works in the folder: this one gets a worktree of its own, on its branch.
+        worktree = make_worktree(project, name, home) if pis else None
+        if start_pi_session(project, extra, env, home, width, height, name, worktree=worktree):
             return name, True
         # Another call took that name meanwhile: look again.
         forget_pi_sessions()
         sessions = pi_sessions()
     raise ApiError("tmux could not start the session")
+
+
+# --- worktrees: several Pis in one git project ---------------------------------------------
+#
+# Two Pis in the same folder step on each other's files. In a git project, the first Pi
+# works in the folder itself, and every other one in a worktree of its own,
+# .pi-worktrees/<its tmux session>, on a branch pi/agent-N-...: they come together by
+# merges or pull requests, as a team does. The worktree has links to the project's
+# .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
+# removed when its Pi ends without having changed or committed anything; otherwise it
+# stays, listed in Setup > Git, until the user removes it.
+
+WORKTREE_DIR = ".pi-worktrees"
+
+
+def git_head(project):
+    try:
+        return jailed_git(git_jail(project), "-C", os.path.realpath(project), "rev-parse", "--verify", "-q", "HEAD").strip() or None
+    except ApiError:
+        return None
+
+
+def make_worktree(project, slot, home):
+    """A worktree for the Pi of tmux session slot, or None (not a git project, no commit
+    yet, worktrees turned off, or git refusing)."""
+    config, _ = load_config(home)
+    if not config["worktrees"] or not git_dir(project):
+        return None
+    base = git_head(project)
+    if not base:
+        return None
+    tidy_worktrees(project)
+    folder = ignored_dir(project, WORKTREE_DIR)
+    name = slot if not os.path.lexists(os.path.join(folder, slot)) else f"{slot}-{stamp()}"
+    path = os.path.join(folder, name)
+    base_name = session_name(project, home)  # the first Pi's session; the others add -N
+    suffix = slot[len(base_name) + 1:] if slot.startswith(base_name + "-") else ""
+    n = int(suffix) if suffix.isdigit() else 1
+    branch = f"pi/agent-{n}-{stamp()}"  # stamp: the time and a random part, never twice
+    try:
+        jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "worktree", "add", "-q", "-b", branch, path, base)
+    except ApiError as exc:
+        log("warn", "worktree.failed", project=project, slot=slot, err=str(exc))
+        return None
+    # What is given to Pi lives in the project: reached through links from the worktree,
+    # left out of git (the common info/exclude serves every worktree).
+    for given in (IMAGE_DIR, FILES_DIR, SHARE_DIR):
+        target = os.path.join(path, given)
+        if not os.path.lexists(target):
+            try:
+                os.symlink(os.path.join("..", "..", given), target)
+            except OSError:
+                pass
+    directory = git_dir(project)
+    exclude = os.path.join(directory, "info", "exclude") if directory and os.path.isdir(directory) else None
+    if exclude:
+        current = read_text(exclude, 64 * 1024, root=project) or ""
+        wanted = [f"/{given}" for given in (IMAGE_DIR, FILES_DIR, SHARE_DIR)] + [f"/{WORKTREE_DIR}/"]
+        missing = [w for w in wanted if w not in current.split("\n")]
+        if missing:
+            os.makedirs(os.path.dirname(exclude), exist_ok=True)
+            try:
+                atomic_write(exclude, current + ("" if not current or current.endswith("\n") else "\n")
+                             + "# written by pier-picker: what Pi is given, and the Pis' worktrees\n" + "\n".join(missing) + "\n",
+                             project, 0o644)
+            except ApiError:
+                pass
+    log("info", "worktree.made", project=project, slot=slot, path=path, branch=branch)
+    return path
+
+
+def worktree_of(project, path):
+    """path if it is one of the project's Pi worktrees, else None."""
+    if not path:
+        return None
+    real, folder = os.path.realpath(path), os.path.realpath(os.path.join(project, WORKTREE_DIR))
+    return real if within(real, folder) and real != folder and os.path.isdir(real) else None
+
+
+def worktree_state(project, path):
+    """(changed files, commits not in the project's checked-out branch)."""
+    jail = git_jail(project)
+    try:
+        dirty = len([l for l in jailed_git(jail, "-C", path, "status", "--porcelain").splitlines() if l.strip()])
+        ahead = int(jailed_git(jail, "-C", path, "rev-list", "--count", f"{git_head(project) or 'HEAD'}..HEAD").strip() or 0)
+    except (ApiError, ValueError):
+        return None, None
+    return dirty, ahead
+
+
+def end_worktree(project, path):
+    """When its Pi ends: an untouched worktree goes, with its branch; one with work stays."""
+    dirty, ahead = worktree_state(project, path)
+    if dirty or ahead or dirty is None:
+        log("info", "worktree.kept", project=project, path=path, changed=dirty, commits=ahead)
+        return False
+    try:
+        branch = jailed_git(git_jail(project), "-C", path, "branch", "--show-current").strip()
+        jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "worktree", "remove", "--force", path)
+        if PI_BRANCH_RE.fullmatch(branch or ""):
+            jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "branch", "-D", branch)
+    except ApiError as exc:
+        log("warn", "worktree.remove-failed", project=project, path=path, err=str(exc))
+        return False
+    log("info", "worktree.removed", project=project, path=path, why="its Pi ended without changes")
+    return True
+
+
+def tidy_worktrees(project):
+    """The untouched worktrees of Pis that no longer run, removed (see end_worktree)."""
+    folder = os.path.join(project, WORKTREE_DIR)
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    running = {name for name, info in read_pi_sessions().items() if info.get("path") == project}
+    for name in names:
+        path = worktree_of(project, os.path.join(folder, name))
+        if path and not any(name == slot or name.startswith(slot + "-") for slot in running):
+            end_worktree(project, path)
+
+
+def api_worktrees(home, path):
+    """The Pis' worktrees of a project: branch, changes, commits ahead, whether its Pi runs."""
+    project = resolve_inside(home, path)
+    folder = os.path.join(project, WORKTREE_DIR)
+    running = {name for name, info in read_pi_sessions().items() if info.get("path") == project}
+    out = []
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        names = []
+    for name in names:
+        path = os.path.join(folder, name)
+        if name.startswith(".") or not os.path.isdir(path) or os.path.islink(path) or not os.path.exists(os.path.join(path, ".git")):
+            continue
+        try:
+            branch = jailed_git(git_jail(project), "-C", path, "branch", "--show-current").strip()
+        except ApiError:
+            branch = None
+        dirty, ahead = worktree_state(project, path)
+        out.append({"name": name, "path": path, "branch": branch, "changed": dirty, "ahead": ahead,
+                    "running": any(name == slot or name.startswith(slot + "-") for slot in running)})
+    return {"project": project, "worktrees": out}
+
+
+def api_worktree_remove(home, path, name):
+    """A worktree removed from Pier (its branch stays: it may hold work to merge)."""
+    project = resolve_inside(home, path)
+    target = worktree_of(project, os.path.join(project, WORKTREE_DIR, name or ""))
+    if not target or "/" in (name or ""):
+        raise ApiError(f"not one of the Pis' worktrees: {name}")
+    jailed_git(git_jail_rw(project), "-C", os.path.realpath(project), "worktree", "remove", "--force", target)
+    log("info", "worktree.removed", project=project, path=target, why="removed from Pier")
+    return {"removed": name}
 
 
 def api_stop(home, path, slot):
@@ -1100,17 +1899,20 @@ def api_stop(home, path, slot):
     for pi in pis:
         run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"))
         forget_pi_sessions()
+    # Killed with its session, a Pi cannot clean its worktree up itself: done here.
+    tidy_worktrees(project)
     return {"project": project, "stopped": len(pis)}
 
 
-def start_pi_session(path, extra, env, home, width, height, name=None):
+def start_pi_session(path, extra, env, home, width, height, name=None, worktree=None):
     """A detached tmux session running Pi in path, styled to stay discreet. False on failure.
     PI_PICKER_SLOT tells --exec-pi its session name, to record its conversation there."""
     name = name or session_name(path, home)
     command = [sys.executable, SCRIPT, "--exec-pi", path, *extra]
     # -f: a server started here reads Pier's config, not ~/.tmux.conf (see tmux_conf).
     conf = write_tmux_conf(load_config(home)[0])
-    if not run_quiet(tmux_cmd("-f", conf, "new-session", "-d", "-s", name, "-c", path, "-e", f"PI_PICKER_SLOT={name}",
+    where = ["-e", f"PIER_WORKTREE={worktree}"] if worktree else []
+    if not run_quiet(tmux_cmd("-f", conf, "new-session", "-d", "-s", name, "-c", path, "-e", f"PI_PICKER_SLOT={name}", *where,
                               "-x", str(width), "-y", str(height), *command), env):
         log("error", "tmux.new-session-failed", project=path, session=name)
         return False
@@ -1125,7 +1927,7 @@ def start_pi_session(path, extra, env, home, width, height, name=None):
     if sandbox_wanted(config):
         label += "  [sandbox]"
     # The rest of the bar's look is global, in tmux_conf: only the project is per session.
-    run_quiet(tmux_cmd("set-option", "-t", f"={name}", "status-left", f" pi  {label} "), env)
+    run_quiet(tmux_cmd("set-option", "-t", f"={name}:", "status-left", f" pi  {label} "), env)
     if extra[:1] == ["--session"] and len(extra) == 2:
         set_pi_file(name, extra[1])
     return True
@@ -1150,7 +1952,7 @@ def tmux_conf(config):
       on no background: it follows the terminal's theme.
     """
     lines = [
-        "# Written by pi-dir-picker for the tmux server of Pi's sessions (see tmux_conf there).",
+        "# Written by pier-picker for the tmux server of Pi's sessions (see tmux_conf there).",
         "# Rewritten at each start. ~/.tmux.conf is not read by this server.",
         "set -s extended-keys on",
         "set -sq extended-keys-format csi-u",
@@ -1200,12 +2002,13 @@ def tmux_server_options(env, config):
     for name in pi_sessions():
         for option in ("status-style", "status-right", "status-right-length", "window-status-format",
                        "window-status-current-format", "status-left-length"):
-            run_quiet(tmux_cmd("set-option", "-u", "-t", f"={name}", option), env)
+            run_quiet(tmux_cmd("set-option", "-u", "-t", f"={name}:", option), env)
 
 
 def set_pi_file(slot, file):
-    """Record in tmux which conversation the Pi of a session writes."""
-    run_quiet(tmux_cmd("set-option", "-t", f"={slot}", "@pi-file", file))
+    """Record in tmux which conversation the Pi of a session writes. set-option takes a
+    pane: "=name:" is the session's (without the colon, tmux looks for a window)."""
+    run_quiet(tmux_cmd("set-option", "-t", f"={slot}:", "@pi-file", file))
     forget_pi_sessions()
 
 
@@ -1218,7 +2021,7 @@ def set_pi_file(slot, file):
 # and whether it works, to ~/.pi/pier/pis/<tmux session>.json. ~/.pi because the sandbox
 # lets Pi write there and nowhere else outside the project.
 
-PIER_EXTENSION = """// Written by Pier (pi-dir-picker): tells Pier which conversation this Pi holds and
+PIER_EXTENSION = """// Written by Pier (pier-picker): tells Pier which conversation this Pi holds and
 // whether it is working. Loaded with --extension by the picker only; it writes one small
 // file, PIER_STATE, and nothing else.
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -1277,10 +2080,10 @@ def pier_extension():
 def pier_state(slot):
     """What the Pi of a tmux session last said: {"file", "working"}, or None (no word
     from it: an older Pi, or one started before Pier gave the extension)."""
+    text = read_text(pier_state_path(slot), 64 * 1024, root=pier_dir())
     try:
-        with open(pier_state_path(slot), encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
+        data = json.loads(text) if text is not None else None
+    except ValueError:
         return None
     if not isinstance(data, dict):
         return None
@@ -1308,7 +2111,7 @@ def said_file_ok(file):
 # created since included (they are removed), or only the files chosen.
 #
 # They live outside the project, in a git repository of their own per project under
-# ~/.local/state/pi-dir-picker/checkpoints. The project's own git, if any, is never
+# ~/.local/state/pier-picker/checkpoints. The project's own git, if any, is never
 # touched, and Pi cannot reach them: its sandbox hides that folder. git stores each
 # version of a file once, so a restore point costs only what changed. That repository
 # reads no configuration but its own: no hook, filter or fsmonitor of yours runs.
@@ -1330,7 +2133,7 @@ CHECKPOINT_TOTAL_MAX = 1024 * 1024 * 1024
 CHECKPOINT_TIMEOUT = 120
 CHECKPOINT_POLL = 0.3
 CHECKPOINT_GC_EVERY = 25
-CHECKPOINT_EXCLUDE = ("/.pi-images/", "/.pi-files/", "/.pi-shared/", "/.pi/devbox-history/",
+CHECKPOINT_EXCLUDE = ("/.pi-images/", "/.pi-files/", "/.pi-shared/", "/.pi-worktrees/", "/.pi/devbox-history/",
                       "node_modules/", "__pycache__/", ".venv/", ".mypy_cache/", ".pytest_cache/")
 # Points that only mark time passing: one with the same files as the point before it
 # replaces it, so that every point in the list is a different state.
@@ -1449,17 +2252,19 @@ def checkpoint_init(project):
         os.makedirs(store, mode=0o700, exist_ok=True)
         checkpoint_git(project, "init", "-q")
         log("info", "checkpoint.init", project=project, store=store)
-    # A lock left by a git that was killed would block every later point.
+    # A lock left by a git that was killed would block every later point. Every git
+    # that writes here runs under CheckpointLock, held now: one found is stale, at once
+    # (without flock, only after 10 minutes).
     lock = os.path.join(store, "index.lock")
     try:
-        if time.time() - os.stat(lock).st_mtime > 600:
+        if fcntl or time.time() - os.stat(lock).st_mtime > 600:
             os.remove(lock)
             log("warn", "checkpoint.stale-lock", project=project)
     except OSError:
         pass
     os.makedirs(os.path.join(store, "info"), exist_ok=True)
     with open(os.path.join(store, "info", "exclude"), "w", encoding="utf-8") as handle:
-        handle.write("# written by pi-dir-picker: never saved in restore points\n")
+        handle.write("# written by pier-picker: never saved in restore points\n")
         handle.write("".join(f"{pattern}\n" for pattern in CHECKPOINT_EXCLUDE))
 
 
@@ -1722,7 +2527,7 @@ class PromptWatcher(threading.Thread):
             start = 0
         if size == start:
             return
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             handle.seek(start)
             chunk = handle.read(size - start)
         end = chunk.rfind(b"\n")
@@ -1852,7 +2657,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 11
+API_VERSION = 15
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -1949,6 +2754,24 @@ def atomic_write(path, text, root, mode=0o600):
     folder = os.path.dirname(path)
     if not within(os.path.realpath(folder), os.path.realpath(root)):
         raise ApiError(f"refusing to write outside {pretty_path(root, home_dir())}: {os.path.basename(path)}")
+    if SAFE_FD:
+        # Through the folder's descriptor: swapped for a link after the check above, it
+        # still cannot send the file elsewhere.
+        data = text.encode("utf-8") if isinstance(text, str) else text
+        dir_fd = open_folder(root, folder)
+        tmp = f".pier-{os.urandom(6).hex()}.tmp"
+        try:
+            write_new_at(dir_fd, tmp, data, mode)
+            os.replace(tmp, os.path.basename(path), src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+        except BaseException:
+            try:
+                os.unlink(tmp, dir_fd=dir_fd)
+            except OSError:
+                pass
+            raise
+        finally:
+            os.close(dir_fd)
+        return
     fd, tmp = tempfile.mkstemp(dir=folder, prefix=".pier-", suffix=".tmp")
     try:
         with os.fdopen(fd, "wb") as handle:
@@ -1963,8 +2786,18 @@ def atomic_write(path, text, root, mode=0o600):
         raise
 
 
-def create_new(path, text, mode=0o644):
-    """Create path with text if it does not exist; a link there is not followed."""
+def create_new(path, text, mode=0o644, root=None):
+    """Create path with text if it does not exist; a link there is not followed. With
+    root (the project), its folder is reached from root without following links."""
+    if root is not None and SAFE_FD:
+        dir_fd = open_folder(root, os.path.dirname(path))
+        try:
+            write_new_at(dir_fd, os.path.basename(path), text.encode("utf-8"), mode)
+        except FileExistsError:
+            return False
+        finally:
+            os.close(dir_fd)
+        return True
     try:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
     except FileExistsError:
@@ -1987,7 +2820,7 @@ def safe_folder(project, rel):
 def ignored_dir(project, name):
     """project/name, created with its own .gitignore so nothing in it gets committed."""
     folder = safe_folder(project, name)
-    create_new(os.path.join(folder, ".gitignore"), "*\n")
+    create_new(os.path.join(folder, ".gitignore"), "*\n", root=project)
     return folder
 
 
@@ -1996,11 +2829,21 @@ def type_into_pi(pi, text):
     text = "".join(ch for ch in text if ch.isprintable())
     # send-keys takes a pane: "=name:" is the session's active pane, "=" makes the
     # match exact. Without the colon, tmux reads the target as a window name.
-    return run_quiet(tmux_cmd("send-keys", "-t", f"={pi['name']}:", "-l", text))
+    # "--": a text starting with "-" is text, not an option of send-keys.
+    return run_quiet(tmux_cmd("send-keys", "-t", f"={pi['name']}:", "-l", "--", text))
 
 
-def save_new(folder, filename, data):
+def save_new(folder, filename, data, root):
+    """folder/filename created with data, folder reached from root (the project)
+    without following links."""
     saved = os.path.join(folder, filename)
+    if SAFE_FD:
+        dir_fd = open_folder(root, folder)
+        try:
+            write_new_at(dir_fd, filename, data, 0o600)
+        finally:
+            os.close(dir_fd)
+        return saved
     fd = os.open(saved, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as handle:
         handle.write(data)
@@ -2038,7 +2881,7 @@ def api_paste_image(home, target, data):
         raise ApiError("not a PNG, JPEG, GIF or WebP image")
     project, session = target_project(home, target, pi_sessions())
     filename = f"{stamp()}.{kind}"
-    saved = save_new(ignored_dir(project, IMAGE_DIR), filename, data)
+    saved = save_new(ignored_dir(project, IMAGE_DIR), filename, data, project)
     return delivered(project, home, saved, f"@{IMAGE_DIR}/{filename}", session)
 
 
@@ -2048,7 +2891,7 @@ def api_paste_file(home, name, target, data):
         raise ApiError(f"file larger than {FILE_MAX_BYTES // (1024 * 1024)} MB")
     project, session = target_project(home, target, pi_sessions())
     filename = f"{stamp()}-{safe_name(name, 'file')}"
-    saved = save_new(ignored_dir(project, FILES_DIR), filename, data)
+    saved = save_new(ignored_dir(project, FILES_DIR), filename, data, project)
     return delivered(project, home, saved, f"@{FILES_DIR}/{filename}", session)
 
 
@@ -2313,7 +3156,7 @@ def read_session(path):
         usage = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "cost": 0.0, "turns": 0, "model": None,
                  "days": {}}
         last = None  # "user", "toolResult", or the stop reason of the last assistant message
-    with open(path, "rb") as handle:
+    with open_plain(path, sessions_root()) as handle:
         handle.seek(offset)
         for raw in handle:
             if not raw.endswith(b"\n"):
@@ -2364,7 +3207,7 @@ def session_edits(session):
     """The writes and edits of a session file with their whole arguments, and which
     tool calls finished (with an error or not): for api_diff, read once per diff."""
     calls, finished = {}, {}
-    with open(session, "rb") as handle:
+    with open_plain(session, sessions_root()) as handle:
         for raw in handle:
             if b'"role":"toolResult"' in raw:
                 found = re.search(rb'"toolCallId":"([^"]+)"', raw)
@@ -2387,7 +3230,7 @@ def session_edits(session):
 
 def session_tail(path, offset):
     try:
-        with open(path, "rb") as handle:
+        with open_plain(path, sessions_root()) as handle:
             handle.seek(max(0, offset - _TAIL))
             return handle.read(min(offset, _TAIL))
     except OSError:
@@ -2446,7 +3289,7 @@ def session_working(session):
 
 def session_working_now(session):
     try:
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             handle.seek(0, os.SEEK_END)
             size = handle.tell()
             handle.seek(max(0, size - 256 * 1024))
@@ -2541,7 +3384,7 @@ def api_diff(home, file, path, conversation=""):
         if status == "??":
             untracked = True
             try:
-                with open(full, "rb") as handle:
+                with open_plain(full, project) as handle:
                     data = handle.read(DIFF_MAX_BYTES)
                 diff = "".join(f"+{line}\n" for line in data.decode("utf-8", "replace").splitlines())
             except OSError:
@@ -2692,19 +3535,20 @@ def api_remove(home, path):
             marks = handoff_marks(shared)
             if name not in marks or is_mounted(full) or not os.path.isdir(full):
                 raise ApiError(f"not a handed-off copy: {path}")
-            writable_tree(full)
-            shutil.rmtree(full)
+            remove_entry(home, full)
             del marks[name]
             save_handoff_marks(shared, marks)
         return {"removed": full}
     if not within(full, home) or parent not in (IMAGE_DIR, FILES_DIR) or os.path.basename(full) == ".gitignore":
         raise ApiError(f"not something sent: {path}")
+    # The checks above read paths Pi can change meanwhile (.pi-files swapped for a link
+    # to home): the removal itself walks down from home without following links.
     if os.path.isdir(full) and parent == FILES_DIR:
         if any(within(m, full) for m in mounted_paths()):
             raise ApiError(f"a folder is mounted inside {path}: stop that share first")
-        shutil.rmtree(full)
+        remove_entry(home, full)
     elif os.path.isfile(full):
-        os.remove(full)
+        remove_entry(home, full)
     else:
         raise ApiError(f"not something sent: {path}")
     return {"removed": full}
@@ -2729,10 +3573,10 @@ HANDOFF_MARKS = ".handed-off.json"
 def handoff_marks(shared):
     """{folder name: {"mode", "at"}} for the shares of a project's .pi-shared that were
     handed off: their folder now holds a copy instead of a mount."""
+    text = read_text(os.path.join(shared, HANDOFF_MARKS), 1024 * 1024, root=os.path.dirname(shared))
     try:
-        with open(os.path.join(shared, HANDOFF_MARKS), encoding="utf-8") as handle:
-            marks = json.load(handle)
-    except (OSError, ValueError):
+        marks = json.loads(text) if text is not None else {}
+    except ValueError:
         return {}
     return marks if isinstance(marks, dict) else {}
 
@@ -2757,15 +3601,43 @@ def extract_tar(stream, dest):
     return count
 
 
-def read_only_tree(path):
+def private_staging():
+    """A fresh folder of the picker's own (in its state folder, which Pi never sees),
+    where an archive is unpacked before it is moved into a project: Pi cannot swap
+    anything inside it while tarfile writes there."""
+    base = os.path.join(os.path.dirname(state_path(home_dir())), "incoming")
+    os.makedirs(base, mode=0o700, exist_ok=True)
+    return tempfile.mkdtemp(dir=base)
+
+
+def move_into(source, folder, name, root):
+    """Rename source (a folder of ours) to folder/name, folder reached from root without
+    following links. False when they are on different file systems (the caller copies)."""
+    if not SAFE_FD:
+        os.rename(source, os.path.join(folder, name))
+        return True
+    dir_fd = open_folder(root, folder)
+    try:
+        os.rename(source, name, dst_dir_fd=dir_fd)
+    except OSError as exc:
+        if exc.errno == 18:  # EXDEV
+            return False
+        raise
+    finally:
+        os.close(dir_fd)
+    return True
+
+
+def read_only_tree(path, keep_top=False):
     """Removes write permission everywhere under path: a read-only share stays read-only
-    once it is a copy."""
+    once it is a copy. Only on a folder of the picker's own (see private_staging)."""
     for root, dirs, files in os.walk(path, topdown=False):
         for name in files + dirs:
             full = os.path.join(root, name)
             if not os.path.islink(full):
                 os.chmod(full, os.lstat(full).st_mode & ~0o222)
-    os.chmod(path, os.stat(path).st_mode & ~0o222)
+    if not keep_top:
+        os.chmod(path, os.stat(path).st_mode & ~0o222)
 
 
 def writable_tree(path):
@@ -2787,28 +3659,57 @@ def api_handoff(home, mount, mode, stream):
     mount = share_mountpoint(home, mount)
     shared = os.path.dirname(mount)
     name = os.path.basename(mount)
-    staging = os.path.join(shared, f".handoff-{name}-{stamp()}")
-    os.makedirs(staging, mode=0o700)
+    staging = private_staging()
     try:
         count = extract_tar(stream, staging)
         entries = os.listdir(staging)
         # Pier packs the folder under its own name: unpack that level away.
         inner = os.path.join(staging, entries[0]) if len(entries) == 1 and os.path.isdir(os.path.join(staging, entries[0])) else staging
+        if mode != "rw":
+            # Here, where Pi reaches nothing; the top folder last, once it is in place
+            # (moving a folder needs it writable).
+            read_only_tree(inner, keep_top=True)
         if is_mounted(mount):
             tool = shutil.which("fusermount3") or shutil.which("fusermount")
             if not tool or not run_quiet([tool, "-u", "-z", mount]):
                 raise ApiError("could not unmount the share")
-        if os.path.isdir(mount):
-            os.rmdir(mount)
-        os.rename(inner, mount)
+        project = os.path.dirname(shared)
+        dir_fd = open_folder(project, shared) if SAFE_FD else None
+        try:
+            if dir_fd is None:
+                if os.path.isdir(mount):
+                    os.rmdir(mount)
+                os.rename(inner, mount)
+            else:
+                try:
+                    os.rmdir(name, dir_fd=dir_fd)
+                except FileNotFoundError:
+                    pass
+                try:
+                    os.rename(inner, name, dst_dir_fd=dir_fd)
+                except OSError as exc:
+                    if exc.errno != 18:  # EXDEV: another file system, copied instead
+                        raise
+                    shutil.copytree(inner, mount, symlinks=True)
+            if mode != "rw":
+                if dir_fd is None:
+                    os.chmod(mount, os.stat(mount).st_mode & ~0o222)
+                else:
+                    top = os.open(name, DIR_FLAGS, dir_fd=dir_fd)
+                    try:
+                        os.fchmod(top, stat.S_IMODE(os.fstat(top).st_mode) & ~0o222)
+                    finally:
+                        os.close(top)
+        finally:
+            if dir_fd is not None:
+                os.close(dir_fd)
     except (ApiError, OSError, Exception) as exc:
         writable_tree(staging) if os.path.isdir(staging) else None
         shutil.rmtree(staging, ignore_errors=True)
         raise ApiError(str(exc)) if not isinstance(exc, ApiError) else exc
     if os.path.isdir(staging):
+        writable_tree(staging)
         shutil.rmtree(staging, ignore_errors=True)
-    if mode != "rw":
-        read_only_tree(mount)
     with marks_lock(shared):
         marks = handoff_marks(shared)
         marks[name] = {"mode": "rw" if mode == "rw" else "ro", "at": int(time.time())}
@@ -2816,6 +3717,134 @@ def api_handoff(home, mount, mode, stream):
     project = os.path.dirname(shared)
     return {"mountpoint": mount, "project": project, "label": pretty_path(project, home),
             "relative": f"{SHARE_DIR}/{name}", "count": count}
+
+
+# --- take back, file by file -------------------------------------------------------------
+#
+# Pier compares a handed-off copy with the original folder on the PC: the picker lists
+# the copy's files with their SHA-256 (copy-manifest), shows one file's difference
+# (copy-diff, the PC's version on stdin), and sends the files chosen (--download-files).
+# The copy is Pi's to write: it is walked through file descriptors (os.fwalk), links are
+# listed but never followed, and only plain files are read.
+
+# Left out of the comparison, as Pier leaves them out of the copy (copy.rs).
+COPY_SKIP = {".git", "node_modules", "target", "__pycache__", ".venv", "venv", ".DS_Store", "Thumbs.db"}
+MANIFEST_MAX_FILES = 20000
+MANIFEST_MAX_BYTES = 2 * 1024 * 1024 * 1024
+COPY_DIFF_MAX = 1024 * 1024
+
+
+def copy_root(home, path):
+    """path, checked to be a copy Pier made (a handed-off share, or a folder copy)."""
+    full = os.path.realpath(path)
+    parent = os.path.basename(os.path.dirname(full))
+    if not within(full, home) or parent not in (SHARE_DIR, FILES_DIR) or is_mounted(full) or not os.path.isdir(full):
+        raise ApiError(f"not a copy that can be taken back: {path}")
+    return full
+
+
+def copy_rel_ok(rel):
+    parts = rel.split("/")
+    return bool(rel) and len(rel) < 4096 and not rel.startswith("/") and all(p not in ("", ".", "..") for p in parts) \
+        and not any(ord(c) < 32 for c in rel)
+
+
+def hash_fd(fd):
+    digest = hashlib.sha256()
+    while True:
+        block = os.read(fd, 1 << 20)
+        if not block:
+            return digest.hexdigest()
+        digest.update(block)
+
+
+def api_copy_manifest(home, path):
+    """{"files": {relative path: {"size", "sha256"}}, "links": [...], "truncated"}."""
+    full = copy_root(home, path)
+    files, links, total, truncated = {}, [], 0, False
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    walker = os.fwalk(full, follow_symlinks=False) if hasattr(os, "fwalk") else ((r, d, f, None) for r, d, f in os.walk(full))
+    for root, dirs, names, dir_fd in walker:
+        dirs[:] = [d for d in dirs if d not in COPY_SKIP]
+        rel_root = os.path.relpath(root, full)
+        for name in sorted(names):
+            if name in COPY_SKIP:
+                continue
+            rel = name if rel_root == "." else f"{rel_root}/{name}".replace(os.sep, "/")
+            try:
+                st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False) if dir_fd is not None else os.lstat(os.path.join(root, name))
+            except OSError:
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                links.append(rel)
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            if len(files) >= MANIFEST_MAX_FILES or total + st.st_size > MANIFEST_MAX_BYTES:
+                truncated = True
+                break
+            try:
+                fd = os.open(name, flags, dir_fd=dir_fd) if dir_fd is not None else os.open(os.path.join(root, name), flags)
+            except OSError:
+                continue
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    continue
+                files[rel] = {"size": st.st_size, "sha256": hash_fd(fd)}
+                total += st.st_size
+            finally:
+                os.close(fd)
+        if truncated:
+            break
+    return {"path": full, "files": files, "links": links, "truncated": truncated}
+
+
+def api_copy_diff(home, path, rel, local):
+    """The difference between the PC's version of rel (local, bytes; empty when it has
+    none) and the copy's, as a unified diff ("-" the PC, "+" Pi)."""
+    import difflib
+    full = copy_root(home, path)
+    if not copy_rel_ok(rel):
+        raise ApiError(f"not a file of the copy: {rel}")
+    fd = open_regular(os.path.join(full, *rel.split("/")), root=full)
+    if fd is None:
+        remote = b""
+    else:
+        with os.fdopen(fd, "rb") as handle:
+            remote = handle.read(COPY_DIFF_MAX + 1)
+    if len(remote) > COPY_DIFF_MAX or len(local) > COPY_DIFF_MAX:
+        return {"rel": rel, "too_big": True}
+    if b"\0" in remote or b"\0" in local:
+        return {"rel": rel, "binary": True, "size_vm": len(remote), "size_pc": len(local)}
+    before = local.decode("utf-8", "replace").splitlines(keepends=True)
+    after = remote.decode("utf-8", "replace").splitlines(keepends=True)
+    diff = "".join(difflib.unified_diff(before, after, f"PC/{rel}", f"Pi/{rel}", n=3))
+    return {"rel": rel, "diff": diff[:4 * COPY_DIFF_MAX]}
+
+
+def download_files(home, path):
+    """--download-files PATH: the files of a copy named on stdin (one relative path a
+    line), as a tar stream on stdout. Plain files only, opened without following links."""
+    import tarfile
+    try:
+        full = copy_root(home, path)
+    except ApiError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    wanted = [rel for rel in sys.stdin.read(8 * 1024 * 1024).split("\n") if rel]
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        for rel in wanted:
+            if not copy_rel_ok(rel):
+                continue
+            fd = open_regular(os.path.join(full, *rel.split("/")), root=full)
+            if fd is None:
+                continue
+            with os.fdopen(fd, "rb") as handle:
+                info = archive.gettarinfo(fileobj=handle, arcname=rel)
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                archive.addfile(info, handle)
+    return 0
 
 
 def download_tar(home, path):
@@ -2842,15 +3871,18 @@ def api_upload_dir(home, name, target, stream):
     project, session = target_project(home, target, pi_sessions())
     folder = ignored_dir(project, FILES_DIR)
     dest = os.path.join(folder, f"{stamp()}-{safe_name(name, 'folder')}")
-    os.makedirs(dest, mode=0o700)
+    staging = private_staging()
     try:
-        count = extract_tar(stream, dest)
+        count = extract_tar(stream, staging)
+        if not move_into(staging, folder, os.path.basename(dest), project):
+            shutil.copytree(staging, dest, symlinks=True)  # another file system: copied
     except ApiError as exc:
-        shutil.rmtree(dest, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
         raise ApiError(f"{exc}: share it live instead")
     except Exception as exc:  # noqa: BLE001 - nothing half-made stays
-        shutil.rmtree(dest, ignore_errors=True)
+        shutil.rmtree(staging, ignore_errors=True)
         raise ApiError(f"{type(exc).__name__}: {exc}" if not isinstance(exc, (tarfile.TarError, OSError)) else str(exc))
+    shutil.rmtree(staging, ignore_errors=True)  # gone already when it was moved
     relative = f"{FILES_DIR}/{os.path.basename(dest)}"
     typed = session is not None and type_into_pi(session, relative + "/ ")
     return {"saved": dest, "project": project, "label": pretty_path(project, home),
@@ -2885,9 +3917,14 @@ def context_file_in(directory):
     return None
 
 
-def read_text(path, limit=TEXT_MAX_BYTES):
+def read_text(path, limit=TEXT_MAX_BYTES, root=None):
+    """At most limit bytes of a plain file, as text; None otherwise. With root (the
+    project), a link leading out of it is not followed: see open_regular."""
+    fd = open_regular(path, root)
+    if fd is None:
+        return None
     try:
-        with open(path, "rb") as handle:
+        with os.fdopen(fd, "rb") as handle:
             return handle.read(limit).decode("utf-8", "replace")
     except OSError:
         return None
@@ -2924,10 +3961,10 @@ def startup_files(project, home):
 
 def trust_decision(project):
     """True, False, or None (never decided), as Pi reads ~/.pi/agent/trust.json."""
+    text = read_text(os.path.join(agent_dir(), "trust.json"), 4 * 1024 * 1024)
     try:
-        with open(os.path.join(agent_dir(), "trust.json"), encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
+        data = json.loads(text) if text is not None else None
+    except ValueError:
         return None
     if not isinstance(data, dict):
         return None
@@ -2966,7 +4003,7 @@ def history_entries(project, which):
         key = (st.st_size, st.st_mtime_ns)
         cached = _HISTORY.get(path)
         if not cached or cached[0] != key:
-            cached = (key, read_text(path, 64 * 1024) or "")
+            cached = (key, read_text(path, 64 * 1024, root=project) or "")
             remember(_HISTORY, path, cached, 512)
         entries.append({"path": path, "at": int(st.st_mtime), "text": cached[1]})
     return entries
@@ -2978,7 +4015,7 @@ _HISTORY = {}  # history file -> ((size, mtime), text)
 def first_prompt(session):
     """The first thing the user asked in a session file, for a readable list."""
     try:
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             for raw in handle:
                 if b'"role":"user"' not in raw:
                     continue
@@ -3017,7 +4054,7 @@ def session_name_of(session):
         # name given lately is; reading hundreds of MB would stall the watch.
         offset, name = max(0, st.st_size - NAME_SCAN_COLD), None
     try:
-        with open(session, "rb") as handle:
+        with open_plain(session, sessions_root()) as handle:
             handle.seek(offset)
             rest = b""
             while True:
@@ -3046,7 +4083,7 @@ def session_name_of(session):
 
 
 # Names and categories given in Pier to conversations: Pier's own, in
-# ~/.local/state/pi-dir-picker/labels.json (Pi's files are not touched).
+# ~/.local/state/pier-picker/labels.json (Pi's files are not touched).
 
 LABEL_MAX = 80
 
@@ -3225,7 +4262,13 @@ def package_folder(spec, base):
         at = name.rfind("@")
         return os.path.join(base, "npm", "node_modules", name[:at] if at > 0 else name)
     if spec.startswith(("git:", "http://", "https://", "ssh://", "git@")):
-        return None  # where Pi clones it is its own business: version unknown here
+        # Pi clones to <base>/git/<host>/<path> (docs/packages.md), without the @ref.
+        rest = re.sub(r"^(git:|https?://|ssh://)", "", spec)
+        rest = re.sub(r"^git@([^:/]+)[:/]", r"\1/", rest)  # git@host:user/repo
+        rest = re.sub(r"@[^/@]*$", "", rest).removesuffix(".git").strip("/")
+        if not rest or ".." in rest.split("/"):
+            return None
+        return os.path.join(base, "git", *rest.split("/"))
     path = os.path.expanduser(spec)
     return path if os.path.isabs(path) else os.path.join(base, path)
 
@@ -3334,7 +4377,7 @@ def folder_project(folder):
         names = []
     for name in names[:3]:
         try:
-            with open(os.path.join(folder, name), "rb") as handle:
+            with open_plain(os.path.join(folder, name), sessions_root()) as handle:
                 header = json.loads(handle.readline(64 * 1024))
             if isinstance(header, dict) and isinstance(header.get("cwd"), str):
                 project = header["cwd"]
@@ -3428,11 +4471,1179 @@ def api_conversations(home):
 
 # Pi's version and the newest one, and the newest version of each npm package. Asked to
 # npm's registry from the VM, at most every 6 hours (an hour after a failure); the
-# answer is kept in ~/.local/state/pi-dir-picker/versions.json.
+# answer is kept in ~/.local/state/pier-picker/versions.json.
 
 PI_NPM = "@earendil-works/pi-coding-agent"
 VERSIONS_FRESH = 6 * 3600
 VERSIONS_RETRY = 3600
+
+
+# --- managing what Pi loads: skills, extensions, prompts, packages ------------------------
+#
+# Setup lists each resource with whether Pi loads it, and turns one on or off the way
+# `pi config` does (Pi's own package-manager.js): a "+path" or "-path" entry, path
+# relative to its base, in the "skills" / "extensions" / "prompts" list of
+# settings.json, or of the package's entry there (then relative to the package root).
+# Local skills can be made, edited, imported from the PC and put in a bin; packages are
+# installed and removed by `pi install` / `pi remove`, run in Pi's sandbox (see
+# pi_package). Pi reads what changed when it next starts.
+
+MANAGED_KINDS = ("skills", "extensions", "prompts")
+SKILL_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # Pi's rule: 1-64, lowercase, hyphens
+
+
+def scope_base(scope, project):
+    """(base folder, settings.json, root that writes stay in) of a scope."""
+    if scope == "project":
+        return os.path.join(project, ".pi"), os.path.join(project, ".pi", "settings.json"), project
+    agent = agent_dir()
+    return agent, os.path.join(agent, "settings.json"), os.path.dirname(os.path.realpath(agent))
+
+
+def skill_files(folder, recursive=True, top_md=True):
+    """SKILL.md of every skill folder under folder (and, at its top, plain .md skills)."""
+    found = []
+    try:
+        entries = sorted(os.scandir(folder), key=lambda e: e.name)
+    except OSError:
+        return found
+    for entry in entries:
+        if entry.name.startswith(".") or entry.is_symlink():
+            continue
+        if entry.is_dir():
+            skill = os.path.join(entry.path, "SKILL.md")
+            if os.path.isfile(skill):
+                found.append(skill)
+            elif recursive:
+                found.extend(skill_files(entry.path, True, False))
+        elif top_md and entry.name.endswith(".md") and entry.is_file():
+            found.append(entry.path)
+        if len(found) >= RESOURCE_MAX:
+            break
+    return found
+
+
+def kind_files(folder, kind):
+    """The files of one kind in a folder, by Pi's conventions."""
+    if kind == "skills":
+        return skill_files(folder)
+    try:
+        names = sorted(n for n in os.listdir(folder) if not n.startswith("."))[:RESOURCE_MAX]
+    except OSError:
+        return []
+    out = []
+    for name in names:
+        path = os.path.join(folder, name)
+        if kind == "prompts" and name.endswith(".md") and os.path.isfile(path):
+            out.append(path)
+        elif kind == "extensions" and (name.endswith((".ts", ".js", ".mjs")) or os.path.isdir(path)):
+            out.append(path)
+    return out
+
+
+def frontmatter(path):
+    """name and description of a skill (its YAML front matter, the simple form)."""
+    text = read_text(path, 16 * 1024) or ""
+    out = {}
+    if text.startswith("---"):
+        for line in text.split("\n")[1:40]:
+            if line.strip() == "---":
+                break
+            key, _, value = line.partition(":")
+            if key.strip() in ("name", "description") and value.strip():
+                out[key.strip()] = value.strip().strip("\"'")[:300]
+    return out
+
+
+def resource_state(rel_paths, patterns):
+    """Whether Pi loads a resource, from the patterns of its list: plain entries other
+    than paths include (none: all), "!glob" excludes, "+path" / "-path" force; the last
+    exact one wins. rel_paths: the forms the resource answers to (file, skill folder)."""
+    import fnmatch
+    if patterns is None:
+        return True
+    if patterns == []:
+        return False
+    includes = [p for p in patterns if not p.startswith(("!", "+", "-")) and ("*" in p or "?" in p)]
+    enabled = any(fnmatch.fnmatch(r, p) for r in rel_paths for p in includes) if includes else True
+    for p in patterns:
+        target = p[1:] if p[:1] in "!+-" else p
+        target = target[2:] if target.startswith("./") else target
+        if p.startswith("!") and any(fnmatch.fnmatch(r, target) for r in rel_paths):
+            enabled = False
+        elif p.startswith(("+", "-")) and target in rel_paths:
+            enabled = p.startswith("+")
+    return enabled
+
+
+def resource_entry(kind, path, base, scope, patterns, source=None, local=False):
+    rel = os.path.relpath(path, base).replace(os.sep, "/")
+    forms = [rel]
+    if os.path.basename(path) == "SKILL.md":
+        forms.append(os.path.dirname(rel))
+    meta = frontmatter(path) if kind == "skills" else {}
+    folder = os.path.dirname(path) if os.path.basename(path) == "SKILL.md" else path
+    name = meta.get("name") or (os.path.basename(folder) if kind == "skills" else os.path.basename(path))
+    if kind == "prompts":
+        name = name[:-3] if name.endswith(".md") else name
+    return {"name": name, "description": meta.get("description"), "scope": scope, "rel": rel, "source": source,
+            "enabled": resource_state(forms, patterns), "path": path,
+            # A local skill in its own folder of skills/: Pier can edit it, or put it in the bin.
+            "editable": bool(local and kind == "skills" and os.path.basename(path) == "SKILL.md"
+                             and os.path.dirname(os.path.dirname(rel)) == "skills")}
+
+
+def package_resources(entry, base, scope):
+    """The resources of a package, with whether Pi loads each one."""
+    spec = entry if isinstance(entry, str) else entry.get("source") if isinstance(entry, dict) else None
+    root = package_folder(spec, base) if isinstance(spec, str) else None
+    out = {kind: [] for kind in MANAGED_KINDS}
+    if not root or not os.path.isdir(root):
+        return out
+    manifest = read_json_file(os.path.join(root, "package.json"))
+    declared = manifest.get("pi") if isinstance(manifest, dict) and isinstance(manifest.get("pi"), dict) else None
+    for kind in MANAGED_KINDS:
+        if declared is not None and isinstance(declared.get(kind), list):
+            import glob
+            files = []
+            for item in declared[kind]:
+                if not isinstance(item, str) or item.startswith(("!", "+", "-")):
+                    continue
+                for match in sorted(glob.glob(os.path.join(root, item))):
+                    files.extend(kind_files(match, kind) if os.path.isdir(match) and not os.path.isfile(os.path.join(match, "SKILL.md")) else
+                                 [os.path.join(match, "SKILL.md")] if os.path.isfile(os.path.join(match, "SKILL.md")) else [match])
+        else:
+            files = kind_files(os.path.join(root, kind), kind)
+        patterns = entry.get(kind) if isinstance(entry, dict) and isinstance(entry.get(kind), list) else None
+        for path in files[:RESOURCE_MAX]:
+            if within(os.path.realpath(path), os.path.realpath(root)):
+                out[kind].append(resource_entry(kind, path, root, scope, patterns, source=spec))
+    return out
+
+
+def api_resources(home, path):
+    """Everything Setup can manage for a project: the user's and the project's skills,
+    extensions and prompts, local or from packages, each with whether Pi loads it."""
+    project = resolve_inside(home, path)
+    out = {"project": project, "skills": [], "extensions": [], "prompts": [], "packages": []}
+    for scope in ("user", "project"):
+        base, settings_file, _ = scope_base(scope, project)
+        settings = read_json_file(settings_file)
+        settings = settings if isinstance(settings, dict) else {}
+        for kind in MANAGED_KINDS:
+            patterns = settings.get(kind) if isinstance(settings.get(kind), list) else None
+            for file in kind_files(os.path.join(base, kind), kind):
+                out[kind].append(resource_entry(kind, file, base, scope, patterns, local=True))
+        for entry in settings.get("packages") or []:
+            info = package_info(entry, base, scope)
+            if not info:
+                continue
+            info["resources"] = package_resources(entry, base, scope)
+            out["packages"].append(info)
+            for kind in MANAGED_KINDS:
+                out[kind].extend(info["resources"][kind])
+    return out
+
+
+def write_settings(scope, project, change):
+    """settings.json of a scope, read, changed by change(settings), written back."""
+    base, settings_file, root = scope_base(scope, project)
+    settings = read_json_file(settings_file) if os.path.exists(settings_file) else {}
+    if not isinstance(settings, dict):
+        raise ApiError(f"{pretty_path(settings_file, home_dir())} is not a JSON object: fix it by hand")
+    change(settings)
+    os.makedirs(base, exist_ok=True)
+    atomic_write(settings_file, json.dumps(settings, indent=2, ensure_ascii=False) + "\n", root, 0o644)
+
+
+def api_toggle_resource(home, scope, path, kind, source, rel, on):
+    """Turn a resource on or off, as `pi config` does: "+rel" or "-rel" in its list."""
+    project = resolve_inside(home, path)
+    if scope not in ("user", "project") or kind not in MANAGED_KINDS:
+        raise ApiError("unknown resource")
+    if not rel or rel.startswith(("/", "+", "-", "!")) or ".." in rel.split("/") or any(c in rel for c in "\n*?"):
+        raise ApiError(f"not a resource path: {rel}")
+    enable = on == "1"
+
+    def toggled(entries):
+        kept = [p for p in entries if not (isinstance(p, str) and (p[1:] if p[:1] in "!+-" else p) == rel)]
+        return kept + [("+" if enable else "-") + rel]
+
+    def change(settings):
+        if not source:
+            settings[kind] = toggled(settings.get(kind) if isinstance(settings.get(kind), list) else [])
+            return
+        packages = settings.get("packages") if isinstance(settings.get("packages"), list) else []
+        for i, entry in enumerate(packages):
+            spec = entry if isinstance(entry, str) else entry.get("source") if isinstance(entry, dict) else None
+            if spec != source:
+                continue
+            pkg = dict(entry) if isinstance(entry, dict) else {"source": spec}
+            pkg[kind] = toggled(pkg.get(kind) if isinstance(pkg.get(kind), list) else [])
+            packages[i] = pkg
+            settings["packages"] = packages
+            return
+        raise ApiError(f"{source} is not in {scope} settings")
+
+    write_settings(scope, project, change)
+    log("info", "resource.toggle", scope=scope, kind=kind, source=source or "local", rel=rel, on=enable)
+    return {"rel": rel, "enabled": enable}
+
+
+SKILL_TEMPLATE = """---
+name: {name}
+description: {description}
+---
+
+# {title}
+
+When to use this skill, and what to do, step by step.
+"""
+
+
+def skills_folder(scope, project):
+    base, _, root = scope_base(scope, project)
+    folder = os.path.join(base, "skills")
+    os.makedirs(folder, exist_ok=True)
+    return folder, root
+
+
+def skill_name(name):
+    if not SKILL_NAME_RE.fullmatch(name or "") or len(name) > 64:
+        raise ApiError("a skill's name: 1 to 64 lowercase letters, digits and single hyphens (my-skill)")
+    return name
+
+
+def api_skill_new(home, scope, path, name, description):
+    project = resolve_inside(home, path)
+    name = skill_name(name)
+    folder, root = skills_folder(scope, project)
+    description = " ".join((description or "").split())[:300] or "What this skill does, and when Pi should use it."
+    dir_fd = open_folder(root, folder) if SAFE_FD else None
+    try:
+        if dir_fd is None:
+            os.mkdir(os.path.join(folder, name), 0o755)
+        else:
+            os.mkdir(name, 0o755, dir_fd=dir_fd)
+    except FileExistsError:
+        raise ApiError(f"a skill named {name} is already there")
+    finally:
+        if dir_fd is not None:
+            os.close(dir_fd)
+    text = SKILL_TEMPLATE.format(name=name, description=description, title=name.replace("-", " ").capitalize())
+    create_new(os.path.join(folder, name, "SKILL.md"), text, 0o644, root=root)
+    log("info", "skill.new", scope=scope, name=name)
+    return {"name": name, "path": os.path.join(folder, name, "SKILL.md")}
+
+
+def api_skill_read(home, scope, path, name):
+    project = resolve_inside(home, path)
+    folder, root = skills_folder(scope, project)
+    text = read_text(os.path.join(folder, skill_name(name), "SKILL.md"), TEXT_MAX_BYTES, root=root)
+    if text is None:
+        raise ApiError(f"no SKILL.md for {name}")
+    return {"name": name, "text": text}
+
+
+def api_skill_write(home, scope, path, name, data):
+    project = resolve_inside(home, path)
+    folder, root = skills_folder(scope, project)
+    if len(data) > TEXT_MAX_BYTES:
+        raise ApiError(f"text larger than {TEXT_MAX_BYTES // 1024} KB")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ApiError("the text is not UTF-8")
+    target = os.path.join(folder, skill_name(name), "SKILL.md")
+    if not os.path.isfile(target):
+        raise ApiError(f"no skill named {name}")
+    atomic_write(target, text, root, 0o644)
+    log("info", "skill.saved", scope=scope, name=name, chars=len(text))
+    return {"saved": target}
+
+
+def trash_folder():
+    folder = os.path.join(os.path.dirname(state_path(home_dir())), "trash")
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    return folder
+
+
+def api_skill_delete(home, scope, path, name):
+    """A local skill moved to the picker's bin (~/.local/state/pier-picker/trash), where
+    Pi does not look: nothing is lost."""
+    project = resolve_inside(home, path)
+    folder, root = skills_folder(scope, project)
+    name = skill_name(name)
+    kept = f"{stamp()}-{scope}-{name}"
+    bin_folder = trash_folder()
+    src_fd = open_folder(root, folder) if SAFE_FD else None
+    try:
+        if src_fd is None:
+            os.rename(os.path.join(folder, name), os.path.join(bin_folder, kept))
+        else:
+            st = os.stat(name, dir_fd=src_fd, follow_symlinks=False)
+            if not stat.S_ISDIR(st.st_mode):
+                raise ApiError(f"{name} is not a skill folder")
+            dst_fd = os.open(bin_folder, DIR_FLAGS)
+            try:
+                os.rename(name, kept, src_dir_fd=src_fd, dst_dir_fd=dst_fd)
+            finally:
+                os.close(dst_fd)
+    except FileNotFoundError:
+        raise ApiError(f"no skill named {name}")
+    except OSError as exc:
+        if exc.errno == 18:  # another file system: copied, then removed
+            shutil.copytree(os.path.join(folder, name), os.path.join(bin_folder, kept), symlinks=True)
+            remove_entry(os.path.realpath(root), os.path.realpath(os.path.join(folder, name)))
+        else:
+            raise
+    finally:
+        if src_fd is not None:
+            os.close(src_fd)
+    log("info", "skill.binned", scope=scope, name=name, kept=kept)
+    return {"name": name, "kept": os.path.join(bin_folder, kept)}
+
+
+def api_skill_import(home, scope, path, name, stream):
+    """A skill folder sent from the PC (a tar stream, as a folder copy), unpacked out of
+    Pi's reach, checked to hold a SKILL.md, then moved into the skills."""
+    import tarfile
+    project = resolve_inside(home, path)
+    folder, root = skills_folder(scope, project)
+    wanted = re.sub(r"[^a-z0-9-]+", "-", (name or "").lower()).strip("-")[:64] or "skill"
+    staging = private_staging()
+    try:
+        extract_tar(stream, staging)
+        entries = os.listdir(staging)
+        inner = os.path.join(staging, entries[0]) if len(entries) == 1 and os.path.isdir(os.path.join(staging, entries[0])) else staging
+        skill_md = os.path.join(inner, "SKILL.md")
+        if not os.path.isfile(skill_md) or os.path.islink(skill_md):
+            raise ApiError("no SKILL.md at the top of that folder: it is not a skill")
+        declared = frontmatter(skill_md).get("name", "")
+        target = declared if SKILL_NAME_RE.fullmatch(declared) and len(declared) <= 64 else wanted
+        if os.path.lexists(os.path.join(folder, target)):
+            raise ApiError(f"a skill named {target} is already there: put it in the bin first")
+        if not move_into(inner, folder, target, root):
+            shutil.copytree(inner, os.path.join(folder, target), symlinks=True)
+    except (tarfile.TarError, OSError) as exc:
+        raise ApiError(str(exc))
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    log("info", "skill.imported", scope=scope, name=target)
+    return {"name": target, "path": os.path.join(folder, target, "SKILL.md")}
+
+
+_GALLERY = {}  # query -> (when, results)
+
+
+def api_gallery(home, query):
+    """Packages of the gallery (pi.dev/packages): those tagged pi-package on npm."""
+    import urllib.parse
+    import urllib.request
+    query = " ".join((query or "").split())[:100]
+    cached = _GALLERY.get(query)
+    if cached and time.monotonic() - cached[0] < 600:
+        return cached[1]
+    text = "keywords:pi-package" + (f" {query}" if query else "")
+    url = "https://registry.npmjs.org/-/v1/search?" + urllib.parse.urlencode({"text": text, "size": 40})
+    try:
+        with urllib.request.urlopen(url, timeout=10) as answer:
+            data = json.loads(answer.read(4 * 1024 * 1024))
+    except (OSError, ValueError) as exc:
+        raise ApiError(f"the npm registry did not answer ({exc})")
+    results = []
+    for item in data.get("objects") or []:
+        pkg = item.get("package") if isinstance(item, dict) else None
+        if not isinstance(pkg, dict) or not isinstance(pkg.get("name"), str):
+            continue
+        publisher = pkg.get("publisher") if isinstance(pkg.get("publisher"), dict) else {}
+        results.append({"name": pkg["name"], "version": pkg.get("version"), "date": pkg.get("date"),
+                        "description": (pkg.get("description") or "")[:300], "publisher": publisher.get("username"),
+                        "source": f"npm:{pkg['name']}"})
+    reply = {"query": query, "results": results}
+    _GALLERY[query] = (time.monotonic(), reply)
+    return reply
+
+
+def pi_package(args):
+    """--pi-package install|remove user|PROJECT SOURCE: `pi install` or `pi remove`
+    (-l for a project) in a terminal of Pier. npm runs the packages' install scripts:
+    with the sandbox on, it all runs in Pi's sandbox, network limited as Pi's is, so a
+    package cannot read your keys or the rest of home while it installs."""
+    if len(args) != 3 or args[0] not in ("install", "remove") or not PI_UPDATE_TARGET.fullmatch(args[2]):
+        print("usage: --pi-package install|remove user|PROJECT SOURCE")
+        return 2
+    action, scope, source = args
+    home = home_dir()
+    config, _ = load_config(home)
+    env = child_env(home)
+    argv = pi_argv(config, env)
+    if argv is None:
+        print("pi not found on PATH: install it or set PI_BIN")
+        pause_for_enter("press Enter to close ")
+        return 1
+    if scope == "user":
+        project, local = os.path.join(home, ".pi"), []
+    else:
+        project, local = resolve_inside(home, scope), ["-l"]
+    command = [*argv, action, *local, source]
+    print(f"$ pi {action} {' '.join(local + [source])}", flush=True)
+    network = None
+    if sandbox_wanted(config):
+        if not shutil.which("bwrap"):
+            print(SANDBOX_MISSING)
+            pause_for_enter("press Enter to close ")
+            return 1
+        for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
+            env.pop(key, None)
+        network, unlimited = network_plan(config, env, project)
+        if unlimited:
+            print(f"Pier: {unlimited}")
+        if network:
+            proxy_env(env)
+        command = sandbox_argv(command, os.path.realpath(project), home, config, env, network)
+        print("(in Pi's sandbox: the package sees ~/.pi and this project only"
+              + (", and reaches only network_allow)" if network else ")"), flush=True)
+    else:
+        print("(sandbox off: npm's install scripts run with all your rights)", flush=True)
+    log("info", f"pi.{action}", source=source, scope="user" if not local else project)
+    fd = seccomp_pipe() if sandbox_wanted(config) else None  # bwrap reads it: only in the sandbox
+    if fd is not None:
+        command = [command[0], "--seccomp", str(fd), *command[1:]]
+    try:
+        status = subprocess.call(command, env=env, cwd=project, pass_fds=() if fd is None else (fd,))
+    except OSError as exc:
+        print(f"cannot run pi: {exc}")
+        status = 1
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if network:
+            network.close()
+    log("warn" if status else "info", f"pi.{action}-done", source=source, status=status)
+    forget_versions(home)
+    print("\n" + ("done" if not status else f"pi {action} failed (status {status})")
+          + ". Pis load the change when they next start.")
+    if status and network:
+        print("If it needed another site, look for net.blocked in the picker's log (Logs tab), "
+              "and add it to network_allow in ~/.config/pier-picker/config.toml.")
+    pause_for_enter("press Enter to close ")
+    return status
+
+
+# --- git forges: GitHub, GitLab, Gitea / Forgejo ------------------------------------------
+#
+# Pi works in git as it likes inside its sandbox (commit, branch, merge, all local). What
+# talks to a forge goes through the picker, out of the sandbox, with a token Pi never
+# sees: Pi's tools (PIER_GIT_EXTENSION) ask the broker (GitBroker) over a Unix socket,
+# and the broker checks each request against the rules before doing it.
+#   - push: only branches under "pi/" (the default branch only while the remote repository
+#     is empty), never forced. The commits are first fetched, in git's jail (no network,
+#     the project read-only), into a bare mirror of the picker's own; the mirror then
+#     pushes with the token. No hook, filter or setting of the project runs with it.
+#   - pull: the forge into the mirror, then the mirror into the project's
+#     refs/remotes/origin/*, in the jail: Pi merges or rebases itself.
+#   - pull requests: opened, listed and read freely.
+#   - merging, and creating a repository: never by Pi alone. Its request waits in
+#     approvals.json until the user approves it in Pier, which then does it.
+# Tokens live in ~/.config/pier-picker/forges.json (mode 600), out of the sandbox's
+# sight; they are never logged, nor put on a command line (git gets them in its
+# environment, GIT_CONFIG_*).
+
+FORGE_KINDS = ("github", "gitlab", "gitea")
+PI_BRANCH_RE = re.compile(r"pi/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")
+REPO_NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,100}")
+REPO_PATH_RE = re.compile(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4}")
+FORGE_TIMEOUT = 20
+
+
+def forges_path(home):
+    return os.path.join(os.path.dirname(config_path(home)), "forges.json")
+
+
+def repos_path(home):
+    return os.path.join(os.path.dirname(state_path(home)), "repos.json")
+
+
+def approvals_path(home):
+    return os.path.join(os.path.dirname(state_path(home)), "approvals.json")
+
+
+def private_json(path):
+    """A JSON file of the picker's own; {} when missing or unreadable."""
+    fd = open_regular(path, follow=False)
+    if fd is None:
+        return {}
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            data = json.loads(handle.read(4 * 1024 * 1024) or b"{}")
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_private_json(path, data):
+    """A file of the picker's own, readable by its owner only."""
+    folder = os.path.dirname(path)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".pier-", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, indent=2))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def forge_api_base(kind, url):
+    url = url.rstrip("/")
+    if kind == "github":
+        return "https://api.github.com" if url in ("https://github.com", "https://www.github.com") else f"{url}/api/v3"
+    return f"{url}/api/v4" if kind == "gitlab" else f"{url}/api/v1"
+
+
+def forge_request(forge, method, path, body=None, raw_url=None):
+    """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
+    import urllib.error
+    import urllib.request
+    url = raw_url or forge_api_base(forge["kind"], forge["url"]) + path
+    headers = {"Accept": "application/json", "User-Agent": f"pier-picker/{VERSION}"}
+    if forge["kind"] == "github":
+        headers.update({"Authorization": f"Bearer {forge['token']}", "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28"})
+    elif forge["kind"] == "gitlab":
+        headers["PRIVATE-TOKEN"] = forge["token"]
+    else:
+        headers["Authorization"] = f"token {forge['token']}"
+    data = json.dumps(body).encode() if body is not None else None
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=FORGE_TIMEOUT) as answer:
+            text = answer.read(8 * 1024 * 1024)
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            payload = json.loads(exc.read(64 * 1024) or b"{}")
+            detail = payload.get("message") or payload.get("error") or ""
+            if isinstance(detail, (dict, list)):
+                detail = json.dumps(detail)[:300]
+        except (ValueError, OSError):
+            pass
+        raise ApiError(f"{forge['kind']} refused ({exc.code}){': ' + str(detail)[:300] if detail else ''}")
+    except (OSError, ValueError) as exc:
+        raise ApiError(f"{forge['url']} did not answer ({exc})")
+    try:
+        return json.loads(text) if text.strip() else {}
+    except ValueError:
+        return {}
+
+
+def load_forges(home):
+    data = private_json(forges_path(home))
+    return [f for f in data.get("forges", []) if isinstance(f, dict) and f.get("kind") in FORGE_KINDS]
+
+
+def forge_by_id(home, ident):
+    for forge in load_forges(home):
+        if forge.get("id") == ident:
+            return forge
+    raise ApiError(f"no forge account {ident}: connect it in Pier (Setup > Git)")
+
+
+def public_forge(forge):
+    return {k: forge.get(k) for k in ("id", "kind", "url", "login")}
+
+
+def api_forges(home):
+    return {"forges": [public_forge(f) for f in load_forges(home)]}
+
+
+def api_forge_add(home, kind, url, data):
+    """Connect a forge account with a token (sent on stdin, checked against the forge)."""
+    if kind not in FORGE_KINDS:
+        raise ApiError(f"unknown forge: {kind}")
+    url = (url or ("https://github.com" if kind == "github" else "https://gitlab.com" if kind == "gitlab" else "")).rstrip("/")
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?(/[A-Za-z0-9._~-]+)*", url):
+        raise ApiError("the forge's address: https://host (and a path, for a forge not at the root)")
+    token = data.decode("utf-8", "replace").strip()
+    if not token or len(token) > 512 or any(c.isspace() for c in token):
+        raise ApiError("paste the token alone")
+    forge = {"kind": kind, "url": url, "token": token}
+    user = forge_request(forge, "GET", "/user")
+    login = user.get("login") or user.get("username")
+    if not isinstance(login, str):
+        raise ApiError("the forge did not say who this token belongs to")
+    forge.update(id=f"{kind}:{url.split('://', 1)[1]}:{login}", login=login)
+    forges = [f for f in load_forges(home) if f.get("id") != forge["id"]] + [forge]
+    save_private_json(forges_path(home), {"forges": forges})
+    log("info", "forge.added", kind=kind, url=url, login=login)
+    return public_forge(forge)
+
+
+def api_forge_remove(home, ident):
+    forges = [f for f in load_forges(home) if f.get("id") != ident]
+    save_private_json(forges_path(home), {"forges": forges})
+    log("info", "forge.removed", id=ident)
+    return {"removed": ident}
+
+
+def load_repos(home):
+    return private_json(repos_path(home))
+
+
+def repo_link(home, project):
+    link = load_repos(home).get(project)
+    return link if isinstance(link, dict) and isinstance(link.get("repo"), str) else None
+
+
+def forge_repo(forge, repo):
+    """(path in the API, the repository's details) on the forge."""
+    if forge["kind"] == "gitlab":
+        import urllib.parse
+        path = f"/projects/{urllib.parse.quote(repo, safe='')}"
+    else:
+        path = f"/repos/{repo}"
+    return path, forge_request(forge, "GET", path)
+
+
+def clone_url(forge, repo):
+    return f"{forge['url']}/{repo}.git"
+
+
+def api_repo_link(home, path, forge_id, repo):
+    """Connect the project to a repository of a forge account."""
+    project = resolve_inside(home, path)
+    if not REPO_PATH_RE.fullmatch(repo or ""):
+        raise ApiError("a repository: owner/name")
+    forge = forge_by_id(home, forge_id)
+    _, info = forge_repo(forge, repo)
+    default = info.get("default_branch") or "main"
+    ensure_local_repo(project, default)
+    repos = load_repos(home)
+    repos[project] = {"forge": forge_id, "repo": repo, "default_branch": default, "prefix": "pi/"}
+    save_private_json(repos_path(home), repos)
+    log("info", "repo.linked", project=project, forge=forge_id, repo=repo)
+    return {"project": project, **repos[project]}
+
+
+def api_repo_unlink(home, path):
+    project = resolve_inside(home, path)
+    repos = load_repos(home)
+    repos.pop(project, None)
+    save_private_json(repos_path(home), repos)
+    log("info", "repo.unlinked", project=project)
+    return {"project": project}
+
+
+def create_forge_repo(home, project, forge_id, name, private, description=""):
+    if not REPO_NAME_RE.fullmatch(name or ""):
+        raise ApiError("a repository's name: letters, digits, '.', '_' and '-'")
+    forge = forge_by_id(home, forge_id)
+    description = " ".join((description or "").split())[:300]
+    if forge["kind"] == "gitlab":
+        made = forge_request(forge, "POST", "/projects", {"name": name, "path": name, "description": description,
+                                                          "visibility": "private" if private else "public"})
+        repo = made.get("path_with_namespace")
+    else:
+        made = forge_request(forge, "POST", "/user/repos", {"name": name, "private": bool(private), "description": description})
+        repo = made.get("full_name")
+    if not isinstance(repo, str):
+        raise ApiError("the forge made the repository but did not say where")
+    log("info", "repo.created", forge=forge_id, repo=repo, private=bool(private))
+    return api_repo_link(home, project, forge_id, repo)
+
+
+def api_repo_create(home, path, forge_id, name, private, description):
+    """From Pier (the user's own action): a new repository, connected to the project."""
+    return create_forge_repo(home, resolve_inside(home, path), forge_id, name, private == "1", description)
+
+
+def git_jail_rw(project, extra_ro=(), extra_rw=()):
+    """git's jail with the project writable (and more folders): for init and pull, still
+    without network, and with nothing else of home."""
+    args = git_jail(project)
+    if args is None:
+        return None
+    cut = args.index("--unshare-all")
+    real = os.path.realpath(project)
+    binds = []
+    for folder in extra_ro:
+        binds += ["--ro-bind", folder, folder]
+    for folder in [real, *extra_rw]:
+        binds += ["--bind", folder, folder]
+    return args[:cut] + binds + args[cut:]
+
+
+def jailed_git(jail, *args, cwd=None):
+    """git in a jail (bwrap arguments) or plain when there is no bwrap; stdout, or an
+    ApiError with git's message."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+    for key in ("SSH_AUTH_SOCK", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"):
+        env.pop(key, None)
+    try:
+        result = subprocess.run([*(jail or []), "git", *GIT_OPTIONS, *args], stdin=subprocess.DEVNULL, capture_output=True,
+                                env=env, timeout=120, cwd=cwd)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ApiError(f"git failed: {exc}")
+    if result.returncode != 0:
+        raise ApiError(result.stderr.decode("utf-8", "replace").strip()[-400:] or "git failed")
+    return result.stdout.decode("utf-8", "replace")
+
+
+def ensure_local_repo(project, default):
+    if git_dir(project):
+        return
+    jailed_git(git_jail_rw(project), "-C", project, "init", "-q", "-b", default)
+    log("info", "repo.init", project=project, branch=default)
+
+
+def mirror_path(home, forge_id, repo):
+    digest = hashlib.sha1(f"{forge_id}|{repo}".encode()).hexdigest()[:16]
+    return os.path.join(os.path.dirname(state_path(home)), "git", f"{digest}.git")
+
+
+def ensure_mirror(home, forge_id, repo):
+    """The picker's own bare repository for a remote: no hook, no setting of anyone else."""
+    path = mirror_path(home, forge_id, repo)
+    if not os.path.isdir(os.path.join(path, "objects")):
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        jailed_git(None, "init", "-q", "--bare", path)
+    return path
+
+
+def forge_git_env(forge):
+    """The token for git, in its environment (other users cannot read it, unlike argv)."""
+    import base64
+    user = {"github": "x-access-token", "gitlab": "oauth2"}.get(forge["kind"], forge.get("login") or "git")
+    basic = base64.b64encode(f"{user}:{forge['token']}".encode()).decode()
+    return {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+
+
+def mirror_git(forge, mirror, *args):
+    """git in the mirror, outside the sandbox, with the token: only for push and fetch."""
+    env = dict(os.environ, **forge_git_env(forge))
+    for key in ("SSH_AUTH_SOCK", "GIT_ASKPASS", "SSH_ASKPASS"):
+        env.pop(key, None)
+    try:
+        result = subprocess.run(["git", "--git-dir", mirror, "-c", "core.hooksPath=/dev/null", *args],
+                                stdin=subprocess.DEVNULL, capture_output=True, env=env, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ApiError(f"git failed: {exc}")
+    text = result.stderr.decode("utf-8", "replace").replace(forge["token"], "***")
+    if result.returncode != 0:
+        raise ApiError(text.strip()[-600:] or "git failed")
+    return text
+
+
+def remote_branches(forge, repo):
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, repo)
+        items = forge_request(forge, "GET", f"{api}/repository/branches?per_page=100")
+    else:
+        items = forge_request(forge, "GET", f"/repos/{repo}/branches?per_page=100")
+    return [b.get("name") for b in items if isinstance(b, dict) and isinstance(b.get("name"), str)] if isinstance(items, list) else []
+
+
+def git_push(home, project, link, branch):
+    """Pi's branch pushed to the forge, under the rules (see above)."""
+    forge = forge_by_id(home, link["forge"])
+    default = link.get("default_branch") or "main"
+    if not PI_BRANCH_RE.fullmatch(branch or "") or ".." in branch or branch.endswith((".lock", "/", ".")):
+        if branch != default:
+            raise ApiError(f"Pi pushes only its own branches, named pi/…: not {branch}")
+        if remote_branches(forge, link["repo"]):
+            raise ApiError(f"{default} is the default branch: push a pi/… branch and open a pull request")
+    mirror = ensure_mirror(home, link["forge"], link["repo"])
+    jail = git_jail(project)
+    if jail is not None:
+        cut = jail.index("--unshare-all")
+        jail = jail[:cut] + ["--bind", mirror, mirror] + jail[cut:]
+    # The commits, into the mirror: git reads the project in its jail, writes nowhere else.
+    jailed_git(jail, "--git-dir", mirror, "fetch", "--no-tags", "--quiet", os.path.realpath(project),
+               f"+refs/heads/{branch}:refs/heads/{branch}")
+    # Then pushed by the mirror, never forced: a branch rewritten is refused by the forge.
+    said = mirror_git(forge, mirror, "push", "--porcelain", clone_url(forge, link["repo"]), f"refs/heads/{branch}:refs/heads/{branch}")
+    log("info", "git.push", project=project, repo=link["repo"], branch=branch)
+    return {"pushed": branch, "repo": link["repo"], "detail": said.strip()[-300:]}
+
+
+def git_pull(home, project, link):
+    """The forge's branches, into the project's refs/remotes/origin/*: Pi merges itself."""
+    forge = forge_by_id(home, link["forge"])
+    mirror = ensure_mirror(home, link["forge"], link["repo"])
+    mirror_git(forge, mirror, "fetch", "--prune", "--no-tags", clone_url(forge, link["repo"]), "+refs/heads/*:refs/remotes/origin/*")
+    jailed_git(git_jail_rw(project, extra_ro=[mirror]), "-C", os.path.realpath(project), "fetch", "--no-tags", "--quiet",
+               mirror, "+refs/remotes/origin/*:refs/remotes/origin/*")
+    log("info", "git.pull", project=project, repo=link["repo"])
+    return {"fetched": link["repo"], "into": "refs/remotes/origin/*"}
+
+
+def pr_from(forge, item):
+    """A pull request (or GitLab merge request), the same shape whatever the forge."""
+    if forge["kind"] == "gitlab":
+        state = {"opened": "open", "merged": "merged", "closed": "closed"}.get(item.get("state"), item.get("state"))
+        pipeline = (item.get("head_pipeline") or {}).get("status") if isinstance(item.get("head_pipeline"), dict) else None
+        return {"number": item.get("iid"), "title": item.get("title"), "state": state, "head": item.get("source_branch"),
+                "base": item.get("target_branch"), "url": item.get("web_url"), "draft": bool(item.get("draft")),
+                "checks": {"success": "success", "failed": "failure", "running": "pending", "pending": "pending"}.get(pipeline, "none" if not pipeline else pipeline),
+                "author": (item.get("author") or {}).get("username")}
+    merged = bool(item.get("merged") or item.get("merged_at"))
+    return {"number": item.get("number"), "title": item.get("title"), "state": "merged" if merged else item.get("state"),
+            "head": (item.get("head") or {}).get("ref"), "base": (item.get("base") or {}).get("ref"),
+            "url": item.get("html_url"), "draft": bool(item.get("draft")), "checks": None, "sha": (item.get("head") or {}).get("sha"),
+            "mergeable": item.get("mergeable"), "author": (item.get("user") or {}).get("login")}
+
+
+def pr_checks(forge, repo, sha):
+    if not sha:
+        return "none"
+    try:
+        if forge["kind"] == "github":
+            runs = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=50").get("check_runs", [])
+            if not runs:
+                return "none"
+            if any(r.get("status") != "completed" for r in runs):
+                return "pending"
+            return "failure" if any(r.get("conclusion") in ("failure", "timed_out", "cancelled", "action_required") for r in runs) else "success"
+        status = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/status").get("state")
+        return {"success": "success", "failure": "failure", "error": "failure", "pending": "pending"}.get(status, "none")
+    except ApiError:
+        return "none"
+
+
+def list_prs(home, link, state="open"):
+    forge = forge_by_id(home, link["forge"])
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        items = forge_request(forge, "GET", f"{api}/merge_requests?state={'opened' if state == 'open' else 'all'}&per_page=50")
+    else:
+        items = forge_request(forge, "GET", f"/repos/{link['repo']}/pulls?state={state}&per_page=50")
+    return [pr_from(forge, i) for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+
+
+def get_pr(home, link, number):
+    forge = forge_by_id(home, link["forge"])
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        pr = pr_from(forge, forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}"))
+    else:
+        pr = pr_from(forge, forge_request(forge, "GET", f"/repos/{link['repo']}/pulls/{int(number)}"))
+        pr["checks"] = pr_checks(forge, link["repo"], pr.get("sha"))
+    return pr
+
+
+def open_pr(home, project, link, branch, title, body, base, draft):
+    forge = forge_by_id(home, link["forge"])
+    base = base or link.get("default_branch") or "main"
+    if not PI_BRANCH_RE.fullmatch(branch or ""):
+        raise ApiError(f"a pull request starts from a pi/… branch: not {branch}")
+    title = " ".join((title or "").split())[:250] or branch
+    body = (body or "")[:60000]
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        item = forge_request(forge, "POST", f"{api}/merge_requests",
+                             {"source_branch": branch, "target_branch": base, "title": ("Draft: " if draft else "") + title, "description": body})
+    else:
+        payload = {"title": title, "head": branch, "base": base, "body": body}
+        if forge["kind"] == "github":
+            payload["draft"] = bool(draft)
+        item = forge_request(forge, "POST", f"/repos/{link['repo']}/pulls", payload)
+    pr = pr_from(forge, item)
+    log("info", "git.pr-opened", project=project, repo=link["repo"], number=pr.get("number"), branch=branch)
+    return pr
+
+
+def merge_pr(home, project, link, number, method="merge"):
+    """Merges a pull request: only from Pier, or a request of Pi the user approved."""
+    forge = forge_by_id(home, link["forge"])
+    method = method if method in ("merge", "squash", "rebase") else "merge"
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash"})
+    elif forge["kind"] == "github":
+        forge_request(forge, "PUT", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"merge_method": method})
+    else:
+        forge_request(forge, "POST", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"Do": method})
+    log("info", "git.merged", project=project, repo=link["repo"], number=int(number), method=method)
+    return {"merged": int(number)}
+
+
+def load_approvals(home):
+    data = private_json(approvals_path(home))
+    return [a for a in data.get("approvals", []) if isinstance(a, dict)]
+
+
+def save_approvals(home, approvals):
+    save_private_json(approvals_path(home), {"approvals": approvals[-200:]})
+
+
+def ask_approval(home, project, kind, args, reason):
+    approval = {"id": uuid.uuid4().hex[:12], "project": project, "kind": kind, "args": args,
+                "reason": " ".join((reason or "").split())[:500], "at": int(time.time()), "state": "pending"}
+    approvals = [a for a in load_approvals(home)
+                 if not (a.get("state") == "pending" and a.get("project") == project and a.get("kind") == kind and a.get("args") == args)]
+    save_approvals(home, approvals + [approval])
+    log("info", "git.approval-asked", project=project, kind=kind, id=approval["id"])
+    return approval
+
+
+def api_approvals(home):
+    pending = [a for a in load_approvals(home) if a.get("state") == "pending"]
+    return {"approvals": pending}
+
+
+def api_approval_answer(home, ident, answer):
+    """The user's answer to a request of Pi (from Pier): done now when approved."""
+    approvals = load_approvals(home)
+    for approval in approvals:
+        if approval.get("id") != ident or approval.get("state") != "pending":
+            continue
+        if answer != "yes":
+            approval["state"] = "refused"
+            save_approvals(home, approvals)
+            log("info", "git.approval-refused", id=ident, kind=approval.get("kind"))
+            return {"id": ident, "state": "refused"}
+        project, args = approval["project"], approval.get("args") or {}
+        try:
+            if approval["kind"] == "merge":
+                link = repo_link(home, project)
+                if not link:
+                    raise ApiError("the project is no longer connected to a repository")
+                result = merge_pr(home, project, link, args.get("number"), args.get("method") or "merge")
+            elif approval["kind"] == "create_repo":
+                result = create_forge_repo(home, project, args.get("forge"), args.get("name"), args.get("private", True), args.get("description", ""))
+            else:
+                raise ApiError("unknown request")
+            approval.update(state="done", result=result)
+        except ApiError as exc:
+            approval.update(state="failed", error=str(exc))
+        save_approvals(home, approvals)
+        if approval["state"] == "failed":
+            raise ApiError(approval["error"])
+        return {"id": ident, "state": "done", "result": approval.get("result")}
+    raise ApiError("that request is no longer waiting")
+
+
+def api_repo(home, path):
+    """What Setup's Git page shows: the forge accounts, the project's repository, its open
+    pull requests, and what Pi asks."""
+    project = resolve_inside(home, path)
+    link = repo_link(home, project)
+    out = {"project": project, "forges": [public_forge(f) for f in load_forges(home)], "link": link, "prs": [],
+           "local": bool(git_dir(project)), "branch": git_branch(project),
+           "approvals": [a for a in load_approvals(home) if a.get("state") == "pending" and a.get("project") == project]}
+    if link:
+        try:
+            out["prs"] = list_prs(home, link)
+            forge = forge_by_id(home, link["forge"])
+            for pr in out["prs"][:10]:
+                if forge["kind"] != "gitlab":
+                    pr["checks"] = pr_checks(forge, link["repo"], pr.get("sha"))
+        except ApiError as exc:
+            out["error"] = str(exc)
+    return out
+
+
+def api_pr_merge(home, path, number, method):
+    project = resolve_inside(home, path)
+    link = repo_link(home, project)
+    if not link:
+        raise ApiError("no repository connected to this project")
+    return merge_pr(home, project, link, int(number), method or "merge")
+
+
+GIT_OPS = ("info", "push", "pull", "open_pr", "list_prs", "pr", "request_merge", "create_repo")
+
+
+class GitBroker:
+    """The socket Pi's git tools reach (PIER_GIT_SOCKET): one JSON request per
+    connection, one JSON answer. Out of the sandbox, with the forge's token."""
+
+    def __init__(self, project):
+        self.project = project
+        self.home = home_dir()
+        folder = os.path.join(os.path.dirname(state_path(self.home)), "net")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        self.socket = os.path.join(folder, f"{os.getpid()}-git.sock")
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(self.socket)
+        os.chmod(self.socket, 0o600)
+        self.server.listen(16)
+        self.lock = threading.Lock()  # one forge operation at a time per Pi
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.handle, args=(client,), daemon=True).start()
+
+    def handle(self, client):
+        try:
+            client.settimeout(60)
+            data = b""
+            while not data.endswith(b"\n") and len(data) < 256 * 1024:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+            try:
+                request = json.loads(data or b"{}")
+                if not isinstance(request, dict):
+                    raise ValueError
+                with self.lock:
+                    reply = self.answer(request)
+            except ValueError:
+                reply = {"error": "not a request"}
+            except ApiError as exc:
+                reply = {"error": str(exc)}
+            except Exception as exc:  # noqa: BLE001 - a bug: said to Pi, logged with its traceback
+                log("error", "git.broker", trace=traceback.format_exc(), err=f"{type(exc).__name__}: {exc}")
+                reply = {"error": f"the picker failed ({type(exc).__name__})"}
+            client.sendall((json.dumps(reply) + "\n").encode())
+        except OSError:
+            pass
+        finally:
+            try:
+                client.close()
+            except OSError:
+                pass
+
+    def answer(self, request):
+        op = request.get("op")
+        if op not in GIT_OPS:
+            raise ApiError(f"unknown operation: {op}")
+        link = repo_link(self.home, self.project)
+        log("info", f"git.tool-{op}", project=self.project, branch=request.get("branch"), number=request.get("number"))
+        if op == "info":
+            return {"project": self.project, "linked": bool(link), "repo": link and link["repo"],
+                    "default_branch": link and link.get("default_branch"), "branch_prefix": "pi/",
+                    "rules": "push only pi/… branches, never forced; open pull requests freely; merging and creating a "
+                             "repository wait for the user's approval in Pier"}
+        if op == "create_repo":
+            if link:
+                raise ApiError(f"this project is already connected to {link['repo']}")
+            forges = load_forges(self.home)
+            if not forges:
+                raise ApiError("no forge account connected: the user connects one in Pier (Setup > Git)")
+            forge = next((f for f in forges if f.get("id") == request.get("forge")), forges[0])
+            name = str(request.get("name") or "")
+            if not REPO_NAME_RE.fullmatch(name):
+                raise ApiError("a repository's name: letters, digits, '.', '_' and '-'")
+            approval = ask_approval(self.home, self.project, "create_repo",
+                                    {"forge": forge["id"], "name": name, "private": request.get("private", True) is not False,
+                                     "description": str(request.get("description") or "")[:300]}, request.get("reason"))
+            return {"asked": approval["id"], "waiting": "the user approves creating it in Pier; ask again later with info"}
+        if not link:
+            raise ApiError("no repository connected to this project: the user connects one in Pier (Setup > Git), "
+                           "or use create_repo")
+        if op == "push":
+            return git_push(self.home, self.project, link, str(request.get("branch") or ""))
+        if op == "pull":
+            return git_pull(self.home, self.project, link)
+        if op == "open_pr":
+            return open_pr(self.home, self.project, link, str(request.get("branch") or ""), request.get("title"),
+                           request.get("body"), request.get("base"), bool(request.get("draft")))
+        if op == "list_prs":
+            return {"pull_requests": list_prs(self.home, link, "open")}
+        number = request.get("number")
+        if not isinstance(number, int) or number < 1:
+            raise ApiError("a pull request's number")
+        if op == "pr":
+            return get_pr(self.home, link, number)
+        approval = ask_approval(self.home, self.project, "merge",
+                                {"number": number, "method": request.get("method") if request.get("method") in ("merge", "squash", "rebase") else "merge"},
+                                request.get("reason"))
+        return {"asked": approval["id"], "waiting": "the user approves the merge in Pier; check the pull request later"}
+
+    def close(self):
+        try:
+            self.server.close()
+        except OSError:
+            pass
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+
+
+PIER_GIT_EXTENSION = """// Written by Pier (pier-picker): git tools for the forge (GitHub, GitLab, Gitea).
+// They ask the picker over PIER_GIT_SOCKET; the picker holds the token and checks every
+// request: push only pi/... branches, pull requests freely, merging and creating a
+// repository only once the user approves in Pier.
+import { connect } from "node:net";
+import { Type } from "typebox";
+
+function ask(request: any): Promise<any> {
+  const path = process.env.PIER_GIT_SOCKET;
+  return new Promise((resolve, reject) => {
+    if (!path) return reject(new Error("Pier's git broker is not available in this session"));
+    const socket = connect(path);
+    let data = "";
+    socket.setEncoding("utf8");
+    socket.on("connect", () => socket.write(JSON.stringify(request) + "\\n"));
+    socket.on("data", (chunk: string) => { data += chunk; });
+    socket.on("end", () => {
+      try {
+        const answer = JSON.parse(data);
+        if (answer.error) reject(new Error(answer.error)); else resolve(answer);
+      } catch { reject(new Error("no answer from Pier's git broker")); }
+    });
+    socket.on("error", (error: Error) => reject(error));
+  });
+}
+
+const text = (value: any) => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }], details: value });
+
+export default function (pi: any) {
+  const tool = (name: string, label: string, description: string, parameters: any, op: string) =>
+    pi.registerTool({
+      name, label, description, parameters,
+      async execute(_id: string, params: any) { return text(await ask({ op, ...params })); },
+    });
+  tool("git_repo_info", "Repository", "The forge repository connected to this project, its default branch and the rules for pushing.",
+    Type.Object({}), "info");
+  tool("git_push", "Push", "Push a local branch to the forge. Only branches named pi/... are accepted, never forced: commit on a pi/... branch first.",
+    Type.Object({ branch: Type.String({ description: "a local branch, pi/..." }) }), "push");
+  tool("git_pull", "Fetch", "Fetch the forge's branches into refs/remotes/origin/*; then merge or rebase locally with git.",
+    Type.Object({}), "pull");
+  tool("open_pull_request", "Open pull request", "Open a pull request from a pushed pi/... branch.",
+    Type.Object({ branch: Type.String(), title: Type.String(), body: Type.Optional(Type.String()),
+      base: Type.Optional(Type.String({ description: "target branch, the default one when left out" })),
+      draft: Type.Optional(Type.Boolean()) }), "open_pr");
+  tool("list_pull_requests", "Pull requests", "The open pull requests of the repository.", Type.Object({}), "list_prs");
+  tool("pull_request_status", "Pull request", "A pull request's state, its checks (CI) and whether it can be merged.",
+    Type.Object({ number: Type.Integer() }), "pr");
+  tool("request_merge", "Ask to merge", "Ask the user to merge a pull request. Only when the user asked for it: Pier shows the request and the user approves or refuses it there.",
+    Type.Object({ number: Type.Integer(), method: Type.Optional(Type.String({ description: "merge, squash or rebase" })),
+      reason: Type.Optional(Type.String()) }), "request_merge");
+  tool("create_repository", "Create repository", "Ask the user to create a repository on the forge and connect this project to it: Pier shows the request for approval.",
+    Type.Object({ name: Type.String(), private: Type.Optional(Type.Boolean()), description: Type.Optional(Type.String()),
+      reason: Type.Optional(Type.String()) }), "create_repo");
+}
+"""
+
+
+def pier_git_extension():
+    """The git tools' file, written when missing or different; None when it cannot be."""
+    path = os.path.join(pier_dir(), "pier-git.ts")
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        if read_text(path) == PIER_GIT_EXTENSION and not os.path.islink(path):
+            return path
+        atomic_write(path, PIER_GIT_EXTENSION, os.path.join(home_dir(), ".pi"), 0o644)
+        return path
+    except (OSError, ApiError) as exc:
+        log("warn", "pier.git-extension-failed", err=str(exc))
+        return None
 
 
 def versions_path(home):
@@ -3630,7 +5841,8 @@ def api_setup(home, path):
     texts = {}
     for which in EDITABLE:
         target = editable_path(project, which)
-        text = read_text(target) if os.path.isfile(target) else None
+        # A link leading out of the project (AGENTS.md -> ~/.config/...) is not read.
+        text = read_text(target, root=project) if os.path.isfile(target) else None
         texts[which] = {"path": target, "name": os.path.relpath(target, project), "exists": text is not None,
                         "text": text or "", "history": history_entries(project, which)}
     for which, name in (("append", "APPEND_SYSTEM.md"), ("system", "SYSTEM.md")):
@@ -3663,12 +5875,14 @@ def api_write_text(home, path, which, data):
     target = editable_path(project, which)
     if not within(os.path.realpath(os.path.dirname(target)), project):
         raise ApiError("refusing to write outside the project")
-    previous = read_text(target) if os.path.isfile(target) else None
+    # Never the content of a link leading out of the project: it would be copied into
+    # the history, where Pi reads it. Saving replaces such a link with the file itself.
+    previous = read_text(target, root=project) if os.path.isfile(target) else None
     if previous is not None and previous != text:
         history = safe_folder(project, HISTORY_DIR)
-        create_new(os.path.join(history, ".gitignore"), "*\n")
+        create_new(os.path.join(history, ".gitignore"), "*\n", root=project)
         # Nanoseconds, zero-padded: names sort in saving order even within one second.
-        create_new(os.path.join(history, f"{which}-{time.time_ns():020d}.md"), previous, 0o600)
+        create_new(os.path.join(history, f"{which}-{time.time_ns():020d}.md"), previous, 0o600, root=project)
         old = sorted((n for n in os.listdir(history) if n.startswith(which + "-")), reverse=True)
         for name in old[HISTORY_KEEP:]:
             os.remove(os.path.join(history, name))
@@ -3683,7 +5897,8 @@ def api_write_text(home, path, which, data):
 
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "shares", "activity", "diff", "contexts",
-             "setup", "log", "checkpoints", "checkpoint-diff"}
+             "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
+             "skill-read", "gallery", "forges", "repo", "approvals", "worktrees"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -3691,12 +5906,40 @@ API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped",
 def api_log_fields(command, rest):
     """The arguments of a call, for the log: what is typed into Pi only as its length."""
     if command == "type":
-        return {"chars": len(rest[0]) if rest else 0, "target": rest[1] if len(rest) > 1 else None}
+        chars = "stdin" if rest and rest[0] == "-" else len(rest[0]) if rest else 0
+        return {"chars": chars, "target": rest[1] if len(rest) > 1 else None}
+    if command == "restore" and rest[2:3] == ["-"]:
+        return {"args": [a[:200] for a in rest[:2]], "files": "stdin"}
     return {"args": [a[:200] for a in rest]} if rest else {}
 
 
 def stdin_bytes(limit):
     return sys.stdin.buffer.read(limit + 1)
+
+
+# What an argument "-" stands for: text sent on stdin rather than on the command line,
+# where any user of the VM could read it (ps, /proc), and which holds 128 KB at most.
+TYPED_MAX_BYTES = 1024 * 1024
+
+
+def stdin_text(limit):
+    data = stdin_bytes(limit)
+    if len(data) > limit:
+        raise ApiError(f"more than {limit // 1024} KB sent")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ApiError("what was sent is not UTF-8")
+
+
+def typed_text(arg):
+    return stdin_text(TYPED_MAX_BYTES) if arg == "-" else arg
+
+
+def restore_files(args):
+    if args[:1] == ["-"]:
+        return [line for line in stdin_text(TYPED_MAX_BYTES).split("\n") if line]
+    return [f for f in args if f]
 
 
 # Every API command: (home, config, a = the arguments, padded with "") -> reply.
@@ -3706,7 +5949,7 @@ API_COMMANDS = {
     "ls": lambda home, config, a: api_ls(home, a[0]),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
-    "type": lambda home, config, a: api_type(home, a[0], a[1], a[2]),
+    "type": lambda home, config, a: api_type(home, typed_text(a[0]), a[1], a[2]),
     "shares": lambda home, config, a: api_shares(home),
     "share-prepare": lambda home, config, a: api_share_prepare(home, a[0], a[1]),
     "share-stop": lambda home, config, a: api_share_stop(home, a[0]),
@@ -3723,11 +5966,33 @@ API_COMMANDS = {
     "checkpoints": lambda home, config, a: api_checkpoints(home, a[0], config),
     "checkpoint": lambda home, config, a: api_checkpoint(home, a[0], a[1]),
     "checkpoint-diff": lambda home, config, a: api_checkpoint_diff(home, a[0], a[1], a[2]),
-    "restore": lambda home, config, a: api_restore(home, a[0], a[1], [f for f in a[2:] if f]),
+    "restore": lambda home, config, a: api_restore(home, a[0], a[1], restore_files(a[2:])),
     "stop": lambda home, config, a: api_stop(home, a[0], a[1]),
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
     "conversations": lambda home, config, a: api_conversations(home),
+    "copy-manifest": lambda home, config, a: api_copy_manifest(home, a[0]),
+    "resources": lambda home, config, a: api_resources(home, a[0]),
+    "toggle-resource": lambda home, config, a: api_toggle_resource(home, a[0], a[1], a[2], a[3], a[4], a[5]),
+    "skill-new": lambda home, config, a: api_skill_new(home, a[0], a[1], a[2], a[3]),
+    "skill-read": lambda home, config, a: api_skill_read(home, a[0], a[1], a[2]),
+    "skill-write": lambda home, config, a: api_skill_write(home, a[0], a[1], a[2], stdin_bytes(TEXT_MAX_BYTES)),
+    "skill-delete": lambda home, config, a: api_skill_delete(home, a[0], a[1], a[2]),
+    "skill-import": lambda home, config, a: api_skill_import(home, a[0], a[1], a[2], sys.stdin.buffer),
+    "gallery": lambda home, config, a: api_gallery(home, a[0]),
+    "forges": lambda home, config, a: api_forges(home),
+    "forge-add": lambda home, config, a: api_forge_add(home, a[0], a[1], stdin_bytes(4096)),
+    "forge-remove": lambda home, config, a: api_forge_remove(home, a[0]),
+    "repo": lambda home, config, a: api_repo(home, a[0]),
+    "repo-link": lambda home, config, a: api_repo_link(home, a[0], a[1], a[2]),
+    "repo-unlink": lambda home, config, a: api_repo_unlink(home, a[0]),
+    "repo-create": lambda home, config, a: api_repo_create(home, a[0], a[1], a[2], a[3], a[4]),
+    "pr-merge": lambda home, config, a: api_pr_merge(home, a[0], a[1], a[2]),
+    "approvals": lambda home, config, a: api_approvals(home),
+    "approval-answer": lambda home, config, a: api_approval_answer(home, a[0], a[1]),
+    "worktrees": lambda home, config, a: api_worktrees(home, a[0]),
+    "worktree-remove": lambda home, config, a: api_worktree_remove(home, a[0], a[1]),
+    "copy-diff": lambda home, config, a: api_copy_diff(home, a[0], a[1], stdin_bytes(COPY_DIFF_MAX)),
 }
 
 
@@ -3792,11 +6057,15 @@ def run_api(args):
 WATCH_TICK = 1.0
 # The longest a part goes without being looked at again; most also look at what they
 # read (file sizes and times) and refresh as soon as that moves.
-WATCH_EVERY = {"projects": 1, "contexts": 4, "activity": 3, "setup": 15, "checkpoints": 10, "log": 1,
-               "conversations": 10}
+# projects and activity watch what they read (see watch_signature), so the period only
+# catches what leaves no trace there: a Pi started without Pier's extension, a file
+# changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
+# tmux, each one of activity runs git status in its jail: not every second for nothing.
+WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
+               "conversations": 10, "approvals": 30}
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
-WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2}
+WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2, "activity": 1.5}
 
 
 def watch_signature(kind, value, home):
@@ -3807,9 +6076,15 @@ def watch_signature(kind, value, home):
             return st.st_size, st.st_mtime_ns
         except OSError:
             return None
+    if kind == "projects":
+        # A Pi started by Pier, ending, working or idle: its extension rewrites its file
+        # in ~/.pi/pier/pis. Recent projects: the state file.
+        return stat(os.path.join(pier_dir(), "pis")), stat(state_path(home))
     if kind == "activity" and isinstance(value, dict):
         project = value.get("project") or ""
-        return stat(value.get("file") or latest_session_file(project) or ""), stat(session_dir(project))
+        directory = git_dir(project) if project else None
+        index = stat(os.path.join(directory, "index")) if directory else None  # a commit, an add
+        return stat(value.get("file") or latest_session_file(project) or ""), stat(session_dir(project)), index
     if kind == "setup":
         folder = session_dir(value)
         try:
@@ -3834,6 +6109,8 @@ def watch_signature(kind, value, home):
         return stat(os.path.join(store, "refs", "devbox")), stat(os.path.join(store, "packed-refs"))
     if kind == "log":
         return stat(log_path())
+    if kind == "approvals":
+        return stat(approvals_path(home))  # a request of Pi shows at once
     return None
 
 
@@ -3850,6 +6127,8 @@ def watch_part(kind, value, home, config):
         return api_checkpoints(home, value, config)
     if kind == "conversations":
         return api_conversations(home)
+    if kind == "approvals":
+        return api_approvals(home)
     raise ApiError(f"unknown part: {kind}")
 
 
@@ -4230,7 +6509,7 @@ class Picker:
         scored = []
         for path, hay, label in self.index:
             score = match_score(needle, hay)
-            if score is not None and openable(path, self.home, self.config):
+            if score is not None:
                 scored.append((score, path, label))
         scored.sort(key=lambda item: item[0])
         return [make_entry("found", path, label) for _, path, label in scored[:SEARCH_SHOWN]]
@@ -4242,7 +6521,10 @@ class Picker:
         self.draw()
         self.message = ""
         self.index = []
+        # Folders Pi may not run in are left out here, once, rather than at each key.
         for path in walk_dirs(self.home, self.config["search_depth"], self.ignore):
+            if not openable(path, self.home, self.config):
+                continue
             rel = os.path.relpath(path, self.home)
             self.index.append((path, rel.casefold(), clean(rel)))
 
@@ -4673,7 +6955,7 @@ class Picker:
             top = self.draw_banner(w)
         else:
             top = 1
-            put(scr, 0, 2, "pi dir picker", curses.A_BOLD, w - 4)
+            put(scr, 0, 2, "pier picker", curses.A_BOLD, w - 4)
 
         width = w - 4
         title = f"find in {self.pretty(self.home)}" if self.search is not None else clean(self.cwd)
@@ -4710,7 +6992,7 @@ class Picker:
             put(self.scr, 1 + i, x, line, curses.A_BOLD, w - 2 - x)
         # The version sits on the baseline, the row where the letters end.
         put(self.scr, 1 + LOGO_BASELINE, x + logo_w + 1, f"v{VERSION}", curses.A_BOLD, w - 3 - x - logo_w)
-        subtitle = "dir picker"
+        subtitle = "pier picker"
         put(self.scr, 1 + len(LOGO), max(2, (w - len(subtitle)) // 2), subtitle, self.grey)
         return len(LOGO) + 3
 
@@ -5060,20 +7342,27 @@ def resolve_start(argv, config):
     return home
 
 
-USAGE = """usage: pi-dir-picker.py [DIR]
-       pi-dir-picker.py --attach DIR [PI ARGS]
-       pi-dir-picker.py --api COMMAND [ARGS]   (see the desktop client API section)
+USAGE = """usage: pier-picker.py [DIR]
+       pier-picker.py --attach DIR [PI ARGS]
+       pier-picker.py --api COMMAND [ARGS]   (see the desktop client API section)
 
 Pick a directory under your home and start Pi in it. Press ? inside for the keys.
 --attach and --api serve the desktop client over SSH.
-Settings: ~/.config/pi-dir-picker/config.toml"""
+Settings: ~/.config/pier-picker/config.toml"""
 
 
-if __name__ == "__main__":
+def entry():
+    """The command line. Run as a script, or through the launcher Pier installs
+    (~/bin/pi-pick importing this file as a module, so that Python keeps it compiled)."""
+    if len(sys.argv) >= 2 and sys.argv[1] == "--net-bridge":
+        sys.exit(net_bridge(sys.argv[2:]))  # inside Pi's sandbox: nothing of home to move
+    migrate_old_name(home_dir())
     if len(sys.argv) >= 3 and sys.argv[1] == "--exec-pi":
         sys.exit(exec_pi(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--api":
         sys.exit(run_api(sys.argv[2:]))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--download-files":
+        sys.exit(download_files(home_dir(), sys.argv[2]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--download":
         sys.exit(download_tar(home_dir(), sys.argv[2]))
     if len(sys.argv) >= 4 and sys.argv[1] == "--share-serve":
@@ -5082,6 +7371,8 @@ if __name__ == "__main__":
         sys.exit(attach(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--attach-control":
         sys.exit(attach_control(sys.argv[2], sys.argv[3:]))
+    if len(sys.argv) >= 2 and sys.argv[1] == "--pi-package":
+        sys.exit(pi_package(sys.argv[2:]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--pi-update":
         sys.exit(pi_update(sys.argv[2:]))
     if len(sys.argv) > 1 and sys.argv[1] in ("-h", "--help"):
@@ -5102,3 +7393,7 @@ if __name__ == "__main__":
     except Exception as exc:
         log("error", "picker.crash", trace=traceback.format_exc(), err=f"{type(exc).__name__}: {exc}")
         raise
+
+
+if __name__ == "__main__":
+    entry()

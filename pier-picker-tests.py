@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# subject: tmux-driven test suite for pi-dir-picker.py: proves listing, navigation, creation, filtering, search, clone, rename, sort, launching (direct and in tmux) and quit on a real terminal.
-# verified: v3, 2026-10-11: not yet run; run it on the Debian host before relying on it.
+# subject: tmux-driven test suite for pier-picker.py: proves listing, navigation, creation, filtering, search, clone, rename, sort, launching (direct and in tmux) and quit on a real terminal.
+# verified: v4.20, 2026-10-16: all passed on the Debian host (/tmp noexec there: see runnable_tmp).
 # tech: python, tmux, curses, git, pi
 #
-# Run: python3 -B pi-dir-picker-tests.py
+# Run: python3 -B pier-picker-tests.py
 # Exit 0 when everything passes, 1 when an assertion fails, 2 when tmux is absent.
 #
 # tmux is the ground truth, not a hand-written parser. A first version replayed the
@@ -34,13 +34,34 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-APP = HERE / "pi-dir-picker.py"
-SOCKET = "pi-dir-picker-tests"
-PI_SOCKET = "pi-dir-picker-tests-pi"
+APP = HERE / "pier-picker.py"
+SOCKET = "pier-picker-tests"
+PI_SOCKET = "pier-picker-tests-pi"
 SESSION = "s"
 ROWS, COLS = 45, 100
 
 FAILURES = []
+
+
+def runnable_tmp():
+    """Where the suite makes its fake homes. Its fake pi must run from there: a hardened
+    VM often mounts /tmp noexec, and every test starting pi then failed with "pi not
+    found on PATH" (which() checks that a file can be run). Then a folder of the
+    user's home is used instead."""
+    tmp = tempfile.gettempdir()
+    try:
+        noexec = bool(os.statvfs(tmp).f_flag & os.ST_NOEXEC)
+    except (OSError, AttributeError):
+        noexec = False
+    if not noexec:
+        return
+    folder = Path.home() / ".cache" / "pier-picker-tests"
+    folder.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(folder)
+    print(f"{tmp} is mounted noexec: the tests work in {folder}")
+
+
+runnable_tmp()
 
 
 def check(name, ok, detail=""):
@@ -121,7 +142,7 @@ def activity_fixture(home):
 
 def session(keys, fixture=home_fixture, use_tmux=False):
     """Fresh tmux session and sandbox per call. keys is a list of ("key"|"text", value)."""
-    work = tempfile.mkdtemp(prefix="pi-dir-picker-")
+    work = tempfile.mkdtemp(prefix="pier-picker-")
     home = Path(work) / "home"
     home.mkdir()
     bin_dir = Path(work) / "bin"
@@ -175,8 +196,9 @@ def read(path):
 
 
 def without_extension(args):
-    """Pi's arguments as asked, without the extension Pier gives each Pi it starts."""
-    return re.sub(r"^--extension \S+pier-session\.ts ?", "", args)
+    """Pi's arguments as asked, without the extensions Pier gives each Pi it starts (the
+    conversation tracker, the git tools)."""
+    return re.sub(r"^(?:--extension \S+pier-(?:session|git)\.ts ?)+", "", args)
 
 
 def unit_tests():
@@ -206,7 +228,7 @@ def unit_tests():
           module.match_score("blog", "blog") < module.match_score("blog", "blog-old/x"))
     check("search matches scattered letters", module.match_score("bv2", "clients/blog-v2") is not None)
 
-    work = tempfile.mkdtemp(prefix="pi-dir-picker-unit-")
+    work = tempfile.mkdtemp(prefix="pier-picker-unit-")
     root = Path(work)
     (root / "b").mkdir()
     (root / "A").mkdir()
@@ -233,7 +255,7 @@ def unit_tests():
 def back_to_back_children():
     """Two children with nothing drawn between them, as when tmux gets installed and Pi
     starts right after: endwin used to fail the second time and crash the picker."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = work / "home"
     home.mkdir()
     done = work / "done.txt"
@@ -264,7 +286,7 @@ def sandbox_test():
     if not shutil.which("bwrap"):
         print("  skip sandbox test: bubblewrap is not installed (sudo apt install bubblewrap)")
         return
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "work" / "proj"
     project.mkdir(parents=True)
@@ -286,6 +308,18 @@ def sandbox_test():
         'echo ok > /usr/local/escape.txt 2>/dev/null && echo escaped > escape.out || echo blocked > escape.out\n'
         'echo written > inside.out\n'
         'touch "$HOME/.pi/state" && echo pi-state-ok > pistate.out\n'
+        # The filter against typing into the terminal (TIOCSTI) is loaded, /run is hidden
+        # (system sockets), and names still resolve.
+        "grep '^Seccomp:' /proc/self/status | tr -d ' \\t' > seccomp.out\n"
+        'if [ -e /run/user ] || [ -e /run/dbus ]; then echo visible > run.out; else echo hidden > run.out; fi\n'
+        'cat /etc/resolv.conf > /dev/null 2>&1 && echo ok > resolv.out || echo unreadable > resolv.out\n'
+        # The network: nothing directly, the proxy refuses what is not allowed.
+        'echo "$HTTPS_PROXY" > proxy.out\n'
+        "python3 -c 'import socket,sys; sys.exit(socket.socket().connect_ex((\"1.1.1.1\", 443)) == 0)' "
+        '&& echo blocked > direct.out || echo open > direct.out\n'
+        "python3 -c 'import socket; s = socket.create_connection((\"127.0.0.1\", 3128), timeout=5); "
+        's.sendall(b\"CONNECT example.com:443 HTTP/1.1\\r\\n\\r\\n\"); print(s.recv(100).split()[1].decode())\' '
+        '> proxied.out 2>&1\n'
     )
     fake.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_BIN", "PI_PICKER_SANDBOX")}
@@ -300,14 +334,149 @@ def sandbox_test():
     check("sandbox: nothing written outside the project", out("escape.out") == "blocked" and not (home / "escape.txt").exists(),
           out("escape.out"))
     check("sandbox: ~/.pi stays writable for pi's own state", out("pistate.out") == "pi-state-ok", out("pistate.out"))
+    check("sandbox: the TIOCSTI filter is loaded", out("seccomp.out") == "Seccomp:2", out("seccomp.out"))
+    check("sandbox: /run is hidden", out("run.out") == "hidden", out("run.out"))
+    check("sandbox: /etc/resolv.conf still readable", out("resolv.out") == "ok", out("resolv.out"))
+    if "network not limited" in run.stdout:
+        print("  skip network checks: " + run.stdout.split("network not limited", 1)[1].splitlines()[0])
+    else:
+        check("network: the proxy is given to Pi", out("proxy.out") == "http://127.0.0.1:3128", out("proxy.out"))
+        check("network: no direct connection", out("direct.out") == "blocked", out("direct.out"))
+        check("network: a host not allowed is refused", out("proxied.out") == "403", out("proxied.out"))
     shutil.rmtree(work, ignore_errors=True)
+
+
+def hardening_test():
+    """What the picker reads or deletes outside the sandbox, in places Pi can write:
+    links there never lead it elsewhere."""
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    project = home / "proj"
+    (project / ".pi-files" / "copy" / "ro").mkdir(parents=True)
+    (home / ".pi").mkdir()
+    secret = home / "secret.txt"
+    secret.write_text("private\n")
+    env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_CODING_AGENT_DIR")}
+    env["HOME"] = str(home)
+
+    def picker(code):
+        script = ("import importlib.util, json, os, sys\n"
+                  f"spec = importlib.util.spec_from_file_location('picker', {str(APP)!r})\n"
+                  "m = importlib.util.module_from_spec(spec)\n"
+                  "spec.loader.exec_module(m)\n" + code)
+        run = subprocess.run([sys.executable, "-B", "-c", script], env=env, capture_output=True, text=True, timeout=30)
+        return run.stdout.strip() + run.stderr.strip()[-300:]
+
+    # The Hindsight key: a link put in its place is not read.
+    key = home / ".pi" / "hindsight.key"
+    key.symlink_to(secret)
+    check("hindsight key: a link is not followed", picker(f"print(m.read_hindsight_key({str(home)!r})[0])") == "None")
+    key.unlink()
+    key.write_text("k-123\n")
+    key.chmod(0o600)
+    check("hindsight key: the file itself is read", picker(f"print(m.read_hindsight_key({str(home)!r})[0])") == "k-123")
+
+    # Setup: an AGENTS.md leading out of the project is neither shown nor kept in history.
+    (project / "AGENTS.md").symlink_to(secret)
+    setup = subprocess.run([sys.executable, "-B", str(APP), "--api", "setup", str(project)],
+                           env=env, capture_output=True, text=True, timeout=30)
+    shown = json.loads(setup.stdout or "{}").get("texts", {}).get("instructions", {}).get("text")
+    check("setup: a link out of the project is not read", shown == "", setup.stdout[-300:] + setup.stderr[-300:])
+    subprocess.run([sys.executable, "-B", str(APP), "--api", "write-text", str(project), "instructions"],
+                   input="new instructions\n", env=env, capture_output=True, text=True, timeout=30)
+    history = project / ".pi" / "devbox-history"
+    kept = "".join(p.read_text() for p in history.glob("*.md")) if history.is_dir() else ""
+    check("setup: saving keeps nothing of the link's target", "private" not in kept and secret.read_text() == "private\n", kept)
+    check("setup: saving replaces the link with the file",
+          not (project / "AGENTS.md").is_symlink() and (project / "AGENTS.md").read_text() == "new instructions\n")
+    inner = home / "proj2"
+    inner.mkdir()
+    (inner / "CLAUDE.md").write_text("inside\n")
+    (inner / "AGENTS.md").symlink_to("CLAUDE.md")
+    check("setup: a link inside the project is still read",
+          picker(f"print(m.read_text({str(inner / 'AGENTS.md')!r}, root={str(inner)!r}))") == "inside")
+
+    # Removing: a read-only copy goes; a folder on the way swapped for a link stops it.
+    (project / ".pi-files" / "copy" / "ro" / "f").write_text("x")
+    (project / ".pi-files" / "copy" / "ro").chmod(0o500)
+    removed = picker(f"print(json.dumps(m.api_remove({str(home)!r}, {str(project / '.pi-files' / 'copy')!r})))")
+    check("remove: a copy with read-only folders goes", not (project / ".pi-files" / "copy").exists(), removed)
+    outside = home / "outside"
+    (outside / "keep").mkdir(parents=True)
+    (outside / "keep" / "f").write_text("keep")
+    shutil.rmtree(project / ".pi-files")
+    (project / ".pi-files").symlink_to(outside)
+    walked = picker(f"m.remove_entry({str(home)!r}, {str(project / '.pi-files' / 'keep')!r})")
+    check("remove: never through a link on the way", (outside / "keep" / "f").exists() and "Error" in walked, walked)
+
+    # Writing: a folder swapped for a link leading out is refused, nothing lands there.
+    wrote = picker(f"m.save_new({str(project / '.pi-files')!r}, 'x.png', b'data', {str(project)!r})")
+    check("write: never through a link out of the project", not (outside / "x.png").exists() and "Error" in wrote, wrote)
+    (project / ".pi-files").unlink()
+
+    # A FIFO left where the picker reads does not block it.
+    fifo = project / "AGENTS.md"
+    fifo.unlink()
+    os.mkfifo(fifo)
+    began = time.monotonic()
+    blocked = picker(f"print(m.read_text({str(fifo)!r}, root={str(project)!r}))")
+    check("read: a FIFO is not waited on", blocked == "None" and time.monotonic() - began < 10, blocked)
+    fifo.unlink()
+
+    # The git jail: the project only, unless its .git file names a real git folder.
+    (project / ".git").write_text(f"gitdir: {home / '.ssh'}\n")
+    (home / ".ssh").mkdir()
+    (home / ".ssh" / "HEAD").write_text("ref: refs/heads/main\n")
+    check("git jail: a .git file naming ~/.ssh adds nothing",
+          picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project)]))
+    main_git = home / "main" / ".git"
+    (main_git / "worktrees" / "w").mkdir(parents=True)
+    (main_git / "HEAD").write_text("ref: refs/heads/main\n")
+    (main_git / "worktrees" / "w" / "HEAD").write_text("ref: refs/heads/w\n")
+    (main_git / "worktrees" / "w" / "commondir").write_text("../..\n")
+    (project / ".git").write_text(f"gitdir: {main_git / 'worktrees' / 'w'}\n")
+    check("git jail: a worktree gets its main repository's .git",
+          picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project), str(main_git)]))
+    (project / ".git").unlink()
+
+    # A folder copy is unpacked out of Pi's reach, then moved into .pi-files.
+    import io
+    import tarfile
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w") as tar:
+        info = tarfile.TarInfo("mock/a.txt")
+        info.size = 5
+        tar.addfile(info, io.BytesIO(b"hello"))
+    upload = subprocess.run([sys.executable, "-B", str(APP), "--api", "upload-dir", "mock", str(project)],
+                            input=archive.getvalue(), env=env, capture_output=True, timeout=30)
+    saved = json.loads(upload.stdout or b"{}").get("saved") or ""
+    check("upload-dir: the copy lands in .pi-files",
+          saved.startswith(str(project / ".pi-files")) and (Path(saved) / "mock" / "a.txt").read_text() == "hello",
+          upload.stdout[-300:] + upload.stderr[-300:])
+    incoming = home / ".local" / "state" / "pier-picker" / "incoming"
+    check("upload-dir: nothing left in the private folder", not incoming.exists() or not any(incoming.iterdir()))
+
+    # The old name: its folders move to the new one, a link stays behind.
+    shutil.rmtree(home / ".local" / "state" / "pier-picker", ignore_errors=True)
+    (home / ".config" / "pi-dir-picker").mkdir(parents=True)
+    (home / ".config" / "pi-dir-picker" / "config.toml").write_text("recent_count = 3\n")
+    (home / ".local" / "state" / "pi-dir-picker").mkdir(parents=True)
+    (home / ".local" / "state" / "pi-dir-picker" / "labels.json").write_text("{}")
+    subprocess.run([sys.executable, "-B", str(APP), "--api", "version"], env=env, capture_output=True, timeout=30)
+    check("old name: the config moves",
+          (home / ".config" / "pier-picker" / "config.toml").read_text() == "recent_count = 3\n"
+          if (home / ".config" / "pier-picker" / "config.toml").exists() else False)
+    check("old name: the state moves, a link stays",
+          (home / ".local" / "state" / "pier-picker" / "labels.json").exists()
+          and (home / ".local" / "state" / "pi-dir-picker").is_symlink())
+    cleanup(str(work))
 
 
 def checkpoint_test():
     """Restore points around a real --exec-pi: a fake Pi writes its session as Pi does
     (the file of a new session appears with the first answer) and changes a file; the
     API then lists the points and puts the file back."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "proj"
     project.mkdir(parents=True)
@@ -358,16 +527,172 @@ def checkpoint_test():
     check("checkpoints: what changed since the first", [c["path"] for c in diff.get("changes", [])] == ["notes.txt"], diff)
     restored = api("restore", str(project), first)
     check("checkpoints: the file is back", (project / "notes.txt").read_text() == "original\n", restored)
-    check("checkpoints: the state before restoring is kept", api("checkpoints", str(project)).get("points", [{}])[0].get("reason") == "before-restore")
-    log = (home / ".local" / "state" / "pi-dir-picker" / "picker.log").read_text() if (home / ".local" / "state" / "pi-dir-picker" / "picker.log").exists() else ""
+    check("checkpoints: the state before restoring is kept", (api("checkpoints", str(project)).get("points") or [{}])[0].get("reason") == "before-restore")
+    log = (home / ".local" / "state" / "pier-picker" / "picker.log").read_text() if (home / ".local" / "state" / "pier-picker" / "picker.log").exists() else ""
     check("log: pi start and exit, the restore", "pi.start" in log and "pi.exit" in log and "checkpoint.restore" in log, log[-600:])
     shutil.rmtree(work, ignore_errors=True)
+
+
+GIT_BROKER_SCRIPT = r'''
+import importlib.util, json, os, subprocess, sys, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+spec = importlib.util.spec_from_file_location("pier_picker", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+home = m.home_dir()
+proj = os.path.join(home, "proj")
+os.makedirs(proj, exist_ok=True)
+calls, prs = [], []
+
+class Forge(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, code, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(code); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def do_GET(self):
+        calls.append(("GET", self.path, self.headers.get("Authorization")))
+        if self.path == "/user": return self.reply(200, {"login": "leo"})
+        if self.path == "/repos/leo/demo": return self.reply(200, {"default_branch": "main"})
+        if self.path.startswith("/repos/leo/demo/branches"): return self.reply(200, [{"name": "main"}])
+        if self.path.startswith("/repos/leo/demo/pulls/"): return self.reply(200, prs[int(self.path.split("/")[-1]) - 1])
+        if self.path.startswith("/repos/leo/demo/pulls"): return self.reply(200, prs)
+        if "check-runs" in self.path: return self.reply(200, {"check_runs": []})
+        self.reply(404, {"message": "Not Found"})
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        calls.append(("POST", self.path, body))
+        pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x"}, "base": {"ref": body.get("base")}}
+        prs.append(pr); self.reply(201, pr)
+    def do_PUT(self):
+        calls.append(("PUT", self.path, None)); self.reply(200, {"merged": True})
+
+server = HTTPServer(("127.0.0.1", 0), Forge)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+m.forge_api_base = lambda kind, url: f"http://127.0.0.1:{server.server_address[1]}"
+remote = os.path.join(home, "remote.git")
+subprocess.run(["git", "init", "-q", "--bare", "-b", "main", remote], check=True)
+m.clone_url = lambda forge, repo: remote
+out = {}
+m.api_forge_add(home, "github", "https://github.com", b"tok-secret")
+out["forges_mode"] = oct(os.stat(m.forges_path(home)).st_mode & 0o777)
+fid = m.load_forges(home)[0]["id"]
+m.api_repo_link(home, proj, fid, "leo/demo")
+git = lambda *a: subprocess.run(["git", "-C", proj, "-c", "user.email=t@t", "-c", "user.name=t", *a], check=True, capture_output=True, text=True).stdout
+open(os.path.join(proj, "a.txt"), "w").write("a")
+git("add", "."); git("commit", "-qm", "one"); git("checkout", "-qb", "pi/work")
+open(os.path.join(proj, "b.txt"), "w").write("b")
+git("add", "."); git("commit", "-qm", "two")
+broker = object.__new__(m.GitBroker); broker.project = os.path.realpath(proj); broker.home = home
+def tried(request):
+    try:
+        return broker.answer(request)
+    except m.ApiError as exc:
+        return {"error": str(exc)}
+out["push_main"] = "error" in tried({"op": "push", "branch": "main"})
+out["push_other"] = "error" in tried({"op": "push", "branch": "feature"})
+out["push_pi"] = tried({"op": "push", "branch": "pi/work"}).get("pushed")
+out["remote_branches"] = subprocess.run(["git", "--git-dir", remote, "branch"], capture_output=True, text=True).stdout.split()
+out["pr"] = tried({"op": "open_pr", "branch": "pi/work", "title": "Work"}).get("number")
+asked = tried({"op": "request_merge", "number": 1})
+out["merged_before"] = any(c[0] == "PUT" for c in calls)
+m.api_approval_answer(home, asked["asked"], "yes")
+out["merged_after"] = any(c[0] == "PUT" for c in calls)
+out["pull"] = tried({"op": "pull"}).get("into")
+out["origin"] = git("branch", "-r").split()
+out["token_sent"] = any(c[2] == "Bearer tok-secret" for c in calls if c[0] == "GET")
+out["token_in_log"] = "tok-secret" in open(m.log_path()).read()
+print(json.dumps(out))
+'''
+
+
+def worktree_test():
+    """Two Pis in a git project, with real tmux: the second works in a worktree of its own,
+    on its branch, and its untouched worktree goes once they are stopped."""
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    project = home / "repo"
+    project.mkdir(parents=True)
+    git = lambda *a: subprocess.run(["git", "-C", str(project), "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                                    check=True, capture_output=True, text=True).stdout
+    git("init", "-q", "-b", "main")
+    (project / "a.txt").write_text("a")
+    git("add", ".")
+    git("commit", "-qm", "one")
+    tools = home / ".local" / "bin"
+    tools.mkdir(parents=True)
+    fake = tools / "pi"
+    fake.write_text('#!/bin/sh\npwd > "$HOME/pwd-$PI_PICKER_SLOT"\nsleep 60\n')
+    fake.chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_BIN")}
+    env.update(HOME=str(home), PATH=f"{tools}:/usr/bin:/bin", PI_PICKER_SANDBOX="0", PI_PICKER_TMUX_SOCKET=PI_SOCKET)
+    script = (
+        "import importlib.util, json\n"
+        f"spec = importlib.util.spec_from_file_location('picker', {str(APP)!r})\n"
+        "m = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(m)\n"
+        "home = m.home_dir()\n"
+        "env = m.child_env(home)\n"
+        f"first = m.open_pi({str(project)!r}, [], env, home, 80, 24)\n"
+        f"second = m.open_pi({str(project)!r}, ['--new'], env, home, 80, 24)\n"
+        "print(json.dumps([first, second]))\n"
+    )
+    tmux("kill-server", socket=PI_SOCKET)
+    run = subprocess.run([sys.executable, "-B", "-c", script], capture_output=True, text=True, env=env, timeout=30)
+    try:
+        first, second = json.loads(run.stdout)
+    except ValueError:
+        check("worktrees: two Pis start", False, run.stdout[-300:] + run.stderr[-600:])
+        cleanup(str(work))
+        return
+    time.sleep(2.0)
+    read = lambda slot: (home / f"pwd-{slot}").read_text().strip() if (home / f"pwd-{slot}").exists() else "nothing"
+    tree = project / ".pi-worktrees" / second[0]
+    check("worktrees: the first Pi works in the folder", read(first[0]) == str(project), read(first[0]))
+    check("worktrees: the second in a worktree of its own", read(second[0]) == str(tree), read(second[0]))
+    branch = subprocess.run(["git", "-C", str(tree), "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+    check("worktrees: on a pi/agent-2 branch", branch.startswith("pi/agent-2-"), branch)
+    check("worktrees: what is given to Pi reachable", (tree / ".pi-images").is_symlink())
+    check("worktrees: the project's git status stays clean", git("status", "--porcelain").strip() == "", git("status", "--porcelain"))
+    subprocess.run([sys.executable, "-B", str(APP), "--api", "stop", str(project), ""], env=env, capture_output=True, timeout=30)
+    time.sleep(1.0)
+    check("worktrees: an untouched one goes when the Pis stop", not tree.exists() and "pi/agent-2" not in git("branch"),
+          (tree.exists(), git("branch")))
+    tmux("kill-server", socket=PI_SOCKET)
+    cleanup(str(work))
+
+
+def git_broker_test():
+    """The git broker on the real system: pushes through git's jail and the mirror, pull
+    requests and a merge only once approved, against a made-up forge (a local server)
+    and a local bare repository standing for the remote."""
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    home.mkdir()
+    script = work / "broker.py"
+    script.write_text(GIT_BROKER_SCRIPT)
+    env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "XDG_STATE_HOME")}
+    env["HOME"] = str(home)
+    run = subprocess.run([sys.executable, "-B", str(script), str(APP)], env=env, capture_output=True, text=True, timeout=120)
+    try:
+        out = json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        check("git broker runs", False, run.stdout[-400:] + run.stderr[-800:])
+        cleanup(str(work))
+        return
+    check("git: the forge token file is private", out["forges_mode"] == "0o600", out)
+    check("git: main and other branches refused", out["push_main"] and out["push_other"], out)
+    check("git: a pi/ branch pushed through the mirror", out["push_pi"] == "pi/work" and "pi/work" in out["remote_branches"], out)
+    check("git: a pull request opened", out["pr"] == 1, out)
+    check("git: no merge before the user approves", not out["merged_before"] and out["merged_after"], out)
+    check("git: pull fills origin/*", "origin/pi/work" in out["origin"], out)
+    check("git: the token used, never logged", out["token_sent"] and not out["token_in_log"], out)
+    cleanup(str(work))
 
 
 def resources_test():
     """Setup's list of what Pi loads: packages with their version, skills, prompts, MCP
     servers, from a made-up agent dir and project; nothing is run."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     agent = home / ".pi" / "agent"
     project = home / "proj"
@@ -378,7 +703,7 @@ def resources_test():
     (agent / "prompts" / "review.md").write_text("x")
     (project / ".pi" / "skills" / "notes").mkdir(parents=True)
     (project / ".pi" / "skills" / "notes" / "SKILL.md").write_text("x")
-    (project / ".mcp.json").write_text('{"mcpServers": {"github": {}}}')
+    (project / ".pi" / "mcp.json").write_text('{"mcpServers": {"github": {}}}')
     env = {k: v for k, v in os.environ.items() if k not in ("PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "XDG_STATE_HOME")}
     env["HOME"] = str(home)
     out = subprocess.run([sys.executable, "-B", str(APP), "--api", "setup", str(project)],
@@ -396,13 +721,73 @@ def resources_test():
           [s["name"] for s in r["skills"]] == ["notes"] and [p["name"] for p in r["prompts"]] == ["review"]
           and [m["name"] for m in r["mcp"]] == ["github"], r)
     check("the default model", r["model"].get("defaultModel") == "m", r["model"])
+
+    # Managing them: on and off as `pi config` writes it, local skills, a package's skill.
+    pkg = agent / "npm" / "node_modules" / "pi-hindsight"
+    (pkg / "skills" / "recall").mkdir(parents=True)
+    (pkg / "skills" / "recall" / "SKILL.md").write_text("---\nname: recall\n---\n")
+
+    def api(*args, data=None):
+        run = subprocess.run([sys.executable, "-B", str(APP), "--api", *args], input=data, env=env,
+                             capture_output=True, timeout=30)
+        try:
+            return json.loads(run.stdout)
+        except ValueError:
+            return {"error": run.stdout.decode(errors="replace") + run.stderr.decode(errors="replace")}
+
+    listed = api("resources", str(project))
+    names = {(s["name"], s["source"]): s for s in listed.get("skills", [])}
+    check("resources: local and package skills, loaded", names.get(("notes", None), {}).get("enabled")
+          and names.get(("recall", "npm:pi-hindsight"), {}).get("enabled"), listed)
+    api("toggle-resource", "user", str(project), "skills", "npm:pi-hindsight", "skills/recall/SKILL.md", "0")
+    api("toggle-resource", "project", str(project), "skills", "", "skills/notes/SKILL.md", "0")
+    settings = json.loads((agent / "settings.json").read_text())
+    check("resources: a package's skill off, as pi config writes it",
+          {"source": "npm:pi-hindsight", "skills": ["-skills/recall/SKILL.md"]} in settings.get("packages", []), settings)
+    check("resources: a local skill off, in the project's settings",
+          json.loads((project / ".pi" / "settings.json").read_text()).get("skills") == ["-skills/notes/SKILL.md"])
+    listed = api("resources", str(project))
+    check("resources: both listed off", not any(s["enabled"] for s in listed.get("skills", [])), listed.get("skills"))
+    made = api("skill-new", "user", str(project), "my-skill", "does things")
+    check("skills: a new one from the template", (agent / "skills" / "my-skill" / "SKILL.md").read_text().startswith("---\nname: my-skill")
+          if (agent / "skills" / "my-skill" / "SKILL.md").exists() else False, made)
+    check("skills: a bad name refused", "error" in api("skill-new", "user", str(project), "Bad Name", ""))
+    api("skill-write", "user", str(project), "my-skill", data=b"---\nname: my-skill\n---\nnew\n")
+    check("skills: saved", api("skill-read", "user", str(project), "my-skill").get("text", "").endswith("new\n"))
+    binned = api("skill-delete", "user", str(project), "my-skill")
+    check("skills: put in the bin, recoverable", not (agent / "skills" / "my-skill").exists()
+          and Path(binned.get("kept", "/nonexistent")).joinpath("SKILL.md").exists(), binned)
+    import io
+    import tarfile
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w") as tar:
+        for name, body in (("Shared Skill/SKILL.md", b"---\nname: shared\n---\n"), ("Shared Skill/notes.md", b"x")):
+            info = tarfile.TarInfo(name)
+            info.size = len(body)
+            tar.addfile(info, io.BytesIO(body))
+    imported = api("skill-import", "project", str(project), "Shared Skill", data=archive.getvalue())
+    check("skills: imported under the name it declares", (project / ".pi" / "skills" / "shared" / "notes.md").exists(), imported)
+
+    # pi install, run by the picker: a fake pi records what it was asked.
+    tools = home / ".local" / "bin"
+    tools.mkdir(parents=True)
+    (tools / "pi").write_text('#!/bin/sh\necho "$@" > "$HOME/.pi/pi-args.txt"\n')
+    (tools / "pi").chmod(0o755)
+    env2 = dict(env, PATH=f"{tools}:/usr/bin:/bin", PI_PICKER_SANDBOX="0")
+    subprocess.run([sys.executable, "-B", str(APP), "--pi-package", "install", str(project), "npm:pi-review"],
+                   stdin=subprocess.DEVNULL, env=env2, capture_output=True, timeout=30)
+    args = (home / ".pi" / "pi-args.txt").read_text().strip() if (home / ".pi" / "pi-args.txt").exists() else "nothing"
+    check("packages: pi install -l for a project", args == "install -l npm:pi-review", args)
+    refused = subprocess.run([sys.executable, "-B", str(APP), "--pi-package", "install", "user", "npm:x;rm"],
+                             stdin=subprocess.DEVNULL, env=env2, capture_output=True, text=True, timeout=30)
+    check("packages: a source that is not one refused", refused.returncode == 2, refused.stdout[-200:])
     cleanup(work)
 
 
 def multi_pi_test():
     """Two Pis in one project, in real tmux: each in its own conversation (recorded in
     tmux as @pi-file), both listed by the API, stopped one at a time."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "proj"
     project.mkdir(parents=True)
@@ -656,9 +1041,12 @@ def main():
 
     back_to_back_children()
     sandbox_test()
+    hardening_test()
     checkpoint_test()
     multi_pi_test()
     resources_test()
+    git_broker_test()
+    worktree_test()
 
     home, screens, work = session([])
     send("Escape")

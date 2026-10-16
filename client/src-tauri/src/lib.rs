@@ -13,6 +13,7 @@ mod picker;
 mod share;
 mod ssh;
 mod store;
+mod takeback;
 mod term;
 mod watch;
 
@@ -35,13 +36,13 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 11;
+const API_VERSION: u64 = 15;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff"];
+const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees"];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -519,6 +520,13 @@ async fn api_call(app: AppHandle, state: State<'_, AppState>, args: Vec<String>)
         return Err(format!("command not allowed: {command}"));
     }
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    // What is typed into Pi goes on stdin ("-"): on the command line, any user of the VM
+    // could read it (ps), and a line holds 128 KB at most.
+    if let ["type", text, rest @ ..] = args.as_slice() {
+        let mut moved = vec!["type", "-"];
+        moved.extend_from_slice(rest);
+        return api(&app, &state, &moved, text.as_bytes()).await;
+    }
     api(&app, &state, &args, &[]).await
 }
 
@@ -694,9 +702,13 @@ async fn checkpoint_create(app: AppHandle, state: State<'_, AppState>, project: 
 /// Puts the project back as it was at a restore point: all of it, or `files`.
 #[tauri::command]
 async fn checkpoint_restore(app: AppHandle, state: State<'_, AppState>, project: String, id: String, files: Vec<String>) -> Result<Value, String> {
-    let mut args = vec!["restore", project.as_str(), id.as_str()];
-    args.extend(files.iter().map(String::as_str));
-    api(&app, &state, &args, &[]).await
+    // The files, one per line on stdin: hundreds of them would not fit on a command line.
+    if files.iter().any(|f| f.contains('\n')) {
+        return Err("a file name with a line break cannot be restored one by one".into());
+    }
+    let list = files.join("\n");
+    let args = if files.is_empty() { vec!["restore", project.as_str(), id.as_str()] } else { vec!["restore", project.as_str(), id.as_str(), "-"] };
+    api(&app, &state, &args, list.as_bytes()).await
 }
 
 // --- terminals ----------------------------------------------------------------------
@@ -728,16 +740,34 @@ fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
 
 /// `pi update` run by the picker in a terminal: Pi itself, --all, --extensions, or one
 /// package (npm:…, git:…, https://…). Nothing else reaches the command line.
+/// A package source Pier passes to `pi update`, `pi install` or `pi remove`.
+fn package_source(s: &str) -> bool {
+    (s.starts_with("npm:") || s.starts_with("git:") || s.starts_with("https://"))
+        && s.len() <= 200
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || "@/._:+~-".contains(c))
+}
+
 fn update_command(args: &[String]) -> Result<String, String> {
-    let source = |s: &str| {
-        (s.starts_with("npm:") || s.starts_with("git:") || s.starts_with("https://"))
-            && s.len() <= 200
-            && s.chars().all(|c| c.is_ascii_alphanumeric() || "@/._:+~-".contains(c))
-    };
+    let source = package_source;
     match args {
         [] => Ok("--pi-update".into()),
         [flag] if flag == "--all" || flag == "--extensions" || source(flag) => Ok(format!("--pi-update {}", sh_quote(flag))),
         _ => Err("unsupported update".into()),
+    }
+}
+
+/// `pi install` / `pi remove` run by the picker in a terminal, in Pi's sandbox: for the
+/// user ("user") or a project (its path, checked to be in home on the VM).
+fn package_command(args: &[String]) -> Result<String, String> {
+    match args {
+        [action, scope, source]
+            if (action == "install" || action == "remove")
+                && (scope == "user" || (scope.starts_with('/') && scope.len() < 4096 && !scope.chars().any(char::is_control)))
+                && package_source(source) =>
+        {
+            Ok(format!("--pi-package {} {} {}", sh_quote(action), sh_quote(scope), sh_quote(source)))
+        }
+        _ => Err("unsupported package command".into()),
     }
 }
 
@@ -766,6 +796,7 @@ async fn term_open(
         "shell" => None,
         "pi" => Some(remote(&settings, &request, &attach_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
         "update" => Some(remote(&settings, &request, &update_command(args.as_deref().unwrap_or(&[]))?)),
+        "package" => Some(remote(&settings, &request, &package_command(args.as_deref().unwrap_or(&[]))?)),
         other => return Err(format!("unknown terminal: {other}")),
     };
     let exit_app = app.clone();
@@ -964,6 +995,119 @@ async fn share_stop(app: AppHandle, state: State<'_, AppState>, id: u32, forget:
     Ok(())
 }
 
+// --- skills, extensions, prompts (Setup) -----------------------------------------------
+
+fn resource_scope(scope: &str) -> Result<(), String> {
+    if scope == "user" || scope == "project" { Ok(()) } else { Err(format!("unknown scope: {scope}")) }
+}
+
+/// Turns a skill, an extension or a prompt on or off, as `pi config` does.
+#[tauri::command]
+async fn resource_toggle(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, kind: String, source: String, rel: String, on: bool) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    if !["skills", "extensions", "prompts"].contains(&kind.as_str()) {
+        return Err(format!("unknown kind: {kind}"));
+    }
+    api(&app, &state, &["toggle-resource", &scope, &project, &kind, &source, &rel, if on { "1" } else { "0" }], &[]).await
+}
+
+/// A new local skill, from a template.
+#[tauri::command]
+async fn skill_create(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String, description: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    api(&app, &state, &["skill-new", &scope, &project, &name, &description], &[]).await
+}
+
+/// A local skill's SKILL.md, saved.
+#[tauri::command]
+async fn skill_save(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String, text: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    api(&app, &state, &["skill-write", &scope, &project, &name], text.as_bytes()).await
+}
+
+/// A local skill, moved to the picker's bin on the VM.
+#[tauri::command]
+async fn skill_delete(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    api(&app, &state, &["skill-delete", &scope, &project, &name], &[]).await
+}
+
+// --- git forges (Setup > Git) ------------------------------------------------------------
+
+/// Connects a forge account: the token goes on stdin, never on a command line or in a log.
+#[tauri::command]
+async fn forge_add(app: AppHandle, state: State<'_, AppState>, kind: String, url: String, token: String) -> Result<Value, String> {
+    if !["github", "gitlab", "gitea"].contains(&kind.as_str()) {
+        return Err(format!("unknown forge: {kind}"));
+    }
+    api(&app, &state, &["forge-add", &kind, &url], token.trim().as_bytes()).await
+}
+
+#[tauri::command]
+async fn forge_remove(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    api(&app, &state, &["forge-remove", &id], &[]).await
+}
+
+/// Connects the project to a repository (owner/name) of a forge account.
+#[tauri::command]
+async fn repo_link(app: AppHandle, state: State<'_, AppState>, project: String, forge: String, repo: String) -> Result<Value, String> {
+    api(&app, &state, &["repo-link", &project, &forge, &repo], &[]).await
+}
+
+#[tauri::command]
+async fn repo_unlink(app: AppHandle, state: State<'_, AppState>, project: String) -> Result<Value, String> {
+    api(&app, &state, &["repo-unlink", &project], &[]).await
+}
+
+/// A new repository on the forge, connected to the project (the user's own action).
+#[tauri::command]
+async fn repo_create(app: AppHandle, state: State<'_, AppState>, project: String, forge: String, name: String, private: bool, description: String) -> Result<Value, String> {
+    api(&app, &state, &["repo-create", &project, &forge, &name, if private { "1" } else { "0" }, &description], &[]).await
+}
+
+/// Merges a pull request, from Pier.
+#[tauri::command]
+async fn pr_merge(app: AppHandle, state: State<'_, AppState>, project: String, number: u64, method: String) -> Result<Value, String> {
+    if !["merge", "squash", "rebase"].contains(&method.as_str()) {
+        return Err(format!("unknown merge method: {method}"));
+    }
+    api(&app, &state, &["pr-merge", &project, &number.to_string(), &method], &[]).await
+}
+
+/// A Pi's worktree removed (its branch stays).
+#[tauri::command]
+async fn worktree_remove(app: AppHandle, state: State<'_, AppState>, project: String, name: String) -> Result<Value, String> {
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return Err(format!("not a worktree: {name}"));
+    }
+    api(&app, &state, &["worktree-remove", &project, &name], &[]).await
+}
+
+/// The user's answer to a request of Pi (merge, create a repository).
+#[tauri::command]
+async fn approval_answer(app: AppHandle, state: State<'_, AppState>, id: String, approve: bool) -> Result<Value, String> {
+    api(&app, &state, &["approval-answer", &id, if approve { "yes" } else { "no" }], &[]).await
+}
+
+/// Largest skill folder sent from this computer.
+const SKILL_MAX_BYTES: u64 = 20 * 1024 * 1024;
+
+/// A skill folder of this computer (it holds a SKILL.md), copied into the skills.
+#[tauri::command]
+async fn skill_import(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, path: String) -> Result<Value, String> {
+    resource_scope(&scope)?;
+    let root = PathBuf::from(&path);
+    if !root.join("SKILL.md").is_file() {
+        return Err(format!("{path} holds no SKILL.md: it is not a skill folder"));
+    }
+    let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "skill".into());
+    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, SKILL_MAX_BYTES))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(message)?;
+    api(&app, &state, &["skill-import", &scope, &project, &name], &packed.0).await
+}
+
 /// Saves one of the project's texts for Pi: "instructions" (AGENTS.md), "append"
 /// (.pi/APPEND_SYSTEM.md) or "system" (.pi/SYSTEM.md). The picker keeps the previous
 /// version in the project's history.
@@ -1049,6 +1193,106 @@ async fn download_copy(app: AppHandle, state: State<'_, AppState>, path: String,
     })?;
     log_info!("takeback.saved", req = request, path = path, dest = dest.display(), bytes = bytes, ms = started.elapsed().as_millis());
     Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Take back, file by file (takeback.rs): what differs between a handed-off copy on the
+/// VM and its original folder here.
+#[tauri::command]
+async fn takeback_compare(app: AppHandle, state: State<'_, AppState>, path: String, local: String) -> Result<Value, String> {
+    let remote = api(&app, &state, &["copy-manifest", &path], &[]).await?;
+    let root = PathBuf::from(&local);
+    let started = Instant::now();
+    let (mine, truncated) = tokio::task::spawn_blocking(move || takeback::local_manifest(&root))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{local}: {}", message(e)))?;
+    let result = takeback::compare(&mine, &takeback::remote_manifest(&remote));
+    log_info!("takeback.compare", path = path, local = local, changed = result.changed.len(), added = result.added.len(),
+        deleted = result.deleted.len(), same = result.same, ms = started.elapsed().as_millis());
+    Ok(json!({
+        "changed": result.changed, "added": result.added, "deleted": result.deleted, "same": result.same,
+        "links": remote.get("links").cloned().unwrap_or(Value::Null),
+        "truncated": truncated || remote.get("truncated").and_then(Value::as_bool).unwrap_or(false),
+    }))
+}
+
+/// One file's difference: this computer's version against the copy's (a unified diff).
+#[tauri::command]
+async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, path: String, local: String, rel: String) -> Result<Value, String> {
+    let root = PathBuf::from(&local);
+    let mine = {
+        let rel = rel.clone();
+        tokio::task::spawn_blocking(move || takeback::read_local(&root, &rel, 1024 * 1024))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(message)?
+    };
+    if mine.len() > 1024 * 1024 {
+        return Ok(json!({ "rel": rel, "too_big": true }));
+    }
+    api(&app, &state, &["copy-diff", &path, &rel], &mine).await
+}
+
+/// Brings the files chosen from the copy into the original folder, and deletes there
+/// the ones chosen among those Pi deleted. What is replaced or deleted is moved first to
+/// "NAME (before Pi's changes DATE)", next to the original.
+#[tauri::command]
+async fn takeback_apply(app: AppHandle, state: State<'_, AppState>, path: String, local: String, take: Vec<String>, delete: Vec<String>) -> Result<Value, String> {
+    let root = PathBuf::from(&local);
+    if !root.is_dir() {
+        return Err(format!("{local} is not a folder"));
+    }
+    if take.iter().chain(delete.iter()).any(|rel| takeback::safe_parts(rel).is_none()) {
+        return Err("a file name from the VM is not acceptable here".into());
+    }
+    let parent = root.parent().ok_or_else(|| format!("{local} has no parent folder"))?.to_path_buf();
+    let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
+    let when = journal::timestamp(std::time::SystemTime::now()).replace('T', " ").replace(':', "-");
+    let backup = parent.join(format!("{name} (before Pi's changes {})", &when[..16]));
+    let request = next_request();
+    let started = Instant::now();
+    let unique = format!("{}-{}", std::process::id(), NEXT_REQUEST.fetch_add(1, Ordering::Relaxed));
+    let archive = std::env::temp_dir().join(format!("pier-takeback-files-{unique}.tar"));
+    let mut fetched = None;
+    if !take.is_empty() {
+        let settings = settings(&state)?;
+        let command = remote(&settings, &request, &format!("--download-files {}", sh_quote(&path)));
+        let channel = vm_channel(&app, &state).await?;
+        let list = take.join("\n");
+        let ran = {
+            let mut file = std::fs::File::create(&archive).map_err(|e| e.to_string())?;
+            ssh::run_into(channel, &command, list.as_bytes(), &mut file, TAKEBACK_MAX).await
+        };
+        match ran {
+            Ok((Some(0), _)) => fetched = Some(archive.clone()),
+            Ok((status, stderr)) => {
+                let _ = std::fs::remove_file(&archive);
+                let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                log_warn!("takeback.fetch-failed", req = request, path = path, status = status.map_or("none".into(), |s| s.to_string()), err = stderr);
+                return Err(format!("download failed: {stderr}"));
+            }
+            Err(err) => {
+                let _ = std::fs::remove_file(&archive);
+                return Err(message(err));
+            }
+        }
+    }
+    let wanted: std::collections::HashSet<String> = take.into_iter().collect();
+    let applied = tokio::task::spawn_blocking({
+        let (root, backup) = (root.clone(), backup.clone());
+        move || takeback::apply(&root, &backup, fetched.as_deref(), &wanted, &delete)
+    })
+    .await
+    .map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&archive);
+    let applied = applied?.map_err(|e| {
+        let text = message(e);
+        log_warn!("takeback.apply-failed", req = request, local = local, err = text);
+        text
+    })?;
+    log_info!("takeback.applied", req = request, path = path, local = local, taken = applied.taken.len(), deleted = applied.deleted.len(),
+        skipped = applied.skipped.len(), backup = applied.backup.clone().unwrap_or_default(), ms = started.elapsed().as_millis());
+    serde_json::to_value(applied).map_err(|e| e.to_string())
 }
 
 /// Largest take-back archive, and most bytes it may unpack to.
@@ -1463,7 +1707,23 @@ pub fn run() {
             forget_share,
             hand_off,
             download_copy,
+            takeback_compare,
+            takeback_diff,
+            takeback_apply,
             write_text,
+            resource_toggle,
+            skill_create,
+            skill_save,
+            skill_delete,
+            skill_import,
+            forge_add,
+            forge_remove,
+            repo_link,
+            repo_unlink,
+            repo_create,
+            pr_merge,
+            approval_answer,
+            worktree_remove,
             checkpoint_create,
             checkpoint_restore,
             stop_pi,
@@ -1539,6 +1799,21 @@ mod tests {
             assert!(attach_command("/x", &bad).is_err(), "{bad:?}");
         }
         assert!(attach_command("", &[]).is_err());
+    }
+
+    #[test]
+    fn package_arguments() {
+        assert_eq!(package_command(&["install".into(), "user".into(), "npm:pi-tools".into()]).unwrap(), "--pi-package 'install' 'user' 'npm:pi-tools'");
+        assert!(package_command(&["remove".into(), "/home/leo/work".into(), "git:github.com/u/r@v1".into()]).is_ok());
+        for bad in [
+            vec!["exec".to_string(), "user".into(), "npm:x".into()],
+            vec!["install".into(), "home".into(), "npm:x".into()],
+            vec!["install".into(), "user".into(), "npm:x; rm -rf ~".into()],
+            vec!["install".into(), "user".into(), "/tmp/evil".into()],
+            vec!["install".into(), "/a\nb".into(), "npm:x".into()],
+        ] {
+            assert!(package_command(&bad).is_err(), "{bad:?}");
+        }
     }
 
     #[test]

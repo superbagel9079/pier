@@ -56,6 +56,10 @@ function mockBackend() {
   let shares = [];
   let kept = [];
   let handed = [];
+  let mockForges = [{ id: "github:github.com:leo", kind: "github", url: "https://github.com", login: "leo" }];
+  let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/" };
+  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" }];
+  let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,
     pinned: Boolean(mockLabels[path]?.pinned), archived: Boolean(mockLabels[path]?.archived) });
@@ -126,6 +130,31 @@ function mockBackend() {
     trustHost: async () => { trusted = true; },
     disconnect: async () => {},
     async api(args) {
+      if (args[0] === "resources") {
+        const item = (kind, name, scope, source, enabled, editable) => ({ name, scope, source, enabled, editable,
+          rel: source ? `${kind}/${name}/SKILL.md` : `${kind}/${name}${kind === "skills" ? "/SKILL.md" : kind === "prompts" ? ".md" : ".ts"}`,
+          description: `${name}, a demo ${kind.slice(0, -1)}`, path: `/home/leo/.pi/agent/${kind}/${name}` });
+        return { project: args[1], packages: [{ source: "npm:pi-hindsight", scope: "user", version: "0.4.2", installed: true }],
+          skills: [...mockSkills.map((s) => item("skills", s.name, s.scope, null, s.enabled, true)), item("skills", "recall", "user", "npm:pi-hindsight", true, false)],
+          extensions: [item("extensions", "memory", "user", "npm:pi-hindsight", true, false)],
+          prompts: [item("prompts", "review", "user", null, true, false)] };
+      }
+      if (args[0] === "gallery") {
+        return { query: args[1], results: [
+          { name: "pi-hindsight", source: "npm:pi-hindsight", version: "0.4.2", publisher: "vectorize", description: "Long-term memory for Pi" },
+          { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", description: "Code review skills" },
+        ].filter((p) => !args[1] || p.name.includes(args[1]) || p.description.toLowerCase().includes(args[1].toLowerCase())) };
+      }
+      if (args[0] === "repo") {
+        return { project: args[1], local: true, branch: "pi/fix-login",
+          forges: mockForges, link: mockForges.length ? mockLink : null,
+          prs: mockLink && mockForges.length ? [{ number: 12, title: "Fix the login redirect", state: "open", head: "pi/fix-login", base: "main", url: "https://github.com/leo/work/pull/12", checks: "success", author: "leo" },
+            { number: 13, title: "Docs: setup guide", state: "open", head: "pi/docs", base: "main", url: "https://github.com/leo/work/pull/13", checks: "pending", draft: true, author: "leo" }] : [],
+          approvals: mockApprovals };
+      }
+      if (args[0] === "approvals") return { approvals: mockApprovals };
+      if (args[0] === "worktrees") return { worktrees: [{ name: "pi-work-1a2b3c-2", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-2", branch: "pi/agent-2-20261016-1530-ab12", changed: 2, ahead: 3, running: true }] };
+      if (args[0] === "skill-read") return { name: args[3], text: `---\nname: ${args[3]}\ndescription: demo\n---\n\n# ${args[3]}\n` };
       if (args[0] === "projects") {
         const pis = pisNow();
         const work = { path: "/home/leo/work", label: "~/work", running: pis.length > 0, working: pis.some((p) => p.working), pis };
@@ -172,7 +201,7 @@ function mockBackend() {
           diff: args[3] ? "diff --git a/src/main.rs b/src/main.rs\n@@ -1,3 +1,4 @@\n fn main() {\n-    println!(\"hi\");\n+    println!(\"hello\");\n+    run();\n }\n" : null };
       }
       if (args[0] === "log") {
-        return { path: "/home/leo/.local/state/pi-dir-picker/picker.log", lines: [
+        return { path: "/home/leo/.local/state/pier-picker/picker.log", lines: [
           "2026-10-12T14:01:02.120Z INFO  pi.start pid=812 project=/home/leo/work sandbox=True args=[] pi=/home/leo/.npm-global/bin/pi",
           "2026-10-12T14:01:02.410Z INFO  checkpoint.create pid=812 project=/home/leo/work id=01791813662410000000 reason=start replaced=False ms=180",
           "2026-10-12T14:09:40.002Z WARN  api.share-prepare pid=990 req=d3mo-4 ms=12 err=\"sshfs is missing on the VM: sudo apt install sshfs\" args=\"[\\\"docs\\\"]\"",
@@ -250,6 +279,53 @@ function mockBackend() {
       return { mountpoint: share.mountpoint, count: 12 };
     },
     downloadCopy: async (path, local) => `${local} (from Pi)`,
+    takebackCompare: async () => ({
+      changed: [{ rel: "index.html", size_pc: 1200, size_vm: 1350 }, { rel: "css/site.css", size_pc: 800, size_vm: 790 }],
+      added: [{ rel: "js/menu.js", size_pc: null, size_vm: 420 }],
+      deleted: [{ rel: "old/draft.txt", size_pc: 90, size_vm: null }],
+      same: 31, links: [], truncated: false,
+    }),
+    takebackDiff: async (path, local, rel) => ({ rel, diff: `--- PC/${rel}
++++ Pi/${rel}
+@@ -1,3 +1,3 @@
+ <header>
+-  <h1>Mockups</h1>
++  <h1>Mockups, revised</h1>
+ </header>
+` }),
+    takebackApply: async (path, local, take, remove) => ({ taken: take, deleted: remove, skipped: [], backup: take.length || remove.length ? `${local} (before Pi's changes 2026-10-16 10-32)` : null }),
+    resourceToggle: async (scope, project, kind, source, rel, on) => {
+      const skill = mockSkills.find((s) => rel === `skills/${s.name}/SKILL.md`);
+      if (skill) skill.enabled = on;
+      return { rel, enabled: on };
+    },
+    skillCreate: async (scope, project, name) => {
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) throw "a skill's name: 1 to 64 lowercase letters, digits and single hyphens (my-skill)";
+      mockSkills.push({ name, scope, enabled: true });
+      return { name };
+    },
+    skillSave: async () => ({ saved: "SKILL.md" }),
+    forgeAdd: async (kind, url, token) => {
+      if (!token) throw "paste the token alone";
+      const forge = { id: `${kind}:${url.replace(/^https:\/\//, "")}:leo`, kind, url, login: "leo" };
+      mockForges.push(forge);
+      return forge;
+    },
+    forgeRemove: async (id) => { mockForges = mockForges.filter((f) => f.id !== id); return { removed: id }; },
+    repoLink: async (project, forge, repo) => { mockLink = { forge, repo, default_branch: "main", prefix: "pi/" }; return mockLink; },
+    repoUnlink: async () => { mockLink = null; return {}; },
+    repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/" }; return mockLink; },
+    prMerge: async (project, number) => ({ merged: number }),
+    approvalAnswer: async (id, approve) => { mockApprovals = mockApprovals.filter((a) => a.id !== id); return { id, state: approve ? "done" : "refused" }; },
+    skillDelete: async (scope, project, name) => {
+      mockSkills = mockSkills.filter((s) => s.name !== name);
+      return { name, kept: `/home/leo/.local/state/pier-picker/trash/20261016-${scope}-${name}` };
+    },
+    skillImport: async (scope, project, path) => {
+      const name = path.split(/[\\/]/).pop().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
+      mockSkills.push({ name, scope, enabled: true });
+      return { name };
+    },
     async removeUpload(path) {
       for (const key of ["images", "files", "copies"]) given[key] = given[key].filter((i) => i.path !== path);
       handed = handed.filter((h) => h.mountpoint !== path);

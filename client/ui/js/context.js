@@ -173,8 +173,11 @@ function makeContext(tab) {
    *  original live again in its place, or delete the copy. */
   function takeBackActions(share, context) {
     const actions = [];
+    if (share.origin) {
+      actions.push(link("review changes", "What Pi changed, file by file, against your folder: bring back the files you choose", () => openTakeBack(share)));
+    }
     if (share.writable && share.origin) {
-      actions.push(link("download", "Save Pi's version next to the original folder (nothing is overwritten)", async () => {
+      actions.push(link("download","Save Pi's version next to the original folder (nothing is overwritten)", async () => {
         const saved = await backend.downloadCopy(share.mountpoint, share.origin.local);
         notify(`Pi's version saved in ${saved}. Compare it with the original and keep what you want.`);
       }));

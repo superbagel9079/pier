@@ -55,9 +55,23 @@ function realBackend() {
       output.onmessage = (message) => {
         onBytes(message instanceof ArrayBuffer ? new Uint8Array(message) : Uint8Array.from(message));
       };
-      return invoke("term_open", { kind, cols, rows, output, project: params?.project ?? null, args: params?.args ?? null });
+      // An "update" tab can run pi install / pi remove instead (params.termKind "package").
+      return invoke("term_open", { kind: params?.termKind ?? kind, cols, rows, output, project: params?.project ?? null, args: params?.args ?? null });
     },
     writeText: (project, which, text) => invoke("write_text", { project, which, text }),
+    resourceToggle: (scope, project, kind, source, rel, on) => invoke("resource_toggle", { scope, project, kind, source, rel, on }),
+    skillCreate: (scope, project, name, description) => invoke("skill_create", { scope, project, name, description }),
+    skillSave: (scope, project, name, text) => invoke("skill_save", { scope, project, name, text }),
+    skillDelete: (scope, project, name) => invoke("skill_delete", { scope, project, name }),
+    skillImport: (scope, project, path) => invoke("skill_import", { scope, project, path }),
+    forgeAdd: (kind, url, token) => invoke("forge_add", { kind, url, token }),
+    forgeRemove: (id) => invoke("forge_remove", { id }),
+    repoLink: (project, forge, repo) => invoke("repo_link", { project, forge, repo }),
+    repoUnlink: (project) => invoke("repo_unlink", { project }),
+    repoCreate: (project, forge, name, priv, description) => invoke("repo_create", { project, forge, name, private: priv, description }),
+    prMerge: (project, number, method) => invoke("pr_merge", { project, number, method }),
+    approvalAnswer: (id, approve) => invoke("approval_answer", { id, approve }),
+    worktreeRemove: (project, name) => invoke("worktree_remove", { project, name }),
     termWrite: (id, data) => invoke("term_write", { id, data }).catch(() => {}),
     termResize: (id, cols, rows) => invoke("term_resize", { id, cols, rows }).catch(() => {}),
     termClose: (id) => invoke("term_close", { id }).catch(() => {}),
@@ -70,6 +84,9 @@ function realBackend() {
     clipboardPaths: () => invoke("clipboard_paths"),
     handOff: (id) => invoke("hand_off", { id }),
     downloadCopy: (path, local) => invoke("download_copy", { path, local }),
+    takebackCompare: (path, local) => invoke("takeback_compare", { path, local }),
+    takebackDiff: (path, local, rel) => invoke("takeback_diff", { path, local, rel }),
+    takebackApply: (path, local, take, remove) => invoke("takeback_apply", { path, local, take, delete: remove }),
     shareList: () => invoke("share_list"),
     async pickFolder() {
       return (await tauri.dialog.open({ directory: true, multiple: false, title: "Folder to share with the VM" })) || null;

@@ -32,6 +32,8 @@ function openPrefs() {
   }
   fillThemes();
   $("#prefs-font").value = prefs.fontSize;
+  $("#prefs-padding").value = prefs.termPadding;
+  fillTermFonts();
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -232,6 +234,73 @@ $("#prefs-font").addEventListener("change", (e) => {
   e.target.value = prefs.fontSize;
   savePrefs();
   for (const tab of workspace.tabs()) tab.applyFont?.();
+});
+// Monospaced fonts often installed: offered in the list, and only those found here.
+const TERM_FONT_CHOICES = ["Cascadia Mono", "Cascadia Code", "Consolas", "JetBrains Mono", "Fira Code", "Fira Mono",
+  "Source Code Pro", "Hack", "Iosevka", "IBM Plex Mono", "Roboto Mono", "Ubuntu Mono", "DejaVu Sans Mono",
+  "Liberation Mono", "Noto Sans Mono", "Menlo", "SF Mono", "Monaco", "Courier New"];
+
+function fontInstalled(name) {
+  // A font the system lacks measures as the fallback does: compared with two of them.
+  const probe = (family) => {
+    const span = el("span", { textContent: "mmmmmmmmmmlli10OO" });
+    span.style.cssText = `position:absolute;visibility:hidden;font-size:40px;font-family:${family}`;
+    document.body.append(span);
+    const width = span.getBoundingClientRect().width;
+    span.remove();
+    return width;
+  };
+  const safe = name.replace(/["'`;\\{}<>]/g, "");
+  return ["monospace", "serif"].some((base) => probe(`"${safe}", ${base}`) !== probe(base));
+}
+
+const OTHER_FONT = "__other__"; // the "Other font…" entry: a name typed below
+
+let installedFonts = null; // measured once: it takes a moment
+/** The font list: the default, the usual fonts found here, the one chosen if typed by
+ *  hand, and "Other font…". A plain select, as the theme's. */
+function fillTermFonts() {
+  installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
+  const select = $("#prefs-termfont");
+  const chosen = prefs.termFont || "";
+  select.innerHTML = "";
+  select.add(new Option("Cascadia Mono (default)", ""));
+  for (const name of installedFonts) if (name !== "Cascadia Mono") select.add(new Option(name, name));
+  if (chosen && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
+  select.add(new Option("Other font…", OTHER_FONT));
+  select.value = chosen;
+  $("#prefs-termfont-other").hidden = true;
+}
+
+function setTermFont(raw) {
+  const name = String(raw).replace(/["'`;\\{}<>]/g, "").trim().slice(0, 60);
+  prefs.termFont = name === "Cascadia Mono" ? "" : name;
+  savePrefs();
+  const note = $("#prefs-termfont-note");
+  note.hidden = !name || fontInstalled(name);
+  note.textContent = `"${name}" is not installed on this computer: the terminals use Cascadia Mono meanwhile.`;
+  for (const tab of workspace.tabs()) tab.applyFont?.();
+  fillTermFonts();
+}
+
+$("#prefs-termfont").addEventListener("change", (e) => {
+  if (e.target.value !== OTHER_FONT) { setTermFont(e.target.value); return; }
+  const other = $("#prefs-termfont-other");
+  other.hidden = false;
+  other.value = "";
+  other.focus();
+});
+$("#prefs-termfont-other").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.value.trim()) setTermFont(e.target.value);
+  if (e.key === "Escape") { e.stopPropagation(); fillTermFonts(); }
+});
+$("#prefs-termfont-other").addEventListener("change", (e) => { if (e.target.value.trim()) setTermFont(e.target.value); });
+$("#prefs-padding").addEventListener("change", (e) => {
+  prefs.termPadding = Math.min(40, Math.max(0, Math.round(Number(e.target.value) || 0)));
+  e.target.value = prefs.termPadding;
+  savePrefs();
+  applyTermPadding();
+  for (const tab of workspace.tabs()) tab.refit?.();
 });
 $("#prefs-shortcut").addEventListener("change", async (e) => {
   prefs.shortcut = e.target.checked;

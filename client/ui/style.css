@@ -198,8 +198,13 @@ details label { margin-top: 8px; }
 
 .panes { position: relative; flex: 1; min-height: 0; background: var(--bg); }
 .pane { position: absolute; inset: 0; overflow: auto; padding: 14px; }
-.pane.terminal { padding: 4px 0 0 6px; overflow: hidden; }
-.pane.terminal .xterm { height: 100%; }
+/* The padding is the terminal's own (Settings > Appearance): xterm.js's fit takes it off
+   the size it gives the program, and the scrollbar stays at the edge. */
+.pane.terminal { padding: 0; overflow: hidden; }
+.pane.terminal .xterm { height: 100%; padding: var(--term-pad, 8px); }
+/* xterm.js puts its scrollbar at the right of the text: moved by the padding, it stays
+   against the edge of the terminal, as in kitty or foot. */
+.pane.terminal .xterm-scrollable-element > .scrollbar.vertical { transform: translateX(var(--term-pad, 8px)); }
 /* The usual arrow over terminals, not xterm's text cursor; selecting text still works. */
 .pane.terminal .xterm, .pane.terminal .xterm-screen, .pane.terminal .xterm-viewport, .pane.terminal .xterm-rows { cursor: default; }
 
@@ -531,3 +536,42 @@ details label { margin-top: 8px; }
 .side.collapsed .tab, .side.collapsed .tab:not(.active):not(:hover) { min-width: 0; flex: 0 0 auto; padding: 12px 0; }
 .side.collapsed .tab > span:first-child { overflow: visible; }
 .side.collapsed .dock-head > button.icon { border-left: none; padding: 8px 0; }
+
+/* Take back, file by file */
+.takeback-section { margin: 0 0 12px; }
+.takeback-section summary { cursor: pointer; font-weight: 700; margin-bottom: 4px; }
+.takeback-list { list-style: none; margin: 0; padding: 0; }
+.takeback-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0; }
+.takeback-list .rel { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.takeback-diff { flex-basis: 100%; }
+.takeback-diff .diff { content-visibility: auto; }
+
+/* Setup: four pages (the same switch as Activity's), compact rows */
+/* The pages: one row when they fit, two otherwise; never a label cut. */
+.setup-pages { display: flex; flex-wrap: wrap; width: 100%; margin: 4px 0 12px; border: none; gap: 0; }
+.setup-pages .mode { flex: 1 0 auto; padding: 2px 6px; font-size: 12px; white-space: nowrap; border: 1px solid var(--line); margin: 0 -1px -1px 0; }
+.resource-items li > .row-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+.setup-page > h2:first-child { margin-top: 4px; }
+.startup-box { margin-top: 12px; }
+.startup-box > summary { cursor: pointer; color: var(--dim); }
+.resource-bar { display: flex; gap: 8px; align-items: center; }
+.resource-bar input[type="search"] { flex: 1; min-width: 0; }
+.resource-lists h3 { margin: 14px 0 2px; font-size: 12px; }
+.resource-lists .group { margin: 6px 0 2px; }
+.resource-items { list-style: none; margin: 0; padding: 0; }
+.resource-items li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid var(--line); min-height: 26px; }
+.resource-items li > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
+/* The name is what is read: it keeps its room, the source or version gives way first. */
+.resource-items li > .name, .resource-items .line > .name { flex: 0 1 auto; min-width: 0; max-width: 75%; overflow-wrap: anywhere; }
+.resource-items li > .dim, .resource-items .line > .dim { flex: 1 1 0; min-width: 0; text-align: right; }
+.resource-items li.two-lines { display: block; padding: 4px 0; }
+.resource-items .line { display: flex; align-items: center; gap: 8px; }
+.resource-items .line > .link { flex: 0 0 auto; }
+.resource-items li > .desc, .resource-items .desc { text-align: left; margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.resource-items li.off > .name { color: var(--dim); }
+.resource-items li > .more { visibility: hidden; padding: 0 4px; }
+.resource-items li:hover > .more, .resource-items li > .more:focus-visible { visibility: visible; }
+.gallery .line > .dim { text-align: left; }
+.dialog.wide { width: min(860px, 100%); }
+.dialog textarea.editor { width: 100%; }
+.dialog .grid.fields { grid-template-columns: auto minmax(0, 1fr); }

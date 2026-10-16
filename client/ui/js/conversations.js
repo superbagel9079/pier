@@ -55,9 +55,22 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }) {
 /** In place of a row: a conversation's name and category, kept by Pier. */
 function conversationEditor(at, project, session, categories, { done, failed }) {
   const name = el("input", { value: session.title || "", placeholder: session.name || session.prompt || "a name", spellcheck: false });
-  const category = el("input", { value: session.category || "", placeholder: "category (optional)", spellcheck: false });
-  const options = el("datalist", { id: `categories-${Math.random().toString(36).slice(2)}` }, ...categories.map((c) => el("option", { value: c })));
-  category.setAttribute("list", options.id);
+  // The category: a list like every other in Pier (the categories already used), and
+  // "New category…" to type one.
+  const NEW = "__new__";
+  const picker = el("select", { title: "Category" });
+  picker.add(new Option("no category", ""));
+  for (const c of categories) picker.add(new Option(c, c));
+  if (session.category && !categories.includes(session.category)) picker.add(new Option(session.category, session.category));
+  picker.add(new Option("New category…", NEW));
+  picker.value = session.category || "";
+  const fresh = el("input", { placeholder: "new category", spellcheck: false, hidden: true });
+  picker.addEventListener("change", () => {
+    fresh.hidden = picker.value !== NEW;
+    if (!fresh.hidden) fresh.focus();
+  });
+  const category = { get value() { return picker.value === NEW ? fresh.value : picker.value; } };
+  const options = el("span", {}, picker, fresh);
   const save = async () => {
     try {
       await backend.sessionLabel(project, session.path, name.value, category.value);
@@ -70,13 +83,13 @@ function conversationEditor(at, project, session, categories, { done, failed }) 
     uiLog("info", "session-label", { category: session.category || "" });
     done();
   };
-  for (const input of [name, category]) {
+  for (const input of [name, picker, fresh]) {
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") { event.preventDefault(); save(); }
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); done(); }
     });
   }
-  const form = el("li", { className: "label-editor" }, name, category, options,
+  const form = el("li", { className: "label-editor" }, name, options,
     el("span", { className: "row-actions" }, linkButton("save", "", save), linkButton("cancel", "", done)));
   at.replaceWith(form);
   name.focus();
@@ -268,7 +281,13 @@ function makeConversations(tab) {
   };
   tab.onTargetChange = () => render();
 
-  $$(".conversation-filter").addEventListener("input", (event) => { query = event.target.value.trim().toLowerCase(); render(); });
+  // Redrawn once typing pauses: with every conversation of every project, at each key
+  // it rebuilt thousands of rows.
+  let filterTimer = null;
+  $$(".conversation-filter").addEventListener("input", (event) => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => { query = event.target.value.trim().toLowerCase(); render(); }, 150);
+  });
   $$(".show-archived").addEventListener("change", (event) => { archived = event.target.checked; render(); });
 
   const unlisten = vm.on("conversations", (message) => {
