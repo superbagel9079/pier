@@ -1,6 +1,7 @@
-/* Pier's look: black and white, square, the panels set apart by a step of tone rather
-   than by lines. The interface in a sans; what is code (paths, branches, versions,
-   logs, diffs) in the terminal's own font. One section per component.
+/* Pier's look: black and white, square, the panels set apart by a step of tone, a line
+   under each section and between rows. A console font throughout: Pier's own (Settings >
+   Appearance, the terminals' by default), and what is code (paths, branches, versions,
+   logs, diffs) in the terminals' font. One section per component.
 
    Contents: tokens · base · controls · workspace (docks, tabs) · lists and sections ·
    dialogs · each panel · scrollbars. */
@@ -38,8 +39,8 @@
   --chip: var(--bg);
   --raise: color-mix(in srgb, var(--fg) 10%, var(--bg));
   --strong: color-mix(in srgb, var(--fg) 16%, var(--bg));
-  /* Faces: the interface, and code (set from the terminal's font, see core.js). */
-  --ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+  /* Faces: the interface, and code (both set from Settings, see applyFonts in core.js). */
+  --ui: "Cascadia Mono", Consolas, ui-monospace, monospace;
   --code: "Cascadia Mono", Consolas, ui-monospace, monospace;
   /* Sizes: labels, details, text, titles. */
   --t-label: 11px;
@@ -332,16 +333,16 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .toolbar { display: flex; align-items: center; gap: var(--s3); margin-bottom: 10px; flex-wrap: wrap; }
 .toolbar .root { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* One way to title a section, in every panel: bold, plain, no line. */
+/* One way to title a section, in every panel: bold, plain, a line under it. */
 .pane-setup h2, .group h3, .sessions li.category {
   font-size: var(--t-small); font-weight: 600; color: var(--fg); text-transform: none; letter-spacing: 0;
-  margin: 20px 0 6px; padding: 0; border: none;
+  margin: 20px 0 var(--s1); padding: 0 0 6px; border-bottom: 1px solid var(--line);
 }
 .pane-setup h2 .file-name, .pane-setup h2 .dim { font-weight: 400; color: var(--dim); }
 .pane-setup h3 { font-size: var(--t-small); font-weight: 600; color: var(--dim); margin: 14px 0 var(--s1); }
 .setup-page > h2:first-child, .group:first-child h3 { margin-top: var(--s1); }
 
-/* Rows: no line between them; the row under the pointer lights up, with its actions. */
+/* Rows: a line between them; the row under the pointer lights up, with its actions. */
 .group { margin-bottom: 14px; }
 .group ul { list-style: none; margin: 0; padding: 0; }
 .group li { display: flex; gap: var(--s2); padding: 2px 6px; white-space: nowrap; cursor: default; }
@@ -355,7 +356,8 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 
 .resource-items { list-style: none; margin: 0; padding: 0; }
-.resource-items li { display: flex; align-items: center; gap: var(--s2); padding: 5px var(--s2); margin: 0 calc(-1 * var(--s2)); min-height: 28px; }
+.resource-items li { display: flex; align-items: center; gap: var(--s2); padding: 5px var(--s2); margin: 0 calc(-1 * var(--s2)); min-height: 28px; border-top: 1px solid var(--line); }
+.resource-items li:first-child { border-top: none; }
 .resource-items li:hover { background: var(--raise); }
 .resource-items li:hover .link { color: var(--fg); }
 .resource-items li > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
@@ -408,6 +410,7 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .prefs-tabs button { background: none; border: none; color: var(--dim); padding: 6px 10px; margin: 0; text-align: left; white-space: nowrap; }
 .prefs-tabs button:hover { color: var(--fg); background: var(--raise); }
 .prefs-tabs button[aria-selected="true"] { color: var(--bg); background: var(--fg); }
+.prefs-page > .grid { margin-bottom: var(--s2); }
 .prefs-pages { grid-column: 2; grid-row: 2; overflow: auto; padding: 0 var(--s1) var(--s2) 0; }
 #prefs .actions.end { grid-column: 1 / -1; grid-row: 3; padding-top: var(--s3); margin-top: var(--s3); }
 @media (max-width: 620px) {
@@ -492,6 +495,7 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .tree .hidden-entry { color: var(--dim); }
 
 .points { list-style: none; padding: 0; margin: 0 0 var(--s3); display: flex; flex-direction: column; gap: 2px; }
+.points > li + li { border-top: 1px solid var(--line); }
 .point-head { display: flex; gap: 10px; align-items: baseline; padding: var(--s1) 6px; cursor: pointer; min-width: 0; }
 .point-head:hover { background: var(--raise); }
 .point-head .mark { flex: 0 0 1.2em; text-align: center; color: var(--dim); }
@@ -588,7 +592,8 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .sessions li.more, .sessions li.list-tools { padding-left: 1.6em; }
 .sessions li.list-tools { gap: 14px; }
 /* A project's head: its name, then its facts; the project in use marked. */
-.sessions li.project-head { gap: 6px; margin-top: var(--s4); padding-top: 0; }
+.sessions li.project-head { gap: 6px; margin-top: var(--s4); padding-top: 6px; border-top: 1px solid var(--line); }
+.sessions li.project-head:first-child { border-top: none; padding-top: 0; }
 .sessions li.project-head:first-child { margin-top: 2px; }
 .sessions li.project-head .project-name { font-weight: 700; flex: 1 1 auto; min-width: 0; }
 .sessions li.project-head .fold { background: none; border: none; color: var(--dim); padding: 0 2px; width: 1.2em; line-height: 1.35; }
@@ -607,7 +612,7 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .pane-logs { display: flex; flex-direction: column; }
 .pane-logs .search { flex: 1 1 120px; min-width: 0; }
 .log-lines { flex: 1 1 auto; min-height: 120px; overflow: auto; background: var(--chip); font-size: var(--t-small); padding: var(--s1) 0; }
-.log-lines .entry { padding: 3px var(--s2); white-space: pre-wrap; word-break: break-word; }
+.log-lines .entry { padding: 3px var(--s2); white-space: pre-wrap; word-break: break-word; border-bottom: 1px solid var(--line); }
 .log-lines .entry:hover { background: var(--raise); }
 .log-lines .time { color: var(--dim); }
 .log-lines .lvl { display: inline-block; width: 5.5ch; }

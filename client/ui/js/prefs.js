@@ -34,6 +34,7 @@ function openPrefs() {
   $("#prefs-font").value = prefs.fontSize;
   $("#prefs-padding").value = prefs.termPadding;
   fillTermFonts();
+  fillUiFonts();
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -280,8 +281,9 @@ function setTermFont(raw) {
   note.hidden = !name || fontInstalled(name);
   note.textContent = `"${name}" is not installed on this computer: the terminals use Cascadia Mono meanwhile.`;
   for (const tab of workspace.tabs()) tab.applyFont?.();
-  applyCodeFont();
+  applyFonts();
   fillTermFonts();
+  fillUiFonts();
 }
 
 $("#prefs-termfont").addEventListener("change", (e) => {
@@ -296,6 +298,41 @@ $("#prefs-termfont-other").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.stopPropagation(); fillTermFonts(); }
 });
 $("#prefs-termfont-other").addEventListener("change", (e) => { if (e.target.value.trim()) setTermFont(e.target.value); });
+/** Pier's own font: the same list, after "the terminals'" and the system's sans. */
+function fillUiFonts() {
+  installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
+  const select = $("#prefs-uifont");
+  const chosen = prefs.uiFont || "";
+  select.innerHTML = "";
+  select.add(new Option("Same as the terminals (default)", ""));
+  for (const name of installedFonts) select.add(new Option(name, name));
+  if (chosen && chosen !== UI_SANS && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
+  select.add(new Option("The system's sans (Segoe UI)", UI_SANS));
+  select.add(new Option("Other font…", OTHER_FONT));
+  select.value = chosen;
+  $("#prefs-uifont-other").hidden = true;
+}
+
+function setUiFont(raw) {
+  const name = raw === UI_SANS ? UI_SANS : String(raw).replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
+  prefs.uiFont = name;
+  savePrefs();
+  applyFonts();
+  fillUiFonts();
+}
+
+$("#prefs-uifont").addEventListener("change", (e) => {
+  if (e.target.value !== OTHER_FONT) { setUiFont(e.target.value); return; }
+  const other = $("#prefs-uifont-other");
+  other.hidden = false;
+  other.value = "";
+  other.focus();
+});
+$("#prefs-uifont-other").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.value.trim()) setUiFont(e.target.value);
+  if (e.key === "Escape") { e.stopPropagation(); fillUiFonts(); }
+});
+$("#prefs-uifont-other").addEventListener("change", (e) => { if (e.target.value.trim()) setUiFont(e.target.value); });
 $("#prefs-padding").addEventListener("change", (e) => {
   prefs.termPadding = Math.min(40, Math.max(0, Math.round(Number(e.target.value) || 0)));
   e.target.value = prefs.termPadding;
