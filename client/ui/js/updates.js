@@ -18,13 +18,27 @@ function showUpdate(info) {
   $("#update-notes").textContent = updateFound?.notes || "No notes for this version.";
 }
 
+/** What the updater's error means for the user. Its "valid release JSON" one is what
+ *  GitHub answers when no release is published yet (a draft does not count), or when
+ *  GitHub cannot be reached. */
+function updateError(e) {
+  const text = String(e);
+  if (/valid release JSON|404/i.test(text)) {
+    return "No published version found: none is out yet (a draft release does not count), or GitHub cannot be reached from here.";
+  }
+  return text;
+}
+
 async function checkForUpdate(quiet) {
   $("#update-error").hidden = true;
-  if (!quiet) $("#update-state").textContent = "Looking for a new Pier…";
+  const state = $("#update-state");
+  const before = state.textContent;
+  if (!quiet) state.textContent = "Looking for a new Pier…";
   try {
     showUpdate(await backend.updateCheck());
   } catch (e) {
-    if (!quiet) showError($("#update-error"), String(e));
+    state.textContent = before === "Looking for a new Pier…" ? "Not checked yet." : before;
+    if (!quiet) showError($("#update-error"), updateError(e));
   }
 }
 
