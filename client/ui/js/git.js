@@ -3,8 +3,9 @@
 // ============================================================================
 // A project connected to a forge (GitHub, GitLab, Gitea / Forgejo): Pi pushes its pi/…
 // branches and opens pull requests by itself, through the picker, which holds the
-// token. Merging, and creating a repository, wait for the user here. See "git forges"
-// in the picker.
+// token. What Pi may do alone is chosen per repository (work locally, ask to merge, merge
+// once the checks pass); creating a repository always waits for the user here. See
+// "git forges" in the picker.
 // ============================================================================
 
 const FORGE_LABELS = { github: "GitHub", gitlab: "GitLab", gitea: "Gitea / Forgejo" };
@@ -13,6 +14,12 @@ const FORGE_HINTS = {
   gitlab: "A personal access token with the api scope (GitLab > Preferences > Access tokens). A project access token limits it to one project.",
   gitea: "An access token with read and write on repository (Settings > Applications).",
 };
+const REPO_MODES = {
+  local: ["Work locally", "Pi commits and branches in the project; nothing is pushed."],
+  ask: ["Push, ask to merge", "Pi pushes its pi/… branches and opens pull requests; a merge waits for your approval here."],
+  auto: ["Push and merge", "Pi pushes, opens pull requests and merges them itself once their checks have passed."],
+};
+const MERGE_LABELS = { merge: "Merge commit", squash: "Squash", rebase: "Rebase" };
 const CHECK_MARKS = { success: ["✓", "checks passed"], failure: ["✗", "checks failed"], pending: ["…", "checks running"], none: ["", "no checks"] };
 
 function makeGitManager(box, currentProject) {
@@ -21,7 +28,7 @@ function makeGitManager(box, currentProject) {
   const body = el("div");
   const refresh = el("button", { className: "link", textContent: "refresh", title: "Ask the forge again" });
   refresh.addEventListener("click", () => load());
-  box.replaceChildren(el("div", { className: "toolbar resource-bar" }, el("span", { className: "dim small", textContent: "Pi pushes pi/… branches and opens pull requests; merging waits for you." }), refresh),
+  box.replaceChildren(el("div", { className: "toolbar resource-bar" }, el("span", { className: "dim small", textContent: "Pi works with the project's repository as you choose below." }), refresh),
     error, notice, body);
   const say = (text) => { notice.hidden = !text; notice.textContent = text || ""; };
   let data = null;
@@ -79,6 +86,7 @@ function makeGitManager(box, currentProject) {
       repo.append(el("li", { className: "dim small note", textContent: data.forges.length ? "Not connected: connect a repository, or create one." : "Connect a forge account first, below." }));
     }
     body.append(repo);
+    if (data.link) body.append(settings(data.link));
     if (!data.link && data.forges.length) {
       const connect = el("button", { className: "secondary", textContent: "Connect a repository…" });
       connect.addEventListener("click", () => linkDialog());
@@ -115,7 +123,38 @@ function makeGitManager(box, currentProject) {
     const addAccount = el("button", { className: "secondary", textContent: "Connect an account…" });
     addAccount.addEventListener("click", () => accountDialog());
     body.append(el("div", { className: "toolbar" }, addAccount),
-      el("p", { className: "hint", textContent: "The token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merging and creating a repository only once you approve them here." }));
+      el("p", { className: "hint", textContent: "The token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merges as chosen above; creating a repository only once you approve it here." }));
+  }
+
+  // What Pi may do alone, and how merges are made: saved as soon as it is chosen.
+  function settings(link) {
+    const mode = el("select", { id: "repo-mode" });
+    for (const [value, [label]] of Object.entries(REPO_MODES)) mode.add(new Option(label, value));
+    const method = el("select", { id: "repo-merge" });
+    for (const [value, label] of Object.entries(MERGE_LABELS)) method.add(new Option(label, value));
+    mode.value = link.mode || "ask";
+    method.value = link.merge_method || "merge";
+    const hint = el("p", { className: "hint" });
+    const show = () => { hint.textContent = REPO_MODES[mode.value][1]; };
+    const save = async () => {
+      show();
+      try {
+        Object.assign(link, await backend.repoSettings(currentProject(), mode.value, method.value));
+      } catch (e) {
+        showError(error, String(e));
+        mode.value = link.mode || "ask";
+        method.value = link.merge_method || "merge";
+        show();
+      }
+    };
+    mode.addEventListener("change", save);
+    method.addEventListener("change", save);
+    show();
+    return el("div", {},
+      el("div", { className: "grid" },
+        el("label", { htmlFor: "repo-mode", textContent: "Pi may" }), mode,
+        el("label", { htmlFor: "repo-merge", textContent: "Merges" }), method),
+      hint);
   }
 
   function worktreeRow(w) {
@@ -146,11 +185,13 @@ function makeGitManager(box, currentProject) {
   function prRow(pr) {
     const [mark, label] = CHECK_MARKS[pr.checks || "none"] || CHECK_MARKS.none;
     const merge = el("button", { className: "link", textContent: "merge ▾", title: "Merge it on the forge" });
-    merge.addEventListener("click", () => showMenu(merge, [
-      ["Merge", () => doMerge(pr, "merge")],
-      ["Squash and merge", () => doMerge(pr, "squash")],
-      ["Rebase and merge", () => doMerge(pr, "rebase")],
-    ]));
+    // The repository's method first.
+    merge.addEventListener("click", () => {
+      const first = data.link?.merge_method || "merge";
+      const methods = [["merge", "Merge"], ["squash", "Squash and merge"], ["rebase", "Rebase and merge"]]
+        .sort((a, b) => (b[0] === first) - (a[0] === first));
+      showMenu(merge, methods.map(([m, label]) => [label, () => doMerge(pr, m)]));
+    });
     const copy = action("copy link", "Its address, to open in a browser", async () => {
       try { await backend.copyText(pr.url || ""); say(`Copied: ${pr.url}`); } catch (e) { showError(error, String(e)); }
     });

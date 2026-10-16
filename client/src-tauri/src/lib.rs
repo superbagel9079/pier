@@ -36,7 +36,7 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 15;
+const API_VERSION: u64 = 16;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
@@ -1065,6 +1065,15 @@ async fn repo_create(app: AppHandle, state: State<'_, AppState>, project: String
     api(&app, &state, &["repo-create", &project, &forge, &name, if private { "1" } else { "0" }, &description], &[]).await
 }
 
+/// What Pi may do alone with the project's repository (local, ask, auto), and how it merges.
+#[tauri::command]
+async fn repo_settings(app: AppHandle, state: State<'_, AppState>, project: String, mode: String, method: String) -> Result<Value, String> {
+    if !["local", "ask", "auto"].contains(&mode.as_str()) || !["merge", "squash", "rebase"].contains(&method.as_str()) {
+        return Err(format!("unknown repository setting: {mode}, {method}"));
+    }
+    api(&app, &state, &["repo-settings", &project, &mode, &method], &[]).await
+}
+
 /// Merges a pull request, from Pier.
 #[tauri::command]
 async fn pr_merge(app: AppHandle, state: State<'_, AppState>, project: String, number: u64, method: String) -> Result<Value, String> {
@@ -1721,6 +1730,7 @@ pub fn run() {
             repo_link,
             repo_unlink,
             repo_create,
+            repo_settings,
             pr_merge,
             approval_answer,
             worktree_remove,

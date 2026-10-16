@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.23"
+VERSION = "4.24"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2657,7 +2657,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 15
+API_VERSION = 16
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -5091,9 +5091,24 @@ def load_repos(home):
     return private_json(repos_path(home))
 
 
+# What Pi may do alone with a repository, chosen in Setup > Git:
+#   local - Pi commits and branches, nothing leaves the VM;
+#   ask   - Pi pushes its pi/... branches and opens pull requests, merges wait for the user;
+#   auto  - as ask, and Pi merges its pull requests itself once their checks have passed.
+# Creating a repository always waits for the user.
+REPO_MODES = ("local", "ask", "auto")
+MERGE_METHODS = ("merge", "squash", "rebase")
+
+
 def repo_link(home, project):
     link = load_repos(home).get(project)
-    return link if isinstance(link, dict) and isinstance(link.get("repo"), str) else None
+    if not isinstance(link, dict) or not isinstance(link.get("repo"), str):
+        return None
+    if link.get("mode") not in REPO_MODES:
+        link["mode"] = "ask"
+    if link.get("merge_method") not in MERGE_METHODS:
+        link["merge_method"] = "merge"
+    return link
 
 
 def forge_repo(forge, repo):
@@ -5120,10 +5135,28 @@ def api_repo_link(home, path, forge_id, repo):
     default = info.get("default_branch") or "main"
     ensure_local_repo(project, default)
     repos = load_repos(home)
-    repos[project] = {"forge": forge_id, "repo": repo, "default_branch": default, "prefix": "pi/"}
+    before = repos.get(project) if isinstance(repos.get(project), dict) else {}
+    repos[project] = {"forge": forge_id, "repo": repo, "default_branch": default, "prefix": "pi/",
+                      "mode": before.get("mode") if before.get("mode") in REPO_MODES else "ask",
+                      "merge_method": before.get("merge_method") if before.get("merge_method") in MERGE_METHODS else "merge"}
     save_private_json(repos_path(home), repos)
     log("info", "repo.linked", project=project, forge=forge_id, repo=repo)
     return {"project": project, **repos[project]}
+
+
+def api_repo_settings(home, path, mode, method):
+    """From Pier: what Pi may do alone with the project's repository, and how it merges."""
+    project = resolve_inside(home, path)
+    if mode not in REPO_MODES or method not in MERGE_METHODS:
+        raise ApiError(f"a mode ({', '.join(REPO_MODES)}) and a merge method ({', '.join(MERGE_METHODS)})")
+    repos = load_repos(home)
+    link = repos.get(project)
+    if not isinstance(link, dict):
+        raise ApiError("no repository connected to this project")
+    link.update(mode=mode, merge_method=method)
+    save_private_json(repos_path(home), repos)
+    log("info", "repo.settings", project=project, mode=mode, method=method)
+    return {"project": project, **link}
 
 
 def api_repo_unlink(home, path):
@@ -5355,10 +5388,11 @@ def open_pr(home, project, link, branch, title, body, base, draft):
     return pr
 
 
-def merge_pr(home, project, link, number, method="merge"):
-    """Merges a pull request: only from Pier, or a request of Pi the user approved."""
+def merge_pr(home, project, link, number, method=None):
+    """Merges a pull request: from Pier, a request of Pi the user approved, or Pi itself
+    when the repository is set to auto and the checks have passed."""
     forge = forge_by_id(home, link["forge"])
-    method = method if method in ("merge", "squash", "rebase") else "merge"
+    method = method if method in MERGE_METHODS else link.get("merge_method") or "merge"
     if forge["kind"] == "gitlab":
         api, _ = forge_repo(forge, link["repo"])
         forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash"})
@@ -5411,7 +5445,7 @@ def api_approval_answer(home, ident, answer):
                 link = repo_link(home, project)
                 if not link:
                     raise ApiError("the project is no longer connected to a repository")
-                result = merge_pr(home, project, link, args.get("number"), args.get("method") or "merge")
+                result = merge_pr(home, project, link, args.get("number"), args.get("method"))
             elif approval["kind"] == "create_repo":
                 result = create_forge_repo(home, project, args.get("forge"), args.get("name"), args.get("private", True), args.get("description", ""))
             else:
@@ -5451,7 +5485,7 @@ def api_pr_merge(home, path, number, method):
     link = repo_link(home, project)
     if not link:
         raise ApiError("no repository connected to this project")
-    return merge_pr(home, project, link, int(number), method or "merge")
+    return merge_pr(home, project, link, int(number), method or None)
 
 
 GIT_OPS = ("info", "push", "pull", "open_pr", "list_prs", "pr", "request_merge", "create_repo")
@@ -5524,10 +5558,17 @@ class GitBroker:
         link = repo_link(self.home, self.project)
         log("info", f"git.tool-{op}", project=self.project, branch=request.get("branch"), number=request.get("number"))
         if op == "info":
-            return {"project": self.project, "linked": bool(link), "repo": link and link["repo"],
+            mode = link["mode"] if link else None
+            rules = {"local": "work locally only: commit and branch as you like; pushing and pull requests are off "
+                              "for this repository (the user can change that in Pier, Setup > Git)",
+                     "ask": "push only pi/… branches, never forced; open pull requests freely; merging waits for the "
+                            "user's approval in Pier",
+                     "auto": "push only pi/… branches, never forced; open pull requests freely; request_merge merges "
+                             "at once when the checks have passed"}.get(mode, "no repository connected")
+            return {"project": self.project, "linked": bool(link), "repo": link and link["repo"], "mode": mode,
                     "default_branch": link and link.get("default_branch"), "branch_prefix": "pi/",
-                    "rules": "push only pi/… branches, never forced; open pull requests freely; merging and creating a "
-                             "repository wait for the user's approval in Pier"}
+                    "merge_method": link and link["merge_method"],
+                    "rules": rules + "; creating a repository always waits for the user's approval"}
         if op == "create_repo":
             if link:
                 raise ApiError(f"this project is already connected to {link['repo']}")
@@ -5545,6 +5586,9 @@ class GitBroker:
         if not link:
             raise ApiError("no repository connected to this project: the user connects one in Pier (Setup > Git), "
                            "or use create_repo")
+        if link["mode"] == "local" and op in ("push", "open_pr", "request_merge"):
+            raise ApiError("this repository is set to local work in Pier: commit and branch locally; "
+                           "the user can let Pi push in Setup > Git")
         if op == "push":
             return git_push(self.home, self.project, link, str(request.get("branch") or ""))
         if op == "pull":
@@ -5559,9 +5603,16 @@ class GitBroker:
             raise ApiError("a pull request's number")
         if op == "pr":
             return get_pr(self.home, link, number)
-        approval = ask_approval(self.home, self.project, "merge",
-                                {"number": number, "method": request.get("method") if request.get("method") in ("merge", "squash", "rebase") else "merge"},
-                                request.get("reason"))
+        method = request.get("method") if request.get("method") in MERGE_METHODS else link["merge_method"]
+        if link["mode"] == "auto":
+            pr = get_pr(self.home, link, number)
+            if pr.get("state") != "open":
+                raise ApiError(f"pull request {number} is {pr.get('state')}")
+            if pr.get("checks") in ("pending", "failure"):
+                raise ApiError(f"pull request {number}: its checks have {'not finished' if pr['checks'] == 'pending' else 'failed'}; "
+                               "merge once they pass")
+            return merge_pr(self.home, self.project, link, number, method)
+        approval = ask_approval(self.home, self.project, "merge", {"number": number, "method": method}, request.get("reason"))
         return {"asked": approval["id"], "waiting": "the user approves the merge in Pier; check the pull request later"}
 
     def close(self):
@@ -5622,7 +5673,7 @@ export default function (pi: any) {
   tool("list_pull_requests", "Pull requests", "The open pull requests of the repository.", Type.Object({}), "list_prs");
   tool("pull_request_status", "Pull request", "A pull request's state, its checks (CI) and whether it can be merged.",
     Type.Object({ number: Type.Integer() }), "pr");
-  tool("request_merge", "Ask to merge", "Ask the user to merge a pull request. Only when the user asked for it: Pier shows the request and the user approves or refuses it there.",
+  tool("request_merge", "Merge", "Merge a pull request, when the user asked for it. Depending on the repository's setting in Pier (see git_repo_info), it merges at once once the checks have passed, or waits for the user's approval.",
     Type.Object({ number: Type.Integer(), method: Type.Optional(Type.String({ description: "merge, squash or rebase" })),
       reason: Type.Optional(Type.String()) }), "request_merge");
   tool("create_repository", "Create repository", "Ask the user to create a repository on the forge and connect this project to it: Pier shows the request for approval.",
@@ -5988,6 +6039,7 @@ API_COMMANDS = {
     "repo-unlink": lambda home, config, a: api_repo_unlink(home, a[0]),
     "repo-create": lambda home, config, a: api_repo_create(home, a[0], a[1], a[2], a[3], a[4]),
     "pr-merge": lambda home, config, a: api_pr_merge(home, a[0], a[1], a[2]),
+    "repo-settings": lambda home, config, a: api_repo_settings(home, a[0], a[1], a[2]),
     "approvals": lambda home, config, a: api_approvals(home),
     "approval-answer": lambda home, config, a: api_approval_answer(home, a[0], a[1]),
     "worktrees": lambda home, config, a: api_worktrees(home, a[0]),
