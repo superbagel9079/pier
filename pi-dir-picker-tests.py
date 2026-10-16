@@ -532,7 +532,7 @@ def resources_test():
     (agent / "prompts" / "review.md").write_text("x")
     (project / ".pi" / "skills" / "notes").mkdir(parents=True)
     (project / ".pi" / "skills" / "notes" / "SKILL.md").write_text("x")
-    (project / ".mcp.json").write_text('{"mcpServers": {"github": {}}}')
+    (project / ".pi" / "mcp.json").write_text('{"mcpServers": {"github": {}}}')
     env = {k: v for k, v in os.environ.items() if k not in ("PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "XDG_STATE_HOME")}
     env["HOME"] = str(home)
     out = subprocess.run([sys.executable, "-B", str(APP), "--api", "setup", str(project)],

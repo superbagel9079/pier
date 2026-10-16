@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.18"
+VERSION = "4.19"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -1713,7 +1713,7 @@ def start_pi_session(path, extra, env, home, width, height, name=None):
     if sandbox_wanted(config):
         label += "  [sandbox]"
     # The rest of the bar's look is global, in tmux_conf: only the project is per session.
-    run_quiet(tmux_cmd("set-option", "-t", f"={name}", "status-left", f" pi  {label} "), env)
+    run_quiet(tmux_cmd("set-option", "-t", f"={name}:", "status-left", f" pi  {label} "), env)
     if extra[:1] == ["--session"] and len(extra) == 2:
         set_pi_file(name, extra[1])
     return True
@@ -1788,12 +1788,13 @@ def tmux_server_options(env, config):
     for name in pi_sessions():
         for option in ("status-style", "status-right", "status-right-length", "window-status-format",
                        "window-status-current-format", "status-left-length"):
-            run_quiet(tmux_cmd("set-option", "-u", "-t", f"={name}", option), env)
+            run_quiet(tmux_cmd("set-option", "-u", "-t", f"={name}:", option), env)
 
 
 def set_pi_file(slot, file):
-    """Record in tmux which conversation the Pi of a session writes."""
-    run_quiet(tmux_cmd("set-option", "-t", f"={slot}", "@pi-file", file))
+    """Record in tmux which conversation the Pi of a session writes. set-option takes a
+    pane: "=name:" is the session's (without the colon, tmux looks for a window)."""
+    run_quiet(tmux_cmd("set-option", "-t", f"={slot}:", "@pi-file", file))
     forget_pi_sessions()
 
 
