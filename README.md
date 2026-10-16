@@ -473,7 +473,7 @@ A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea 
 
 #### A. Connecting
 
-- **Connect an account…**: the forge, its address, and a token. GitHub: a fine-grained token limited to the repositories Pi works on, with *Contents* and *Pull requests* in read and write (*Administration* too, to let Pi create repositories). GitLab: a token with the `api` scope (a project access token limits it to one project). Gitea / Forgejo: a token with read and write on repositories. Pier checks it with the forge before keeping it.
+- With nothing connected, the page only asks where the code lives: **GitHub…**, **GitLab…** or **Gitea / Forgejo…**. Each asks for the address and a token (**Add an account…** adds another later). GitHub: a fine-grained token limited to the repositories Pi works on, with *Contents* and *Pull requests* in read and write (*Administration* too, to let Pi create repositories). GitLab: a token with the `api` scope (a project access token limits it to one project). Gitea / Forgejo: a token with read and write on repositories. Pier checks it with the service before keeping it.
 - **Connect a repository…** (`owner/name`) or **Create a repository…** (private by default). The project becomes a git repository if it is not one yet.
 - The page then shows the repository, the branch checked out, the **open pull requests** with their checks (✓ passed, ✗ failed, … running), and for each one **copy link** and **merge ▾** (merge, squash and merge, rebase and merge; the repository's method first).
 - Two settings, under the repository, saved as soon as they are chosen:
