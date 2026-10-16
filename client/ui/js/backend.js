@@ -102,6 +102,9 @@ function realBackend() {
         handler(p.type === "enter" || p.type === "over" ? "over" : p.type, p.paths || [], p.position);
       });
     },
+    updateCheck: () => invoke("update_check"),
+    updateInstall: () => invoke("update_install"),
+    onUpdateProgress: (handler) => listen("update-progress", (event) => handler(event.payload)),
     onClipboardSent: (handler) => listen("clipboard-sent", (event) => handler(event.payload)),
     onConnectionLost: (handler) => listen("connection-lost", (event) => handler(event.payload)),
     onConnectionRetrying: (handler) => listen("connection-retrying", () => handler()),

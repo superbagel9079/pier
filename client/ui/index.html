@@ -13,6 +13,7 @@
     <span id="status" class="dim">not connected</span>
     <span id="target" class="dim" hidden></span>
     <nav>
+      <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
       <button id="btn-palette" class="link" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)">search <kbd>Ctrl Shift K</kbd></button>
       <button id="btn-handoff" class="link" hidden title="Let Pi keep working with this computer off">hand off</button>
       <button id="btn-prefs" class="link" hidden>settings</button>
@@ -134,6 +135,7 @@
         <button role="tab" data-page="behavior">Behavior</button>
         <button role="tab" data-page="picker">Picker</button>
         <button role="tab" data-page="diagnostics">Diagnostics</button>
+        <button role="tab" data-page="updates">Updates</button>
         <button role="tab" data-page="connection">Connection</button>
       </div>
 
@@ -236,6 +238,21 @@
       </div>
       <p class="hint">A report holds the versions, the connection (never a password), and the end of both logs: what is needed to understand a problem.</p>
       <p id="prefs-diag-note" class="notice" hidden></p>
+      </section>
+
+      <section class="prefs-page" data-page="updates" role="tabpanel" hidden>
+      <p id="update-state" class="dim">Not checked yet.</p>
+      <div id="update-found" hidden>
+        <pre id="update-notes"></pre>
+        <div class="actions">
+          <button id="update-install">Install and restart</button>
+          <span id="update-progress" class="dim small" hidden></span>
+        </div>
+      </div>
+      <div class="actions"><button id="update-check" class="secondary">Check now</button></div>
+      <label class="check"><input id="prefs-updatecheck" type="checkbox"> <span>Look for a new Pier at startup, then every 6 hours</span></label>
+      <p id="update-error" class="error" hidden></p>
+      <p class="hint">New versions come from the project's releases on GitHub. Pier installs one only if it was signed with the project's key: a file changed on the way, or from elsewhere, is refused. Shares are stopped before Pier restarts. The picker on the VM follows: Pier updates it when it carries a newer one.</p>
       </section>
 
       <section class="prefs-page" data-page="connection" role="tabpanel" hidden>
@@ -455,6 +472,7 @@
   <script src="js/connect.js"></script>
   <script src="js/workspace.js"></script>
   <script src="js/prefs.js"></script>
+  <script src="js/updates.js"></script>
   <script src="js/terminal.js"></script>
   <script src="js/context.js"></script>
   <script src="js/project.js"></script>

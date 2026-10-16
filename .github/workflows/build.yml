@@ -4,6 +4,10 @@
 # built on the three systems, kept as artifacts of the run. A tag "v*" (git tag v0.3.0
 # && git push --tags) also publishes them as a GitHub release, with their SHA-256.
 #
+# Updates: with TAURI_SIGNING_PRIVATE_KEY (and TAURI_SIGNING_PRIVATE_KEY_PASSWORD, empty if
+# the key has none), the installers are also signed for Pier's updater, and the release
+# gets the latest.json Pier reads (see RELEASING.md). Without it, nothing changes.
+#
 # Signing is optional: without these secrets the files are built unsigned (Windows and
 # macOS then warn on first start).
 #   Windows (Authenticode): WINDOWS_CERTIFICATE (the .pfx in base64), WINDOWS_CERTIFICATE_PASSWORD
@@ -37,7 +41,7 @@ jobs:
       - name: System libraries for Tauri
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev build-essential
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -72,13 +76,15 @@ jobs:
     env:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - name: System libraries for Tauri (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev build-essential
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev build-essential
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
@@ -115,6 +121,8 @@ jobs:
           done
           args=(--bundles "${{ matrix.bundles }}")
           if [ -n "${{ matrix.target }}" ]; then args+=(--target "${{ matrix.target }}"); fi
+          # With the updater's key: the installers signed for Pier's updater too (.sig).
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}'); fi
           cargo tauri build "${args[@]}"
       - name: Sign for Windows (only with the secrets)
         if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
@@ -131,6 +139,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
           Remove-Item $pfx
+          # The installer changed: its signature for the updater is made again.
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            foreach ($file in (Get-ChildItem client/src-tauri/target/release/bundle/nsis/*-setup.exe).FullName) {
+              cargo tauri signer sign $file
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          }
       - name: Gather the files, with their SHA-256
         shell: bash
         run: |
@@ -142,8 +157,16 @@ jobs:
             macOS) cp "$release"/bundle/dmg/*.dmg out/ ;;
             Linux) cp "$release"/bundle/deb/*.deb "$release"/bundle/appimage/*.AppImage out/ ;;
           esac
+          # What Pier's updater downloads, with its signature (only with the updater's key).
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            case "${{ runner.os }}" in
+              Windows) cp "$release"/bundle/nsis/*-setup.exe.sig out/ ;;
+              macOS) cp "$release"/bundle/macos/*.app.tar.gz "$release"/bundle/macos/*.app.tar.gz.sig out/ ;;
+              Linux) cp "$release"/bundle/appimage/*.AppImage.sig out/ ;;
+            esac
+          fi
           cd out
-          for f in *; do
+          for f in $(ls | grep -v '\.sig$'); do
             if command -v sha256sum >/dev/null; then sha256sum "$f"; else shasum -a 256 "$f"; fi
           done > "SHA256SUMS-${{ matrix.name }}.txt"
           cat "SHA256SUMS-${{ matrix.name }}.txt"
@@ -164,6 +187,33 @@ jobs:
         with:
           path: out
           merge-multiple: true
+      - name: latest.json, for Pier's updater (when the installers were signed for it)
+        shell: bash
+        run: |
+          python3 - "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" <<'EOF'
+          import datetime, glob, json, os, sys, urllib.parse
+          tag, repo = sys.argv[1], sys.argv[2]
+          url = lambda name: f"https://github.com/{repo}/releases/download/{tag}/{urllib.parse.quote(name)}"
+          def entry(pattern):
+              found = [f for f in glob.glob(f"out/{pattern}") if os.path.exists(f + ".sig")]
+              if not found:
+                  return None
+              path = found[0]
+              return {"signature": open(path + ".sig").read().strip(), "url": url(os.path.basename(path))}
+          platforms = {}
+          for key, pattern in [("windows-x86_64", "*-setup.exe"), ("darwin-x86_64", "*.app.tar.gz"),
+                               ("darwin-aarch64", "*.app.tar.gz"), ("linux-x86_64", "*.AppImage")]:
+              if (found := entry(pattern)):
+                  platforms[key] = found
+          if not platforms:
+              print("no updater signatures: no latest.json")
+              sys.exit(0)
+          latest = {"version": tag.lstrip("v"), "notes": f"https://github.com/{repo}/releases/tag/{tag}",
+                    "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "platforms": platforms}
+          json.dump(latest, open("out/latest.json", "w"), indent=2)
+          print(json.dumps(latest, indent=2))
+          EOF
       - uses: softprops/action-gh-release@v2
         with:
           files: out/*

@@ -4,6 +4,7 @@
 function mockBackend() {
   let saved = null;
   let mockClipboard = "";
+  const updateListeners = [];
   let trusted = false;
   let pickerVersion = "3.8"; // the demo's VM has an old picker: Pier updates it
   const logLines = [];
@@ -359,6 +360,16 @@ function mockBackend() {
     pickFiles: async () => ["C:\\Users\\leo\\Documents\\notes.pdf"],
     onDragDrop() {},
     onClipboardSent() {},
+    updateCheck: async () => ({ current: "0.2.0", version: "0.3.0", date: "2026-10-20 09:00:00 +00:00",
+      notes: ["- Per-repository Git settings", "- A font for Pier in Settings", "- 13 more themes"].join("\n") }),
+    async updateInstall() {
+      for (let done = 0; done <= 8; done++) {
+        for (const handler of updateListeners) handler({ done: done * 1_200_000, total: 9_600_000 });
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      throw "the demo cannot install anything";
+    },
+    onUpdateProgress(handler) { updateListeners.push(handler); },
     onConnectionLost() {},
     onConnectionRetrying() {},
     onConnectionBack() {},

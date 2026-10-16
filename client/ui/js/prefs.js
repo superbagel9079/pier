@@ -46,6 +46,7 @@ function openPrefs() {
   $("#prefs-copymode").value = prefs.copyMode;
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
+  $("#prefs-updatecheck").checked = prefs.updateCheck;
   $("#prefs-debug").checked = prefs.debugLogs;
   $("#prefs-logtab").checked = Boolean(workspace.find("logs"));
   $("#prefs-side").value = prefs.panelSide === "left" ? "left" : "right";

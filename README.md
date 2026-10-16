@@ -526,7 +526,7 @@ The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by y
 The categories in a column on the left, the page on the right; the window opens again on the last page shown.
 
 - **Layout:** which side the panels go to (Panels), where each tab lives, and Reset layout.
-- **Appearance:** theme, and for the terminals: font size, font (any monospaced font installed on this computer; the list offers the usual ones found here, and a font missing falls back to Cascadia Mono, with a note), and the space around their text (0 to 40 px, 8 by default; the scrollbar stays against the edge). Built-in themes: Pier dark/light (or "follow the system"), One Dark, Dracula, Nord, Gruvbox, Tokyo Night, Catppuccin Mocha, Solarized dark/light, GitHub Light. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
+- **Appearance:** theme, and for the terminals: font size, font (any monospaced font installed on this computer; the list offers the usual ones found here, and a font missing falls back to Cascadia Mono, with a note), and the space around their text (0 to 40 px, 8 by default; the scrollbar stays against the edge). **Pier's font** (panels, menus, settings): the terminals' by default, another console font, the system's sans, or one typed by name; paths, branches, logs and diffs stay in the terminals' font. Built-in themes, 24: Pier dark/light (or "follow the system"), Ayu dark/light, Catppuccin Latte/Mocha, Dracula, Everforest Dark, GitHub dark/light, Gruvbox dark/light, Kanagawa, Monokai, Night Owl, Nord, One Dark/Light, Rosé Pine (and Dawn), Solarized dark/light, Tokyo Night, Tomorrow Night. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
   - **Import a VS Code or Zed theme…:** takes the `.json` of a VS Code theme (the extension's `themes/` folder, comments accepted) or a Zed theme (zed.dev/themes, `~/.config/zed/themes`; a Zed file can hold several themes, all are added). Missing colours are derived from the others.
   - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes.
 - **Terminals:** the copy and paste keys, copying on selection or with Ctrl+Shift+C, focus following the mouse, drawing by the graphics card.
@@ -538,6 +538,7 @@ The categories in a column on the left, the page on the right; the window opens 
   - resuming shares after a reconnection.
 - **Picker:** its version and Pier's, automatic updates (on by default), and a button to install it again.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
+- **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](RELEASING.md).
 - **Connection:** where Pier connects (changed from the login screen).
 
 ---
@@ -728,6 +729,10 @@ Host pi
 `ssh pi` opens the picker, and `ssh pi-sh` a normal shell (for scp, rsync…). With a bastion, add `ProxyJump bastion` under `Host pi pi-sh`.
 
 ### Part III. Pier
+
+**The simplest:** download the installer from the [latest release](https://github.com/superbagel9079/pier/releases/latest) (Windows `Pier_…_x64-setup.exe`, macOS `.dmg`, Linux `.AppImage` or `.deb`) and install it. Pier then updates itself (Settings > Updates): no clone, no build. Without a code-signing certificate, Windows SmartScreen warns once, at that first installation ("More info", then "Run anyway").
+
+**Or build it:**
 
 The compiled executable is `client/src-tauri/target/release/pier.exe`. Nothing to install: WebView2 is already there on Windows 10 and 11.
 
