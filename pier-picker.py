@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.21"
+VERSION = "4.22"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -71,6 +71,7 @@ DEFAULTS = {
     "track_sessions": True,            # Pi tells Pier which conversation it holds (an extension Pier gives it)
     "network_limit": True,             # in the sandbox, Pi reaches only NETWORK_ALLOW and network_allow
     "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
+    "git_tools": True,                 # Pi gets git tools for the forge (push, pull requests), through the picker
 }
 
 # Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its
@@ -1008,7 +1009,7 @@ def sandbox_refusal(project, home):
     return None
 
 
-def sandbox_argv(argv, project, home, config, env, network=None):
+def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None):
     """argv wrapped in bubblewrap, or None when bwrap is missing.
 
     Inside, Pi sees the whole system read-only, and of the home directory only:
@@ -1054,6 +1055,9 @@ def sandbox_argv(argv, project, home, config, env, network=None):
     for path in sorted(mounts, key=lambda m: (m.count(os.sep), m)):
         if os.path.exists(path):
             args += ["--bind" if mounts[path] == "rw" else "--ro-bind", path, path]
+    if git_socket:
+        # The git broker's socket (GitBroker): Pi's git tools ask it, the token stays out here.
+        args += ["--dir", NET_DIR, "--bind", git_socket, f"{NET_DIR}/git.sock"]
     if network is not None:
         # No network of its own: only the relay below, to the proxy outside (NetProxy).
         args += ["--unshare-net", "--dir", NET_DIR, "--bind", network.socket, f"{NET_DIR}/net.sock",
@@ -1450,6 +1454,17 @@ def exec_pi(path, extra):
             except OSError:
                 pass
     network = None  # the proxy of a sandbox whose network is limited (see NetProxy)
+    broker = None   # Pi's git tools ask it (see GitBroker)
+    if config["git_tools"]:
+        git_extension = pier_git_extension()
+        if git_extension:
+            try:
+                broker = GitBroker(os.path.realpath(path))
+            except OSError as exc:
+                log("warn", "git.broker-failed", project=path, err=str(exc))
+        if broker:
+            tracked = tracked + ["--extension", git_extension]
+            env["PIER_GIT_SOCKET"] = broker.socket
     plain = argv + list(extra)
     argv = argv + tracked + list(extra)
     if sandbox_wanted(config):
@@ -1467,10 +1482,13 @@ def exec_pi(path, extra):
             log("warn", "pi.network-unlimited", project=path, why=unlimited)
         if network:
             proxy_env(env)
+        git_socket = broker.socket if broker else None
+        if broker:
+            env["PIER_GIT_SOCKET"] = f"{NET_DIR}/git.sock"  # where the sandbox sees it
         # Refuse rather than run unconfined: a sandbox that silently goes away
         # protects nothing.
-        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network)
-        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network)
+        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network, git_socket)
+        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network, git_socket)
         if argv is None:
             print(SANDBOX_MISSING)
             log("error", "pi.sandbox-missing", project=path)
@@ -1524,6 +1542,8 @@ def exec_pi(path, extra):
         watcher.stop()
     if network:
         network.close()
+    if broker:
+        broker.close()
     if env.get("PIER_STATE"):
         try:
             os.remove(env["PIER_STATE"])
@@ -2471,7 +2491,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 13
+API_VERSION = 14
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -4745,6 +4765,721 @@ def pi_package(args):
     return status
 
 
+# --- git forges: GitHub, GitLab, Gitea / Forgejo ------------------------------------------
+#
+# Pi works in git as it likes inside its sandbox (commit, branch, merge, all local). What
+# talks to a forge goes through the picker, out of the sandbox, with a token Pi never
+# sees: Pi's tools (PIER_GIT_EXTENSION) ask the broker (GitBroker) over a Unix socket,
+# and the broker checks each request against the rules before doing it.
+#   - push: only branches under "pi/" (the default branch only while the remote repository
+#     is empty), never forced. The commits are first fetched, in git's jail (no network,
+#     the project read-only), into a bare mirror of the picker's own; the mirror then
+#     pushes with the token. No hook, filter or setting of the project runs with it.
+#   - pull: the forge into the mirror, then the mirror into the project's
+#     refs/remotes/origin/*, in the jail: Pi merges or rebases itself.
+#   - pull requests: opened, listed and read freely.
+#   - merging, and creating a repository: never by Pi alone. Its request waits in
+#     approvals.json until the user approves it in Pier, which then does it.
+# Tokens live in ~/.config/pier-picker/forges.json (mode 600), out of the sandbox's
+# sight; they are never logged, nor put on a command line (git gets them in its
+# environment, GIT_CONFIG_*).
+
+FORGE_KINDS = ("github", "gitlab", "gitea")
+PI_BRANCH_RE = re.compile(r"pi/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")
+REPO_NAME_RE = re.compile(r"[A-Za-z0-9._-]{1,100}")
+REPO_PATH_RE = re.compile(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+){1,4}")
+FORGE_TIMEOUT = 20
+
+
+def forges_path(home):
+    return os.path.join(os.path.dirname(config_path(home)), "forges.json")
+
+
+def repos_path(home):
+    return os.path.join(os.path.dirname(state_path(home)), "repos.json")
+
+
+def approvals_path(home):
+    return os.path.join(os.path.dirname(state_path(home)), "approvals.json")
+
+
+def private_json(path):
+    """A JSON file of the picker's own; {} when missing or unreadable."""
+    fd = open_regular(path, follow=False)
+    if fd is None:
+        return {}
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            data = json.loads(handle.read(4 * 1024 * 1024) or b"{}")
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_private_json(path, data):
+    """A file of the picker's own, readable by its owner only."""
+    folder = os.path.dirname(path)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=".pier-", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, indent=2))
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def forge_api_base(kind, url):
+    url = url.rstrip("/")
+    if kind == "github":
+        return "https://api.github.com" if url in ("https://github.com", "https://www.github.com") else f"{url}/api/v3"
+    return f"{url}/api/v4" if kind == "gitlab" else f"{url}/api/v1"
+
+
+def forge_request(forge, method, path, body=None, raw_url=None):
+    """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
+    import urllib.error
+    import urllib.request
+    url = raw_url or forge_api_base(forge["kind"], forge["url"]) + path
+    headers = {"Accept": "application/json", "User-Agent": f"pier-picker/{VERSION}"}
+    if forge["kind"] == "github":
+        headers.update({"Authorization": f"Bearer {forge['token']}", "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": "2022-11-28"})
+    elif forge["kind"] == "gitlab":
+        headers["PRIVATE-TOKEN"] = forge["token"]
+    else:
+        headers["Authorization"] = f"token {forge['token']}"
+    data = json.dumps(body).encode() if body is not None else None
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=FORGE_TIMEOUT) as answer:
+            text = answer.read(8 * 1024 * 1024)
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            payload = json.loads(exc.read(64 * 1024) or b"{}")
+            detail = payload.get("message") or payload.get("error") or ""
+            if isinstance(detail, (dict, list)):
+                detail = json.dumps(detail)[:300]
+        except (ValueError, OSError):
+            pass
+        raise ApiError(f"{forge['kind']} refused ({exc.code}){': ' + str(detail)[:300] if detail else ''}")
+    except (OSError, ValueError) as exc:
+        raise ApiError(f"{forge['url']} did not answer ({exc})")
+    try:
+        return json.loads(text) if text.strip() else {}
+    except ValueError:
+        return {}
+
+
+def load_forges(home):
+    data = private_json(forges_path(home))
+    return [f for f in data.get("forges", []) if isinstance(f, dict) and f.get("kind") in FORGE_KINDS]
+
+
+def forge_by_id(home, ident):
+    for forge in load_forges(home):
+        if forge.get("id") == ident:
+            return forge
+    raise ApiError(f"no forge account {ident}: connect it in Pier (Setup > Git)")
+
+
+def public_forge(forge):
+    return {k: forge.get(k) for k in ("id", "kind", "url", "login")}
+
+
+def api_forges(home):
+    return {"forges": [public_forge(f) for f in load_forges(home)]}
+
+
+def api_forge_add(home, kind, url, data):
+    """Connect a forge account with a token (sent on stdin, checked against the forge)."""
+    if kind not in FORGE_KINDS:
+        raise ApiError(f"unknown forge: {kind}")
+    url = (url or ("https://github.com" if kind == "github" else "https://gitlab.com" if kind == "gitlab" else "")).rstrip("/")
+    if not re.fullmatch(r"https://[A-Za-z0-9.-]+(:\d+)?(/[A-Za-z0-9._~-]+)*", url):
+        raise ApiError("the forge's address: https://host (and a path, for a forge not at the root)")
+    token = data.decode("utf-8", "replace").strip()
+    if not token or len(token) > 512 or any(c.isspace() for c in token):
+        raise ApiError("paste the token alone")
+    forge = {"kind": kind, "url": url, "token": token}
+    user = forge_request(forge, "GET", "/user")
+    login = user.get("login") or user.get("username")
+    if not isinstance(login, str):
+        raise ApiError("the forge did not say who this token belongs to")
+    forge.update(id=f"{kind}:{url.split('://', 1)[1]}:{login}", login=login)
+    forges = [f for f in load_forges(home) if f.get("id") != forge["id"]] + [forge]
+    save_private_json(forges_path(home), {"forges": forges})
+    log("info", "forge.added", kind=kind, url=url, login=login)
+    return public_forge(forge)
+
+
+def api_forge_remove(home, ident):
+    forges = [f for f in load_forges(home) if f.get("id") != ident]
+    save_private_json(forges_path(home), {"forges": forges})
+    log("info", "forge.removed", id=ident)
+    return {"removed": ident}
+
+
+def load_repos(home):
+    return private_json(repos_path(home))
+
+
+def repo_link(home, project):
+    link = load_repos(home).get(project)
+    return link if isinstance(link, dict) and isinstance(link.get("repo"), str) else None
+
+
+def forge_repo(forge, repo):
+    """(path in the API, the repository's details) on the forge."""
+    if forge["kind"] == "gitlab":
+        import urllib.parse
+        path = f"/projects/{urllib.parse.quote(repo, safe='')}"
+    else:
+        path = f"/repos/{repo}"
+    return path, forge_request(forge, "GET", path)
+
+
+def clone_url(forge, repo):
+    return f"{forge['url']}/{repo}.git"
+
+
+def api_repo_link(home, path, forge_id, repo):
+    """Connect the project to a repository of a forge account."""
+    project = resolve_inside(home, path)
+    if not REPO_PATH_RE.fullmatch(repo or ""):
+        raise ApiError("a repository: owner/name")
+    forge = forge_by_id(home, forge_id)
+    _, info = forge_repo(forge, repo)
+    default = info.get("default_branch") or "main"
+    ensure_local_repo(project, default)
+    repos = load_repos(home)
+    repos[project] = {"forge": forge_id, "repo": repo, "default_branch": default, "prefix": "pi/"}
+    save_private_json(repos_path(home), repos)
+    log("info", "repo.linked", project=project, forge=forge_id, repo=repo)
+    return {"project": project, **repos[project]}
+
+
+def api_repo_unlink(home, path):
+    project = resolve_inside(home, path)
+    repos = load_repos(home)
+    repos.pop(project, None)
+    save_private_json(repos_path(home), repos)
+    log("info", "repo.unlinked", project=project)
+    return {"project": project}
+
+
+def create_forge_repo(home, project, forge_id, name, private, description=""):
+    if not REPO_NAME_RE.fullmatch(name or ""):
+        raise ApiError("a repository's name: letters, digits, '.', '_' and '-'")
+    forge = forge_by_id(home, forge_id)
+    description = " ".join((description or "").split())[:300]
+    if forge["kind"] == "gitlab":
+        made = forge_request(forge, "POST", "/projects", {"name": name, "path": name, "description": description,
+                                                          "visibility": "private" if private else "public"})
+        repo = made.get("path_with_namespace")
+    else:
+        made = forge_request(forge, "POST", "/user/repos", {"name": name, "private": bool(private), "description": description})
+        repo = made.get("full_name")
+    if not isinstance(repo, str):
+        raise ApiError("the forge made the repository but did not say where")
+    log("info", "repo.created", forge=forge_id, repo=repo, private=bool(private))
+    return api_repo_link(home, project, forge_id, repo)
+
+
+def api_repo_create(home, path, forge_id, name, private, description):
+    """From Pier (the user's own action): a new repository, connected to the project."""
+    return create_forge_repo(home, resolve_inside(home, path), forge_id, name, private == "1", description)
+
+
+def git_jail_rw(project, extra_ro=(), extra_rw=()):
+    """git's jail with the project writable (and more folders): for init and pull, still
+    without network, and with nothing else of home."""
+    args = git_jail(project)
+    if args is None:
+        return None
+    cut = args.index("--unshare-all")
+    real = os.path.realpath(project)
+    binds = []
+    for folder in extra_ro:
+        binds += ["--ro-bind", folder, folder]
+    for folder in [real, *extra_rw]:
+        binds += ["--bind", folder, folder]
+    return args[:cut] + binds + args[cut:]
+
+
+def jailed_git(jail, *args, cwd=None):
+    """git in a jail (bwrap arguments) or plain when there is no bwrap; stdout, or an
+    ApiError with git's message."""
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+    for key in ("SSH_AUTH_SOCK", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"):
+        env.pop(key, None)
+    try:
+        result = subprocess.run([*(jail or []), "git", *GIT_OPTIONS, *args], stdin=subprocess.DEVNULL, capture_output=True,
+                                env=env, timeout=120, cwd=cwd)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ApiError(f"git failed: {exc}")
+    if result.returncode != 0:
+        raise ApiError(result.stderr.decode("utf-8", "replace").strip()[-400:] or "git failed")
+    return result.stdout.decode("utf-8", "replace")
+
+
+def ensure_local_repo(project, default):
+    if git_dir(project):
+        return
+    jailed_git(git_jail_rw(project), "-C", project, "init", "-q", "-b", default)
+    log("info", "repo.init", project=project, branch=default)
+
+
+def mirror_path(home, forge_id, repo):
+    digest = hashlib.sha1(f"{forge_id}|{repo}".encode()).hexdigest()[:16]
+    return os.path.join(os.path.dirname(state_path(home)), "git", f"{digest}.git")
+
+
+def ensure_mirror(home, forge_id, repo):
+    """The picker's own bare repository for a remote: no hook, no setting of anyone else."""
+    path = mirror_path(home, forge_id, repo)
+    if not os.path.isdir(os.path.join(path, "objects")):
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        jailed_git(None, "init", "-q", "--bare", path)
+    return path
+
+
+def forge_git_env(forge):
+    """The token for git, in its environment (other users cannot read it, unlike argv)."""
+    import base64
+    user = {"github": "x-access-token", "gitlab": "oauth2"}.get(forge["kind"], forge.get("login") or "git")
+    basic = base64.b64encode(f"{user}:{forge['token']}".encode()).decode()
+    return {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}", "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+
+
+def mirror_git(forge, mirror, *args):
+    """git in the mirror, outside the sandbox, with the token: only for push and fetch."""
+    env = dict(os.environ, **forge_git_env(forge))
+    for key in ("SSH_AUTH_SOCK", "GIT_ASKPASS", "SSH_ASKPASS"):
+        env.pop(key, None)
+    try:
+        result = subprocess.run(["git", "--git-dir", mirror, "-c", "core.hooksPath=/dev/null", *args],
+                                stdin=subprocess.DEVNULL, capture_output=True, env=env, timeout=300)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ApiError(f"git failed: {exc}")
+    text = result.stderr.decode("utf-8", "replace").replace(forge["token"], "***")
+    if result.returncode != 0:
+        raise ApiError(text.strip()[-600:] or "git failed")
+    return text
+
+
+def remote_branches(forge, repo):
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, repo)
+        items = forge_request(forge, "GET", f"{api}/repository/branches?per_page=100")
+    else:
+        items = forge_request(forge, "GET", f"/repos/{repo}/branches?per_page=100")
+    return [b.get("name") for b in items if isinstance(b, dict) and isinstance(b.get("name"), str)] if isinstance(items, list) else []
+
+
+def git_push(home, project, link, branch):
+    """Pi's branch pushed to the forge, under the rules (see above)."""
+    forge = forge_by_id(home, link["forge"])
+    default = link.get("default_branch") or "main"
+    if not PI_BRANCH_RE.fullmatch(branch or "") or ".." in branch or branch.endswith((".lock", "/", ".")):
+        if branch != default:
+            raise ApiError(f"Pi pushes only its own branches, named pi/…: not {branch}")
+        if remote_branches(forge, link["repo"]):
+            raise ApiError(f"{default} is the default branch: push a pi/… branch and open a pull request")
+    mirror = ensure_mirror(home, link["forge"], link["repo"])
+    jail = git_jail(project)
+    if jail is not None:
+        cut = jail.index("--unshare-all")
+        jail = jail[:cut] + ["--bind", mirror, mirror] + jail[cut:]
+    # The commits, into the mirror: git reads the project in its jail, writes nowhere else.
+    jailed_git(jail, "--git-dir", mirror, "fetch", "--no-tags", "--quiet", os.path.realpath(project),
+               f"+refs/heads/{branch}:refs/heads/{branch}")
+    # Then pushed by the mirror, never forced: a branch rewritten is refused by the forge.
+    said = mirror_git(forge, mirror, "push", "--porcelain", clone_url(forge, link["repo"]), f"refs/heads/{branch}:refs/heads/{branch}")
+    log("info", "git.push", project=project, repo=link["repo"], branch=branch)
+    return {"pushed": branch, "repo": link["repo"], "detail": said.strip()[-300:]}
+
+
+def git_pull(home, project, link):
+    """The forge's branches, into the project's refs/remotes/origin/*: Pi merges itself."""
+    forge = forge_by_id(home, link["forge"])
+    mirror = ensure_mirror(home, link["forge"], link["repo"])
+    mirror_git(forge, mirror, "fetch", "--prune", "--no-tags", clone_url(forge, link["repo"]), "+refs/heads/*:refs/remotes/origin/*")
+    jailed_git(git_jail_rw(project, extra_ro=[mirror]), "-C", os.path.realpath(project), "fetch", "--no-tags", "--quiet",
+               mirror, "+refs/remotes/origin/*:refs/remotes/origin/*")
+    log("info", "git.pull", project=project, repo=link["repo"])
+    return {"fetched": link["repo"], "into": "refs/remotes/origin/*"}
+
+
+def pr_from(forge, item):
+    """A pull request (or GitLab merge request), the same shape whatever the forge."""
+    if forge["kind"] == "gitlab":
+        state = {"opened": "open", "merged": "merged", "closed": "closed"}.get(item.get("state"), item.get("state"))
+        pipeline = (item.get("head_pipeline") or {}).get("status") if isinstance(item.get("head_pipeline"), dict) else None
+        return {"number": item.get("iid"), "title": item.get("title"), "state": state, "head": item.get("source_branch"),
+                "base": item.get("target_branch"), "url": item.get("web_url"), "draft": bool(item.get("draft")),
+                "checks": {"success": "success", "failed": "failure", "running": "pending", "pending": "pending"}.get(pipeline, "none" if not pipeline else pipeline),
+                "author": (item.get("author") or {}).get("username")}
+    merged = bool(item.get("merged") or item.get("merged_at"))
+    return {"number": item.get("number"), "title": item.get("title"), "state": "merged" if merged else item.get("state"),
+            "head": (item.get("head") or {}).get("ref"), "base": (item.get("base") or {}).get("ref"),
+            "url": item.get("html_url"), "draft": bool(item.get("draft")), "checks": None, "sha": (item.get("head") or {}).get("sha"),
+            "mergeable": item.get("mergeable"), "author": (item.get("user") or {}).get("login")}
+
+
+def pr_checks(forge, repo, sha):
+    if not sha:
+        return "none"
+    try:
+        if forge["kind"] == "github":
+            runs = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=50").get("check_runs", [])
+            if not runs:
+                return "none"
+            if any(r.get("status") != "completed" for r in runs):
+                return "pending"
+            return "failure" if any(r.get("conclusion") in ("failure", "timed_out", "cancelled", "action_required") for r in runs) else "success"
+        status = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/status").get("state")
+        return {"success": "success", "failure": "failure", "error": "failure", "pending": "pending"}.get(status, "none")
+    except ApiError:
+        return "none"
+
+
+def list_prs(home, link, state="open"):
+    forge = forge_by_id(home, link["forge"])
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        items = forge_request(forge, "GET", f"{api}/merge_requests?state={'opened' if state == 'open' else 'all'}&per_page=50")
+    else:
+        items = forge_request(forge, "GET", f"/repos/{link['repo']}/pulls?state={state}&per_page=50")
+    return [pr_from(forge, i) for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+
+
+def get_pr(home, link, number):
+    forge = forge_by_id(home, link["forge"])
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        pr = pr_from(forge, forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}"))
+    else:
+        pr = pr_from(forge, forge_request(forge, "GET", f"/repos/{link['repo']}/pulls/{int(number)}"))
+        pr["checks"] = pr_checks(forge, link["repo"], pr.get("sha"))
+    return pr
+
+
+def open_pr(home, project, link, branch, title, body, base, draft):
+    forge = forge_by_id(home, link["forge"])
+    base = base or link.get("default_branch") or "main"
+    if not PI_BRANCH_RE.fullmatch(branch or ""):
+        raise ApiError(f"a pull request starts from a pi/… branch: not {branch}")
+    title = " ".join((title or "").split())[:250] or branch
+    body = (body or "")[:60000]
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        item = forge_request(forge, "POST", f"{api}/merge_requests",
+                             {"source_branch": branch, "target_branch": base, "title": ("Draft: " if draft else "") + title, "description": body})
+    else:
+        payload = {"title": title, "head": branch, "base": base, "body": body}
+        if forge["kind"] == "github":
+            payload["draft"] = bool(draft)
+        item = forge_request(forge, "POST", f"/repos/{link['repo']}/pulls", payload)
+    pr = pr_from(forge, item)
+    log("info", "git.pr-opened", project=project, repo=link["repo"], number=pr.get("number"), branch=branch)
+    return pr
+
+
+def merge_pr(home, project, link, number, method="merge"):
+    """Merges a pull request: only from Pier, or a request of Pi the user approved."""
+    forge = forge_by_id(home, link["forge"])
+    method = method if method in ("merge", "squash", "rebase") else "merge"
+    if forge["kind"] == "gitlab":
+        api, _ = forge_repo(forge, link["repo"])
+        forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash"})
+    elif forge["kind"] == "github":
+        forge_request(forge, "PUT", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"merge_method": method})
+    else:
+        forge_request(forge, "POST", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"Do": method})
+    log("info", "git.merged", project=project, repo=link["repo"], number=int(number), method=method)
+    return {"merged": int(number)}
+
+
+def load_approvals(home):
+    data = private_json(approvals_path(home))
+    return [a for a in data.get("approvals", []) if isinstance(a, dict)]
+
+
+def save_approvals(home, approvals):
+    save_private_json(approvals_path(home), {"approvals": approvals[-200:]})
+
+
+def ask_approval(home, project, kind, args, reason):
+    approval = {"id": uuid.uuid4().hex[:12], "project": project, "kind": kind, "args": args,
+                "reason": " ".join((reason or "").split())[:500], "at": int(time.time()), "state": "pending"}
+    approvals = [a for a in load_approvals(home)
+                 if not (a.get("state") == "pending" and a.get("project") == project and a.get("kind") == kind and a.get("args") == args)]
+    save_approvals(home, approvals + [approval])
+    log("info", "git.approval-asked", project=project, kind=kind, id=approval["id"])
+    return approval
+
+
+def api_approvals(home):
+    pending = [a for a in load_approvals(home) if a.get("state") == "pending"]
+    return {"approvals": pending}
+
+
+def api_approval_answer(home, ident, answer):
+    """The user's answer to a request of Pi (from Pier): done now when approved."""
+    approvals = load_approvals(home)
+    for approval in approvals:
+        if approval.get("id") != ident or approval.get("state") != "pending":
+            continue
+        if answer != "yes":
+            approval["state"] = "refused"
+            save_approvals(home, approvals)
+            log("info", "git.approval-refused", id=ident, kind=approval.get("kind"))
+            return {"id": ident, "state": "refused"}
+        project, args = approval["project"], approval.get("args") or {}
+        try:
+            if approval["kind"] == "merge":
+                link = repo_link(home, project)
+                if not link:
+                    raise ApiError("the project is no longer connected to a repository")
+                result = merge_pr(home, project, link, args.get("number"), args.get("method") or "merge")
+            elif approval["kind"] == "create_repo":
+                result = create_forge_repo(home, project, args.get("forge"), args.get("name"), args.get("private", True), args.get("description", ""))
+            else:
+                raise ApiError("unknown request")
+            approval.update(state="done", result=result)
+        except ApiError as exc:
+            approval.update(state="failed", error=str(exc))
+        save_approvals(home, approvals)
+        if approval["state"] == "failed":
+            raise ApiError(approval["error"])
+        return {"id": ident, "state": "done", "result": approval.get("result")}
+    raise ApiError("that request is no longer waiting")
+
+
+def api_repo(home, path):
+    """What Setup's Git page shows: the forge accounts, the project's repository, its open
+    pull requests, and what Pi asks."""
+    project = resolve_inside(home, path)
+    link = repo_link(home, project)
+    out = {"project": project, "forges": [public_forge(f) for f in load_forges(home)], "link": link, "prs": [],
+           "local": bool(git_dir(project)), "branch": git_branch(project),
+           "approvals": [a for a in load_approvals(home) if a.get("state") == "pending" and a.get("project") == project]}
+    if link:
+        try:
+            out["prs"] = list_prs(home, link)
+            forge = forge_by_id(home, link["forge"])
+            for pr in out["prs"][:10]:
+                if forge["kind"] != "gitlab":
+                    pr["checks"] = pr_checks(forge, link["repo"], pr.get("sha"))
+        except ApiError as exc:
+            out["error"] = str(exc)
+    return out
+
+
+def api_pr_merge(home, path, number, method):
+    project = resolve_inside(home, path)
+    link = repo_link(home, project)
+    if not link:
+        raise ApiError("no repository connected to this project")
+    return merge_pr(home, project, link, int(number), method or "merge")
+
+
+GIT_OPS = ("info", "push", "pull", "open_pr", "list_prs", "pr", "request_merge", "create_repo")
+
+
+class GitBroker:
+    """The socket Pi's git tools reach (PIER_GIT_SOCKET): one JSON request per
+    connection, one JSON answer. Out of the sandbox, with the forge's token."""
+
+    def __init__(self, project):
+        self.project = project
+        self.home = home_dir()
+        folder = os.path.join(os.path.dirname(state_path(self.home)), "net")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        self.socket = os.path.join(folder, f"{os.getpid()}-git.sock")
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(self.socket)
+        os.chmod(self.socket, 0o600)
+        self.server.listen(16)
+        self.lock = threading.Lock()  # one forge operation at a time per Pi
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.handle, args=(client,), daemon=True).start()
+
+    def handle(self, client):
+        try:
+            client.settimeout(60)
+            data = b""
+            while not data.endswith(b"\n") and len(data) < 256 * 1024:
+                chunk = client.recv(65536)
+                if not chunk:
+                    break
+                data += chunk
+            try:
+                request = json.loads(data or b"{}")
+                if not isinstance(request, dict):
+                    raise ValueError
+                with self.lock:
+                    reply = self.answer(request)
+            except ValueError:
+                reply = {"error": "not a request"}
+            except ApiError as exc:
+                reply = {"error": str(exc)}
+            except Exception as exc:  # noqa: BLE001 - a bug: said to Pi, logged with its traceback
+                log("error", "git.broker", trace=traceback.format_exc(), err=f"{type(exc).__name__}: {exc}")
+                reply = {"error": f"the picker failed ({type(exc).__name__})"}
+            client.sendall((json.dumps(reply) + "\n").encode())
+        except OSError:
+            pass
+        finally:
+            try:
+                client.close()
+            except OSError:
+                pass
+
+    def answer(self, request):
+        op = request.get("op")
+        if op not in GIT_OPS:
+            raise ApiError(f"unknown operation: {op}")
+        link = repo_link(self.home, self.project)
+        log("info", f"git.tool-{op}", project=self.project, branch=request.get("branch"), number=request.get("number"))
+        if op == "info":
+            return {"project": self.project, "linked": bool(link), "repo": link and link["repo"],
+                    "default_branch": link and link.get("default_branch"), "branch_prefix": "pi/",
+                    "rules": "push only pi/… branches, never forced; open pull requests freely; merging and creating a "
+                             "repository wait for the user's approval in Pier"}
+        if op == "create_repo":
+            if link:
+                raise ApiError(f"this project is already connected to {link['repo']}")
+            forges = load_forges(self.home)
+            if not forges:
+                raise ApiError("no forge account connected: the user connects one in Pier (Setup > Git)")
+            forge = next((f for f in forges if f.get("id") == request.get("forge")), forges[0])
+            name = str(request.get("name") or "")
+            if not REPO_NAME_RE.fullmatch(name):
+                raise ApiError("a repository's name: letters, digits, '.', '_' and '-'")
+            approval = ask_approval(self.home, self.project, "create_repo",
+                                    {"forge": forge["id"], "name": name, "private": request.get("private", True) is not False,
+                                     "description": str(request.get("description") or "")[:300]}, request.get("reason"))
+            return {"asked": approval["id"], "waiting": "the user approves creating it in Pier; ask again later with info"}
+        if not link:
+            raise ApiError("no repository connected to this project: the user connects one in Pier (Setup > Git), "
+                           "or use create_repo")
+        if op == "push":
+            return git_push(self.home, self.project, link, str(request.get("branch") or ""))
+        if op == "pull":
+            return git_pull(self.home, self.project, link)
+        if op == "open_pr":
+            return open_pr(self.home, self.project, link, str(request.get("branch") or ""), request.get("title"),
+                           request.get("body"), request.get("base"), bool(request.get("draft")))
+        if op == "list_prs":
+            return {"pull_requests": list_prs(self.home, link, "open")}
+        number = request.get("number")
+        if not isinstance(number, int) or number < 1:
+            raise ApiError("a pull request's number")
+        if op == "pr":
+            return get_pr(self.home, link, number)
+        approval = ask_approval(self.home, self.project, "merge",
+                                {"number": number, "method": request.get("method") if request.get("method") in ("merge", "squash", "rebase") else "merge"},
+                                request.get("reason"))
+        return {"asked": approval["id"], "waiting": "the user approves the merge in Pier; check the pull request later"}
+
+    def close(self):
+        try:
+            self.server.close()
+        except OSError:
+            pass
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+
+
+PIER_GIT_EXTENSION = """// Written by Pier (pier-picker): git tools for the forge (GitHub, GitLab, Gitea).
+// They ask the picker over PIER_GIT_SOCKET; the picker holds the token and checks every
+// request: push only pi/... branches, pull requests freely, merging and creating a
+// repository only once the user approves in Pier.
+import { connect } from "node:net";
+import { Type } from "typebox";
+
+function ask(request: any): Promise<any> {
+  const path = process.env.PIER_GIT_SOCKET;
+  return new Promise((resolve, reject) => {
+    if (!path) return reject(new Error("Pier's git broker is not available in this session"));
+    const socket = connect(path);
+    let data = "";
+    socket.setEncoding("utf8");
+    socket.on("connect", () => socket.write(JSON.stringify(request) + "\\n"));
+    socket.on("data", (chunk: string) => { data += chunk; });
+    socket.on("end", () => {
+      try {
+        const answer = JSON.parse(data);
+        if (answer.error) reject(new Error(answer.error)); else resolve(answer);
+      } catch { reject(new Error("no answer from Pier's git broker")); }
+    });
+    socket.on("error", (error: Error) => reject(error));
+  });
+}
+
+const text = (value: any) => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }], details: value });
+
+export default function (pi: any) {
+  const tool = (name: string, label: string, description: string, parameters: any, op: string) =>
+    pi.registerTool({
+      name, label, description, parameters,
+      async execute(_id: string, params: any) { return text(await ask({ op, ...params })); },
+    });
+  tool("git_repo_info", "Repository", "The forge repository connected to this project, its default branch and the rules for pushing.",
+    Type.Object({}), "info");
+  tool("git_push", "Push", "Push a local branch to the forge. Only branches named pi/... are accepted, never forced: commit on a pi/... branch first.",
+    Type.Object({ branch: Type.String({ description: "a local branch, pi/..." }) }), "push");
+  tool("git_pull", "Fetch", "Fetch the forge's branches into refs/remotes/origin/*; then merge or rebase locally with git.",
+    Type.Object({}), "pull");
+  tool("open_pull_request", "Open pull request", "Open a pull request from a pushed pi/... branch.",
+    Type.Object({ branch: Type.String(), title: Type.String(), body: Type.Optional(Type.String()),
+      base: Type.Optional(Type.String({ description: "target branch, the default one when left out" })),
+      draft: Type.Optional(Type.Boolean()) }), "open_pr");
+  tool("list_pull_requests", "Pull requests", "The open pull requests of the repository.", Type.Object({}), "list_prs");
+  tool("pull_request_status", "Pull request", "A pull request's state, its checks (CI) and whether it can be merged.",
+    Type.Object({ number: Type.Integer() }), "pr");
+  tool("request_merge", "Ask to merge", "Ask the user to merge a pull request. Only when the user asked for it: Pier shows the request and the user approves or refuses it there.",
+    Type.Object({ number: Type.Integer(), method: Type.Optional(Type.String({ description: "merge, squash or rebase" })),
+      reason: Type.Optional(Type.String()) }), "request_merge");
+  tool("create_repository", "Create repository", "Ask the user to create a repository on the forge and connect this project to it: Pier shows the request for approval.",
+    Type.Object({ name: Type.String(), private: Type.Optional(Type.Boolean()), description: Type.Optional(Type.String()),
+      reason: Type.Optional(Type.String()) }), "create_repo");
+}
+"""
+
+
+def pier_git_extension():
+    """The git tools' file, written when missing or different; None when it cannot be."""
+    path = os.path.join(pier_dir(), "pier-git.ts")
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        if read_text(path) == PIER_GIT_EXTENSION and not os.path.islink(path):
+            return path
+        atomic_write(path, PIER_GIT_EXTENSION, os.path.join(home_dir(), ".pi"), 0o644)
+        return path
+    except (OSError, ApiError) as exc:
+        log("warn", "pier.git-extension-failed", err=str(exc))
+        return None
+
+
 def versions_path(home):
     return os.path.join(os.path.dirname(state_path(home)), "versions.json")
 
@@ -4997,7 +5732,7 @@ def api_write_text(home, path, which, data):
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
-             "skill-read", "gallery"}
+             "skill-read", "gallery", "forges", "repo", "approvals"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -5079,6 +5814,16 @@ API_COMMANDS = {
     "skill-delete": lambda home, config, a: api_skill_delete(home, a[0], a[1], a[2]),
     "skill-import": lambda home, config, a: api_skill_import(home, a[0], a[1], a[2], sys.stdin.buffer),
     "gallery": lambda home, config, a: api_gallery(home, a[0]),
+    "forges": lambda home, config, a: api_forges(home),
+    "forge-add": lambda home, config, a: api_forge_add(home, a[0], a[1], stdin_bytes(4096)),
+    "forge-remove": lambda home, config, a: api_forge_remove(home, a[0]),
+    "repo": lambda home, config, a: api_repo(home, a[0]),
+    "repo-link": lambda home, config, a: api_repo_link(home, a[0], a[1], a[2]),
+    "repo-unlink": lambda home, config, a: api_repo_unlink(home, a[0]),
+    "repo-create": lambda home, config, a: api_repo_create(home, a[0], a[1], a[2], a[3], a[4]),
+    "pr-merge": lambda home, config, a: api_pr_merge(home, a[0], a[1], a[2]),
+    "approvals": lambda home, config, a: api_approvals(home),
+    "approval-answer": lambda home, config, a: api_approval_answer(home, a[0], a[1]),
     "copy-diff": lambda home, config, a: api_copy_diff(home, a[0], a[1], stdin_bytes(COPY_DIFF_MAX)),
 }
 
@@ -5149,7 +5894,7 @@ WATCH_TICK = 1.0
 # changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
 # tmux, each one of activity runs git status in its jail: not every second for nothing.
 WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
-               "conversations": 10}
+               "conversations": 10, "approvals": 30}
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
 WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2, "activity": 1.5}
@@ -5196,6 +5941,8 @@ def watch_signature(kind, value, home):
         return stat(os.path.join(store, "refs", "devbox")), stat(os.path.join(store, "packed-refs"))
     if kind == "log":
         return stat(log_path())
+    if kind == "approvals":
+        return stat(approvals_path(home))  # a request of Pi shows at once
     return None
 
 
@@ -5212,6 +5959,8 @@ def watch_part(kind, value, home, config):
         return api_checkpoints(home, value, config)
     if kind == "conversations":
         return api_conversations(home)
+    if kind == "approvals":
+        return api_approvals(home)
     raise ApiError(f"unknown part: {kind}")
 
 

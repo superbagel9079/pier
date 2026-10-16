@@ -532,6 +532,106 @@ def checkpoint_test():
     shutil.rmtree(work, ignore_errors=True)
 
 
+GIT_BROKER_SCRIPT = r'''
+import importlib.util, json, os, subprocess, sys, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+spec = importlib.util.spec_from_file_location("pier_picker", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+home = m.home_dir()
+proj = os.path.join(home, "proj")
+os.makedirs(proj, exist_ok=True)
+calls, prs = [], []
+
+class Forge(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, code, obj):
+        body = json.dumps(obj).encode()
+        self.send_response(code); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def do_GET(self):
+        calls.append(("GET", self.path, self.headers.get("Authorization")))
+        if self.path == "/user": return self.reply(200, {"login": "leo"})
+        if self.path == "/repos/leo/demo": return self.reply(200, {"default_branch": "main"})
+        if self.path.startswith("/repos/leo/demo/branches"): return self.reply(200, [{"name": "main"}])
+        if self.path.startswith("/repos/leo/demo/pulls/"): return self.reply(200, prs[int(self.path.split("/")[-1]) - 1])
+        if self.path.startswith("/repos/leo/demo/pulls"): return self.reply(200, prs)
+        if "check-runs" in self.path: return self.reply(200, {"check_runs": []})
+        self.reply(404, {"message": "Not Found"})
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        calls.append(("POST", self.path, body))
+        pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x"}, "base": {"ref": body.get("base")}}
+        prs.append(pr); self.reply(201, pr)
+    def do_PUT(self):
+        calls.append(("PUT", self.path, None)); self.reply(200, {"merged": True})
+
+server = HTTPServer(("127.0.0.1", 0), Forge)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+m.forge_api_base = lambda kind, url: f"http://127.0.0.1:{server.server_address[1]}"
+remote = os.path.join(home, "remote.git")
+subprocess.run(["git", "init", "-q", "--bare", "-b", "main", remote], check=True)
+m.clone_url = lambda forge, repo: remote
+out = {}
+m.api_forge_add(home, "github", "https://github.com", b"tok-secret")
+out["forges_mode"] = oct(os.stat(m.forges_path(home)).st_mode & 0o777)
+fid = m.load_forges(home)[0]["id"]
+m.api_repo_link(home, proj, fid, "leo/demo")
+git = lambda *a: subprocess.run(["git", "-C", proj, "-c", "user.email=t@t", "-c", "user.name=t", *a], check=True, capture_output=True, text=True).stdout
+open(os.path.join(proj, "a.txt"), "w").write("a")
+git("add", "."); git("commit", "-qm", "one"); git("checkout", "-qb", "pi/work")
+open(os.path.join(proj, "b.txt"), "w").write("b")
+git("add", "."); git("commit", "-qm", "two")
+broker = object.__new__(m.GitBroker); broker.project = os.path.realpath(proj); broker.home = home
+def tried(request):
+    try:
+        return broker.answer(request)
+    except m.ApiError as exc:
+        return {"error": str(exc)}
+out["push_main"] = "error" in tried({"op": "push", "branch": "main"})
+out["push_other"] = "error" in tried({"op": "push", "branch": "feature"})
+out["push_pi"] = tried({"op": "push", "branch": "pi/work"}).get("pushed")
+out["remote_branches"] = subprocess.run(["git", "--git-dir", remote, "branch"], capture_output=True, text=True).stdout.split()
+out["pr"] = tried({"op": "open_pr", "branch": "pi/work", "title": "Work"}).get("number")
+asked = tried({"op": "request_merge", "number": 1})
+out["merged_before"] = any(c[0] == "PUT" for c in calls)
+m.api_approval_answer(home, asked["asked"], "yes")
+out["merged_after"] = any(c[0] == "PUT" for c in calls)
+out["pull"] = tried({"op": "pull"}).get("into")
+out["origin"] = git("branch", "-r").split()
+out["token_sent"] = any(c[2] == "Bearer tok-secret" for c in calls if c[0] == "GET")
+out["token_in_log"] = "tok-secret" in open(m.log_path()).read()
+print(json.dumps(out))
+'''
+
+
+def git_broker_test():
+    """The git broker on the real system: pushes through git's jail and the mirror, pull
+    requests and a merge only once approved, against a made-up forge (a local server)
+    and a local bare repository standing for the remote."""
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    home.mkdir()
+    script = work / "broker.py"
+    script.write_text(GIT_BROKER_SCRIPT)
+    env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "XDG_STATE_HOME")}
+    env["HOME"] = str(home)
+    run = subprocess.run([sys.executable, "-B", str(script), str(APP)], env=env, capture_output=True, text=True, timeout=120)
+    try:
+        out = json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        check("git broker runs", False, run.stdout[-400:] + run.stderr[-800:])
+        cleanup(str(work))
+        return
+    check("git: the forge token file is private", out["forges_mode"] == "0o600", out)
+    check("git: main and other branches refused", out["push_main"] and out["push_other"], out)
+    check("git: a pi/ branch pushed through the mirror", out["push_pi"] == "pi/work" and "pi/work" in out["remote_branches"], out)
+    check("git: a pull request opened", out["pr"] == 1, out)
+    check("git: no merge before the user approves", not out["merged_before"] and out["merged_after"], out)
+    check("git: pull fills origin/*", "origin/pi/work" in out["origin"], out)
+    check("git: the token used, never logged", out["token_sent"] and not out["token_in_log"], out)
+    cleanup(str(work))
+
+
 def resources_test():
     """Setup's list of what Pi loads: packages with their version, skills, prompts, MCP
     servers, from a made-up agent dir and project; nothing is run."""
@@ -888,6 +988,7 @@ def main():
     checkpoint_test()
     multi_pi_test()
     resources_test()
+    git_broker_test()
 
     home, screens, work = session([])
     send("Escape")

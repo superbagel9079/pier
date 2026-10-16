@@ -13,7 +13,7 @@ function canon(value) {
 const vm = (() => {
   // projects: the Pis and recent projects; activity: {project, file} of one conversation;
   // setup and checkpoints: a project; contexts: everything given to Pis; log: new lines.
-  const want = { projects: true, contexts: false, activity: null, setup: null, checkpoints: null, log: false, conversations: false };
+  const want = { projects: true, contexts: false, activity: null, setup: null, checkpoints: null, log: false, conversations: false, approvals: true };
   const latest = {};
   const listeners = {};
   let active = false; // connected: the watch should be running
@@ -24,7 +24,7 @@ const vm = (() => {
   // While the window is hidden (in the tray, minimized), only the projects are followed:
   // they bring the "Pi finished" notifications. The panels' parts come back when the
   // window does, rebuilt fresh; nothing is computed on the VM for a window nobody sees.
-  const quiet = () => (document.hidden ? { ...Object.fromEntries(Object.keys(want).map((k) => [k, null])), projects: want.projects } : want);
+  const quiet = () => (document.hidden ? { ...Object.fromEntries(Object.keys(want).map((k) => [k, null])), projects: want.projects, approvals: want.approvals } : want);
   document.addEventListener("visibilitychange", () => {
     if (running) backend.watchSet(quiet()).catch(() => {});
   });

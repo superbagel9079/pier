@@ -315,7 +315,7 @@
       <p class="error" hidden></p>
       <p class="setup-summary small"></p>
       <span class="switch setup-pages" role="group">
-        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
+        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="git" title="The forge repository: pull requests, Pi's requests, accounts">Git</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
       </span>
 
       <section class="setup-page" data-page="instructions">
@@ -345,6 +345,10 @@
       <section class="setup-page" data-page="packages" hidden>
         <ul class="resource-items resources"></ul>
         <div class="package-tools"></div>
+      </section>
+
+      <section class="setup-page" data-page="git" hidden>
+        <div class="git-manager"></div>
       </section>
 
       <section class="setup-page" data-page="advanced" hidden>
@@ -453,6 +457,7 @@
   <script src="js/takeback.js"></script>
   <script src="js/conversations.js"></script>
   <script src="js/resources.js"></script>
+  <script src="js/git.js"></script>
   <script src="js/setup.js"></script>
   <script src="js/logs.js"></script>
   <script src="js/palette.js"></script>

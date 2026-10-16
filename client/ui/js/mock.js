@@ -56,6 +56,9 @@ function mockBackend() {
   let shares = [];
   let kept = [];
   let handed = [];
+  let mockForges = [{ id: "github:github.com:leo", kind: "github", url: "https://github.com", login: "leo" }];
+  let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/" };
+  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,
@@ -142,6 +145,14 @@ function mockBackend() {
           { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", description: "Code review skills" },
         ].filter((p) => !args[1] || p.name.includes(args[1]) || p.description.toLowerCase().includes(args[1].toLowerCase())) };
       }
+      if (args[0] === "repo") {
+        return { project: args[1], local: true, branch: "pi/fix-login",
+          forges: mockForges, link: mockForges.length ? mockLink : null,
+          prs: mockLink && mockForges.length ? [{ number: 12, title: "Fix the login redirect", state: "open", head: "pi/fix-login", base: "main", url: "https://github.com/leo/work/pull/12", checks: "success", author: "leo" },
+            { number: 13, title: "Docs: setup guide", state: "open", head: "pi/docs", base: "main", url: "https://github.com/leo/work/pull/13", checks: "pending", draft: true, author: "leo" }] : [],
+          approvals: mockApprovals };
+      }
+      if (args[0] === "approvals") return { approvals: mockApprovals };
       if (args[0] === "skill-read") return { name: args[3], text: `---\nname: ${args[3]}\ndescription: demo\n---\n\n# ${args[3]}\n` };
       if (args[0] === "projects") {
         const pis = pisNow();
@@ -293,6 +304,18 @@ function mockBackend() {
       return { name };
     },
     skillSave: async () => ({ saved: "SKILL.md" }),
+    forgeAdd: async (kind, url, token) => {
+      if (!token) throw "paste the token alone";
+      const forge = { id: `${kind}:${url.replace(/^https:\/\//, "")}:leo`, kind, url, login: "leo" };
+      mockForges.push(forge);
+      return forge;
+    },
+    forgeRemove: async (id) => { mockForges = mockForges.filter((f) => f.id !== id); return { removed: id }; },
+    repoLink: async (project, forge, repo) => { mockLink = { forge, repo, default_branch: "main", prefix: "pi/" }; return mockLink; },
+    repoUnlink: async () => { mockLink = null; return {}; },
+    repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/" }; return mockLink; },
+    prMerge: async (project, number) => ({ merged: number }),
+    approvalAnswer: async (id, approve) => { mockApprovals = mockApprovals.filter((a) => a.id !== id); return { id, state: approve ? "done" : "refused" }; },
     skillDelete: async (scope, project, name) => {
       mockSkills = mockSkills.filter((s) => s.name !== name);
       return { name, kept: `/home/leo/.local/state/pier-picker/trash/20261016-${scope}-${name}` };

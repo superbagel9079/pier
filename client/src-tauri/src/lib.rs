@@ -36,13 +36,13 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 13;
+const API_VERSION: u64 = 14;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery"];
+const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals"];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -1032,6 +1032,54 @@ async fn skill_delete(app: AppHandle, state: State<'_, AppState>, scope: String,
     api(&app, &state, &["skill-delete", &scope, &project, &name], &[]).await
 }
 
+// --- git forges (Setup > Git) ------------------------------------------------------------
+
+/// Connects a forge account: the token goes on stdin, never on a command line or in a log.
+#[tauri::command]
+async fn forge_add(app: AppHandle, state: State<'_, AppState>, kind: String, url: String, token: String) -> Result<Value, String> {
+    if !["github", "gitlab", "gitea"].contains(&kind.as_str()) {
+        return Err(format!("unknown forge: {kind}"));
+    }
+    api(&app, &state, &["forge-add", &kind, &url], token.trim().as_bytes()).await
+}
+
+#[tauri::command]
+async fn forge_remove(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<Value, String> {
+    api(&app, &state, &["forge-remove", &id], &[]).await
+}
+
+/// Connects the project to a repository (owner/name) of a forge account.
+#[tauri::command]
+async fn repo_link(app: AppHandle, state: State<'_, AppState>, project: String, forge: String, repo: String) -> Result<Value, String> {
+    api(&app, &state, &["repo-link", &project, &forge, &repo], &[]).await
+}
+
+#[tauri::command]
+async fn repo_unlink(app: AppHandle, state: State<'_, AppState>, project: String) -> Result<Value, String> {
+    api(&app, &state, &["repo-unlink", &project], &[]).await
+}
+
+/// A new repository on the forge, connected to the project (the user's own action).
+#[tauri::command]
+async fn repo_create(app: AppHandle, state: State<'_, AppState>, project: String, forge: String, name: String, private: bool, description: String) -> Result<Value, String> {
+    api(&app, &state, &["repo-create", &project, &forge, &name, if private { "1" } else { "0" }, &description], &[]).await
+}
+
+/// Merges a pull request, from Pier.
+#[tauri::command]
+async fn pr_merge(app: AppHandle, state: State<'_, AppState>, project: String, number: u64, method: String) -> Result<Value, String> {
+    if !["merge", "squash", "rebase"].contains(&method.as_str()) {
+        return Err(format!("unknown merge method: {method}"));
+    }
+    api(&app, &state, &["pr-merge", &project, &number.to_string(), &method], &[]).await
+}
+
+/// The user's answer to a request of Pi (merge, create a repository).
+#[tauri::command]
+async fn approval_answer(app: AppHandle, state: State<'_, AppState>, id: String, approve: bool) -> Result<Value, String> {
+    api(&app, &state, &["approval-answer", &id, if approve { "yes" } else { "no" }], &[]).await
+}
+
 /// Largest skill folder sent from this computer.
 const SKILL_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
@@ -1659,6 +1707,13 @@ pub fn run() {
             skill_save,
             skill_delete,
             skill_import,
+            forge_add,
+            forge_remove,
+            repo_link,
+            repo_unlink,
+            repo_create,
+            pr_merge,
+            approval_answer,
             checkpoint_create,
             checkpoint_restore,
             stop_pi,

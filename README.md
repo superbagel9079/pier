@@ -173,7 +173,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 13 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 14 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -189,6 +189,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `activity`, `diff` | what Pi reads and changes, its diffs, its cost |
 | `setup`, `write-text` | a project's instructions, what Pi reads at startup and what it loads |
 | `resources`, `toggle-resource`, `skill-new`, `skill-read`, `skill-write`, `skill-delete`, `skill-import`, `gallery` | skills, extensions and prompts: listed with their state, turned on or off, local skills made, edited, put in the bin or imported; the gallery |
+| `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
 | `checkpoints`, `checkpoint`, `checkpoint-diff`, `restore` | restore points: list, make one, what changed since, go back |
@@ -463,14 +464,42 @@ What each page holds:
   A package's extensions run code with your rights when Pi starts, and skills can tell Pi to do anything: look at a package before installing it. `pi install` and `pi remove` run in Pi's sandbox (when it is on), network limited as Pi's: npm's install scripts see `~/.pi` and the project only. A package from a site outside `network_allow` needs it added there first.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).
 
-### Part XIII. Notifications and shortcut
+### Part XIII. Git: Pi with a repository, as a developer
+
+A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea / Forgejo**, in **Setup > Git**. Pi then works as a developer of the team: it commits, branches and merges locally as it likes (that is plain git, in its sandbox), pushes its branches and opens pull requests by itself, and asks when something more is needed.
+
+#### A. Connecting
+
+- **Connect an account…**: the forge, its address, and a token. GitHub: a fine-grained token limited to the repositories Pi works on, with *Contents* and *Pull requests* in read and write (*Administration* too, to let Pi create repositories). GitLab: a token with the `api` scope (a project access token limits it to one project). Gitea / Forgejo: a token with read and write on repositories. Pier checks it with the forge before keeping it.
+- **Connect a repository…** (`owner/name`) or **Create a repository…** (private by default). The project becomes a git repository if it is not one yet.
+- The page then shows the repository, the branch checked out, the **open pull requests** with their checks (✓ passed, ✗ failed, … running), and for each one **copy link** and **merge ▾** (merge, squash and merge, rebase and merge).
+
+#### B. What Pi can do, and what waits for you
+
+Pi gets git tools (from a small extension, `~/.pi/pier/pier-git.ts`, like the one that says which conversation it holds): `git_repo_info`, `git_push`, `git_pull`, `open_pull_request`, `list_pull_requests`, `pull_request_status`, `request_merge`, `create_repository`.
+
+| Pi asks to | What happens |
+|---|---|
+| push a branch | only branches named `pi/…` (the default branch only while the repository is still empty), never forced: a rewritten branch is refused by the forge |
+| fetch | the forge's branches land in `origin/*` in the project; Pi merges or rebases itself |
+| open, list, read pull requests | done at once |
+| **merge** a pull request | **never by itself**: the request appears in **Setup > Git > Waiting for you**, with a Windows notification, and is done only when you click **approve**. So "merge it" said to Pi works, and an instruction hidden in a file cannot merge anything |
+| create a repository | the same: waits for your approval |
+
+You can also merge yourself from the list of pull requests, at any time.
+
+#### C. Why the token is safe
+
+The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. git receives the token in its environment, never on a command line, and it is never written to a log.
+
+### Part XIV. Notifications and shortcut
 
 - **A Windows notification** when a Pi goes from "working" to "idle", for every Pi started. Nothing shows when Pier is already in front.
 - **Ctrl+Alt+V,** from any application: sends the clipboard's image or files to Pi. When another program already uses it, the Settings say so.
 - **One Pier at a time:** starting it again brings the running one forward (even minimised to the notification area) instead of opening a second one.
 - **Closing the window** leaves Pier in the notification area. To quit it: right-click the icon, then Quit.
 
-### Part XIV. Settings (once connected)
+### Part XV. Settings (once connected)
 
 The categories in a column on the left, the page on the right; the window opens again on the last page shown.
 
@@ -501,6 +530,7 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
 | **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
+| **Pi and git** | Pi pushes only `pi/…` branches, never forced, and opens pull requests; merging or creating a repository waits for the user's approval in Pier. The forge's token never enters the sandbox: the picker holds it and pushes from a mirror of its own, after fetching Pi's commits in git's jail. |
 | **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only its model providers, npm, GitHub, PyPI and what `network_allow` adds, through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
 | **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. `~/.pi` is Pi's to write: a link put in place of the key is not followed (only a plain file is read). |
