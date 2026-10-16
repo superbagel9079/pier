@@ -546,16 +546,26 @@ details label { margin-top: 8px; }
 .takeback-diff { flex-basis: 100%; }
 .takeback-diff .diff { content-visibility: auto; }
 
-/* Skills, extensions and prompts (Setup) */
-.resource-head { display: flex; gap: 12px; align-items: baseline; justify-content: space-between; margin: 8px 0; }
-.resource-lists h3 { margin: 12px 0 4px; font-size: 12px; }
-.resource-items li { display: flex; align-items: center; gap: 8px; }
+/* Setup: four pages (the same switch as Activity's), compact rows */
+.setup-pages { display: flex; width: 100%; margin: 4px 0 12px; }
+.setup-pages .mode { flex: 1 1 auto; min-width: 0; padding: 2px 4px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resource-items li > .row-actions { flex: 0 0 auto; display: flex; gap: 8px; }
+.setup-page > h2:first-child { margin-top: 4px; }
+.startup-box { margin-top: 12px; }
+.startup-box > summary { cursor: pointer; color: var(--dim); }
+.resource-bar { display: flex; gap: 8px; align-items: center; }
+.resource-bar input[type="search"] { flex: 1; min-width: 0; }
+.resource-lists h3 { margin: 14px 0 2px; font-size: 12px; }
+.resource-lists .group { margin: 6px 0 2px; }
+.resource-items { list-style: none; margin: 0; padding: 0; }
+.resource-items li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid var(--line); min-height: 26px; }
 .resource-items li > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
-.resource-items .row-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-.resource-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-.resource-panel { border: 1px solid var(--line); padding: 10px; margin-bottom: 12px; }
-.resource-panel h3 { margin: 0 0 8px; font-size: 12px; }
-.resource-panel .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.resource-panel .toolbar input { flex: 1; min-width: 160px; }
-.gallery li { display: flex; align-items: center; gap: 8px; }
-.gallery li > .dim { flex: 1; min-width: 0; }
+.resource-items li > .name { flex: 0 1 auto; min-width: 0; }
+.resource-items li > .dim { flex: 1 1 auto; min-width: 0; text-align: right; }
+.resource-items li.off > .name { color: var(--dim); }
+.resource-items li > .more { visibility: hidden; padding: 0 4px; }
+.resource-items li:hover > .more, .resource-items li > .more:focus-visible { visibility: visible; }
+.gallery li > .dim { text-align: left; }
+.dialog.wide { width: min(860px, 100%); }
+.dialog textarea.editor { width: 100%; }
+.dialog .grid.fields { grid-template-columns: auto minmax(0, 1fr); }

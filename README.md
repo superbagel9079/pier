@@ -421,7 +421,14 @@ Pier reads Pi's sessions folder (`~/.pi/agent/sessions`). The view is only updat
 
 ### Part XII. The Setup tab: a project's configuration, as in Claude Projects
 
-For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top says how many conversations the project has, with **open them in Conversations**.
+For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top sums the project up (Pi's version, packages, skills and how many are off, MCP servers, conversations, with **open them in Conversations**), then four pages, the one chosen being remembered:
+
+- **Instructions:** `AGENTS.md` and, folded, what Pi reads at startup;
+- **Skills:** skills, extensions and prompt templates, with a filter and **+ Add**;
+- **Packages:** Pi, the packages, **Install a package…** and the gallery;
+- **Advanced:** MCP servers, the default model, and Pi's system prompt.
+
+What each page holds:
 
 - **Instructions (`AGENTS.md`)**, read at the start of each session. The editor offers:
   - a **token counter** (this text is read again at every session);
@@ -444,12 +451,14 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
 
   The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pier-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add an MCP server on the VM: `pi mcp add …`.
 
-  Below the list, for you (every project) or for this project only:
-  - **Install a package…**: a source (`npm:…`, `git:…`, `https://…`), installed by `pi install` (`-l` for the project) in a tab where it runs, visible;
-  - **Browse the gallery…**: the packages tagged `pi-package` on npm (those of pi.dev/packages), searched from the VM, with **install**;
+  On the Skills page, one line each, under "Yours" and "This project"; a skill left out has its name dimmed. **+ Add** offers, each asking for you (every project) or this project only:
   - **New skill…**: a skill of your own, made from a template (`name` and `description` in its front matter), then opened to edit;
-  - **Import a skill…**: a folder of this computer holding a `SKILL.md`, copied into the skills (under the name it declares);
-  - a local skill has **edit** (its `SKILL.md`, Ctrl+S saves) and **×**, which puts it in a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
+  - **Import a skill from this computer…**: a folder holding a `SKILL.md`, copied into the skills (under the name it declares);
+  - **Install a package…**: as on the Packages page.
+
+  A local skill has **⋯** (shown under the pointer): **Edit its SKILL.md…** (Ctrl+S saves) and **Put it in the bin**, a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
+
+  On the Packages page: **Install a package…**, a source (`npm:…`, `git:…`, `https://…`) installed by `pi install` (`-l` for the project) in a tab where it runs, visible; and the **gallery**, the packages tagged `pi-package` on npm (those of pi.dev/packages), searched from the VM as you type, with **install**.
 
   A package's extensions run code with your rights when Pi starts, and skills can tell Pi to do anything: look at a package before installing it. `pi install` and `pi remove` run in Pi's sandbox (when it is on), network limited as Pi's: npm's install scripts see `~/.pi` and the project only. A package from a site outside `network_allow` needs it added there first.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).

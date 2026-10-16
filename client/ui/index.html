@@ -314,7 +314,11 @@
       <p class="notice" hidden></p>
       <p class="error" hidden></p>
       <p class="setup-summary small"></p>
+      <span class="switch setup-pages" role="group">
+        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
+      </span>
 
+      <section class="setup-page" data-page="instructions">
       <div class="box-instructions">
         <h2>Instructions <span class="file-name dim small"></span></h2>
         <p class="hint">Read by Pi at the start of every session in this project, like a project's instructions in Claude.</p>
@@ -327,17 +331,27 @@
         <ul class="history-list" hidden></ul>
       </div>
 
-      <h2>What Pi reads at startup</h2>
-      <ol class="startup"></ol>
-      <p class="trust dim small"></p>
+        <details class="startup-box">
+          <summary>What Pi reads at startup</summary>
+          <ol class="startup"></ol>
+          <p class="trust dim small"></p>
+        </details>
+      </section>
 
-      <h2>What Pi loads</h2>
-      <p class="hint">Packages, extensions, skills, prompt templates and MCP servers, yours (user) and this project's. To add one on the VM: <code>pi install npm:…</code>, <code>pi mcp add …</code>.</p>
-      <ul class="startup resources"></ul>
-      <div class="resource-manager"></div>
+      <section class="setup-page" data-page="skills" hidden>
+        <div class="resource-manager"></div>
+      </section>
 
-      <details class="advanced">
-        <summary>Advanced: Pi's system prompt</summary>
+      <section class="setup-page" data-page="packages" hidden>
+        <ul class="resource-items resources"></ul>
+        <div class="package-tools"></div>
+      </section>
+
+      <section class="setup-page" data-page="advanced" hidden>
+        <h2>MCP servers and model</h2>
+        <p class="hint">MCP servers are added on the VM: <code>pi mcp add …</code>.</p>
+        <ul class="startup advanced-list"></ul>
+        <h2>Pi's system prompt</h2>
         <div class="box-append">
           <h3>Added to the system prompt <span class="file-name dim small"></span></h3>
           <p class="hint global-note" hidden></p>
@@ -361,7 +375,7 @@
         </div>
         <ul class="history-list" hidden></ul>
         </div>
-      </details>
+      </section>
     </div>
   </template>
 
