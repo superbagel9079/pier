@@ -155,11 +155,11 @@
         <label for="prefs-font">Terminal font size</label>
         <input id="prefs-font" type="number" min="8" max="28">
         <label for="prefs-termfont">Terminal font</label>
-        <input id="prefs-termfont" list="prefs-termfont-list" placeholder="Cascadia Mono (default)" spellcheck="false" autocomplete="off">
-        <datalist id="prefs-termfont-list"></datalist>
+        <select id="prefs-termfont"></select>
         <label for="prefs-padding">Space around the terminal's text (px)</label>
         <input id="prefs-padding" type="number" min="0" max="40">
       </div>
+      <input id="prefs-termfont-other" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
       <p id="prefs-termfont-note" class="hint" hidden></p>
       <div id="theme-swatches" class="swatches" aria-hidden="true"></div>
       <div class="actions">

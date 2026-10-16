@@ -32,7 +32,6 @@ function openPrefs() {
   }
   fillThemes();
   $("#prefs-font").value = prefs.fontSize;
-  $("#prefs-termfont").value = prefs.termFont || "";
   $("#prefs-padding").value = prefs.termPadding;
   fillTermFonts();
   $("#prefs-shortcut").checked = prefs.shortcut;
@@ -255,22 +254,47 @@ function fontInstalled(name) {
   return ["monospace", "serif"].some((base) => probe(`"${safe}", ${base}`) !== probe(base));
 }
 
+const OTHER_FONT = "__other__"; // the "Other font…" entry: a name typed below
+
+let installedFonts = null; // measured once: it takes a moment
+/** The font list: the default, the usual fonts found here, the one chosen if typed by
+ *  hand, and "Other font…". A plain select, as the theme's. */
 function fillTermFonts() {
-  const list = $("#prefs-termfont-list");
-  if (list.childElementCount) return;
-  for (const name of TERM_FONT_CHOICES) if (fontInstalled(name)) list.append(el("option", { value: name }));
+  installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
+  const select = $("#prefs-termfont");
+  const chosen = prefs.termFont || "";
+  select.innerHTML = "";
+  select.add(new Option("Cascadia Mono (default)", ""));
+  for (const name of installedFonts) if (name !== "Cascadia Mono") select.add(new Option(name, name));
+  if (chosen && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
+  select.add(new Option("Other font…", OTHER_FONT));
+  select.value = chosen;
+  $("#prefs-termfont-other").hidden = true;
 }
 
-$("#prefs-termfont").addEventListener("change", (e) => {
-  const name = e.target.value.replace(/["'`;\\{}<>]/g, "").trim().slice(0, 60);
-  e.target.value = name;
-  prefs.termFont = name;
+function setTermFont(raw) {
+  const name = String(raw).replace(/["'`;\\{}<>]/g, "").trim().slice(0, 60);
+  prefs.termFont = name === "Cascadia Mono" ? "" : name;
   savePrefs();
   const note = $("#prefs-termfont-note");
   note.hidden = !name || fontInstalled(name);
   note.textContent = `"${name}" is not installed on this computer: the terminals use Cascadia Mono meanwhile.`;
   for (const tab of workspace.tabs()) tab.applyFont?.();
+  fillTermFonts();
+}
+
+$("#prefs-termfont").addEventListener("change", (e) => {
+  if (e.target.value !== OTHER_FONT) { setTermFont(e.target.value); return; }
+  const other = $("#prefs-termfont-other");
+  other.hidden = false;
+  other.value = "";
+  other.focus();
 });
+$("#prefs-termfont-other").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.value.trim()) setTermFont(e.target.value);
+  if (e.key === "Escape") { e.stopPropagation(); fillTermFonts(); }
+});
+$("#prefs-termfont-other").addEventListener("change", (e) => { if (e.target.value.trim()) setTermFont(e.target.value); });
 $("#prefs-padding").addEventListener("change", (e) => {
   prefs.termPadding = Math.min(40, Math.max(0, Math.round(Number(e.target.value) || 0)));
   e.target.value = prefs.termPadding;
