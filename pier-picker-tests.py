@@ -196,8 +196,9 @@ def read(path):
 
 
 def without_extension(args):
-    """Pi's arguments as asked, without the extension Pier gives each Pi it starts."""
-    return re.sub(r"^--extension \S+pier-session\.ts ?", "", args)
+    """Pi's arguments as asked, without the extensions Pier gives each Pi it starts (the
+    conversation tracker, the git tools)."""
+    return re.sub(r"^(?:--extension \S+pier-(?:session|git)\.ts ?)+", "", args)
 
 
 def unit_tests():
