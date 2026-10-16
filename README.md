@@ -7,8 +7,6 @@ Two tools for working with **Pi**, a command-line coding agent, installed on a r
 
 The starting idea: **the agent runs on the VM, not on the laptop.** The laptop is only a window onto the VM, as a browser is for Claude. You can close it, switch it off, lose the Wi-Fi: Pi carries on.
 
----
-
 ## Contents
 
 1. [Chapter I. Why these tools](#chapter-i-why-these-tools)
@@ -23,8 +21,6 @@ The starting idea: **the agent runs on the VM, not on the laptop.** The laptop i
 10. [Chapter X. Tests](#chapter-x-tests)
 11. [Chapter XI. Known limits and what is left to check](#chapter-xi-known-limits-and-what-is-left-to-check)
 12. [Chapter XII. Ideas for later](#chapter-xii-ideas-for-later)
-
----
 
 ## Chapter I. Why these tools
 
@@ -48,8 +44,6 @@ The picker solves the first points of the list, and Pier the rest.
 ### Part II. Why the folder is chosen before Pi starts
 
 That is what the picker is for. Pi reads its configuration, its instructions (`AGENTS.md`) and its memory **at startup**, and its Hindsight memory is filed **by folder name**. Starting Pi in one folder and then moving to another would make it work with another project's context. So the working folder is always fixed before Pi starts.
-
----
 
 ## Chapter II. Overview
 
@@ -79,8 +73,6 @@ That is what the picker is for. Pi reads its configuration, its instructions (`A
 - **The picker ships inside Pier.** Pier installs it on the VM and keeps it up to date: the exe is all you need.
 - **Every prompt can be undone:** the project is saved before it (restore points).
 - **Everything is logged,** on the PC and on the VM, in two logs that read side by side.
-
----
 
 ## Chapter III. The picker
 
@@ -206,8 +198,6 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 #### B. The `watch` command
 
 Before, each Pier tab asked for its state again every 2.5 to 15 seconds, each time with a new SSH command starting Python. Now one command stays open for the whole connection. Pier tells it what it follows (the projects, a conversation's activity, a project's setup, its restore points, the conversations, the contents of Context, the log), and it sends a part **only when it changed**. It looks at the size and time of the files concerned first: a Pi started by Pier starting, finishing or changing a file shows within a second, and nothing travels when nothing moves. What leaves no such trace is caught by a slower round: a Pi started without Pier's extension (within 5 seconds), a file changed on disk by a command rather than by Pi's tools (within 10 seconds). While a Pi works, its activity is rebuilt at most every 1.5 seconds. A tab is followed only while it is shown. Pi's conversation files, which keep growing, are read again only from where the last reading stopped, and a part whose inputs keep moving (a working Pi) is rebuilt at most every few seconds. If the connection drops, Pier opens it again by itself.
-
----
 
 ## Chapter IV. Pier
 
@@ -541,8 +531,6 @@ The categories in a column on the left, the page on the right; the window opens 
 - **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](RELEASING.md).
 - **Connection:** where Pier connects (changed from the login screen).
 
----
-
 ## Chapter V. Security
 
 ### Part I. What is in place
@@ -676,7 +664,7 @@ A full review (security on the PC, security on the VM, stability, performance) w
 
 ### Part IV. Audit of 15 October 2026
 
-A second full review (security, CPU, memory, smoothness), in [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md). Fixed in pier-picker 4.15 to 4.20, and checked by the test suite on the VM:
+A second full review (security, CPU, memory, smoothness). Fixed in pier-picker 4.15 to 4.20, and checked by the test suite on the VM:
 
 - **Links planted by Pi:** in `~/.pi` and in the project, everything the picker reads or writes outside the sandbox (the Hindsight key, `AGENTS.md`, conversations, what each Pi says, copies, the × and Clear of Context) goes through file descriptors, without following links; FIFOs and devices are never read. Folder copies and Hand offs are unpacked out of Pi's reach, then moved in.
 - **The sandbox:** `/run` hidden (system sockets), a seccomp filter refusing `TIOCSTI` and `TIOCLINUX` (Pi cannot type into its terminal), git's jail limited to the project, and the network limited to an allowlist (`network_limit`).
@@ -684,8 +672,6 @@ A second full review (security, CPU, memory, smoothness), in [AUDIT-2026-10-15.m
 - **The command line:** what is typed into Pi, and the files of a restore, go on the command's input, not where other users of the VM could read them.
 - **Smoothness:** the Logs tab, dragging a divider, the Setup list and the searches no longer redraw everything; the watch rebuilds less when nothing moves; the picker is kept compiled.
 - **Found by the suite on the VM:** the link protections were silently off under Linux (a Python detail), and tmux never recorded which conversation each Pi held when two ran in one project. Both fixed.
-
----
 
 ## Chapter VI. Installation
 
@@ -747,8 +733,6 @@ Quit Pier before building again (also from the notification area): Windows does 
 
 **GitHub Actions** (`.github/workflows/build.yml`) runs the tests and builds Pier for Windows (installer and exe), macOS (universal `.dmg`) and Linux (`.deb`, AppImage) at every push, kept as the run's artifacts with their SHA-256. A tag `v…` (`git tag v0.3.0`, `git push --tags`) also prepares a draft GitHub release with them. Signing is optional: with the secrets listed at the top of the workflow (an Authenticode certificate for Windows, a Developer ID for macOS, notarized), the files are signed; without them they are not, and Windows and macOS warn on first start. The macOS and Linux versions are built there only, not yet tried by hand.
 
----
-
 ## Chapter VII. Day to day
 
 ### Part I. Without Pier, over SSH
@@ -771,8 +755,6 @@ Quit Pier before building again (also from the notification area): Windows does 
 
 The **Setup** tab, then **let Pi write it** for a first `AGENTS.md`. Adjust it afterwards; every following session benefits.
 
----
-
 ## Chapter VIII. Outages and recovery
 
 ### Part I. What happens, and what to do
@@ -784,8 +766,6 @@ The **Setup** tab, then **let Pi write it** for a first `AGENTS.md`. Adjust it a
 | **The connection** during a long task | As for the PC. | Nothing: Pier reconnects by itself while it has the password in memory. |
 
 Tip: work in a git repository and let Pi commit regularly. After an outage, you go back to the last clean state.
-
----
 
 ## Chapter IX. Files and locations
 
@@ -836,8 +816,6 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 | `client/ui/js/` | its code, one file per part: `core.js` (preferences, log, helpers), `vm.js` (the VM's state, received through `watch`), `connect.js`, `workspace.js` (the three zones and their tabs), `prefs.js`, `terminal.js`, `context.js`, `project.js` (Activity), `diff.js`, `conversations.js`, `setup.js`, `logs.js`, `palette.js`, `backend.js` (the Rust side), `mock.js` (a fake VM to try the interface in a browser), `main.js` |
 | `client/src-tauri/src/` | the Rust side: `ssh.rs` (connection, fingerprints, bastion), `term.rs` (terminals), `share.rs` (the shares' SFTP server), `copy.rs` (folder archives), `store.rs` (settings), `clip.rs` (clipboard), `journal.rs` (the log), `picker.rs` (the built-in picker and its installation), `watch.rs` (the `watch` command), `lib.rs` (everything else) |
 
----
-
 ## Chapter X. Tests
 
 ### Part I. The picker
@@ -878,8 +856,6 @@ GitHub Actions runs them at every push, then builds Pier for Windows, macOS and 
 
 It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection; then take back file by file, the clipboard only after a real key, the Logs tab under thousands of lines, dragging a divider, and a collapsed side unfolded for a look.
 
----
-
 ## Chapter XI. Known limits and what is left to check
 
 ### Part I. To check on the real VM
@@ -907,8 +883,6 @@ Tested only locally or in simulation so far (the sandbox, its network and git's 
 - **No notification while Pier is off.**
 - **Live shares need the PC on.** Copies and Hand off do not.
 - **Restore points** cover neither files ignored by git, nor what a Pi command did outside the project (a database, a package installed, a `git push`).
-
----
 
 ## Chapter XII. Ideas for later
 
