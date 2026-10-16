@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.17"
+VERSION = "4.18"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -376,7 +376,9 @@ def within(path, root):
 # following links: a link or a folder swapped in between a check and its use cannot
 # send it elsewhere. Not on Windows (the simulated tests), which has no dir_fd.
 DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-SAFE_FD = (os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd and os.replace in os.supports_dir_fd
+# os.replace takes src_dir_fd/dst_dir_fd wherever os.rename does (both are renameat),
+# but only os.rename is listed in supports_dir_fd.
+SAFE_FD = (os.open in os.supports_dir_fd and os.unlink in os.supports_dir_fd and os.rename in os.supports_dir_fd
            and os.scandir in os.supports_fd)
 
 

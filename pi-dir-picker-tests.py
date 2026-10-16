@@ -43,6 +43,27 @@ ROWS, COLS = 45, 100
 FAILURES = []
 
 
+def runnable_tmp():
+    """Where the suite makes its fake homes. Its fake pi must run from there: a hardened
+    VM often mounts /tmp noexec, and every test starting pi then failed with "pi not
+    found on PATH" (which() checks that a file can be run). Then a folder of the
+    user's home is used instead."""
+    tmp = tempfile.gettempdir()
+    try:
+        noexec = bool(os.statvfs(tmp).f_flag & os.ST_NOEXEC)
+    except (OSError, AttributeError):
+        noexec = False
+    if not noexec:
+        return
+    folder = Path.home() / ".cache" / "pi-dir-picker-tests"
+    folder.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(folder)
+    print(f"{tmp} is mounted noexec: the tests work in {folder}")
+
+
+runnable_tmp()
+
+
 def check(name, ok, detail=""):
     print(f"  {'ok  ' if ok else 'FAIL'} {name}" + ("" if ok else f"   {detail}"))
     if not ok:
@@ -491,7 +512,7 @@ def checkpoint_test():
     check("checkpoints: what changed since the first", [c["path"] for c in diff.get("changes", [])] == ["notes.txt"], diff)
     restored = api("restore", str(project), first)
     check("checkpoints: the file is back", (project / "notes.txt").read_text() == "original\n", restored)
-    check("checkpoints: the state before restoring is kept", api("checkpoints", str(project)).get("points", [{}])[0].get("reason") == "before-restore")
+    check("checkpoints: the state before restoring is kept", (api("checkpoints", str(project)).get("points") or [{}])[0].get("reason") == "before-restore")
     log = (home / ".local" / "state" / "pi-dir-picker" / "picker.log").read_text() if (home / ".local" / "state" / "pi-dir-picker" / "picker.log").exists() else ""
     check("log: pi start and exit, the restore", "pi.start" in log and "pi.exit" in log and "checkpoint.restore" in log, log[-600:])
     shutil.rmtree(work, ignore_errors=True)
