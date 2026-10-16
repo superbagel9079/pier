@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # subject: TUI directory picker browsing the home directory (non-hidden directories only) that launches Pi in the chosen directory, inside tmux so Pi survives a dropped SSH connection.
-# verified: v4.4, 2026-10-13: picker logic, restore points (real git), several Pis per project and the watch stream checked on Windows (python 3.14, curses stubbed, tmux faked); the tmux suite (pier-picker-tests.py) still has to be run on the Debian host.
+# verified: v4.20, 2026-10-16: the tmux suite (pier-picker-tests.py) passes entirely on the Debian host, sandbox, network and link protections included.
 # tech: python, curses, git, tmux, pi
 #
 # Standard library only.

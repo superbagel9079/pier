@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # subject: tmux-driven test suite for pier-picker.py: proves listing, navigation, creation, filtering, search, clone, rename, sort, launching (direct and in tmux) and quit on a real terminal.
-# verified: v3, 2026-10-11: not yet run; run it on the Debian host before relying on it.
+# verified: v4.20, 2026-10-16: all passed on the Debian host (/tmp noexec there: see runnable_tmp).
 # tech: python, tmux, curses, git, pi
 #
 # Run: python3 -B pier-picker-tests.py

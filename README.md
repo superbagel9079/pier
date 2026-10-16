@@ -1,4 +1,4 @@
-# pi-tui: the picker and Pier
+# Pier and its picker
 
 Two tools for working with **Pi**, a command-line coding agent, installed on a remote Linux VM and used from a laptop.
 
@@ -209,7 +209,7 @@ The picker used to be called **pi-dir-picker**. Its folders on the VM (`~/.confi
 
 Pier used to be called **devbox** (the name was already taken by a well-known tool). Whatever holds data kept the old name, so that nothing is lost: the settings and logs folder (`app.devbox.client`), the interface's preferences, and on the VM the restore points and the history of the instructions (`.pi/devbox-history`).
 
-A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 6.5 MB.
+A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 7 MB.
 
 ### Part I. Connecting
 
@@ -255,6 +255,7 @@ After that, any tab can go to any zone:
 - **The width of the sides** is set by dragging the divider; it is kept for each side. A double click on the divider restores the usual width.
 - **Tabs share the bar:** their names shorten ("…", the full name on hover) before the bar scrolls. The active tab keeps its whole name, and only it and the one under the pointer show ×. Everything else (rename, move, collapse, close) is in the right-click menu.
 - **The sides collapse** with the ‹/› button or a tab's right-click menu (Collapse this side). A click on a tab only shows it; it never collapses the side.
+- **On a collapsed side, a click on a tab unfolds it for a look.** It folds back once you are back on the terminals: as soon as the pointer is over them when the focus follows the mouse (Settings > Terminals), at your next click on them otherwise. **📌** (in place of ‹/› while it is unfolded), or Keep this side open in the tab's right-click menu, keeps it open instead. The layout saved stays collapsed until then.
 - **Right-clicking a tab** offers:
   - **Rename** (the name is kept);
   - **Move** to the left, the centre or the right;
@@ -597,8 +598,19 @@ A full review (security on the PC, security on the VM, stability, performance) w
 #### B. Still known
 
 - **`~/.pi` shared by every project** (see above).
-- **One-off calls to the VM** (opening a folder, a diff) start Python each time. They could go through the watch.
+- **One-off calls to the VM** (opening a folder, a diff) start Python each time, now kept compiled (about 60 to 100 ms less each). They could go through the watch.
 - **The order of very fast keystrokes** is guaranteed only by the order of the calls. A sequence number would make it certain.
+
+### Part IV. Audit of 15 October 2026
+
+A second full review (security, CPU, memory, smoothness), in [AUDIT-2026-10-15.md](AUDIT-2026-10-15.md). Fixed in pier-picker 4.15 to 4.20, and checked by the test suite on the VM:
+
+- **Links planted by Pi:** in `~/.pi` and in the project, everything the picker reads or writes outside the sandbox (the Hindsight key, `AGENTS.md`, conversations, what each Pi says, copies, the × and Clear of Context) goes through file descriptors, without following links; FIFOs and devices are never read. Folder copies and Hand offs are unpacked out of Pi's reach, then moved in.
+- **The sandbox:** `/run` hidden (system sockets), a seccomp filter refusing `TIOCSTI` and `TIOCLINUX` (Pi cannot type into its terminal), git's jail limited to the project, and the network limited to an allowlist (`network_limit`).
+- **The clipboard (OSC 52):** a program on the VM fills it only right after a real key or click, once per key or click; the terminal's automatic replies no longer count as a key.
+- **The command line:** what is typed into Pi, and the files of a restore, go on the command's input, not where other users of the VM could read them.
+- **Smoothness:** the Logs tab, dragging a divider, the Setup list and the searches no longer redraw everything; the watch rebuilds less when nothing moves; the picker is kept compiled.
+- **Found by the suite on the VM:** the link protections were silently off under Linux (a Python detail), and tmux never recorded which conversation each Pi held when two ran in one project. Both fixed.
 
 ---
 
@@ -753,7 +765,14 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 ### Part I. The picker
 
-Several hundred checks of the logic and the API (several Pis per project and `watch`, restore points with real git, the log, conversations, labels, versions, the audit's protections), run on Windows with a simulated curses module. Plus the `pier-picker-tests.py` suite, to run **on the VM**: it drives the picker in a real tmux terminal and checks the real bubblewrap sandbox, restore points around a real `--exec-pi`, two Pis in one project with real tmux, and what Setup lists.
+The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 16 October 2026, picker 4.20): it drives the picker in a real tmux terminal, and checks with the real programs:
+
+- the screen and its keys, starting Pi (directly and in tmux), the Hindsight key, two Pis in one project and the API that lists them;
+- the real bubblewrap sandbox: what Pi sees, its own `/dev`, `/run` hidden, the TIOCSTI filter, and its network (no direct connection, the proxy refusing what is not allowed);
+- the protections against links and FIFOs Pi could plant (Hindsight key, Setup, removals, writes, the git jail), folder copies;
+- restore points around a real `--exec-pi`, the log, what Setup lists, and moving the folders of the old name (pi-dir-picker).
+
+When `/tmp` is mounted `noexec` (a hardened VM), the suite works in `~/.cache/pier-picker-tests` instead: its fake Pi must be able to run.
 
 ```powershell
 scp C:\Users\leo\Downloads\pier\pier-picker.py C:\Users\leo\Downloads\pier\pier-picker-tests.py pi-sh:pi-tui/
@@ -767,17 +786,20 @@ If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -
 
 ### Part II. Pier
 
-44 Rust tests (`cargo test`), including:
+47 Rust tests (`cargo test`), including:
 
 - Pi tabs in tmux control mode against a local SSH server (decoding `%output`, keys as raw bytes, sizes, end, Pi unable to fake Pier's messages, caps);
 - `watch` against a local SSH server (lines cut across two packets, round trip, end);
 - the connection against a real local SSH server: first contact, wrong password, changed fingerprint, bastion, a server with old algorithms refused (without the password leaving);
 - shares end to end (the simulated VM can neither leave the folder nor write when read-only), path confinement, archives, filtering Pi's arguments and update targets, quoting for any login shell;
-- the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused).
+- the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused);
+- take back file by file: comparing by content, names from the VM that Windows would read otherwise, bringing files back with a backup, a path climbing out refused.
+
+GitHub Actions runs them at every push, then builds Pier for Windows, macOS and Linux (see [Pier](#part-iii-pier)).
 
 ### Part III. The interface
 
-It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection.
+It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection; then take back file by file, the clipboard only after a real key, the Logs tab under thousands of lines, dragging a divider, and a collapsed side unfolded for a look.
 
 ---
 
@@ -785,17 +807,18 @@ It was checked in a browser with a fake backend (which also simulates `watch` an
 
 ### Part I. To check on the real VM
 
-Tested only locally or in simulation so far:
-- the real bubblewrap sandbox (its own `/dev`, `/run` hidden, the TIOCSTI filter), and access to shared folders (sshfs) from it;
-- git run in its own sandbox for Activity and diffs;
-- really unmounting sshfs during a Hand off, while Pi works;
+Tested only locally or in simulation so far (the sandbox, its network and git's jail are now checked by the suite on the VM):
+- access to shared folders (sshfs) from the sandbox;
+- the network allowlist with the real Pi: Node 24 or newer, its providers (Bifrost, OpenRouter, Claude Max…), Hindsight, `pi update` through the proxy;
+- really unmounting sshfs during a Hand off, while Pi works, and take back file by file on a real copy;
 - really resuming a session with `--continue` and `--session`;
 - Ctrl+V of files copied in Explorer, and Windows notifications;
 - installing and updating the picker by Pier on the real VM;
 - restore points during a real Pi session (in particular the delay between a prompt arriving and Pi's first change);
 - the tracking extension (`~/.pi/pier/pier-session.ts`) with the real Pi 1.x, in the sandbox: the conversation followed after `/new`, `/resume`, `/fork`, and "working" going back down at the end;
 - `pi update` started from Setup, and asking npm for the latest versions from the VM;
-- silent reconnection after the PC sleeps.
+- silent reconnection after the PC sleeps;
+- the macOS and Linux builds of GitHub Actions, never started by hand.
 
 ### Part II. Limits
 

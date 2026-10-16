@@ -62,8 +62,9 @@ const workspace = (() => {
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);
       const collapse = $(".collapse", dock.el);
-      collapse.textContent = (name === "right") === dock.collapsed ? "‹" : "›";
-      collapse.title = dock.collapsed ? "Expand" : "Collapse";
+      collapse.textContent = dock.peek ? "📌" : (name === "right") === dock.collapsed ? "‹" : "›";
+      collapse.title = dock.peek ? "Keep this side open (otherwise it folds back when you go back to the terminals)"
+        : dock.collapsed ? "Expand" : "Collapse";
     }
     const bar = $(".tabs", dock.el);
     bar.innerHTML = "";
@@ -117,7 +118,8 @@ const workspace = (() => {
     const dock = docks[tab.dock];
     const items = [["Rename…", () => rename(tab)], null];
     for (const name of DOCKS) items.push([`Move to the ${DOCK_NAMES[name]}`, () => move(tab, name), tab.dock === name]);
-    if (dock.side) items.push(["Collapse this side", () => { dock.collapsed = true; render(tab.dock); save(); }, dock.collapsed]);
+    if (dock.side && dock.peek) items.push(["Keep this side open", () => keepOpen(tab.dock)]);
+    if (dock.side) items.push(["Collapse this side", () => { dock.peek = false; dock.collapsed = true; render(tab.dock); save(); }, dock.collapsed]);
     if (KINDS[tab.kind].terminal) {
       items.push(null,
         [`New ${tab.kind} terminal`, () => add(tab.kind, tab.dock)],
@@ -290,10 +292,32 @@ const workspace = (() => {
   }
 
   /** A click on a tab shows it. Collapsing a side is its own button (‹ ›) or the
-   *  tab's right-click menu: a click meant to look at a tab never hides the panel. */
+   *  tab's right-click menu: a click meant to look at a tab never hides the panel.
+   *  On a collapsed side, the click unfolds it for a look ("peek"): it folds back once
+   *  you are back on the terminals (see foldPeeks), unless you keep it open (📌). */
   function clickTab(tab) {
+    const dock = docks[tab.dock];
+    if (dock.side && dock.collapsed) dock.peek = true;
     show(tab);
     save();
+  }
+
+  function keepOpen(name) {
+    docks[name].peek = false;
+    render(name);
+    save();
+  }
+
+  /** The sides unfolded for a look, folded again. */
+  function foldPeeks() {
+    for (const name of DOCKS) {
+      const dock = docks[name];
+      if (!dock.peek) continue;
+      dock.peek = false;
+      dock.collapsed = true;
+      render(name);
+      save();
+    }
   }
 
 
@@ -387,11 +411,20 @@ const workspace = (() => {
 
   // --- side controls ---
 
+  // Back on the terminals, a side unfolded for a look folds again: as soon as the
+  // pointer is there when the focus follows the mouse, at the next click otherwise.
+  const center = docks.center.el;
+  center.addEventListener("pointerenter", (e) => {
+    if (prefs.focusFollowsMouse && e.buttons === 0) foldPeeks();
+  });
+  center.addEventListener("pointerdown", () => foldPeeks(), true);
+
   for (const name of DOCKS) {
     const dock = docks[name];
     $(".add", dock.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));
     if (!dock.side) continue;
     $(".collapse", dock.el).addEventListener("click", () => {
+      if (dock.peek) { keepOpen(name); return; } // 📌: the look becomes the layout
       dock.collapsed = !dock.collapsed;
       render(name);
       if (!dock.collapsed) dock.active?.onShow?.();
@@ -444,7 +477,7 @@ const workspace = (() => {
     const saved = {};
     for (const name of DOCKS) {
       const dock = docks[name];
-      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
+      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed || Boolean(dock.peek), width: dock.width };
     }
     // Names given by the user, for the tabs that come back at the next connection.
     saved.knowsSetup = true;
