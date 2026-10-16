@@ -80,7 +80,18 @@ function makeTerminal(tab, kind) {
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
   tab.refit = () => { if (visible()) { try { fit.fit(); } catch { /* not laid out yet */ } } };
-  tab.applyTheme = () => { term.options.theme = terminalTheme(); };
+  // The padding around the text, and the leftover below the last row, take the
+  // terminal's own background, as in kitty or foot: no band of another colour.
+  tab.applyTheme = () => {
+    const theme = terminalTheme();
+    term.options.theme = theme;
+    tab.pane.style.backgroundColor = theme.background;
+    term.element.style.backgroundColor = theme.background;
+    // The scrolling layer covers the padding too, and xterm.css paints it black.
+    const viewport = term.element.querySelector(".xterm-viewport");
+    if (viewport) viewport.style.backgroundColor = theme.background;
+  };
+  tab.applyTheme();
   tab.applyFont = () => {
     term.options.fontFamily = termFontFamily();
     term.options.fontSize = prefs.fontSize;
