@@ -560,12 +560,17 @@ details label { margin-top: 8px; }
 .resource-items { list-style: none; margin: 0; padding: 0; }
 .resource-items li { display: flex; align-items: center; gap: 8px; padding: 3px 0; border-top: 1px solid var(--line); min-height: 26px; }
 .resource-items li > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
-.resource-items li > .name { flex: 0 1 auto; min-width: 0; }
-.resource-items li > .dim { flex: 1 1 auto; min-width: 0; text-align: right; }
+/* The name is what is read: it keeps its room, the source or version gives way first. */
+.resource-items li > .name, .resource-items .line > .name { flex: 0 1 auto; min-width: 0; max-width: 75%; overflow-wrap: anywhere; }
+.resource-items li > .dim, .resource-items .line > .dim { flex: 1 1 0; min-width: 0; text-align: right; }
+.resource-items li.two-lines { display: block; padding: 4px 0; }
+.resource-items .line { display: flex; align-items: center; gap: 8px; }
+.resource-items .line > .link { flex: 0 0 auto; }
+.resource-items .desc { text-align: left; margin-top: 2px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .resource-items li.off > .name { color: var(--dim); }
 .resource-items li > .more { visibility: hidden; padding: 0 4px; }
 .resource-items li:hover > .more, .resource-items li > .more:focus-visible { visibility: visible; }
-.gallery li > .dim { text-align: left; }
+.gallery .line > .dim { text-align: left; }
 .dialog.wide { width: min(860px, 100%); }
 .dialog textarea.editor { width: 100%; }
 .dialog .grid.fields { grid-template-columns: auto minmax(0, 1fr); }

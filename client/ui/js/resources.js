@@ -290,10 +290,13 @@ function makePackageTools(box, currentProject, onDone) {
       const there = installed.has(pkg.source);
       const action = el("button", { className: "link", textContent: there ? "installed" : "install", disabled: there });
       action.addEventListener("click", () => installDialog(currentProject, onDone, pkg.source));
-      return el("li", { title: pkg.description || "" },
-        el("span", { className: "name ellipsis", textContent: pkg.name }),
-        el("span", { className: "dim small ellipsis", textContent: [pkg.version && `v${pkg.version}`, pkg.publisher, pkg.description].filter(Boolean).join(" · ") }),
-        action);
+      // The name in full, then its version and author; the description on a line of its own.
+      return el("li", { className: "two-lines", title: pkg.description || "" },
+        el("div", { className: "line" },
+          el("span", { className: "name", textContent: pkg.name }),
+          el("span", { className: "dim small ellipsis", textContent: [pkg.version && `v${pkg.version}`, pkg.publisher].filter(Boolean).join(" · ") }),
+          action),
+        pkg.description ? el("div", { className: "desc dim small", textContent: pkg.description }) : null);
     }));
     if (!answer.results.length) results.append(el("li", { className: "dim small", textContent: "Nothing found." }));
   }

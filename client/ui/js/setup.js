@@ -332,7 +332,7 @@ function makeSetup(tab) {
       );
       list.append(li);
     }
-    if (!data.startup.length) list.append(el("li", { className: "dim small", textContent: "No instructions file anywhere: Pi starts with its defaults only." }));
+    if (!data.startup.length) list.append(el("li", { className: "dim small note", textContent: "No instructions file anywhere: Pi starts with its defaults only." }));
     const trust = $$(".trust");
     trust.textContent = data.trusted === true
       ? "This project is trusted: Pi also reads its .pi/ settings and system prompt files."
