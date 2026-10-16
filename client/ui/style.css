@@ -359,7 +359,6 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .resource-items li { display: flex; align-items: center; gap: var(--s2); padding: 5px var(--s2); margin: 0 calc(-1 * var(--s2)); min-height: 28px; border-top: 1px solid var(--line); }
 .resource-items li:first-child { border-top: none; }
 .resource-items li:hover { background: var(--raise); }
-.resource-items li:hover .link { color: var(--fg); }
 .resource-items li > input[type="checkbox"] { flex: 0 0 auto; margin: 0; }
 /* The name is what is read: it keeps its room, the source or version gives way first. */
 .resource-items li > .name, .resource-items .line > .name { flex: 0 1 auto; min-width: 0; max-width: 75%; overflow-wrap: anywhere; font-weight: 600; }
@@ -584,7 +583,6 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .sessions .meta .title.fresh { font-style: italic; color: var(--dim); }
 .sessions .meta .facts { line-height: 1.4; margin-top: 1px; font-size: var(--t-small); }
 .sessions .row-actions { display: flex; gap: var(--s2); flex: 0 0 auto; line-height: 1.35; }
-.sessions li:hover .link { color: var(--fg); }
 .sessions li.running { box-shadow: inset 2px 0 0 var(--fg); padding-left: 6px; }
 .sessions li.archived .ellipsis, .sessions li.archived .title { color: var(--dim); }
 .sessions li.category, .sessions li.list-tools, .sessions li.more { align-items: center; }
