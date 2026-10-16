@@ -2,6 +2,7 @@
 name = "pier"
 version = "0.2.0"
 description = "Desktop companion for a development VM: images into Pi, over SSH"
+license = "MIT"
 edition = "2021"
 rust-version = "1.89"
 

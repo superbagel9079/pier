@@ -915,3 +915,7 @@ Tested only locally or in simulation so far (the sandbox, its network and git's 
 - **Signing certificates** for the GitHub Actions builds (the workflow is ready for them).
 - **Several VMs** saved, chosen at login.
 - **A disposable "clean room"** where Pi can try things without touching the real project or system.
+
+## License
+
+MIT: see [LICENSE](LICENSE).
