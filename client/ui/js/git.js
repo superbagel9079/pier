@@ -3,8 +3,9 @@
 // ============================================================================
 // A project connected to a forge (GitHub, GitLab, Gitea / Forgejo): Pi pushes its pi/…
 // branches and opens pull requests by itself, through the picker, which holds the
-// token. Merging, and creating a repository, wait for the user here. See "git forges"
-// in the picker.
+// token. What Pi may do alone is chosen per repository (work locally, ask to merge, merge
+// once the checks pass); creating a repository always waits for the user here. See
+// "git forges" in the picker.
 // ============================================================================
 
 const FORGE_LABELS = { github: "GitHub", gitlab: "GitLab", gitea: "Gitea / Forgejo" };
@@ -13,16 +14,22 @@ const FORGE_HINTS = {
   gitlab: "A personal access token with the api scope (GitLab > Preferences > Access tokens). A project access token limits it to one project.",
   gitea: "An access token with read and write on repository (Settings > Applications).",
 };
+const REPO_MODES = {
+  local: ["Work locally", "Pi commits and branches in the project; nothing is pushed."],
+  ask: ["Push, ask to merge", "Pi pushes its pi/… branches and opens pull requests; a merge waits for your approval here."],
+  auto: ["Push and merge", "Pi pushes, opens pull requests and merges them itself once their checks have passed."],
+};
+const MERGE_LABELS = { merge: "Merge commit", squash: "Squash", rebase: "Rebase" };
 const CHECK_MARKS = { success: ["✓", "checks passed"], failure: ["✗", "checks failed"], pending: ["…", "checks running"], none: ["", "no checks"] };
 
 function makeGitManager(box, currentProject) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
   const body = el("div");
-  const refresh = el("button", { className: "link", textContent: "refresh", title: "Ask the forge again" });
+  const refresh = el("button", { className: "link", textContent: "refresh", title: "Check the repository and its pull requests again" });
   refresh.addEventListener("click", () => load());
-  box.replaceChildren(el("div", { className: "toolbar resource-bar" }, el("span", { className: "dim small", textContent: "Pi pushes pi/… branches and opens pull requests; merging waits for you." }), refresh),
-    error, notice, body);
+  const bar = el("div", { className: "toolbar resource-bar" }, el("span", { className: "dim small", textContent: "Pi works with the project's repository as you choose below." }), refresh);
+  box.replaceChildren(bar, error, notice, body);
   const say = (text) => { notice.hidden = !text; notice.textContent = text || ""; };
   let data = null;
 
@@ -57,6 +64,7 @@ function makeGitManager(box, currentProject) {
   function render() {
     body.innerHTML = "";
     if (!data) return;
+    bar.hidden = !data.link;
     // What Pi asks, first: it waits for an answer.
     if (data.approvals.length) {
       body.append(el("h2", { textContent: "Waiting for you" }));
@@ -65,21 +73,35 @@ function makeGitManager(box, currentProject) {
       body.append(ul);
     }
 
+    // Nothing connected yet: only the choice of where the code lives.
+    if (!data.forges.length) {
+      body.append(el("p", { className: "dim small", textContent: "Let Pi push its branches and open pull requests where your code lives:" }),
+        el("div", { className: "toolbar" }, ...Object.entries(FORGE_LABELS).map(([kind, label]) => {
+          const b = el("button", { className: "secondary", textContent: `${label}…` });
+          b.addEventListener("click", () => accountDialog(kind));
+          return b;
+        })),
+        el("p", { className: "hint", textContent: "Pier asks for a token, which stays on the VM: Pi never sees it." }));
+      worktrees();
+      return;
+    }
+
     body.append(el("h2", { textContent: "Repository" }));
     const repo = el("ul", { className: "resource-items" });
     if (data.link) {
       const forge = data.forges.find((f) => f.id === data.link.forge);
-      repo.append(line(data.link.repo, `${FORGE_LABELS[forge?.kind] || "forge"} · default branch ${data.link.default_branch}`,
+      repo.append(line(data.link.repo, `${FORGE_LABELS[forge?.kind] || "git host"} · default branch ${data.link.default_branch}`,
         `${forge?.url || ""}/${data.link.repo}`, action("disconnect", "Pi can no longer push or open pull requests for this project (nothing is deleted)", async () => {
-          if (!(await ask(`Disconnect this project from ${data.link.repo}? Nothing is deleted, on the forge or here.`))) return;
+          if (!(await ask(`Disconnect this project from ${data.link.repo}? Nothing is deleted, on ${FORGE_LABELS[forge?.kind] || "the git host"} or here.`))) return;
           try { await backend.repoUnlink(currentProject()); load(); } catch (e) { showError(error, String(e)); }
         })));
       if (data.branch) repo.append(line(`here: ${data.branch}`, data.local ? "local branch" : "", "The branch checked out in the project"));
     } else {
-      repo.append(el("li", { className: "dim small note", textContent: data.forges.length ? "Not connected: connect a repository, or create one." : "Connect a forge account first, below." }));
+      repo.append(el("li", { className: "dim small note", textContent: "Not connected yet: connect a repository, or create one." }));
     }
     body.append(repo);
-    if (!data.link && data.forges.length) {
+    if (data.link) body.append(settings(data.link));
+    if (!data.link) {
       const connect = el("button", { className: "secondary", textContent: "Connect a repository…" });
       connect.addEventListener("click", () => linkDialog());
       const create = el("button", { className: "secondary", textContent: "Create a repository…" });
@@ -95,27 +117,61 @@ function makeGitManager(box, currentProject) {
       body.append(ul);
     }
 
-    if (data.worktrees?.length) {
-      body.append(el("h2", { textContent: `Pis' worktrees · ${data.worktrees.length}` }));
-      const ul = el("ul", { className: "resource-items" });
-      for (const w of data.worktrees) ul.append(worktreeRow(w));
-      body.append(ul, el("p", { className: "hint", textContent: "A Pi beside another in this project works in a worktree of its own, on its branch: an untouched one goes when its Pi ends, one with work stays here until you remove it. Its branch stays either way." }));
-    }
+    worktrees();
 
-    body.append(el("h2", { textContent: "Forge accounts" }));
+    body.append(el("h2", { textContent: "Accounts" }));
     const accounts = el("ul", { className: "resource-items" });
     for (const f of data.forges) {
       accounts.append(line(`${f.login} · ${FORGE_LABELS[f.kind]}`, f.url, f.id, action("×", "Forget this account (its token is deleted on the VM)", async () => {
-        if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on the forge too.`))) return;
+        if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on ${FORGE_LABELS[f.kind]} too.`))) return;
         try { await backend.forgeRemove(f.id); load(); } catch (e) { showError(error, String(e)); }
       })));
     }
-    if (!data.forges.length) accounts.append(el("li", { className: "dim small note", textContent: "None yet." }));
     body.append(accounts);
-    const addAccount = el("button", { className: "secondary", textContent: "Connect an account…" });
+    const addAccount = el("button", { className: "secondary", textContent: "Add an account…" });
     addAccount.addEventListener("click", () => accountDialog());
     body.append(el("div", { className: "toolbar" }, addAccount),
-      el("p", { className: "hint", textContent: "The token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merging and creating a repository only once you approve them here." }));
+      el("p", { className: "hint", textContent: "The token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merges as chosen above; creating a repository only once you approve it here." }));
+  }
+
+  // Local, so shown whether a repository is connected or not.
+  function worktrees() {
+    if (!data.worktrees?.length) return;
+    body.append(el("h2", { textContent: `Pis' worktrees · ${data.worktrees.length}` }));
+    const ul = el("ul", { className: "resource-items" });
+    for (const w of data.worktrees) ul.append(worktreeRow(w));
+    body.append(ul, el("p", { className: "hint", textContent: "A Pi beside another in this project works in a worktree of its own, on its branch: an untouched one goes when its Pi ends, one with work stays here until you remove it. Its branch stays either way." }));
+  }
+
+  // What Pi may do alone, and how merges are made: saved as soon as it is chosen.
+  function settings(link) {
+    const mode = el("select", { id: "repo-mode" });
+    for (const [value, [label]] of Object.entries(REPO_MODES)) mode.add(new Option(label, value));
+    const method = el("select", { id: "repo-merge" });
+    for (const [value, label] of Object.entries(MERGE_LABELS)) method.add(new Option(label, value));
+    mode.value = link.mode || "ask";
+    method.value = link.merge_method || "merge";
+    const hint = el("p", { className: "hint" });
+    const show = () => { hint.textContent = REPO_MODES[mode.value][1]; };
+    const save = async () => {
+      show();
+      try {
+        Object.assign(link, await backend.repoSettings(currentProject(), mode.value, method.value));
+      } catch (e) {
+        showError(error, String(e));
+        mode.value = link.mode || "ask";
+        method.value = link.merge_method || "merge";
+        show();
+      }
+    };
+    mode.addEventListener("change", save);
+    method.addEventListener("change", save);
+    show();
+    return el("div", {},
+      el("div", { className: "grid" },
+        el("label", { htmlFor: "repo-mode", textContent: "Pi may" }), mode,
+        el("label", { htmlFor: "repo-merge", textContent: "Merges" }), method),
+      hint);
   }
 
   function worktreeRow(w) {
@@ -145,12 +201,14 @@ function makeGitManager(box, currentProject) {
 
   function prRow(pr) {
     const [mark, label] = CHECK_MARKS[pr.checks || "none"] || CHECK_MARKS.none;
-    const merge = el("button", { className: "link", textContent: "merge ▾", title: "Merge it on the forge" });
-    merge.addEventListener("click", () => showMenu(merge, [
-      ["Merge", () => doMerge(pr, "merge")],
-      ["Squash and merge", () => doMerge(pr, "squash")],
-      ["Rebase and merge", () => doMerge(pr, "rebase")],
-    ]));
+    const merge = el("button", { className: "link", textContent: "merge ▾", title: "Merge it" });
+    // The repository's method first.
+    merge.addEventListener("click", () => {
+      const first = data.link?.merge_method || "merge";
+      const methods = [["merge", "Merge"], ["squash", "Squash and merge"], ["rebase", "Rebase and merge"]]
+        .sort((a, b) => (b[0] === first) - (a[0] === first));
+      showMenu(merge, methods.map(([m, label]) => [label, () => doMerge(pr, m)]));
+    });
     const copy = action("copy link", "Its address, to open in a browser", async () => {
       try { await backend.copyText(pr.url || ""); say(`Copied: ${pr.url}`); } catch (e) { showError(error, String(e)); }
     });
@@ -167,21 +225,24 @@ function makeGitManager(box, currentProject) {
     } catch (e) { showError(error, String(e)); }
   }
 
-  function accountDialog() {
+  function accountDialog(chosen = "github") {
     const kind = el("select");
     for (const [value, label] of Object.entries(FORGE_LABELS)) kind.add(new Option(label, value));
-    const url = el("input", { value: "https://github.com", spellcheck: false });
+    kind.value = chosen;
+    const url = el("input", { spellcheck: false });
     const token = el("input", { type: "password", placeholder: "the token", autocomplete: "off" });
-    const hint = el("p", { className: "hint", textContent: FORGE_HINTS.github });
-    kind.addEventListener("change", () => {
-      url.value = kind.value === "github" ? "https://github.com" : kind.value === "gitlab" ? "https://gitlab.com" : "https://";
-      hint.textContent = FORGE_HINTS[kind.value];
-    });
+    const hint = el("p", { className: "hint" });
     const problem = dialogError();
     const go = el("button", { textContent: "Connect" });
-    const dialog = resourceDialog("Connect a forge account", [
-      el("div", { className: "grid fields" }, el("label", { textContent: "Forge" }), kind, el("label", { textContent: "Address" }), url,
+    const dialog = resourceDialog("Connect an account", [
+      el("div", { className: "grid fields" }, el("label", { textContent: "Service" }), kind, el("label", { textContent: "Address" }), url,
         el("label", { textContent: "Token" }), token), hint, problem], [go]);
+    const chose = () => {
+      url.value = kind.value === "github" ? "https://github.com" : kind.value === "gitlab" ? "https://gitlab.com" : "https://";
+      hint.textContent = FORGE_HINTS[kind.value];
+    };
+    kind.addEventListener("change", chose);
+    chose();
     const connect = async () => {
       go.disabled = true;
       try {

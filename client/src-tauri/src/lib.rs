@@ -29,6 +29,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex as AsyncMutex;
 
 use journal::Level;
@@ -36,7 +37,7 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 15;
+const API_VERSION: u64 = 16;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
@@ -1065,6 +1066,15 @@ async fn repo_create(app: AppHandle, state: State<'_, AppState>, project: String
     api(&app, &state, &["repo-create", &project, &forge, &name, if private { "1" } else { "0" }, &description], &[]).await
 }
 
+/// What Pi may do alone with the project's repository (local, ask, auto), and how it merges.
+#[tauri::command]
+async fn repo_settings(app: AppHandle, state: State<'_, AppState>, project: String, mode: String, method: String) -> Result<Value, String> {
+    if !["local", "ask", "auto"].contains(&mode.as_str()) || !["merge", "squash", "rebase"].contains(&method.as_str()) {
+        return Err(format!("unknown repository setting: {mode}, {method}"));
+    }
+    api(&app, &state, &["repo-settings", &project, &mode, &method], &[]).await
+}
+
 /// Merges a pull request, from Pier.
 #[tauri::command]
 async fn pr_merge(app: AppHandle, state: State<'_, AppState>, project: String, number: u64, method: String) -> Result<Value, String> {
@@ -1591,6 +1601,51 @@ fn set_tooltip(app: &AppHandle, text: &str) {
     }
 }
 
+// --- updating Pier itself -------------------------------------------------------------
+//
+// Pier reads latest.json in the project's latest GitHub release (tauri.conf.json, plugins >
+// updater). An update is installed only if it was signed with the project's key, whose
+// public half is in tauri.conf.json: a file changed on the way, or from elsewhere, is
+// refused.
+
+/// Whether a newer Pier is out: {current, version?, notes?, date?}.
+#[tauri::command]
+async fn update_check(app: AppHandle) -> Result<Value, String> {
+    let current = app.package_info().version.to_string();
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            log_info!("update.available", current = current, version = update.version);
+            Ok(json!({ "current": current, "version": update.version, "notes": update.body, "date": update.date.map(|d| d.to_string()) }))
+        }
+        Ok(None) => Ok(json!({ "current": current })),
+        Err(e) => {
+            log_warn!("update.check-failed", err = e);
+            Err(format!("could not check for a new Pier: {e}"))
+        }
+    }
+}
+
+/// Downloads the update, checks its signature, installs it, and starts the new Pier.
+/// The download's progress goes to the window as "update-progress" ({done, total}).
+#[tauri::command]
+async fn update_install(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?
+        .ok_or("Pier is already up to date")?;
+    log_info!("update.install", version = update.version);
+    let progress = app.clone();
+    let mut done = 0usize;
+    let bytes = update.download(move |chunk, total| {
+        done += chunk;
+        let _ = progress.emit("update-progress", json!({ "done": done, "total": total }));
+    }, || {}).await.map_err(|e| format!("the download failed: {e}"))?;
+    // As on Quit: the shares are unmounted first, so the VM keeps no dead mount.
+    stop_all_shares(&app, &state).await;
+    update.install(bytes).map_err(|e| format!("the installation failed: {e}"))?;
+    log_info!("update.installed", version = update.version);
+    app.restart();
+}
+
 pub fn run() {
     let paste = paste_shortcut();
     tauri::Builder::default()
@@ -1602,6 +1657,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
@@ -1721,7 +1777,10 @@ pub fn run() {
             repo_link,
             repo_unlink,
             repo_create,
+            repo_settings,
             pr_merge,
+            update_check,
+            update_install,
             approval_answer,
             worktree_remove,
             checkpoint_create,

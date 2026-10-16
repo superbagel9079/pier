@@ -4,6 +4,7 @@
 function mockBackend() {
   let saved = null;
   let mockClipboard = "";
+  const updateListeners = [];
   let trusted = false;
   let pickerVersion = "3.8"; // the demo's VM has an old picker: Pier updates it
   const logLines = [];
@@ -57,7 +58,7 @@ function mockBackend() {
   let kept = [];
   let handed = [];
   let mockForges = [{ id: "github:github.com:leo", kind: "github", url: "https://github.com", login: "leo" }];
-  let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/" };
+  let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" };
   let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
@@ -312,9 +313,10 @@ function mockBackend() {
       return forge;
     },
     forgeRemove: async (id) => { mockForges = mockForges.filter((f) => f.id !== id); return { removed: id }; },
-    repoLink: async (project, forge, repo) => { mockLink = { forge, repo, default_branch: "main", prefix: "pi/" }; return mockLink; },
+    repoLink: async (project, forge, repo) => { mockLink = { forge, repo, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
+    repoSettings: async (project, mode, method) => { Object.assign(mockLink, { mode, merge_method: method }); return mockLink; },
     repoUnlink: async () => { mockLink = null; return {}; },
-    repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/" }; return mockLink; },
+    repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
     prMerge: async (project, number) => ({ merged: number }),
     approvalAnswer: async (id, approve) => { mockApprovals = mockApprovals.filter((a) => a.id !== id); return { id, state: approve ? "done" : "refused" }; },
     skillDelete: async (scope, project, name) => {
@@ -358,6 +360,16 @@ function mockBackend() {
     pickFiles: async () => ["C:\\Users\\leo\\Documents\\notes.pdf"],
     onDragDrop() {},
     onClipboardSent() {},
+    updateCheck: async () => ({ current: "0.2.0", version: "0.3.0", date: "2026-10-20 09:00:00 +00:00",
+      notes: ["- Per-repository Git settings", "- A font for Pier in Settings", "- 13 more themes"].join("\n") }),
+    async updateInstall() {
+      for (let done = 0; done <= 8; done++) {
+        for (const handler of updateListeners) handler({ done: done * 1_200_000, total: 9_600_000 });
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      throw "the demo cannot install anything";
+    },
+    onUpdateProgress(handler) { updateListeners.push(handler); },
     onConnectionLost() {},
     onConnectionRetrying() {},
     onConnectionBack() {},

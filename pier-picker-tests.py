@@ -564,7 +564,8 @@ class Forge(BaseHTTPRequestHandler):
         pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x"}, "base": {"ref": body.get("base")}}
         prs.append(pr); self.reply(201, pr)
     def do_PUT(self):
-        calls.append(("PUT", self.path, None)); self.reply(200, {"merged": True})
+        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        calls.append(("PUT", self.path, body)); self.reply(200, {"merged": True})
 
 server = HTTPServer(("127.0.0.1", 0), Forge)
 threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -597,6 +598,19 @@ asked = tried({"op": "request_merge", "number": 1})
 out["merged_before"] = any(c[0] == "PUT" for c in calls)
 m.api_approval_answer(home, asked["asked"], "yes")
 out["merged_after"] = any(c[0] == "PUT" for c in calls)
+out["mode_default"] = (m.repo_link(home, broker.project) or {}).get("mode")
+m.api_repo_settings(home, proj, "auto", "squash")
+second = tried({"op": "open_pr", "branch": "pi/work", "title": "Again"}).get("number")
+merged = tried({"op": "request_merge", "number": second})
+out["auto_merged"] = merged.get("merged") == second and [c[2] for c in calls if c[0] == "PUT"][-1] == {"merge_method": "squash"}
+m.api_repo_settings(home, proj, "local", "merge")
+out["local_push"] = "error" in tried({"op": "push", "branch": "pi/work"})
+out["local_pr"] = "error" in tried({"op": "open_pr", "branch": "pi/work", "title": "No"})
+try:
+    m.api_repo_settings(home, proj, "anything", "merge"); out["bad_setting"] = False
+except m.ApiError:
+    out["bad_setting"] = True
+m.api_repo_settings(home, proj, "ask", "merge")
 out["pull"] = tried({"op": "pull"}).get("into")
 out["origin"] = git("branch", "-r").split()
 out["token_sent"] = any(c[2] == "Bearer tok-secret" for c in calls if c[0] == "GET")
@@ -684,6 +698,10 @@ def git_broker_test():
     check("git: a pi/ branch pushed through the mirror", out["push_pi"] == "pi/work" and "pi/work" in out["remote_branches"], out)
     check("git: a pull request opened", out["pr"] == 1, out)
     check("git: no merge before the user approves", not out["merged_before"] and out["merged_after"], out)
+    check("git: a repository asks to merge by default", out["mode_default"] == "ask", out)
+    check("git: set to merge itself, Pi merges with the chosen method", out["auto_merged"], out)
+    check("git: set to local work, nothing is pushed", out["local_push"] and out["local_pr"], out)
+    check("git: an unknown setting refused", out["bad_setting"], out)
     check("git: pull fills origin/*", "origin/pi/work" in out["origin"], out)
     check("git: the token used, never logged", out["token_sent"] and not out["token_in_log"], out)
     cleanup(str(work))

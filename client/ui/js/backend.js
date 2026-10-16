@@ -69,6 +69,7 @@ function realBackend() {
     repoLink: (project, forge, repo) => invoke("repo_link", { project, forge, repo }),
     repoUnlink: (project) => invoke("repo_unlink", { project }),
     repoCreate: (project, forge, name, priv, description) => invoke("repo_create", { project, forge, name, private: priv, description }),
+    repoSettings: (project, mode, method) => invoke("repo_settings", { project, mode, method }),
     prMerge: (project, number, method) => invoke("pr_merge", { project, number, method }),
     approvalAnswer: (id, approve) => invoke("approval_answer", { id, approve }),
     worktreeRemove: (project, name) => invoke("worktree_remove", { project, name }),
@@ -101,6 +102,9 @@ function realBackend() {
         handler(p.type === "enter" || p.type === "over" ? "over" : p.type, p.paths || [], p.position);
       });
     },
+    updateCheck: () => invoke("update_check"),
+    updateInstall: () => invoke("update_install"),
+    onUpdateProgress: (handler) => listen("update-progress", (event) => handler(event.payload)),
     onClipboardSent: (handler) => listen("clipboard-sent", (event) => handler(event.payload)),
     onConnectionLost: (handler) => listen("connection-lost", (event) => handler(event.payload)),
     onConnectionRetrying: (handler) => listen("connection-retrying", () => handler()),
