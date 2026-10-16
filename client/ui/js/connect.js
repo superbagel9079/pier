@@ -186,7 +186,7 @@ async function pickerOutcome(outcome, { tried = false } = {}) {
   $("#picker-title").textContent = title;
   $("#picker-text").textContent = text;
   $("#picker-detail").textContent = outcome.installable ? (outcome.detail ? `The VM said: ${outcome.detail}` : "")
-    : `Pier cannot install it there: the picker command (${outcome.command}) is not a plain path like ~/bin/pi-pick. Change it with "change connection" > Advanced, or install pi-dir-picker.py there by hand.`;
+    : `Pier cannot install it there: the picker command (${outcome.command}) is not a plain path like ~/bin/pi-pick. Change it with "change connection" > Advanced, or install pier-picker.py there by hand.`;
   const button = $("#btn-picker-install");
   button.hidden = !outcome.installable;
   button.textContent = { picker_missing: "Install it", picker_outdated: "Update it", picker_newer: "Use this Pier's version" }[outcome.status];

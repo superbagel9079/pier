@@ -2,7 +2,7 @@
 
 Two tools for working with **Pi**, a command-line coding agent, installed on a remote Linux VM and used from a laptop.
 
-- **The picker** (`pi-dir-picker.py`, installed on the VM as `~/bin/pi-pick`): a terminal screen to choose a folder and start Pi in it.
+- **The picker** (`pier-picker.py`, installed on the VM as `~/bin/pi-pick`): a terminal screen to choose a folder and start Pi in it.
 - **Pier** (`client/`): a desktop app for Windows, macOS and Linux. One window holds the VM's terminal, sending images and files to Pi, sharing folders from the PC, and following what the agent does.
 
 The starting idea: **the agent runs on the VM, not on the laptop.** The laptop is only a window onto the VM, as a browser is for Claude. You can close it, switch it off, lose the Wi-Fi: Pi carries on.
@@ -129,7 +129,7 @@ When you start Pi, the picker opens it in a **tmux session of the project's own*
 - The tmux bar is discreet and recalls `ctrl-b d`. It shows `[sandbox]` when the sandbox is on.
 - When tmux is not installed, the picker offers to install it (with `sudo`, which asks for your password itself), or to start Pi without tmux.
 - **Extended keys** are on for this tmux server (`extended-keys`, in `csi-u` form, as Pi recommends): Shift+Enter makes a new line in Pi.
-- **This tmux server has its own configuration,** written by the picker to `~/.local/state/pi-dir-picker/tmux.conf`; your `~/.tmux.conf` is not read. It is applied again whenever a Pi opens, to a server started earlier too. It serves the "plain ssh" way (the picker in Windows Terminal): the mouse belongs to tmux (the wheel scrolls back through the history tmux keeps, a drag selects and copies), what tmux or Pi copies reaches the terminal's clipboard (OSC 52), and the bottom bar uses only palette colours (grey text, no background).
+- **This tmux server has its own configuration,** written by the picker to `~/.local/state/pier-picker/tmux.conf`; your `~/.tmux.conf` is not read. It is applied again whenever a Pi opens, to a server started earlier too. It serves the "plain ssh" way (the picker in Windows Terminal): the mouse belongs to tmux (the wheel scrolls back through the history tmux keeps, a drag selects and copies), what tmux or Pi copies reaches the terminal's clipboard (OSC 52), and the bottom bar uses only palette colours (grey text, no background).
 - **In Pier, Pi does not go through tmux's screen** (see [Terminals](#part-iv-terminals)): Pier attaches in "control mode". tmux keeps Pi alive but draws nothing; it passes Pi's output on as it is, and Pier displays it. So in the picker started by Pier, `p` (and `N`, `c`, `r`) opens Pi **in a Pier tab** instead of attaching to it itself.
 
 ### Part IV. Pi in "regular" mode (recommended)
@@ -150,7 +150,7 @@ By default, Pi runs in **bubblewrap**. See [Security](#chapter-v-security).
 
 ### Part VI. Configuration
 
-Optional, in `~/.config/pi-dir-picker/config.toml`. A commented template is in [config.example.toml](config.example.toml).
+Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [config.example.toml](config.example.toml).
 
 | Key | Purpose | Default |
 |---|---|---|
@@ -205,6 +205,8 @@ Before, each Pier tab asked for its state again every 2.5 to 15 seconds, each ti
 
 ## Chapter IV. Pier
 
+The picker used to be called **pi-dir-picker**. Its folders on the VM (`~/.config/pi-dir-picker`, `~/.local/state/pi-dir-picker`) move to the new name by themselves the first time a newer picker runs, and a link stays at the old place for the Pis started before. Its tmux server keeps the old name for as long as it runs (Pis started before stay found), and takes the new one when it next starts.
+
 Pier used to be called **devbox** (the name was already taken by a well-known tool). Whatever holds data kept the old name, so that nothing is lost: the settings and logs folder (`app.devbox.client`), the interface's preferences, and on the VM the restore points and the history of the instructions (`.pi/devbox-history`).
 
 A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 6.5 MB.
@@ -218,13 +220,13 @@ A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and Java
 
 ### Part II. The picker, shipped with Pier
 
-The exe contains the picker (`pi-dir-picker.py`, built in at compile time). At each connection, Pier compares the VM's version with its own:
+The exe contains the picker (`pier-picker.py`, built in at compile time). At each connection, Pier compares the VM's version with its own:
 
 - **The picker is missing** (first connection): Pier offers to install it, where the picker command points (`~/bin/pi-pick` by default). The VM only needs Python 3.
 - **It is older**: Pier updates it by itself, unless that setting is turned off in the Settings.
 - **It is newer than Pier**: Pier says so, and still offers to install its own version.
 
-The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. The picker itself goes to `pi-pick.lib/pi_dir_picker.py`, and `pi-pick` is a small launcher that imports it: Python then keeps it compiled, instead of compiling its 5000 lines at every call (about 60 to 100 ms saved on each call Pier makes). `pi-pick.previous` is always a whole picker, which runs by itself. A picker copied by hand to `~/bin/pi-pick` still works as before. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
+The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. The picker itself goes to `pi-pick.lib/pier_picker.py`, and `pi-pick` is a small launcher that imports it: Python then keeps it compiled, instead of compiling its 5000 lines at every call (about 60 to 100 ms saved on each call Pier makes). `pi-pick.previous` is always a whole picker, which runs by itself. A picker copied by hand to `~/bin/pi-pick` still works as before. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
 
 ### Part III. The workspace
 
@@ -364,7 +366,7 @@ The project is saved **when Pi starts**, **when each prompt arrives** (before Pi
 
 #### B. How it works
 
-- The points are kept **outside the project**, in a git repository of their own per project (`~/.local/state/pi-dir-picker/checkpoints/`). **The project's git is never touched**, and Pi, in its sandbox, does not see that folder.
+- The points are kept **outside the project**, in a git repository of their own per project (`~/.local/state/pier-picker/checkpoints/`). **The project's git is never touched**, and Pi, in its sandbox, does not see that folder.
 - git stores each version of a file once: a point costs only what changed. The latest 50 points are kept per project.
 - That repository reads none of your git configuration: no hook, filter or fsmonitor runs.
 - **Not saved:** what `.gitignore` leaves out (node_modules, build, `.env`…), what was given to Pi (`.pi-images`, `.pi-files`, the shares), files over 50 MB, and files that cannot be read (they are skipped, the rest is saved).
@@ -383,7 +385,7 @@ Pier and the picker each write a log, **one line per event**, in the same format
 ```
 
 - **On the PC** (`%LOCALAPPDATA%\app.devbox.client\logs\pier.log`): connection and reconnections, every call to the VM (duration, error), terminals opened and closed, shares, Hand off, picker installation, interface errors and every error message shown.
-- **On the VM** (`~/.local/state/pi-dir-picker/picker.log`): every API command, Pi starting and stopping (with its exit status), restore points, crashes **with their traceback**.
+- **On the VM** (`~/.local/state/pier-picker/picker.log`): every API command, Pi starting and stopping (with its exit status), restore points, crashes **with their traceback**.
 - **A call carries the same `req=…` in both logs:** an action can be followed end to end.
 - **Never in the logs:** passwords, what is typed in a terminal, what is typed into Pi (only its length), file contents.
 - **Detailed logs** (Settings) adds the detail lines, on both sides: the reads repeated every few seconds, terminal sizes, the steps of the SSH connection.
@@ -408,7 +410,7 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
   - its date and its number of messages;
   - what it cost: in dollars when the model has a price in Pi, else in tokens (for the 300 most recent);
   - its category.
-- **Actions:** **continue** starts a Pi on it. **⋯** gives it a **name** and a **category**, **pins** it or **archives** it: it leaves the lists, but can still be found by the search and with the **archived** box. Pier keeps these in `~/.local/state/pi-dir-picker/labels.json`; Pi's files are not touched.
+- **Actions:** **continue** starts a Pi on it. **⋯** gives it a **name** and a **category**, **pins** it or **archives** it: it leaves the lists, but can still be found by the search and with the **archived** box. Pier keeps these in `~/.local/state/pier-picker/labels.json`; Pi's files are not touched.
 - **Recovery after an outage:** if the VM restarted while Pi was working, the project shows a **continue where it stopped** banner.
 - **The search** covers every conversation of every project (name, question, category), archived ones included.
 
@@ -437,7 +439,7 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
   - the **MCP servers**, which Pi 1.x connects itself: `~/.pi/agent/mcp.json` (yours) and the project's `.pi/mcp.json` (read only once the project is trusted), with their type (stdio or http) and whether they are off;
   - the default model.
 
-  The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pi-dir-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add a package or an MCP server on the VM: `pi install npm:…`, `pi mcp add …`.
+  The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pier-picker/versions.json`). **update** opens a "pi update" tab where `pi update` runs (or `pi update <package>`, `pi update --extensions`), visible from start to end. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), it cannot update itself and gives the npm command that would: the tab shows it and offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add a package or an MCP server on the VM: `pi install npm:…`, `pi mcp add …`.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).
 
 ### Part XIII. Notifications and shortcut
@@ -611,7 +613,7 @@ sudo apt install tmux bubblewrap sshfs git
 **Pier installs the picker itself** at the first connection, then keeps it up to date. To use it over SSH without Pier before that, copy it by hand (the VM uses port 2222 and the name `pi-sh` defined in `~/.ssh/config`):
 
 ```powershell
-scp C:\Users\leo\Downloads\pi-tui\pi-dir-picker.py pi-sh:bin/pi-pick
+scp C:\Users\leo\Downloads\pier\pier-picker.py pi-sh:bin/pi-pick
 ```
 
 Python 3.12 or newer is needed, for receiving folders; Debian 13 has Python 3.13. git is used for restore points.
@@ -648,7 +650,7 @@ The compiled executable is `client/src-tauri/target/release/pier.exe`. Nothing t
 To build it (Rust and Visual Studio Build Tools, installed with Chocolatey):
 
 ```powershell
-cd C:\Users\leo\Downloads\pi-tui\client\src-tauri
+cd C:\Users\leo\Downloads\pier\client\src-tauri
 cargo tauri build --no-bundle
 ```
 
@@ -704,14 +706,14 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 |---|---|
 | `~/bin/pi-pick` | the picker's launcher (installed by Pier), or the picker itself (copied by hand) |
 | `~/bin/pi-pick.lib/` | the picker, as Pier installs it, and its compiled form (`__pycache__`) |
-| `~/.local/state/pi-dir-picker/incoming/` | where a folder copy or a Hand off is unpacked, out of Pi's reach, before it is moved into the project |
-| `~/.config/pi-dir-picker/config.toml` | its configuration (optional) |
-| `~/.local/state/pi-dir-picker/state.json` | recent projects, sorting (readable by you only) |
-| `~/.local/state/pi-dir-picker/picker.log` | the picker's log (`.1`, `.2`: the previous ones) |
-| `~/.local/state/pi-dir-picker/checkpoints/` | the restore points, one git repository per project |
-| `~/.local/state/pi-dir-picker/labels.json` | names, categories, pinned and archived conversations (Pier) |
-| `~/.local/state/pi-dir-picker/versions.json` | latest versions of Pi and the packages, asked of npm at most every 6 hours |
-| `~/.local/state/pi-dir-picker/tmux.conf` | the configuration of the Pis' tmux server (rewritten by the picker) |
+| `~/.local/state/pier-picker/incoming/` | where a folder copy or a Hand off is unpacked, out of Pi's reach, before it is moved into the project |
+| `~/.config/pier-picker/config.toml` | its configuration (optional) |
+| `~/.local/state/pier-picker/state.json` | recent projects, sorting (readable by you only) |
+| `~/.local/state/pier-picker/picker.log` | the picker's log (`.1`, `.2`: the previous ones) |
+| `~/.local/state/pier-picker/checkpoints/` | the restore points, one git repository per project |
+| `~/.local/state/pier-picker/labels.json` | names, categories, pinned and archived conversations (Pier) |
+| `~/.local/state/pier-picker/versions.json` | latest versions of Pi and the packages, asked of npm at most every 6 hours |
+| `~/.local/state/pier-picker/tmux.conf` | the configuration of the Pis' tmux server (rewritten by the picker) |
 | `~/.pi/pier/pier-session.ts` | the extension Pier gives each Pi it starts (`--extension`) |
 | `~/.pi/pier/pis/<tmux session>.json` | what each Pi says: its conversation, whether it works (deleted when it stops) |
 | `~/bin/pi-pick.previous` | the picker's version from before Pier's last update |
@@ -738,8 +740,8 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 | Path | Purpose |
 |---|---|
-| `pi-dir-picker.py` | the picker and its API |
-| `pi-dir-picker-tests.py` | the test suite, to run on the VM, in a real tmux terminal |
+| `pier-picker.py` | the picker and its API |
+| `pier-picker-tests.py` | the test suite, to run on the VM, in a real tmux terminal |
 | `config.example.toml` | the picker's configuration template |
 | `client/ui/` | Pier's interface: `index.html`, `style.css`, `themes.js`, xterm.js in `vendor/` |
 | `client/ui/js/` | its code, one file per part: `core.js` (preferences, log, helpers), `vm.js` (the VM's state, received through `watch`), `connect.js`, `workspace.js` (the three zones and their tabs), `prefs.js`, `terminal.js`, `context.js`, `project.js` (Activity), `diff.js`, `conversations.js`, `setup.js`, `logs.js`, `palette.js`, `backend.js` (the Rust side), `mock.js` (a fake VM to try the interface in a browser), `main.js` |
@@ -751,14 +753,14 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 ### Part I. The picker
 
-Several hundred checks of the logic and the API (several Pis per project and `watch`, restore points with real git, the log, conversations, labels, versions, the audit's protections), run on Windows with a simulated curses module. Plus the `pi-dir-picker-tests.py` suite, to run **on the VM**: it drives the picker in a real tmux terminal and checks the real bubblewrap sandbox, restore points around a real `--exec-pi`, two Pis in one project with real tmux, and what Setup lists.
+Several hundred checks of the logic and the API (several Pis per project and `watch`, restore points with real git, the log, conversations, labels, versions, the audit's protections), run on Windows with a simulated curses module. Plus the `pier-picker-tests.py` suite, to run **on the VM**: it drives the picker in a real tmux terminal and checks the real bubblewrap sandbox, restore points around a real `--exec-pi`, two Pis in one project with real tmux, and what Setup lists.
 
 ```powershell
-scp C:\Users\leo\Downloads\pi-tui\pi-dir-picker.py C:\Users\leo\Downloads\pi-tui\pi-dir-picker-tests.py pi-sh:pi-tui/
+scp C:\Users\leo\Downloads\pier\pier-picker.py C:\Users\leo\Downloads\pier\pier-picker-tests.py pi-sh:pi-tui/
 ```
 
 ```powershell
-ssh -t pi-sh "python3 -B ~/pi-tui/pi-dir-picker-tests.py"
+ssh -t pi-sh "python3 -B ~/pi-tui/pier-picker-tests.py"
 ```
 
 If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -p ~/pi-tui"`.

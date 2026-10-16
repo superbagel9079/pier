@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-# subject: tmux-driven test suite for pi-dir-picker.py: proves listing, navigation, creation, filtering, search, clone, rename, sort, launching (direct and in tmux) and quit on a real terminal.
+# subject: tmux-driven test suite for pier-picker.py: proves listing, navigation, creation, filtering, search, clone, rename, sort, launching (direct and in tmux) and quit on a real terminal.
 # verified: v3, 2026-10-11: not yet run; run it on the Debian host before relying on it.
 # tech: python, tmux, curses, git, pi
 #
-# Run: python3 -B pi-dir-picker-tests.py
+# Run: python3 -B pier-picker-tests.py
 # Exit 0 when everything passes, 1 when an assertion fails, 2 when tmux is absent.
 #
 # tmux is the ground truth, not a hand-written parser. A first version replayed the
@@ -34,9 +34,9 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-APP = HERE / "pi-dir-picker.py"
-SOCKET = "pi-dir-picker-tests"
-PI_SOCKET = "pi-dir-picker-tests-pi"
+APP = HERE / "pier-picker.py"
+SOCKET = "pier-picker-tests"
+PI_SOCKET = "pier-picker-tests-pi"
 SESSION = "s"
 ROWS, COLS = 45, 100
 
@@ -55,7 +55,7 @@ def runnable_tmp():
         noexec = False
     if not noexec:
         return
-    folder = Path.home() / ".cache" / "pi-dir-picker-tests"
+    folder = Path.home() / ".cache" / "pier-picker-tests"
     folder.mkdir(parents=True, exist_ok=True)
     tempfile.tempdir = str(folder)
     print(f"{tmp} is mounted noexec: the tests work in {folder}")
@@ -142,7 +142,7 @@ def activity_fixture(home):
 
 def session(keys, fixture=home_fixture, use_tmux=False):
     """Fresh tmux session and sandbox per call. keys is a list of ("key"|"text", value)."""
-    work = tempfile.mkdtemp(prefix="pi-dir-picker-")
+    work = tempfile.mkdtemp(prefix="pier-picker-")
     home = Path(work) / "home"
     home.mkdir()
     bin_dir = Path(work) / "bin"
@@ -227,7 +227,7 @@ def unit_tests():
           module.match_score("blog", "blog") < module.match_score("blog", "blog-old/x"))
     check("search matches scattered letters", module.match_score("bv2", "clients/blog-v2") is not None)
 
-    work = tempfile.mkdtemp(prefix="pi-dir-picker-unit-")
+    work = tempfile.mkdtemp(prefix="pier-picker-unit-")
     root = Path(work)
     (root / "b").mkdir()
     (root / "A").mkdir()
@@ -254,7 +254,7 @@ def unit_tests():
 def back_to_back_children():
     """Two children with nothing drawn between them, as when tmux gets installed and Pi
     starts right after: endwin used to fail the second time and crash the picker."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = work / "home"
     home.mkdir()
     done = work / "done.txt"
@@ -285,7 +285,7 @@ def sandbox_test():
     if not shutil.which("bwrap"):
         print("  skip sandbox test: bubblewrap is not installed (sudo apt install bubblewrap)")
         return
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "work" / "proj"
     project.mkdir(parents=True)
@@ -348,7 +348,7 @@ def sandbox_test():
 def hardening_test():
     """What the picker reads or deletes outside the sandbox, in places Pi can write:
     links there never lead it elsewhere."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "proj"
     (project / ".pi-files" / "copy" / "ro").mkdir(parents=True)
@@ -452,8 +452,22 @@ def hardening_test():
     check("upload-dir: the copy lands in .pi-files",
           saved.startswith(str(project / ".pi-files")) and (Path(saved) / "mock" / "a.txt").read_text() == "hello",
           upload.stdout[-300:] + upload.stderr[-300:])
-    incoming = home / ".local" / "state" / "pi-dir-picker" / "incoming"
+    incoming = home / ".local" / "state" / "pier-picker" / "incoming"
     check("upload-dir: nothing left in the private folder", not incoming.exists() or not any(incoming.iterdir()))
+
+    # The old name: its folders move to the new one, a link stays behind.
+    shutil.rmtree(home / ".local" / "state" / "pier-picker", ignore_errors=True)
+    (home / ".config" / "pi-dir-picker").mkdir(parents=True)
+    (home / ".config" / "pi-dir-picker" / "config.toml").write_text("recent_count = 3\n")
+    (home / ".local" / "state" / "pi-dir-picker").mkdir(parents=True)
+    (home / ".local" / "state" / "pi-dir-picker" / "labels.json").write_text("{}")
+    subprocess.run([sys.executable, "-B", str(APP), "--api", "version"], env=env, capture_output=True, timeout=30)
+    check("old name: the config moves",
+          (home / ".config" / "pier-picker" / "config.toml").read_text() == "recent_count = 3\n"
+          if (home / ".config" / "pier-picker" / "config.toml").exists() else False)
+    check("old name: the state moves, a link stays",
+          (home / ".local" / "state" / "pier-picker" / "labels.json").exists()
+          and (home / ".local" / "state" / "pi-dir-picker").is_symlink())
     cleanup(str(work))
 
 
@@ -461,7 +475,7 @@ def checkpoint_test():
     """Restore points around a real --exec-pi: a fake Pi writes its session as Pi does
     (the file of a new session appears with the first answer) and changes a file; the
     API then lists the points and puts the file back."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "proj"
     project.mkdir(parents=True)
@@ -513,7 +527,7 @@ def checkpoint_test():
     restored = api("restore", str(project), first)
     check("checkpoints: the file is back", (project / "notes.txt").read_text() == "original\n", restored)
     check("checkpoints: the state before restoring is kept", (api("checkpoints", str(project)).get("points") or [{}])[0].get("reason") == "before-restore")
-    log = (home / ".local" / "state" / "pi-dir-picker" / "picker.log").read_text() if (home / ".local" / "state" / "pi-dir-picker" / "picker.log").exists() else ""
+    log = (home / ".local" / "state" / "pier-picker" / "picker.log").read_text() if (home / ".local" / "state" / "pier-picker" / "picker.log").exists() else ""
     check("log: pi start and exit, the restore", "pi.start" in log and "pi.exit" in log and "checkpoint.restore" in log, log[-600:])
     shutil.rmtree(work, ignore_errors=True)
 
@@ -521,7 +535,7 @@ def checkpoint_test():
 def resources_test():
     """Setup's list of what Pi loads: packages with their version, skills, prompts, MCP
     servers, from a made-up agent dir and project; nothing is run."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     agent = home / ".pi" / "agent"
     project = home / "proj"
@@ -556,7 +570,7 @@ def resources_test():
 def multi_pi_test():
     """Two Pis in one project, in real tmux: each in its own conversation (recorded in
     tmux as @pi-file), both listed by the API, stopped one at a time."""
-    work = Path(tempfile.mkdtemp(prefix="pi-dir-picker-"))
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
     home = Path(os.path.realpath(work / "home"))
     project = home / "proj"
     project.mkdir(parents=True)

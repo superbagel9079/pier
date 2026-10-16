@@ -172,7 +172,7 @@ function mockBackend() {
           diff: args[3] ? "diff --git a/src/main.rs b/src/main.rs\n@@ -1,3 +1,4 @@\n fn main() {\n-    println!(\"hi\");\n+    println!(\"hello\");\n+    run();\n }\n" : null };
       }
       if (args[0] === "log") {
-        return { path: "/home/leo/.local/state/pi-dir-picker/picker.log", lines: [
+        return { path: "/home/leo/.local/state/pier-picker/picker.log", lines: [
           "2026-10-12T14:01:02.120Z INFO  pi.start pid=812 project=/home/leo/work sandbox=True args=[] pi=/home/leo/.npm-global/bin/pi",
           "2026-10-12T14:01:02.410Z INFO  checkpoint.create pid=812 project=/home/leo/work id=01791813662410000000 reason=start replaced=False ms=180",
           "2026-10-12T14:09:40.002Z WARN  api.share-prepare pid=990 req=d3mo-4 ms=12 err=\"sshfs is missing on the VM: sudo apt install sshfs\" args=\"[\\\"docs\\\"]\"",

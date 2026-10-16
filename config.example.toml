@@ -1,4 +1,4 @@
-# pi-dir-picker settings. Copy to ~/.config/pi-dir-picker/config.toml and keep only
+# pier-picker settings. Copy to ~/.config/pier-picker/config.toml and keep only
 # what you change: every key is optional, the values below are the defaults.
 
 # Directory shown first, inside your home directory.
@@ -40,7 +40,7 @@ sandbox_write = []
 
 # Restore points: the project is saved when Pi starts, before each prompt and when Pi
 # stops working, so that Pier (Activity > Restore) can undo what Pi did. They
-# are kept outside the project, in ~/.local/state/pi-dir-picker/checkpoints (git is
+# are kept outside the project, in ~/.local/state/pier-picker/checkpoints (git is
 # needed; files your .gitignore leaves out, and files over 50 MB, are not saved).
 checkpoints = true
 

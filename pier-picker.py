@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 # subject: TUI directory picker browsing the home directory (non-hidden directories only) that launches Pi in the chosen directory, inside tmux so Pi survives a dropped SSH connection.
-# verified: v4.4, 2026-10-13: picker logic, restore points (real git), several Pis per project and the watch stream checked on Windows (python 3.14, curses stubbed, tmux faked); the tmux suite (pi-dir-picker-tests.py) still has to be run on the Debian host.
+# verified: v4.4, 2026-10-13: picker logic, restore points (real git), several Pis per project and the watch stream checked on Windows (python 3.14, curses stubbed, tmux faked); the tmux suite (pier-picker-tests.py) still has to be run on the Debian host.
 # tech: python, curses, git, tmux, pi
 #
 # Standard library only.
-# Evidence is produced by pi-dir-picker-tests.py, which drives this program through a real pty.
+# Evidence is produced by pier-picker-tests.py, which drives this program through a real pty.
 #
 # Files:
-#   ~/.config/pi-dir-picker/config.toml      optional settings, see DEFAULTS
-#   ~/.local/state/pi-dir-picker/state.json  recent projects and the sort order
-#   ~/.local/state/pi-dir-picker/picker.log  what happened, see "logging"
-#   ~/.local/state/pi-dir-picker/checkpoints/ restore points of the projects, see "restore points"
-#   ~/.local/state/pi-dir-picker/tmux.conf   the config of Pi's tmux server, see tmux_conf
+#   ~/.config/pier-picker/config.toml      optional settings, see DEFAULTS
+#   ~/.local/state/pier-picker/state.json  recent projects and the sort order
+#   ~/.local/state/pier-picker/picker.log  what happened, see "logging"
+#   ~/.local/state/pier-picker/checkpoints/ restore points of the projects, see "restore points"
+#   ~/.local/state/pier-picker/tmux.conf   the config of Pi's tmux server, see tmux_conf
 # Environment:
 #   PI_BIN                 path of the pi executable when it is not found on PATH
 #   PI_PICKER_TMUX_SOCKET  tmux socket holding the Pi sessions (the tests use their own)
@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.19"
+VERSION = "4.20"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -109,7 +109,20 @@ USER_PATH = ("~/.npm-global/bin", "~/.local/bin", "~/bin", "~/.bun/bin")
 SYSTEM_PATH = ("/usr/local/bin",)
 EXTRA_PATH = USER_PATH + SYSTEM_PATH
 
-TMUX_SOCKET = os.environ.get("PI_PICKER_TMUX_SOCKET", "pi-dir-picker")
+# The picker was called pi-dir-picker. Its folders are moved to the new name the first
+# time it runs (see migrate_old_name); its tmux server keeps the old name for as long
+# as it runs, so that the Pis started before are still found.
+OLD_NAME = "pi-dir-picker"
+
+
+def tmux_socket():
+    if os.environ.get("PI_PICKER_TMUX_SOCKET"):
+        return os.environ["PI_PICKER_TMUX_SOCKET"]
+    folder = os.path.join(os.environ.get("TMUX_TMPDIR") or "/tmp", f"tmux-{os.getuid()}") if hasattr(os, "getuid") else ""
+    return OLD_NAME if folder and os.path.exists(os.path.join(folder, OLD_NAME)) else "pier-picker"
+
+
+TMUX_SOCKET = tmux_socket()
 INSTALLERS = (
     ("apt-get", ["apt-get", "install", "-y", "tmux"]),
     ("dnf", ["dnf", "install", "-y", "tmux"]),
@@ -183,7 +196,7 @@ CTRL_U = "\x15"
 
 def config_path(home):
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
-    return os.path.join(base, "pi-dir-picker", "config.toml")
+    return os.path.join(base, "pier-picker", "config.toml")
 
 
 def load_config(home):
@@ -222,7 +235,22 @@ def load_config(home):
 
 def state_path(home):
     base = os.environ.get("XDG_STATE_HOME") or os.path.join(home, ".local", "state")
-    return os.path.join(base, "pi-dir-picker", "state.json")
+    return os.path.join(base, "pier-picker", "state.json")
+
+
+def migrate_old_name(home):
+    """~/.config/pi-dir-picker and ~/.local/state/pi-dir-picker (restore points, labels,
+    recent projects, log) moved to the new name, once. A link is left at the old place:
+    a Pi started by an older picker still writes there."""
+    for new in (os.path.dirname(config_path(home)), os.path.dirname(state_path(home))):
+        old = os.path.join(os.path.dirname(new), OLD_NAME)
+        if os.path.lexists(new) or not os.path.isdir(old) or os.path.islink(old):
+            continue
+        try:
+            os.rename(old, new)
+            os.symlink(new, old)
+        except OSError:
+            pass  # another picker moved it meanwhile, or it cannot be: the old place stays
 
 
 def load_state(home):
@@ -255,7 +283,7 @@ def save_state(home, state):
 
 # --- logging -------------------------------------------------------------------------
 #
-# One line per event, in ~/.local/state/pi-dir-picker/picker.log, readable by its owner
+# One line per event, in ~/.local/state/pier-picker/picker.log, readable by its owner
 # only:
 #   2026-10-12T14:32:01.123Z INFO  api.paste-image pid=4242 req=7f3a-12 ms=41 saved=...
 # Times are UTC, like Pier's own log, so the two read side by side; req is the id
@@ -1180,7 +1208,7 @@ class NetProxy:
                 if now - self.blocked.get(host, -1e9) > 60:
                     self.blocked[host] = now
                     log("warn", "net.blocked", project=self.project, host=host, port=port,
-                        hint="add it to network_allow in ~/.config/pi-dir-picker/config.toml")
+                        hint="add it to network_allow in ~/.config/pier-picker/config.toml")
                 client.sendall(b"HTTP/1.1 403 Not allowed by network_allow\r\nContent-Length: 0\r\n\r\n")
                 client.close()
                 return
@@ -1318,7 +1346,7 @@ def proxy_env(env):
 
 SANDBOX_MISSING = ("bubblewrap is not installed, and Pi is set to run in a sandbox. "
                    "Install it (sudo apt install bubblewrap), "
-                   "or set sandbox = false in ~/.config/pi-dir-picker/config.toml")
+                   "or set sandbox = false in ~/.config/pier-picker/config.toml")
 
 
 def tmux_cmd(*args):
@@ -1738,7 +1766,7 @@ def tmux_conf(config):
       on no background: it follows the terminal's theme.
     """
     lines = [
-        "# Written by pi-dir-picker for the tmux server of Pi's sessions (see tmux_conf there).",
+        "# Written by pier-picker for the tmux server of Pi's sessions (see tmux_conf there).",
         "# Rewritten at each start. ~/.tmux.conf is not read by this server.",
         "set -s extended-keys on",
         "set -sq extended-keys-format csi-u",
@@ -1807,7 +1835,7 @@ def set_pi_file(slot, file):
 # and whether it works, to ~/.pi/pier/pis/<tmux session>.json. ~/.pi because the sandbox
 # lets Pi write there and nowhere else outside the project.
 
-PIER_EXTENSION = """// Written by Pier (pi-dir-picker): tells Pier which conversation this Pi holds and
+PIER_EXTENSION = """// Written by Pier (pier-picker): tells Pier which conversation this Pi holds and
 // whether it is working. Loaded with --extension by the picker only; it writes one small
 // file, PIER_STATE, and nothing else.
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -1897,7 +1925,7 @@ def said_file_ok(file):
 # created since included (they are removed), or only the files chosen.
 #
 # They live outside the project, in a git repository of their own per project under
-# ~/.local/state/pi-dir-picker/checkpoints. The project's own git, if any, is never
+# ~/.local/state/pier-picker/checkpoints. The project's own git, if any, is never
 # touched, and Pi cannot reach them: its sandbox hides that folder. git stores each
 # version of a file once, so a restore point costs only what changed. That repository
 # reads no configuration but its own: no hook, filter or fsmonitor of yours runs.
@@ -2050,7 +2078,7 @@ def checkpoint_init(project):
         pass
     os.makedirs(os.path.join(store, "info"), exist_ok=True)
     with open(os.path.join(store, "info", "exclude"), "w", encoding="utf-8") as handle:
-        handle.write("# written by pi-dir-picker: never saved in restore points\n")
+        handle.write("# written by pier-picker: never saved in restore points\n")
         handle.write("".join(f"{pattern}\n" for pattern in CHECKPOINT_EXCLUDE))
 
 
@@ -3869,7 +3897,7 @@ def session_name_of(session):
 
 
 # Names and categories given in Pier to conversations: Pier's own, in
-# ~/.local/state/pi-dir-picker/labels.json (Pi's files are not touched).
+# ~/.local/state/pier-picker/labels.json (Pi's files are not touched).
 
 LABEL_MAX = 80
 
@@ -4251,7 +4279,7 @@ def api_conversations(home):
 
 # Pi's version and the newest one, and the newest version of each npm package. Asked to
 # npm's registry from the VM, at most every 6 hours (an hour after a failure); the
-# answer is kept in ~/.local/state/pi-dir-picker/versions.json.
+# answer is kept in ~/.local/state/pier-picker/versions.json.
 
 PI_NPM = "@earendil-works/pi-coding-agent"
 VERSIONS_FRESH = 6 * 3600
@@ -5542,7 +5570,7 @@ class Picker:
             top = self.draw_banner(w)
         else:
             top = 1
-            put(scr, 0, 2, "pi dir picker", curses.A_BOLD, w - 4)
+            put(scr, 0, 2, "pier picker", curses.A_BOLD, w - 4)
 
         width = w - 4
         title = f"find in {self.pretty(self.home)}" if self.search is not None else clean(self.cwd)
@@ -5579,7 +5607,7 @@ class Picker:
             put(self.scr, 1 + i, x, line, curses.A_BOLD, w - 2 - x)
         # The version sits on the baseline, the row where the letters end.
         put(self.scr, 1 + LOGO_BASELINE, x + logo_w + 1, f"v{VERSION}", curses.A_BOLD, w - 3 - x - logo_w)
-        subtitle = "dir picker"
+        subtitle = "pier picker"
         put(self.scr, 1 + len(LOGO), max(2, (w - len(subtitle)) // 2), subtitle, self.grey)
         return len(LOGO) + 3
 
@@ -5929,20 +5957,21 @@ def resolve_start(argv, config):
     return home
 
 
-USAGE = """usage: pi-dir-picker.py [DIR]
-       pi-dir-picker.py --attach DIR [PI ARGS]
-       pi-dir-picker.py --api COMMAND [ARGS]   (see the desktop client API section)
+USAGE = """usage: pier-picker.py [DIR]
+       pier-picker.py --attach DIR [PI ARGS]
+       pier-picker.py --api COMMAND [ARGS]   (see the desktop client API section)
 
 Pick a directory under your home and start Pi in it. Press ? inside for the keys.
 --attach and --api serve the desktop client over SSH.
-Settings: ~/.config/pi-dir-picker/config.toml"""
+Settings: ~/.config/pier-picker/config.toml"""
 
 
 def entry():
     """The command line. Run as a script, or through the launcher Pier installs
     (~/bin/pi-pick importing this file as a module, so that Python keeps it compiled)."""
     if len(sys.argv) >= 2 and sys.argv[1] == "--net-bridge":
-        sys.exit(net_bridge(sys.argv[2:]))
+        sys.exit(net_bridge(sys.argv[2:]))  # inside Pi's sandbox: nothing of home to move
+    migrate_old_name(home_dir())
     if len(sys.argv) >= 3 and sys.argv[1] == "--exec-pi":
         sys.exit(exec_pi(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--api":

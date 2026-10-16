@@ -312,7 +312,7 @@ function makeProject(tab) {
     pointsData = data;
     const notes = [];
     if (!pointsData.git) notes.push("git is missing on the VM, and restore points need it: sudo apt install git.");
-    else if (!pointsData.enabled) notes.push("Restore points are turned off on the VM (checkpoints = false in ~/.config/pi-dir-picker/config.toml).");
+    else if (!pointsData.enabled) notes.push("Restore points are turned off on the VM (checkpoints = false in ~/.config/pier-picker/config.toml).");
     if (notes.length) note(notes.join(" "));
     renderPoints();
   }

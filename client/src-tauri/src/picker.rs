@@ -1,4 +1,4 @@
-//! The picker Pier carries: pi-dir-picker.py is built into the executable, and
+//! The picker Pier carries: pier-picker.py is built into the executable, and
 //! installed on the VM, where the picker command points, when it is missing or older.
 //! Only Pier is to install: nothing to copy by hand.
 
@@ -6,8 +6,8 @@ use std::cmp::Ordering;
 
 use crate::ssh::sh_quote;
 
-/// pi-dir-picker.py as it was when Pier was built.
-pub const SCRIPT: &str = include_str!("../../../pi-dir-picker.py");
+/// pier-picker.py as it was when Pier was built.
+pub const SCRIPT: &str = include_str!("../../../pier-picker.py");
 
 /// A constant of the script: `VERSION = "3.9"` gives 3.9, `API_VERSION = 8` gives 8.
 fn constant(name: &str) -> Option<&'static str> {
@@ -61,7 +61,7 @@ pub fn install_script(remote_command: &str, version: &str) -> Result<String, Str
     // No backslash anywhere: the script goes through the user's shell (bash, zsh or
     // fish) inside single quotes.
     //
-    // The picker itself goes to NAME.lib/pi_dir_picker.py, and NAME is a small launcher
+    // The picker itself goes to NAME.lib/pier_picker.py, and NAME is a small launcher
     // importing it: Python then keeps it compiled (__pycache__) instead of compiling its
     // 5000 lines at every call, which cost about 100 ms each. NAME.previous is always a
     // whole picker, which runs by itself.
@@ -80,11 +80,11 @@ tmp="$dest.pier-new.$$"
 cleanup() {{ rm -rf "$tmp" "$new"; }}
 trap cleanup EXIT
 mkdir -p "$new"
-cat > "$new/pi_dir_picker.py"
-chmod 755 "$new/pi_dir_picker.py"
+cat > "$new/pier_picker.py"
+chmod 755 "$new/pier_picker.py"
 # Run through its first line, which catches a broken one (Windows line ends after
 # python3).
-if ! got="$("$new/pi_dir_picker.py" --version 2>&1)"; then
+if ! got="$("$new/pier_picker.py" --version 2>&1)"; then
   echo "the new picker does not start on the VM: $got" >&2
   exit 4
 fi
@@ -99,12 +99,15 @@ cat > "$tmp" <<PIER_LAUNCHER
 import os
 import sys
 sys.path.insert(0, "$lib")
-import pi_dir_picker
-pi_dir_picker.SCRIPT = os.path.realpath(__file__)
-pi_dir_picker.entry()
+import pier_picker
+pier_picker.SCRIPT = os.path.realpath(__file__)
+pier_picker.entry()
 PIER_LAUNCHER
 chmod 755 "$tmp"
-if [ -f "$lib/pi_dir_picker.py" ]; then
+if [ -f "$lib/pier_picker.py" ]; then
+  cp -p "$lib/pier_picker.py" "$dest.previous" 2>/dev/null || true
+elif [ -f "$lib/pi_dir_picker.py" ]; then
+  # Installed under the picker's old name (pi-dir-picker).
   cp -p "$lib/pi_dir_picker.py" "$dest.previous" 2>/dev/null || true
 elif [ -f "$dest" ] && [ ! -L "$dest" ]; then
   cp -p "$dest" "$dest.previous" 2>/dev/null || true
@@ -132,7 +135,7 @@ mod tests {
 
     #[test]
     fn the_bundled_script_speaks_this_api() {
-        assert_eq!(bundled_api(), crate::API_VERSION, "pi-dir-picker.py and lib.rs disagree on the API version");
+        assert_eq!(bundled_api(), crate::API_VERSION, "pier-picker.py and lib.rs disagree on the API version");
         assert!(compare_versions(bundled_version(), "3.8") == Ordering::Greater, "{}", bundled_version());
         assert!(SCRIPT.starts_with("#!/usr/bin/env python3"));
         let sent = script_for_vm();
@@ -161,7 +164,7 @@ mod tests {
         let script = install_script("~/bin/pi-pick", "3.9").unwrap();
         assert!(script.contains("dest=\"$HOME\"/'bin/pi-pick'"), "{script}");
         assert!(script.contains("expected='3.9'"));
-        assert!(script.contains("lib=\"$dest.lib\"") && script.contains("import pi_dir_picker"), "the launcher and its module");
+        assert!(script.contains("lib=\"$dest.lib\"") && script.contains("import pier_picker"), "the launcher and its module");
         assert!(!script.contains('\\'), "no backslash may reach the user's shell");
         assert!(install_script("/opt/tools/pi-pick", "3.9").unwrap().contains("dest='/opt/tools/pi-pick'"));
         for bad in ["python3 ~/pi.py", "~/bin/pi-pick; rm -rf ~", "bin/pi-pick", "~/../etc/x", "~/bin/", "~/a/~b", "$HOME/x", "~/bin/pi pick"] {
