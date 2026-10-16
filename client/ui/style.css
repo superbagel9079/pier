@@ -201,7 +201,10 @@ details label { margin-top: 8px; }
 /* The padding is the terminal's own (Settings > Appearance): xterm.js's fit takes it off
    the size it gives the program, and the scrollbar stays at the edge. */
 .pane.terminal { padding: 0; overflow: hidden; }
-.pane.terminal .xterm { height: 100%; padding: var(--term-pad, 6px); }
+.pane.terminal .xterm { height: 100%; padding: var(--term-pad, 8px); }
+/* xterm.js puts its scrollbar at the right of the text: moved by the padding, it stays
+   against the edge of the terminal, as in kitty or foot. */
+.pane.terminal .xterm-scrollable-element > .scrollbar.vertical { transform: translateX(var(--term-pad, 8px)); }
 /* The usual arrow over terminals, not xterm's text cursor; selecting text still works. */
 .pane.terminal .xterm, .pane.terminal .xterm-screen, .pane.terminal .xterm-viewport, .pane.terminal .xterm-rows { cursor: default; }
 

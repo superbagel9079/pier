@@ -27,10 +27,15 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  panelSide: "right", termFont: "", termPadding: 6 };
+  panelSide: "right", termFont: "", termPadding: 8 };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
+// 6 px was the default padding: the saved one moves to the new default, once.
+if (!prefs.paddingDefault8) {
+  if (prefs.termPadding === 6) prefs.termPadding = 8;
+  prefs.paddingDefault8 = true;
+}
 // Before themes, the choice was "dark" or "light".
 prefs.theme = { dark: "devbox-dark", light: "devbox-light" }[prefs.theme] || prefs.theme;
 if (!Array.isArray(prefs.customThemes)) prefs.customThemes = [];
