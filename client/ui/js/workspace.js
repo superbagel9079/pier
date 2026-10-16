@@ -14,6 +14,7 @@ const KINDS = {
   pi: { title: "pi", terminal: true },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
+  takeback: { title: "take back", make: (tab) => makeTakeBack(tab) },
   logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
 };
 const DOCKS = ["left", "center", "right"];
@@ -76,12 +77,15 @@ const workspace = (() => {
       if (tab.shown !== !tab.pane.hidden) {
         tab.shown = !tab.pane.hidden;
         tab.onVisible?.(tab.shown);
+        // Only a terminal just shown is fitted here; the others follow their size on
+        // their own (a ResizeObserver in terminal.js). Fitting every terminal at every
+        // redraw reflowed all their histories.
+        if (tab.shown) tab.refit?.();
       }
     }
     const panes = $(".panes", dock.el);
     $(":scope > .empty", panes)?.remove();
     if (!dock.tabs.length) panes.append(emptyDock(name));
-    for (const t of tabs()) t.refit?.();
   }
 
   function renderAll() {
@@ -393,7 +397,25 @@ const workspace = (() => {
       if (!dock.collapsed) dock.active?.onShow?.();
       save();
     });
+    // Dragging the divider changes one width per frame, at most. The terminals are not
+    // fitted here: their ResizeObserver does it once the size rests (terminal.js), so a
+    // drag no longer reflows every history at every pixel.
     let resizing = false;
+    let frame = 0;
+    let lastX = 0;
+    const applyWidth = () => {
+      frame = 0;
+      const box = $("#workspace").getBoundingClientRect();
+      const width = name === "left" ? lastX - box.left : box.right - lastX;
+      dock.width = Math.round(Math.min(box.width * 0.6, Math.max(220, width)));
+      dock.el.style.setProperty("--width", `${dock.width}px`);
+    };
+    const stopResizing = () => {
+      if (!resizing) return;
+      resizing = false;
+      dock.splitter.classList.remove("dragging");
+      save();
+    };
     dock.splitter.addEventListener("pointerdown", (e) => {
       resizing = true;
       dock.splitter.classList.add("dragging");
@@ -401,22 +423,16 @@ const workspace = (() => {
     });
     dock.splitter.addEventListener("pointermove", (e) => {
       if (!resizing) return;
-      const box = $("#workspace").getBoundingClientRect();
-      const width = name === "left" ? e.clientX - box.left : box.right - e.clientX;
-      dock.width = Math.round(Math.min(box.width * 0.6, Math.max(220, width)));
-      dock.el.style.setProperty("--width", `${dock.width}px`);
-      for (const t of tabs()) t.refit?.();
+      lastX = e.clientX;
+      if (!frame) frame = requestAnimationFrame(applyWidth);
     });
-    dock.splitter.addEventListener("pointerup", () => {
-      resizing = false;
-      dock.splitter.classList.remove("dragging");
-      save();
-    });
+    dock.splitter.addEventListener("pointerup", stopResizing);
+    dock.splitter.addEventListener("pointercancel", stopResizing);
+    dock.splitter.addEventListener("lostpointercapture", stopResizing);
     // A double click on the divider: back to the usual width.
     dock.splitter.addEventListener("dblclick", () => {
       dock.width = defaultLayout()[name]?.width || (name === "left" ? 320 : 400);
       dock.el.style.setProperty("--width", `${dock.width}px`);
-      for (const t of tabs()) t.refit?.();
       save();
     });
     dock.splitter.title = "Drag to resize; double-click for the usual width";

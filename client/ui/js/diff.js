@@ -97,7 +97,7 @@ function makeDiff(tab) {
       for (const edit of result.edits) {
         const when = edit.at ? new Date(edit.at).toLocaleTimeString() : "";
         body.append(el("p", { className: "edit-title", textContent: `${edit.tool} · ${edit.state} · ${when}` }));
-        if (edit.tool === "write") body.append(lines(edit.content.split("\n").map((l) => `+${l}`).join("\n"), () => "add"));
+        if (edit.tool === "write") body.append(lines(String(edit.content ?? "").split("\n").map((l) => `+${l}`).join("\n"), () => "add"));
         for (const change of edit.changes || []) {
           const text = [...change.old.split("\n").map((l) => `-${l}`), ...change.new.split("\n").map((l) => `+${l}`)].join("\n");
           body.append(lines(text, gitKind));

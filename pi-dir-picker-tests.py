@@ -291,6 +291,13 @@ def sandbox_test():
         "grep '^Seccomp:' /proc/self/status | tr -d ' \\t' > seccomp.out\n"
         'if [ -e /run/user ] || [ -e /run/dbus ]; then echo visible > run.out; else echo hidden > run.out; fi\n'
         'cat /etc/resolv.conf > /dev/null 2>&1 && echo ok > resolv.out || echo unreadable > resolv.out\n'
+        # The network: nothing directly, the proxy refuses what is not allowed.
+        'echo "$HTTPS_PROXY" > proxy.out\n'
+        "python3 -c 'import socket,sys; sys.exit(socket.socket().connect_ex((\"1.1.1.1\", 443)) == 0)' "
+        '&& echo blocked > direct.out || echo open > direct.out\n'
+        "python3 -c 'import socket; s = socket.create_connection((\"127.0.0.1\", 3128), timeout=5); "
+        's.sendall(b\"CONNECT example.com:443 HTTP/1.1\\r\\n\\r\\n\"); print(s.recv(100).split()[1].decode())\' '
+        '> proxied.out 2>&1\n'
     )
     fake.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "PI_BIN", "PI_PICKER_SANDBOX")}
@@ -308,6 +315,12 @@ def sandbox_test():
     check("sandbox: the TIOCSTI filter is loaded", out("seccomp.out") == "Seccomp:2", out("seccomp.out"))
     check("sandbox: /run is hidden", out("run.out") == "hidden", out("run.out"))
     check("sandbox: /etc/resolv.conf still readable", out("resolv.out") == "ok", out("resolv.out"))
+    if "network not limited" in run.stdout:
+        print("  skip network checks: " + run.stdout.split("network not limited", 1)[1].splitlines()[0])
+    else:
+        check("network: the proxy is given to Pi", out("proxy.out") == "http://127.0.0.1:3128", out("proxy.out"))
+        check("network: no direct connection", out("direct.out") == "blocked", out("direct.out"))
+        check("network: a host not allowed is refused", out("proxied.out") == "403", out("proxied.out"))
     shutil.rmtree(work, ignore_errors=True)
 
 

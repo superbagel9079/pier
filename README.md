@@ -166,12 +166,14 @@ Optional, in `~/.config/pi-dir-picker/config.toml`. A commented template is in [
 | `sandbox_read`, `sandbox_write` | more folders Pi may read, or write | `[]` |
 | `checkpoints` | restore points before each prompt | `true` |
 | `track_sessions` | each Pi tells Pier which conversation it holds (an extension Pier gives it) | `true` |
+| `network_limit` | in the sandbox, Pi reaches only its model providers, npm, GitHub, PyPI and `network_allow` (see [Security](#chapter-v-security)) | `true` |
+| `network_allow` | more places Pi may reach: `"host"`, `"host:port"`, `".domain"`, `"127.0.0.1:8080"` | `[]` |
 
 Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the PATH, and `PI_PICKER_SANDBOX=0`, which turns the sandbox off (the test suite uses it).
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 11 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 12 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -329,6 +331,7 @@ Then Pier disconnects, and the PC can be switched off.
 #### B. Take back
 
 **Take back**, on your return, from Context:
+- **review changes** opens a tab that compares Pi's copy with your folder, file by file (by their SHA-256, on both sides): **changed**, **new** and **deleted** by Pi. A click on a file shows its difference (yours `-`, Pi's `+`). Check what to bring back, then **Bring back the checked files**: only those are written into your folder. Changed and new files come checked, files Pi deleted do not. Every file replaced or deleted is first moved to a folder next to yours, `mockups (before Pi's changes 2026-10-16 10-32)`: nothing is lost. Links in the copy are never brought back, nor names Windows would read otherwise (`C:x`, `a:b`, `NUL`…), and every file brought back gets the "came from the Internet" mark;
 - **download** saves Pi's version in a **new folder** next to the original, `mockups (from Pi)`: nothing is overwritten. The download is capped (600 MB received, 2 GB unpacked), links and special files are skipped, and every file gets the "came from the Internet" mark, so Windows warns before opening or running it;
 - **share live** shares the original folder live again, in place of the copy;
 - **×** deletes the copy.
@@ -475,6 +478,7 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
 | **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
+| **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only its model providers, npm, GitHub, PyPI and what `network_allow` adds, through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
 | **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. `~/.pi` is Pi's to write: a link put in place of the key is not followed (only a plain file is read). |
 | **Shared folders** | Confined to the folder chosen: no `..`, no link leaving it, no tricky Windows path; what cannot be checked is refused. Read-only by default, and a confirmation for writing. |
@@ -566,7 +570,7 @@ None of it needs an SSH key.
 
 5. **A second factor (TOTP code)** for SSH, with `libpam-google-authenticator`. **Pier does not handle it yet:** today it answers the password to every hidden question of the server. It would need to ask for the code separately (a small possible change).
 
-6. **Limiting where Pi can send data.** The sandbox hides your files, but Pi keeps network access (it must reach its model). An instruction hidden in a file Pi reads could make it send code elsewhere. A possible answer: an HTTPS proxy with a list of allowed domains (the provider's, npm, GitHub…), and the firewall blocking the rest for Pi. Heavier to set up.
+6. **Where Pi can send data** is limited by the picker itself, without root (`network_limit`, on by default): Pi's sandbox has no network of its own, and a relay inside passes its connections to a proxy outside, which lets through only the places allowed (its model providers, npm, GitHub, PyPI, and `network_allow`). An instruction hidden in a file Pi reads can no longer make it send code anywhere else. What is refused is written to the picker's log (`net.blocked host=…`, in the Logs tab): add the host to `network_allow` if Pi needs it (a gateway such as Bifrost, Hindsight's server). Pi, npm, git and curl follow the proxy; Node needs version 24 or newer for that, and with an older Node the network stays open (the picker says so when Pi starts). A firewall rule would also cover a program that ignores the proxy, but needs root.
 
 #### C. On the PC
 
@@ -648,7 +652,9 @@ cd C:\Users\leo\Downloads\pi-tui\client\src-tauri
 cargo tauri build --no-bundle
 ```
 
-Quit Pier before building again (also from the notification area): Windows does not allow replacing a running program. The macOS and Linux versions will be built with GitHub Actions.
+Quit Pier before building again (also from the notification area): Windows does not allow replacing a running program.
+
+**GitHub Actions** (`.github/workflows/build.yml`) runs the tests and builds Pier for Windows (installer and exe), macOS (universal `.dmg`) and Linux (`.deb`, AppImage) at every push, kept as the run's artifacts with their SHA-256. A tag `v…` (`git tag v0.3.0`, `git push --tags`) also prepares a draft GitHub release with them. Signing is optional: with the secrets listed at the top of the workflow (an Authenticode certificate for Windows, a Developer ID for macOS, notarized), the files are signed; without them they are not, and Windows and macOS warn on first start. The macOS and Linux versions are built there only, not yet tried by hand.
 
 ---
 
@@ -809,7 +815,6 @@ Tested only locally or in simulation so far:
 - **A notification on the phone** when Pi is done, sent by the VM itself (ntfy), so even with the PC off.
 - **SSH limited to the WireGuard tunnel,** sshd hardened, fail2ban, a WireGuard `PresharedKey`: see [Network and encryption](#part-ii-network-and-encryption).
 - **A second factor (TOTP)** in Pier.
-- **macOS and Linux versions** built by GitHub Actions, and signing the executable.
+- **Signing certificates** for the GitHub Actions builds (the workflow is ready for them).
 - **Several VMs** saved, chosen at login.
-- **Bringing Pi's changes back** from a copy to the original folder, with a diff to choose, rather than downloading a whole copy.
 - **A disposable "clean room"** where Pi can try things without touching the real project or system.

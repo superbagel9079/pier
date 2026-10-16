@@ -3350,6 +3350,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "png 0.18.1",
+ "ring",
  "russh",
  "russh-sftp",
  "serde",

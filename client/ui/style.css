@@ -531,3 +531,12 @@ details label { margin-top: 8px; }
 .side.collapsed .tab, .side.collapsed .tab:not(.active):not(:hover) { min-width: 0; flex: 0 0 auto; padding: 12px 0; }
 .side.collapsed .tab > span:first-child { overflow: visible; }
 .side.collapsed .dock-head > button.icon { border-left: none; padding: 8px 0; }
+
+/* Take back, file by file */
+.takeback-section { margin: 0 0 12px; }
+.takeback-section summary { cursor: pointer; font-weight: 700; margin-bottom: 4px; }
+.takeback-list { list-style: none; margin: 0; padding: 0; }
+.takeback-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 0; }
+.takeback-list .rel { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.takeback-diff { flex-basis: 100%; }
+.takeback-diff .diff { content-visibility: auto; }

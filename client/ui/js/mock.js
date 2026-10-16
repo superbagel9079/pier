@@ -250,6 +250,21 @@ function mockBackend() {
       return { mountpoint: share.mountpoint, count: 12 };
     },
     downloadCopy: async (path, local) => `${local} (from Pi)`,
+    takebackCompare: async () => ({
+      changed: [{ rel: "index.html", size_pc: 1200, size_vm: 1350 }, { rel: "css/site.css", size_pc: 800, size_vm: 790 }],
+      added: [{ rel: "js/menu.js", size_pc: null, size_vm: 420 }],
+      deleted: [{ rel: "old/draft.txt", size_pc: 90, size_vm: null }],
+      same: 31, links: [], truncated: false,
+    }),
+    takebackDiff: async (path, local, rel) => ({ rel, diff: `--- PC/${rel}
++++ Pi/${rel}
+@@ -1,3 +1,3 @@
+ <header>
+-  <h1>Mockups</h1>
++  <h1>Mockups, revised</h1>
+ </header>
+` }),
+    takebackApply: async (path, local, take, remove) => ({ taken: take, deleted: remove, skipped: [], backup: take.length || remove.length ? `${local} (before Pi's changes 2026-10-16 10-32)` : null }),
     async removeUpload(path) {
       for (const key of ["images", "files", "copies"]) given[key] = given[key].filter((i) => i.path !== path);
       handed = handed.filter((h) => h.mountpoint !== path);

@@ -268,7 +268,13 @@ function makeConversations(tab) {
   };
   tab.onTargetChange = () => render();
 
-  $$(".conversation-filter").addEventListener("input", (event) => { query = event.target.value.trim().toLowerCase(); render(); });
+  // Redrawn once typing pauses: with every conversation of every project, at each key
+  // it rebuilt thousands of rows.
+  let filterTimer = null;
+  $$(".conversation-filter").addEventListener("input", (event) => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => { query = event.target.value.trim().toLowerCase(); render(); }, 150);
+  });
   $$(".show-archived").addEventListener("change", (event) => { archived = event.target.checked; render(); });
 
   const unlisten = vm.on("conversations", (message) => {

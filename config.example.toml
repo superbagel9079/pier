@@ -48,3 +48,16 @@ checkpoints = true
 # through a small extension given on its command line (~/.pi/pier/pier-session.ts;
 # nothing is added to Pi's settings). Off: Pier guesses from the session files.
 track_sessions = true
+
+# Where Pi may connect, inside its sandbox. With network_limit, Pi has no network of
+# its own: it goes through a proxy run by the picker, which lets through only its model
+# providers (Anthropic, OpenRouter, DeepSeek), npm, GitHub and PyPI, plus what
+# network_allow adds. A refused connection is written to the picker's log as
+# net.blocked, with its host: add that host here if Pi needs it. Needs Node 24 or newer
+# (older, the network stays open and the picker says so).
+network_limit = true
+
+# More places Pi may reach: "host" (ports 443 and 80), "host:port", ".domain" (every
+# name below it), "127.0.0.1:8080" (a service on the VM itself, such as a local gateway).
+# For example: network_allow = ["bifrost.example.org", ".hindsight.example", "127.0.0.1:8080"]
+network_allow = []

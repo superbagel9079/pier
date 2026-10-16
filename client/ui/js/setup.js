@@ -44,6 +44,7 @@ function makeSetup(tab) {
   const select = $$(".setup-project");
   let data = null;
   let chosen = null;      // a project picked in the list, else the Pi in use
+  let shownProjects = ""; // what the project list holds now
   const editors = {};
 
   const project = () => chosen || target?.path || select.value || "";
@@ -56,9 +57,15 @@ function makeSetup(tab) {
     for (const p of [...projects.running, ...projects.recent]) if (!options.some((o) => o.path === p.path)) options.push(p);
     // A project opened from Conversations may be neither running nor recent.
     if (chosen && !options.some((o) => o.path === chosen)) options.push({ path: chosen, label: chosen.replace(/^\/home\/[^/]+/, "~"), running: false });
-    select.innerHTML = "";
-    for (const p of options) select.add(new Option(`${p.running ? "[pi] " : ""}${p.label}`, p.path));
-    if (project()) select.value = project();
+    // Rebuilt only when the list itself changes: the projects arrive again each time a
+    // Pi starts or stops working, and rebuilding closed the list while one chose in it.
+    const key = JSON.stringify(options.map((p) => [p.path, p.label, Boolean(p.running)]));
+    if (key !== shownProjects) {
+      shownProjects = key;
+      select.innerHTML = "";
+      for (const p of options) select.add(new Option(`${p.running ? "[pi] " : ""}${p.label}`, p.path));
+    }
+    if (project() && select.value !== project()) select.value = project();
     // Following the Pi in use, or kept on a project chosen in the list.
     const follow = $$(".follow");
     follow.hidden = !chosen;

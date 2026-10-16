@@ -21,6 +21,14 @@ const vm = (() => {
   let retry = null;
   let watchId = null; // the id of the watch this side started last
 
+  // While the window is hidden (in the tray, minimized), only the projects are followed:
+  // they bring the "Pi finished" notifications. The panels' parts come back when the
+  // window does, rebuilt fresh; nothing is computed on the VM for a window nobody sees.
+  const quiet = () => (document.hidden ? { ...Object.fromEntries(Object.keys(want).map((k) => [k, null])), projects: want.projects } : want);
+  document.addEventListener("visibilitychange", () => {
+    if (running) backend.watchSet(quiet()).catch(() => {});
+  });
+
   backend.onVmUpdate((message) => {
     if (!message?.kind) return;
     latest[message.kind] = message;
@@ -47,11 +55,11 @@ const vm = (() => {
     active = true;
     clearTimeout(retry);
     try {
-      const sent = canon(want);
-      watchId = await backend.watchStart(want);
+      const sent = canon(quiet());
+      watchId = await backend.watchStart(quiet());
       running = true;
       // Followed meanwhile (a tab switched project while the watch was starting): sent now.
-      if (canon(want) !== sent) backend.watchSet(want).catch(() => {});
+      if (canon(quiet()) !== sent) backend.watchSet(quiet()).catch(() => {});
     } catch (error) {
       uiLog("warn", "watch-failed", { msg: String(error) });
       if (active) retry = setTimeout(start, 5000);
@@ -75,7 +83,7 @@ const vm = (() => {
       sent[kind] = value;
       delete latest[kind];
     }
-    if (running && Object.keys(sent).length) backend.watchSet(sent).catch(() => {});
+    if (running && Object.keys(sent).length && !document.hidden) backend.watchSet(sent).catch(() => {});
   }
 
   /** Calls handler with every message of a kind, starting with the last one if any. */

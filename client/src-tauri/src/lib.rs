@@ -13,6 +13,7 @@ mod picker;
 mod share;
 mod ssh;
 mod store;
+mod takeback;
 mod term;
 mod watch;
 
@@ -35,7 +36,7 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 11;
+const API_VERSION: u64 = 12;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
@@ -1062,6 +1063,106 @@ async fn download_copy(app: AppHandle, state: State<'_, AppState>, path: String,
     Ok(dest.to_string_lossy().into_owned())
 }
 
+/// Take back, file by file (takeback.rs): what differs between a handed-off copy on the
+/// VM and its original folder here.
+#[tauri::command]
+async fn takeback_compare(app: AppHandle, state: State<'_, AppState>, path: String, local: String) -> Result<Value, String> {
+    let remote = api(&app, &state, &["copy-manifest", &path], &[]).await?;
+    let root = PathBuf::from(&local);
+    let started = Instant::now();
+    let (mine, truncated) = tokio::task::spawn_blocking(move || takeback::local_manifest(&root))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("{local}: {}", message(e)))?;
+    let result = takeback::compare(&mine, &takeback::remote_manifest(&remote));
+    log_info!("takeback.compare", path = path, local = local, changed = result.changed.len(), added = result.added.len(),
+        deleted = result.deleted.len(), same = result.same, ms = started.elapsed().as_millis());
+    Ok(json!({
+        "changed": result.changed, "added": result.added, "deleted": result.deleted, "same": result.same,
+        "links": remote.get("links").cloned().unwrap_or(Value::Null),
+        "truncated": truncated || remote.get("truncated").and_then(Value::as_bool).unwrap_or(false),
+    }))
+}
+
+/// One file's difference: this computer's version against the copy's (a unified diff).
+#[tauri::command]
+async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, path: String, local: String, rel: String) -> Result<Value, String> {
+    let root = PathBuf::from(&local);
+    let mine = {
+        let rel = rel.clone();
+        tokio::task::spawn_blocking(move || takeback::read_local(&root, &rel, 1024 * 1024))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(message)?
+    };
+    if mine.len() > 1024 * 1024 {
+        return Ok(json!({ "rel": rel, "too_big": true }));
+    }
+    api(&app, &state, &["copy-diff", &path, &rel], &mine).await
+}
+
+/// Brings the files chosen from the copy into the original folder, and deletes there
+/// the ones chosen among those Pi deleted. What is replaced or deleted is moved first to
+/// "NAME (before Pi's changes DATE)", next to the original.
+#[tauri::command]
+async fn takeback_apply(app: AppHandle, state: State<'_, AppState>, path: String, local: String, take: Vec<String>, delete: Vec<String>) -> Result<Value, String> {
+    let root = PathBuf::from(&local);
+    if !root.is_dir() {
+        return Err(format!("{local} is not a folder"));
+    }
+    if take.iter().chain(delete.iter()).any(|rel| takeback::safe_parts(rel).is_none()) {
+        return Err("a file name from the VM is not acceptable here".into());
+    }
+    let parent = root.parent().ok_or_else(|| format!("{local} has no parent folder"))?.to_path_buf();
+    let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
+    let when = journal::timestamp(std::time::SystemTime::now()).replace('T', " ").replace(':', "-");
+    let backup = parent.join(format!("{name} (before Pi's changes {})", &when[..16]));
+    let request = next_request();
+    let started = Instant::now();
+    let unique = format!("{}-{}", std::process::id(), NEXT_REQUEST.fetch_add(1, Ordering::Relaxed));
+    let archive = std::env::temp_dir().join(format!("pier-takeback-files-{unique}.tar"));
+    let mut fetched = None;
+    if !take.is_empty() {
+        let settings = settings(&state)?;
+        let command = remote(&settings, &request, &format!("--download-files {}", sh_quote(&path)));
+        let channel = vm_channel(&app, &state).await?;
+        let list = take.join("\n");
+        let ran = {
+            let mut file = std::fs::File::create(&archive).map_err(|e| e.to_string())?;
+            ssh::run_into(channel, &command, list.as_bytes(), &mut file, TAKEBACK_MAX).await
+        };
+        match ran {
+            Ok((Some(0), _)) => fetched = Some(archive.clone()),
+            Ok((status, stderr)) => {
+                let _ = std::fs::remove_file(&archive);
+                let stderr = String::from_utf8_lossy(&stderr).trim().to_string();
+                log_warn!("takeback.fetch-failed", req = request, path = path, status = status.map_or("none".into(), |s| s.to_string()), err = stderr);
+                return Err(format!("download failed: {stderr}"));
+            }
+            Err(err) => {
+                let _ = std::fs::remove_file(&archive);
+                return Err(message(err));
+            }
+        }
+    }
+    let wanted: std::collections::HashSet<String> = take.into_iter().collect();
+    let applied = tokio::task::spawn_blocking({
+        let (root, backup) = (root.clone(), backup.clone());
+        move || takeback::apply(&root, &backup, fetched.as_deref(), &wanted, &delete)
+    })
+    .await
+    .map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&archive);
+    let applied = applied?.map_err(|e| {
+        let text = message(e);
+        log_warn!("takeback.apply-failed", req = request, local = local, err = text);
+        text
+    })?;
+    log_info!("takeback.applied", req = request, path = path, local = local, taken = applied.taken.len(), deleted = applied.deleted.len(),
+        skipped = applied.skipped.len(), backup = applied.backup.clone().unwrap_or_default(), ms = started.elapsed().as_millis());
+    serde_json::to_value(applied).map_err(|e| e.to_string())
+}
+
 /// Largest take-back archive, and most bytes it may unpack to.
 const TAKEBACK_MAX: u64 = 600 * 1024 * 1024;
 const TAKEBACK_UNPACKED_MAX: u64 = 2 * 1024 * 1024 * 1024;
@@ -1474,6 +1575,9 @@ pub fn run() {
             forget_share,
             hand_off,
             download_copy,
+            takeback_compare,
+            takeback_diff,
+            takeback_apply,
             write_text,
             checkpoint_create,
             checkpoint_restore,

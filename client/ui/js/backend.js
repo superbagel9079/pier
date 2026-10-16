@@ -70,6 +70,9 @@ function realBackend() {
     clipboardPaths: () => invoke("clipboard_paths"),
     handOff: (id) => invoke("hand_off", { id }),
     downloadCopy: (path, local) => invoke("download_copy", { path, local }),
+    takebackCompare: (path, local) => invoke("takeback_compare", { path, local }),
+    takebackDiff: (path, local, rel) => invoke("takeback_diff", { path, local, rel }),
+    takebackApply: (path, local, take, remove) => invoke("takeback_apply", { path, local, take, delete: remove }),
     shareList: () => invoke("share_list"),
     async pickFolder() {
       return (await tauri.dialog.open({ directory: true, multiple: false, title: "Folder to share with the VM" })) || null;

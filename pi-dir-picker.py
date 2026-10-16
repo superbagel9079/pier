@@ -28,6 +28,7 @@ import queue
 import re
 import shlex
 import shutil
+import socket
 import signal
 import stat
 import struct
@@ -50,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.16"
+VERSION = "4.17"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -68,7 +69,21 @@ DEFAULTS = {
     "sandbox_write": [],               # extra paths Pi may also write in the sandbox
     "checkpoints": True,               # save the project before each prompt, to undo what Pi did
     "track_sessions": True,            # Pi tells Pier which conversation it holds (an extension Pier gives it)
+    "network_limit": True,             # in the sandbox, Pi reaches only NETWORK_ALLOW and network_allow
+    "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
 }
+
+# Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its
+# model providers, npm and GitHub (packages, git over https). The rest is refused and
+# logged (net.blocked): add what you need to network_allow in config.toml.
+NETWORK_ALLOW = (
+    ".anthropic.com", "claude.ai",          # Claude, Claude Max sign-in
+    "openrouter.ai", ".openrouter.ai",
+    "api.deepseek.com",
+    "registry.npmjs.org", ".npmjs.org",     # pi install npm:..., pi update
+    "github.com", ".github.com", ".githubusercontent.com",
+    "pypi.org", "files.pythonhosted.org",
+)
 
 # One path segment: starts with a letter or a digit (no hidden directory, no name that
 # reads as an option), then letters, digits, "_", "." or "-". Accented letters allowed.
@@ -963,7 +978,7 @@ def sandbox_refusal(project, home):
     return None
 
 
-def sandbox_argv(argv, project, home, config, env):
+def sandbox_argv(argv, project, home, config, env, network=None):
     """argv wrapped in bubblewrap, or None when bwrap is missing.
 
     Inside, Pi sees the whole system read-only, and of the home directory only:
@@ -1009,8 +1024,294 @@ def sandbox_argv(argv, project, home, config, env):
     for path in sorted(mounts, key=lambda m: (m.count(os.sep), m)):
         if os.path.exists(path):
             args += ["--bind" if mounts[path] == "rw" else "--ro-bind", path, path]
+    if network is not None:
+        # No network of its own: only the relay below, to the proxy outside (NetProxy).
+        args += ["--unshare-net", "--dir", NET_DIR, "--bind", network.socket, f"{NET_DIR}/net.sock",
+                 "--ro-bind", PICKER_MODULE, f"{NET_DIR}/picker.py"]
+        argv = ["python3", "-B", f"{NET_DIR}/picker.py", "--net-bridge", f"{NET_DIR}/net.sock",
+                *network.local_ports(), "--", *argv]
     args += ["--unshare-pid", "--unshare-ipc", "--die-with-parent", "--chdir", project, "--", *argv]
     return args
+
+
+# --- the network Pi may reach -----------------------------------------------------------
+#
+# With network_limit, Pi's sandbox has a network of its own with nothing in it
+# (--unshare-net): Pi cannot connect anywhere by itself. Inside, a small relay of this
+# file (--net-bridge) listens on 127.0.0.1:3128 and passes each connection, through a
+# Unix socket bound into the sandbox, to NetProxy, which runs out here and accepts only
+# HTTP CONNECT to the places allowed. Pi, npm, git and curl use it through the usual
+# HTTPS_PROXY variables (NODE_USE_ENV_PROXY for Node's own fetch). Refused attempts are
+# logged as net.blocked, with the host: add it to network_allow if Pi needs it.
+# An address on the VM itself ("127.0.0.1:8080", a local gateway) is relayed too: the
+# relay listens on that port inside, and NetProxy connects to it out here.
+
+NET_DIR = "/tmp/.pier-net"
+NET_PROXY_PORT = 3128
+PICKER_MODULE = os.path.realpath(__file__)
+
+
+def parse_allow(entries):
+    """Entries of network_allow: (host or ".suffix", port or None) pairs."""
+    rules = []
+    for entry in entries:
+        entry = entry.strip().lower().rstrip(".")
+        if not entry:
+            continue
+        host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")
+        if port and not port.isdigit():
+            continue
+        rules.append(("127.0.0.1" if host == "localhost" else host, int(port) if port else None))
+    return rules
+
+
+def allowed(rules, host, port):
+    host = host.lower().rstrip(".")
+    for rule_host, rule_port in rules:
+        if rule_port is None and port not in (80, 443):
+            continue
+        if rule_port is not None and port != rule_port:
+            continue
+        if rule_host.startswith("."):
+            if host.endswith(rule_host) or host == rule_host[1:]:
+                return True
+        elif host == rule_host:
+            return True
+    return False
+
+
+def node_major(env):
+    """The major version of the node Pi runs on, None when there is none."""
+    node = shutil.which("node", path=env.get("PATH"))
+    if not node:
+        return None
+    try:
+        out = subprocess.run([node, "--version"], capture_output=True, text=True, timeout=5).stdout
+        return int(out.strip().lstrip("v").split(".")[0])
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def relay(a, b):
+    """Copies a to b until a closes, then closes b's sending side."""
+    try:
+        while True:
+            data = a.recv(65536)
+            if not data:
+                break
+            b.sendall(data)
+    except OSError:
+        pass
+    try:
+        b.shutdown(socket.SHUT_WR)
+    except OSError:
+        pass
+
+
+def relay_both(a, b):
+    other = threading.Thread(target=relay, args=(b, a), daemon=True)
+    other.start()
+    relay(a, b)
+    other.join()
+    for s in (a, b):
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+class NetProxy:
+    """The proxy Pi's sandbox reaches through its Unix socket: CONNECT host:port to the
+    places allowed, nothing else."""
+
+    def __init__(self, project, rules):
+        self.project = project
+        self.rules = rules
+        folder = os.path.join(os.path.dirname(state_path(home_dir())), "net")
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        self.socket = os.path.join(folder, f"{os.getpid()}.sock")
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(self.socket)
+        os.chmod(self.socket, 0o600)
+        self.server.listen(64)
+        self.blocked = {}  # host -> when it was last logged
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def local_ports(self):
+        """The ports of the VM itself allowed ("127.0.0.1:8080"): the relay listens there."""
+        return [str(port) for host, port in self.rules if port and host in ("127.0.0.1", "localhost")]
+
+    def serve(self):
+        while True:
+            try:
+                client, _ = self.server.accept()
+            except OSError:
+                return
+            threading.Thread(target=self.handle, args=(client,), daemon=True).start()
+
+    def handle(self, client):
+        try:
+            client.settimeout(30)
+            head = b""
+            while b"\r\n\r\n" not in head and len(head) < 8192:
+                chunk = client.recv(4096)
+                if not chunk:
+                    client.close()
+                    return
+                head += chunk
+            line = head.split(b"\r\n", 1)[0].decode("latin-1")
+            parts = line.split()
+            target = parts[1] if len(parts) == 3 and parts[0].upper() == "CONNECT" else ""
+            host, _, port = target.rpartition(":")
+            host = host.strip("[]")
+            if not host or not port.isdigit():
+                client.sendall(b"HTTP/1.1 405 Only CONNECT\r\nContent-Length: 0\r\n\r\n")
+                client.close()
+                return
+            port = int(port)
+            if not allowed(self.rules, host, port):
+                now = time.monotonic()
+                if now - self.blocked.get(host, -1e9) > 60:
+                    self.blocked[host] = now
+                    log("warn", "net.blocked", project=self.project, host=host, port=port,
+                        hint="add it to network_allow in ~/.config/pi-dir-picker/config.toml")
+                client.sendall(b"HTTP/1.1 403 Not allowed by network_allow\r\nContent-Length: 0\r\n\r\n")
+                client.close()
+                return
+            try:
+                upstream = socket.create_connection((host, port), timeout=15)
+            except OSError as exc:
+                client.sendall(f"HTTP/1.1 502 {exc.strerror or 'unreachable'}\r\nContent-Length: 0\r\n\r\n".encode("latin-1", "replace"))
+                client.close()
+                return
+            upstream.settimeout(None)
+            client.settimeout(None)
+            client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            rest = head.split(b"\r\n\r\n", 1)[1]
+            if rest:
+                upstream.sendall(rest)
+            relay_both(client, upstream)
+        except OSError:
+            try:
+                client.close()
+            except OSError:
+                pass
+
+    def close(self):
+        try:
+            self.server.close()
+        except OSError:
+            pass
+        try:
+            os.remove(self.socket)
+        except OSError:
+            pass
+
+
+def net_bridge(args):
+    """--net-bridge SOCKET [PORT...] -- PROGRAM...: inside Pi's sandbox. Listens on
+    127.0.0.1:3128 (the proxy) and on the local ports allowed, passes each connection to
+    SOCKET, then runs PROGRAM and ends with it."""
+    if "--" not in args or not args:
+        print("usage: --net-bridge SOCKET [PORT...] -- PROGRAM", file=sys.stderr)
+        return 2
+    split = args.index("--")
+    path, ports, program = args[0], [int(p) for p in args[1:split] if p.isdigit()], args[split + 1:]
+
+    def listen(port, forward):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", port))
+        server.listen(64)
+
+        def accept():
+            while True:
+                try:
+                    client, _ = server.accept()
+                except OSError:
+                    return
+                threading.Thread(target=forward, args=(client, port), daemon=True).start()
+
+        threading.Thread(target=accept, daemon=True).start()
+
+    def to_proxy(client, port):
+        upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            upstream.connect(path)
+        except OSError:
+            client.close()
+            return
+        relay_both(client, upstream)
+
+    def to_local(client, port):
+        # A port of the VM itself: asked of the proxy as CONNECT 127.0.0.1:PORT.
+        upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            upstream.connect(path)
+            upstream.sendall(f"CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n".encode())
+            answer = b""
+            while b"\r\n\r\n" not in answer and len(answer) < 4096:
+                chunk = upstream.recv(4096)
+                if not chunk:
+                    break
+                answer += chunk
+            if b" 200 " not in answer.split(b"\r\n", 1)[0]:
+                raise OSError("refused")
+        except OSError:
+            client.close()
+            upstream.close()
+            return
+        relay_both(client, upstream)
+
+    try:
+        listen(NET_PROXY_PORT, to_proxy)
+        for port in ports:
+            if port != NET_PROXY_PORT:
+                listen(port, to_local)
+    except OSError as exc:
+        print(f"Pier: the network relay could not start ({exc})", file=sys.stderr)
+        return 1
+    # The terminal's signals are Pi's: Ctrl+C reaches it, and the relay stays up.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        child = subprocess.Popen(program)
+    except OSError as exc:
+        print(f"cannot run {program[0]}: {exc.strerror or exc}", file=sys.stderr)
+        return 127
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, lambda number, _frame: child.send_signal(number))
+    while True:
+        try:
+            return child.wait()
+        except InterruptedError:
+            continue
+
+
+def network_plan(config, env, project):
+    """A NetProxy for Pi in project, or (None, why) when Pi's network is not limited."""
+    if not config["network_limit"]:
+        return None, None
+    major = node_major(env)
+    if major is not None and major < 24:
+        # Node's fetch follows HTTPS_PROXY only from Node 24 on (NODE_USE_ENV_PROXY):
+        # limited, Pi could not reach its model at all.
+        return None, f"network not limited: Node {major} found, Node 24 or newer is needed (or set network_limit = false)"
+    rules = parse_allow(list(NETWORK_ALLOW) + list(config["network_allow"]))
+    return NetProxy(project, rules), None
+
+
+def proxy_env(env):
+    """The variables that send Pi, npm, git and curl through the relay."""
+    url = f"http://127.0.0.1:{NET_PROXY_PORT}"
+    for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        env[name] = url
+    env["NO_PROXY"] = env["no_proxy"] = "localhost,127.0.0.1,::1"
+    env["NODE_USE_ENV_PROXY"] = "1"
+    return env
 
 
 SANDBOX_MISSING = ("bubblewrap is not installed, and Pi is set to run in a sandbox. "
@@ -1118,6 +1419,7 @@ def exec_pi(path, extra):
                 os.remove(env["PIER_STATE"])  # what an earlier Pi of that name said
             except OSError:
                 pass
+    network = None  # the proxy of a sandbox whose network is limited (see NetProxy)
     plain = argv + list(extra)
     argv = argv + tracked + list(extra)
     if sandbox_wanted(config):
@@ -1129,10 +1431,16 @@ def exec_pi(path, extra):
             return 1
         for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
             env.pop(key, None)
+        network, unlimited = network_plan(config, env, os.path.realpath(path)) if shutil.which("bwrap") else (None, None)
+        if unlimited:
+            print(f"Pier: {unlimited}")
+            log("warn", "pi.network-unlimited", project=path, why=unlimited)
+        if network:
+            proxy_env(env)
         # Refuse rather than run unconfined: a sandbox that silently goes away
         # protects nothing.
-        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env)
-        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env)
+        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network)
+        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network)
         if argv is None:
             print(SANDBOX_MISSING)
             log("error", "pi.sandbox-missing", project=path)
@@ -1152,7 +1460,8 @@ def exec_pi(path, extra):
         file = extra[extra.index("--session") + 1] if "--session" in extra[:-1] else None
         watcher = PromptWatcher(project, file, os.environ.get("PI_PICKER_SLOT"))
         watcher.start()
-    log("info", "pi.start", project=project, sandbox=sandbox_wanted(config), args=list(extra), pi=pi_exe)
+    log("info", "pi.start", project=project, sandbox=sandbox_wanted(config), network="limited" if network else "open",
+        args=list(extra), pi=pi_exe)
     sandboxed = sandbox_wanted(config)
 
     def launch(command):
@@ -1183,6 +1492,8 @@ def exec_pi(path, extra):
         status = 1
     if watcher:
         watcher.stop()
+    if network:
+        network.close()
     if env.get("PIER_STATE"):
         try:
             os.remove(env["PIER_STATE"])
@@ -2129,7 +2440,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 11
+API_VERSION = 12
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -3191,6 +3502,134 @@ def api_handoff(home, mount, mode, stream):
             "relative": f"{SHARE_DIR}/{name}", "count": count}
 
 
+# --- take back, file by file -------------------------------------------------------------
+#
+# Pier compares a handed-off copy with the original folder on the PC: the picker lists
+# the copy's files with their SHA-256 (copy-manifest), shows one file's difference
+# (copy-diff, the PC's version on stdin), and sends the files chosen (--download-files).
+# The copy is Pi's to write: it is walked through file descriptors (os.fwalk), links are
+# listed but never followed, and only plain files are read.
+
+# Left out of the comparison, as Pier leaves them out of the copy (copy.rs).
+COPY_SKIP = {".git", "node_modules", "target", "__pycache__", ".venv", "venv", ".DS_Store", "Thumbs.db"}
+MANIFEST_MAX_FILES = 20000
+MANIFEST_MAX_BYTES = 2 * 1024 * 1024 * 1024
+COPY_DIFF_MAX = 1024 * 1024
+
+
+def copy_root(home, path):
+    """path, checked to be a copy Pier made (a handed-off share, or a folder copy)."""
+    full = os.path.realpath(path)
+    parent = os.path.basename(os.path.dirname(full))
+    if not within(full, home) or parent not in (SHARE_DIR, FILES_DIR) or is_mounted(full) or not os.path.isdir(full):
+        raise ApiError(f"not a copy that can be taken back: {path}")
+    return full
+
+
+def copy_rel_ok(rel):
+    parts = rel.split("/")
+    return bool(rel) and len(rel) < 4096 and not rel.startswith("/") and all(p not in ("", ".", "..") for p in parts) \
+        and not any(ord(c) < 32 for c in rel)
+
+
+def hash_fd(fd):
+    digest = hashlib.sha256()
+    while True:
+        block = os.read(fd, 1 << 20)
+        if not block:
+            return digest.hexdigest()
+        digest.update(block)
+
+
+def api_copy_manifest(home, path):
+    """{"files": {relative path: {"size", "sha256"}}, "links": [...], "truncated"}."""
+    full = copy_root(home, path)
+    files, links, total, truncated = {}, [], 0, False
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    walker = os.fwalk(full, follow_symlinks=False) if hasattr(os, "fwalk") else ((r, d, f, None) for r, d, f in os.walk(full))
+    for root, dirs, names, dir_fd in walker:
+        dirs[:] = [d for d in dirs if d not in COPY_SKIP]
+        rel_root = os.path.relpath(root, full)
+        for name in sorted(names):
+            if name in COPY_SKIP:
+                continue
+            rel = name if rel_root == "." else f"{rel_root}/{name}".replace(os.sep, "/")
+            try:
+                st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False) if dir_fd is not None else os.lstat(os.path.join(root, name))
+            except OSError:
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                links.append(rel)
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            if len(files) >= MANIFEST_MAX_FILES or total + st.st_size > MANIFEST_MAX_BYTES:
+                truncated = True
+                break
+            try:
+                fd = os.open(name, flags, dir_fd=dir_fd) if dir_fd is not None else os.open(os.path.join(root, name), flags)
+            except OSError:
+                continue
+            try:
+                if not stat.S_ISREG(os.fstat(fd).st_mode):
+                    continue
+                files[rel] = {"size": st.st_size, "sha256": hash_fd(fd)}
+                total += st.st_size
+            finally:
+                os.close(fd)
+        if truncated:
+            break
+    return {"path": full, "files": files, "links": links, "truncated": truncated}
+
+
+def api_copy_diff(home, path, rel, local):
+    """The difference between the PC's version of rel (local, bytes; empty when it has
+    none) and the copy's, as a unified diff ("-" the PC, "+" Pi)."""
+    import difflib
+    full = copy_root(home, path)
+    if not copy_rel_ok(rel):
+        raise ApiError(f"not a file of the copy: {rel}")
+    fd = open_regular(os.path.join(full, *rel.split("/")), root=full)
+    if fd is None:
+        remote = b""
+    else:
+        with os.fdopen(fd, "rb") as handle:
+            remote = handle.read(COPY_DIFF_MAX + 1)
+    if len(remote) > COPY_DIFF_MAX or len(local) > COPY_DIFF_MAX:
+        return {"rel": rel, "too_big": True}
+    if b"\0" in remote or b"\0" in local:
+        return {"rel": rel, "binary": True, "size_vm": len(remote), "size_pc": len(local)}
+    before = local.decode("utf-8", "replace").splitlines(keepends=True)
+    after = remote.decode("utf-8", "replace").splitlines(keepends=True)
+    diff = "".join(difflib.unified_diff(before, after, f"PC/{rel}", f"Pi/{rel}", n=3))
+    return {"rel": rel, "diff": diff[:4 * COPY_DIFF_MAX]}
+
+
+def download_files(home, path):
+    """--download-files PATH: the files of a copy named on stdin (one relative path a
+    line), as a tar stream on stdout. Plain files only, opened without following links."""
+    import tarfile
+    try:
+        full = copy_root(home, path)
+    except ApiError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    wanted = [rel for rel in sys.stdin.read(8 * 1024 * 1024).split("\n") if rel]
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        for rel in wanted:
+            if not copy_rel_ok(rel):
+                continue
+            fd = open_regular(os.path.join(full, *rel.split("/")), root=full)
+            if fd is None:
+                continue
+            with os.fdopen(fd, "rb") as handle:
+                info = archive.gettarinfo(fileobj=handle, arcname=rel)
+                info.uid = info.gid = 0
+                info.uname = info.gname = ""
+                archive.addfile(info, handle)
+    return 0
+
+
 def download_tar(home, path):
     """--download PATH: a handed-off copy or a folder copy, as a tar stream on stdout."""
     import tarfile
@@ -4067,7 +4506,7 @@ def api_write_text(home, path, which, data):
 
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "shares", "activity", "diff", "contexts",
-             "setup", "log", "checkpoints", "checkpoint-diff"}
+             "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -4140,6 +4579,8 @@ API_COMMANDS = {
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
     "conversations": lambda home, config, a: api_conversations(home),
+    "copy-manifest": lambda home, config, a: api_copy_manifest(home, a[0]),
+    "copy-diff": lambda home, config, a: api_copy_diff(home, a[0], a[1], stdin_bytes(COPY_DIFF_MAX)),
 }
 
 
@@ -5497,10 +5938,14 @@ Settings: ~/.config/pi-dir-picker/config.toml"""
 def entry():
     """The command line. Run as a script, or through the launcher Pier installs
     (~/bin/pi-pick importing this file as a module, so that Python keeps it compiled)."""
+    if len(sys.argv) >= 2 and sys.argv[1] == "--net-bridge":
+        sys.exit(net_bridge(sys.argv[2:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--exec-pi":
         sys.exit(exec_pi(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--api":
         sys.exit(run_api(sys.argv[2:]))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--download-files":
+        sys.exit(download_files(home_dir(), sys.argv[2]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--download":
         sys.exit(download_tar(home_dir(), sys.argv[2]))
     if len(sys.argv) >= 4 and sys.argv[1] == "--share-serve":
