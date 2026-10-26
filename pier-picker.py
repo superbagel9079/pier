@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.25"
+VERSION = "4.26"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -1459,15 +1459,17 @@ def exec_pi(path, extra):
     # A Pi beside another in the project works in its own worktree (see make_worktree).
     worktree = worktree_of(os.path.realpath(path), os.environ.get("PIER_WORKTREE"))
     workdir = worktree or path
-    if config["git_tools"]:
-        git_extension = pier_git_extension()
-        if git_extension:
-            try:
-                broker = GitBroker(os.path.realpath(path))
-            except OSError as exc:
-                log("warn", "git.broker-failed", project=path, err=str(exc))
+    git_extension = pier_git_extension() if config["git_tools"] else None
+    labs_extension = pier_labs_extension() if labs_enabled(home) else None
+    if git_extension or labs_extension:
+        try:
+            broker = GitBroker(os.path.realpath(path))
+        except OSError as exc:
+            log("warn", "git.broker-failed", project=path, err=str(exc))
         if broker:
-            tracked = tracked + ["--extension", git_extension]
+            for extension in (git_extension, labs_extension):
+                if extension:
+                    tracked = tracked + ["--extension", extension]
             env["PIER_GIT_SOCKET"] = broker.socket
     plain = argv + list(extra)
     argv = argv + tracked + list(extra)
@@ -2663,7 +2665,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 17
+API_VERSION = 18
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -5467,6 +5469,11 @@ def api_approval_answer(home, ident, answer):
                 if not link:
                     raise ApiError("the project is no longer connected to a repository")
                 result = merge_pr(home, project, link, args.get("number"), args.get("method"))
+            elif approval["kind"] == "lab":
+                approval.update(state="approved")
+                save_approvals(home, approvals)
+                log("info", "lab.approved", id=ident, machine=args.get("machine"))
+                return {"id": ident, "state": "approved"}
             elif approval["kind"] == "review":
                 link = repo_link(home, project)
                 if not link:
@@ -6026,6 +6033,647 @@ GIT_OPS = ("info", "push", "pull", "open_pr", "list_prs", "pr", "request_merge",
            "list_tasks", "get_task", "create_task", "claim_task", "release_task", "pr_diff", "review_pr", "request_review")
 TEAM_WRITES = ("create_task", "claim_task", "release_task", "review_pr", "request_review")
 
+# --- labs: machines where Pi may do anything -------------------------------------------
+#
+# An option, off until the user turns it on (Settings > Labs): Pi's sandbox stays as it
+# is, and Pi gets tools to use machines of its own besides.
+#   - labs: disposable Incus containers (or virtual machines when the VM has /dev/kvm)
+#     on this VM, made by Pi. Root inside, nothing of the VM or of home inside, only what
+#     Pi copies in. Limits on CPU, memory and disk, a lifetime after which they go, a
+#     "clean" snapshot to go back to, the network open or cut.
+#   - machines: computers the user adds, reached over SSH with a key the picker makes and
+#     keeps (Pi never sees it). Each has a rule: Pi's commands run freely, or each waits
+#     for the user's approval in Pier.
+# Pi reaches both through the broker socket (lab_* operations), never directly: its
+# sandbox has no network to them. Every command is written to the labs journal.
+
+LABS_DEFAULTS = {"enabled": False, "max": 3, "ttl_hours": 24, "network": "open", "cpu": 2, "memory_gib": 4,
+                 "disk_gib": 20, "image": "debian/13"}
+LAB_NAME_RE = re.compile(r"[a-z][a-z0-9-]{0,39}")
+LAB_IMAGE_RE = re.compile(r"[a-z0-9][a-z0-9._/-]{0,60}")
+LAB_HOST_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}|\[[0-9A-Fa-f:]+\]")
+LAB_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+LAB_RUN_MAX = 900
+LAB_OUTPUT = 60 * 1024
+LAB_PUSH_SKIP = {IMAGE_DIR, FILES_DIR, SHARE_DIR, ".pi-worktrees"}
+LAB_APPROVAL_WAIT = 600
+
+
+def labs_dir():
+    folder = os.path.join(os.path.dirname(state_path(home_dir())), "labs")
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    return folder
+
+
+def labs_path(home):
+    return os.path.join(os.path.dirname(state_path(home)), "labs.json")
+
+
+def load_labs(home):
+    data = private_json(labs_path(home))
+    settings = dict(LABS_DEFAULTS)
+    settings.update({k: v for k, v in (data.get("settings") or {}).items() if k in LABS_DEFAULTS})
+    return {"settings": settings, "labs": data.get("labs") if isinstance(data.get("labs"), dict) else {},
+            "machines": data.get("machines") if isinstance(data.get("machines"), dict) else {}}
+
+
+def save_labs(home, data):
+    save_private_json(labs_path(home), data)
+
+
+def lab_instance(name):
+    return f"pier-{name}"
+
+
+def incus(*args, data=None, timeout=120, stream=None):
+    """The incus command line, as the user (who is in the incus group): stdout, or an
+    ApiError with incus's message."""
+    if not shutil.which("incus"):
+        raise ApiError("Incus is not installed on the VM: see Settings > Labs")
+    try:
+        result = subprocess.run(["incus", *args], input=data, stdout=stream or subprocess.PIPE, stderr=subprocess.PIPE,
+                                timeout=timeout, env=dict(os.environ, LC_ALL="C"))
+    except subprocess.TimeoutExpired:
+        raise ApiError(f"incus {args[0]} took over {timeout} s")
+    except OSError as exc:
+        raise ApiError(f"incus failed: {exc}")
+    if result.returncode != 0:
+        raise ApiError(result.stderr.decode("utf-8", "replace").strip()[-400:] or f"incus {args[0]} failed")
+    return result.stdout or b""
+
+
+def incus_state():
+    """(usable, why, kvm): whether this account can make labs."""
+    if not shutil.which("incus"):
+        return False, "Incus is not installed", False
+    try:
+        info = json.loads(incus("query", "/1.0", timeout=15) or b"{}")
+    except (ApiError, ValueError) as exc:
+        return False, f"Incus does not answer this account ({exc}): is it in the incus group?", False
+    drivers = str((info.get("environment") or {}).get("driver") or "")
+    return True, "", "qemu" in drivers and os.path.exists("/dev/kvm")
+
+
+def labs_expire(home):
+    """Labs past their lifetime go."""
+    data = load_labs(home)
+    now = time.time()
+    gone = [n for n, lab in data["labs"].items() if lab.get("expires") and lab["expires"] < now]
+    for name in gone:
+        try:
+            incus("delete", "--force", lab_instance(name), timeout=120)
+        except ApiError as exc:
+            log("warn", "lab.expire-failed", lab=name, err=str(exc))
+        data["labs"].pop(name, None)
+        log("info", "lab.expired", lab=name)
+    if gone:
+        save_labs(home, data)
+
+
+def lab_journal(entry):
+    entry = {"at": int(time.time()), **entry}
+    path = os.path.join(labs_dir(), "journal.jsonl")
+    try:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+        if os.path.getsize(path) > 2 * 1024 * 1024:  # the last half kept
+            with open(path, "rb") as handle:
+                tail = handle.read()[-1024 * 1024:]
+            atomic_write(path, tail.split(b"\n", 1)[-1].decode("utf-8", "replace"), labs_dir(), 0o600)
+    except OSError:
+        pass
+
+
+def api_lab_journal(home, limit="60"):
+    path = os.path.join(labs_dir(), "journal.jsonl")
+    try:
+        with open(path, "rb") as handle:
+            lines = handle.read()[-512 * 1024:].decode("utf-8", "replace").splitlines()
+    except OSError:
+        lines = []
+    out = []
+    for line in lines[-max(1, min(int(limit or 60), 300)):]:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            pass
+    return {"journal": list(reversed(out))}
+
+
+def machine_key():
+    """The picker's own SSH key for the machines (made once): (private path, public text)."""
+    key = os.path.join(labs_dir(), "id_ed25519")
+    if not os.path.exists(key):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "pier-labs", "-f", key],
+                       check=True, stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+    with open(key + ".pub", encoding="utf-8") as handle:
+        return key, handle.read().strip()
+
+
+def ssh_argv(machine, command=None, tty=False):
+    key, _ = machine_key()
+    argv = ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "-o", f"UserKnownHostsFile={os.path.join(labs_dir(), 'known_hosts')}", "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-p", str(int(machine.get("port") or 22))]
+    if tty:
+        argv.append("-t")
+    argv += [f"{machine['user']}@{machine['host']}"]
+    if command is not None:
+        argv += ["--", command]
+    return argv
+
+
+def lab_target(home, project, name):
+    """("lab", record) or ("machine", record): what a lab name stands for, for project's Pi."""
+    data = load_labs(home)
+    if not data["settings"]["enabled"]:
+        raise ApiError("labs are off: the user turns them on in Pier (Settings > Labs)")
+    if name in data["machines"]:
+        return "machine", data["machines"][name]
+    lab = data["labs"].get(name)
+    if not lab:
+        raise ApiError(f"no lab or machine named {name}: see lab_list")
+    if project and lab.get("project") != project:
+        raise ApiError(f"the lab {name} belongs to another project")
+    return "lab", lab
+
+
+def api_labs(home):
+    """Settings > Labs and the Labs tab: whether labs can be made, the labs, the machines."""
+    labs_expire(home)
+    data = load_labs(home)
+    usable, why, kvm = incus_state()
+    live = {}
+    if usable:
+        try:
+            for item in json.loads(incus("list", "pier-", "--format", "json", timeout=20) or b"[]"):
+                state = item.get("state") or {}
+                live[item.get("name")] = {"status": item.get("status"), "type": item.get("type"),
+                                          "memory": (state.get("memory") or {}).get("usage"),
+                                          "address": next((a.get("address") for n in (state.get("network") or {}).values()
+                                                           for a in n.get("addresses", []) if a.get("family") == "inet"
+                                                           and a.get("scope") == "global"), None)}
+        except (ApiError, ValueError):
+            pass
+    labs = []
+    for name, lab in sorted(data["labs"].items()):
+        labs.append({"name": name, **lab, **live.get(lab_instance(name), {"status": "missing"})})
+    machines = [{"name": n, **{k: m.get(k) for k in ("host", "port", "user", "policy", "added")}} for n, m in sorted(data["machines"].items())]
+    try:
+        public_key = machine_key()[1] if data["machines"] or data["settings"]["enabled"] else None
+    except (OSError, subprocess.SubprocessError):
+        public_key = None
+    return {"settings": data["settings"], "incus": usable, "why": why, "kvm": kvm, "labs": labs, "machines": machines,
+            "public_key": public_key}
+
+
+def api_labs_settings(home, text):
+    """From Pier: labs on or off, and their limits (JSON on stdin)."""
+    try:
+        wanted = json.loads(text or "{}")
+    except ValueError:
+        raise ApiError("labs settings: JSON expected")
+    data = load_labs(home)
+    settings = data["settings"]
+    checks = {"enabled": lambda v: isinstance(v, bool), "max": lambda v: isinstance(v, int) and 1 <= v <= 10,
+              "ttl_hours": lambda v: isinstance(v, int) and 1 <= v <= 24 * 30, "network": lambda v: v in ("open", "none"),
+              "cpu": lambda v: isinstance(v, int) and 1 <= v <= 64, "memory_gib": lambda v: isinstance(v, int) and 1 <= v <= 256,
+              "disk_gib": lambda v: isinstance(v, int) and 2 <= v <= 2000, "image": lambda v: isinstance(v, str) and bool(LAB_IMAGE_RE.fullmatch(v))}
+    for key, value in (wanted.items() if isinstance(wanted, dict) else []):
+        if key in checks:
+            if not checks[key](value):
+                raise ApiError(f"labs settings: {key} out of range")
+            settings[key] = value
+    save_labs(home, {**data, "settings": settings})
+    log("info", "labs.settings", **settings)
+    return api_labs(home)
+
+
+LAB_NO_SNAPSHOTS = ("snapshots are not allowed in this Incus project: lab_reset rebuilds the lab from its image instead. "
+                    "To allow them (an admin, once): sudo incus project set user-$(id -u) restricted.snapshots=allow")
+
+
+def lab_build(name, image, vm, settings):
+    """The Incus instance of a lab, started, with its work folder and, when the project
+    allows it, a "clean" snapshot: (Docker possible, snapshots possible). Nothing stays
+    when it fails."""
+    instance = lab_instance(name)
+    args = ["init", f"images:{image}", instance, "-c", f"limits.cpu={settings['cpu']}", "-c", f"limits.memory={settings['memory_gib']}GiB"]
+    if vm:
+        args.append("--vm")
+    nesting = not vm
+    try:
+        incus(*args, *(["-c", "security.nesting=true"] if nesting else []), timeout=600)
+    except ApiError:
+        if not nesting:
+            raise
+        nesting = False  # a restricted Incus project may refuse it: no Docker inside then
+        incus(*args, timeout=600)
+    snapshots = True
+    try:
+        try:
+            incus("config", "device", "override", instance, "root", f"size={settings['disk_gib']}GiB", timeout=30)
+        except ApiError:
+            pass  # a storage pool without quotas: the disk is not limited
+        if settings["network"] == "none":
+            incus("config", "device", "add", instance, "eth0", "none", timeout=30)
+        incus("start", instance, timeout=120)
+        deadline = time.monotonic() + (180 if vm else 60)
+        while True:  # a VM answers once its agent runs
+            try:
+                incus("exec", instance, "--", "mkdir", "-p", "/root/project", timeout=20)
+                break
+            except ApiError:
+                if time.monotonic() > deadline:
+                    raise ApiError("the lab did not start in time")
+                time.sleep(2)
+        try:
+            incus("snapshot", "create", instance, "clean", timeout=300)
+        except ApiError as exc:
+            if "snapshot" not in str(exc).lower():
+                raise
+            snapshots = False  # the user's restricted Incus project: reset rebuilds instead
+            log("info", "lab.no-snapshots", lab=name, err=str(exc))
+    except ApiError:
+        try:
+            incus("delete", "--force", instance, timeout=120)
+        except ApiError:
+            pass
+        raise
+    return nesting, snapshots
+
+
+def lab_create(home, project, name, vm=False, image=None):
+    labs_expire(home)
+    data = load_labs(home)
+    settings = data["settings"]
+    if not settings["enabled"]:
+        raise ApiError("labs are off: the user turns them on in Pier (Settings > Labs)")
+    usable, why, kvm = incus_state()
+    if not usable:
+        raise ApiError(f"no lab can be made: {why}")
+    if len(data["labs"]) >= settings["max"]:
+        raise ApiError(f"already {len(data['labs'])} labs, the most allowed: destroy one first (lab_destroy)")
+    if not name:
+        n = 1
+        while f"lab-{n}" in data["labs"]:
+            n += 1
+        name = f"lab-{n}"
+    if not LAB_NAME_RE.fullmatch(name) or name in data["labs"] or name in data["machines"]:
+        raise ApiError("a lab's name: lowercase letters, digits and '-', starting with a letter, not taken")
+    image = image or settings["image"]
+    if not LAB_IMAGE_RE.fullmatch(image) or ".." in image:
+        raise ApiError("an image of images.linuxcontainers.org, like debian/13 or ubuntu/24.04")
+    if vm and not kvm:
+        raise ApiError("virtual machines need /dev/kvm on the VM (Proxmox: CPU type host); make a container instead")
+    nesting, snapshots = lab_build(name, image, bool(vm), settings)
+    record = {"project": project, "image": image, "vm": bool(vm), "network": settings["network"], "docker": nesting,
+              "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
+    data = load_labs(home)
+    data["labs"][name] = record
+    save_labs(home, data)
+    log("info", "lab.created", lab=name, project=project, image=image, vm=bool(vm))
+    lab_journal({"lab": name, "project": project, "what": f"created ({'VM' if vm else 'container'}, {image})"})
+    return {"lab": name, **record, "workdir": "/root/project",
+            "note": "copy the project in with lab_push, run with lab_run; lab_reset goes back to this clean state"}
+
+
+def lab_run(home, project, name, command, timeout=300):
+    kind, record = lab_target(home, project, name)
+    command = str(command or "")
+    if not command.strip() or len(command) > 20000:
+        raise ApiError("a command to run")
+    timeout = max(1, min(int(timeout or 300), LAB_RUN_MAX))
+    if kind == "lab":
+        argv = ["incus", "exec", lab_instance(name), "--cwd", "/root/project", "--", "sh", "-lc", command]
+    else:
+        argv = ssh_argv(record, f"mkdir -p ~/pier-lab && cd ~/pier-lab && {command}")
+    started = time.monotonic()
+    try:
+        result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, env=dict(os.environ, LC_ALL="C"))
+        code, out, err = result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired as exc:
+        code, out, err = None, exc.stdout or b"", (exc.stderr or b"") + f"\n[stopped after {timeout} s]".encode()
+    except OSError as exc:
+        raise ApiError(f"could not run it: {exc}")
+    ms = int((time.monotonic() - started) * 1000)
+    lab_journal({"lab": name, "project": project, "command": command[:500], "exit": code, "ms": ms})
+    tail = lambda b: b.decode("utf-8", "replace")[-LAB_OUTPUT:]
+    return {"lab": name, "exit": code, "ms": ms, "stdout": tail(out), "stderr": tail(err),
+            "truncated": len(out) > LAB_OUTPUT or len(err) > LAB_OUTPUT}
+
+
+def lab_push(home, project, name, path="."):
+    """Files of the project into the lab (/root/project, or ~/pier-lab on a machine), as
+    a tar stream: links stay links (nothing outside the project is read), what was given
+    to Pi and its worktrees stay out."""
+    import tarfile
+    kind, record = lab_target(home, project, name)
+    real = os.path.realpath(project)
+    source = os.path.realpath(os.path.join(real, path or "."))
+    if not within(source, real):
+        raise ApiError("a path inside the project")
+    total = [0]
+
+    def keep(info):
+        if any(part in LAB_PUSH_SKIP for part in info.name.split("/")):
+            return None
+        total[0] += max(info.size, 0)
+        if total[0] > COPY_MAX_BYTES:
+            raise ApiError(f"over {COPY_MAX_BYTES // (1024 * 1024)} MB to copy: push a part of the project")
+        return info
+    target = "/root/project" if kind == "lab" else "~/pier-lab"
+    argv = (["incus", "exec", lab_instance(name), "--", "sh", "-c", f"mkdir -p {target} && tar -x -C {target}"]
+            if kind == "lab" else ssh_argv(record, f"mkdir -p {target} && tar -x -C {target}"))
+    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    try:
+        with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
+            arcname = os.path.relpath(source, real)
+            archive.add(source, arcname="." if arcname == "." else arcname, recursive=True, filter=keep)
+        process.stdin.close()
+        err = process.stderr.read(4096)
+        code = process.wait(timeout=600)
+    except BaseException:
+        process.kill()
+        raise
+    if code != 0:
+        raise ApiError(err.decode("utf-8", "replace").strip()[-300:] or "the copy failed")
+    lab_journal({"lab": name, "project": project, "what": f"pushed {path or '.'} ({total[0] // 1024} kB)"})
+    return {"lab": name, "pushed": path or ".", "kb": total[0] // 1024, "into": target}
+
+
+def lab_pull(home, project, name, path):
+    """A file or folder of the lab into the project's .pi-files/<stamp>-lab-<name>, through
+    a private folder and tarfile's data filter, as a folder given to Pi is."""
+    kind, record = lab_target(home, project, name)
+    path = str(path or "").strip()
+    if not path or "\n" in path or "\0" in path:
+        raise ApiError("a path in the lab")
+    base = "/root/project" if kind == "lab" else "~/pier-lab"
+    quoted = shlex.quote(path)
+    script = f"cd {base} && tar -c -C \"$(dirname {quoted})\" \"$(basename {quoted})\""
+    argv = (["incus", "exec", lab_instance(name), "--", "sh", "-c", script] if kind == "lab" else ssh_argv(record, script))
+    staging = private_staging()
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        count = extract_tar(process.stdout, staging)
+        err = process.stderr.read(4096)
+        if process.wait(timeout=600) != 0 and not count:
+            raise ApiError(err.decode("utf-8", "replace").strip()[-300:] or "nothing came back")
+        folder = ignored_dir(project, FILES_DIR)
+        dest = f"{stamp()}-lab-{name}"
+        if not move_into(staging, folder, dest, project):
+            shutil.copytree(staging, os.path.join(folder, dest), symlinks=True)
+    except Exception:
+        process.kill()
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    shutil.rmtree(staging, ignore_errors=True)
+    lab_journal({"lab": name, "project": project, "what": f"pulled {path}"})
+    return {"lab": name, "pulled": path, "into": f"{FILES_DIR}/{dest}/", "files": count}
+
+
+def lab_snapshot(home, project, name, snapshot, restore=False):
+    kind, _ = lab_target(home, project, name)
+    if kind != "lab":
+        raise ApiError("a machine has no snapshots: only labs do")
+    snapshot = snapshot or "clean"
+    if not LAB_NAME_RE.fullmatch(snapshot):
+        raise ApiError("a snapshot's name: lowercase letters, digits and '-'")
+    lab = load_labs(home)["labs"].get(name) or {}
+    if lab.get("snapshots") is False:
+        if not restore or snapshot != "clean":
+            raise ApiError(LAB_NO_SNAPSHOTS)
+        # No snapshot: the lab is made again from its image, under the same name.
+        incus("delete", "--force", lab_instance(name), timeout=180)
+        settings = {**load_labs(home)["settings"], "network": lab.get("network", "open")}
+        nesting, snapshots = lab_build(name, lab.get("image") or settings["image"], bool(lab.get("vm")), settings)
+        data = load_labs(home)
+        if name in data["labs"]:
+            data["labs"][name].update(docker=nesting, snapshots=snapshots)
+            save_labs(home, data)
+        lab_journal({"lab": name, "project": project, "what": "rebuilt from its image (back to clean)"})
+        return {"lab": name, "restored": "clean", "rebuilt": True}
+    if restore:
+        incus("snapshot", "restore", lab_instance(name), snapshot, timeout=300)
+    else:
+        incus("snapshot", "create", lab_instance(name), snapshot, timeout=300)
+    lab_journal({"lab": name, "project": project, "what": f"{'back to' if restore else 'snapshot'} {snapshot}"})
+    return {"lab": name, "restored" if restore else "snapshot": snapshot}
+
+
+def lab_destroy(home, project, name):
+    kind, _ = lab_target(home, project, name)
+    if kind != "lab":
+        raise ApiError("a machine is the user's: it is removed in Pier, not destroyed")
+    try:
+        incus("delete", "--force", lab_instance(name), timeout=180)
+    except ApiError as exc:
+        if "not found" not in str(exc).lower():
+            raise
+    data = load_labs(home)
+    data["labs"].pop(name, None)
+    save_labs(home, data)
+    lab_journal({"lab": name, "project": project, "what": "destroyed"})
+    log("info", "lab.destroyed", lab=name)
+    return {"destroyed": name}
+
+
+def lab_list(home, project):
+    status = api_labs(home)
+    if not status["settings"]["enabled"]:
+        raise ApiError("labs are off: the user turns them on in Pier (Settings > Labs)")
+    return {"labs": [{k: l.get(k) for k in ("name", "status", "image", "vm", "network", "docker", "snapshots", "expires")}
+                     for l in status["labs"] if l.get("project") == project],
+            "machines": [{"name": m["name"], "host": m["host"], "needs_approval": m.get("policy") != "auto"} for m in status["machines"]],
+            "can_create": status["incus"] and len(status["labs"]) < status["settings"]["max"],
+            "vm_possible": status["kvm"], "why_not": status["why"] or None}
+
+
+def api_machine_add(home, name, host, port, user, policy):
+    data = load_labs(home)
+    if not LAB_NAME_RE.fullmatch(name or "") or name in data["labs"]:
+        raise ApiError("a machine's name: lowercase letters, digits and '-', starting with a letter")
+    if not LAB_HOST_RE.fullmatch(host or "") or not LAB_USER_RE.fullmatch(user or ""):
+        raise ApiError("a host name or address, and a user name")
+    if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536 or policy not in ("ask", "auto"):
+        raise ApiError("a port, and ask or auto")
+    _, public = machine_key()
+    data["machines"][name] = {"host": host, "port": int(port or 22), "user": user, "policy": policy, "added": int(time.time())}
+    save_labs(home, data)
+    log("info", "lab.machine-added", machine=name, host=host, policy=policy)
+    return {"machine": name, "public_key": public,
+            "next": f"add this key to ~{user}/.ssh/authorized_keys on {host}, then test it"}
+
+
+def api_machine_remove(home, name):
+    data = load_labs(home)
+    data["machines"].pop(name, None)
+    save_labs(home, data)
+    log("info", "lab.machine-removed", machine=name)
+    return {"removed": name}
+
+
+def api_machine_test(home, name):
+    data = load_labs(home)
+    machine = data["machines"].get(name)
+    if not machine:
+        raise ApiError(f"no machine {name}")
+    try:
+        result = subprocess.run(ssh_argv(machine, "uname -srm"), stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ApiError(f"no answer: {exc}")
+    if result.returncode != 0:
+        raise ApiError(result.stderr.decode("utf-8", "replace").strip()[-300:] or "the connection failed")
+    return {"machine": name, "answer": result.stdout.decode("utf-8", "replace").strip()}
+
+
+def api_lab_action(home, action, name, extra=""):
+    """From Pier (the user's own act): a lab made, reset, destroyed."""
+    if action == "create":
+        project = resolve_inside(home, name) if name else ""
+        return lab_create(home, project, "", vm=extra == "vm")
+    data = load_labs(home)
+    lab = data["labs"].get(name)
+    if not lab:
+        raise ApiError(f"no lab {name}")
+    if action == "reset":
+        return lab_snapshot(home, lab.get("project"), name, "clean", restore=True)
+    if action == "destroy":
+        return lab_destroy(home, lab.get("project"), name)
+    raise ApiError(f"unknown action: {action}")
+
+
+def lab_shell(name):
+    """--lab-shell NAME: a terminal in a lab or on a machine (Pier's Labs tab)."""
+    data = load_labs(home_dir())
+    if name in data["machines"]:
+        argv = ssh_argv(data["machines"][name], tty=True)
+    elif name in data["labs"]:
+        argv = ["incus", "exec", lab_instance(name), "--cwd", "/root/project", "--", "sh", "-c",
+                "command -v bash >/dev/null && exec bash -l || exec sh -l"]
+    else:
+        print(f"no lab or machine named {name}")
+        return 1
+    lab_journal({"lab": name, "what": "terminal opened by the user"})
+    os.execvp(argv[0], argv)
+
+
+LAB_OPS = ("lab_list", "lab_create", "lab_run", "lab_push", "lab_pull", "lab_snapshot", "lab_reset", "lab_destroy")
+
+
+def lab_answer(home, project, request):
+    """A lab operation of Pi (from the broker). On a machine set to ask, it waits for the
+    user's approval in Pier (at most ten minutes)."""
+    op = request.get("op")
+    name = str(request.get("lab") or "")
+    if op == "lab_list":
+        return lab_list(home, project)
+    if op == "lab_create":
+        return lab_create(home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"))
+    kind, record = lab_target(home, project, name)
+    if kind == "machine" and record.get("policy") != "auto":
+        what = {"lab_run": f"run: {str(request.get('command') or '')[:2000]}", "lab_push": f"copy {request.get('path') or '.'} of the project there",
+                "lab_pull": f"bring back {request.get('path')}"}.get(op, op)
+        approval = ask_approval(home, project, "lab", {"machine": name, "op": op, "what": what}, request.get("reason"))
+        deadline = time.monotonic() + LAB_APPROVAL_WAIT
+        while True:
+            state = next((a.get("state") for a in load_approvals(home) if a.get("id") == approval["id"]), "gone")
+            if state == "approved":
+                break
+            if state in ("refused", "gone", "failed"):
+                raise ApiError(f"the user refused it ({what[:120]})")
+            if time.monotonic() > deadline:
+                raise ApiError("no answer from the user within ten minutes: ask again later")
+            time.sleep(1)
+    if op == "lab_run":
+        return lab_run(home, project, name, request.get("command"), request.get("timeout") or 300)
+    if op == "lab_push":
+        return lab_push(home, project, name, str(request.get("path") or "."))
+    if op == "lab_pull":
+        return lab_pull(home, project, name, str(request.get("path") or ""))
+    if op == "lab_snapshot":
+        return lab_snapshot(home, project, name, str(request.get("snapshot") or ""))
+    if op == "lab_reset":
+        return lab_snapshot(home, project, name, str(request.get("snapshot") or "clean"), restore=True)
+    if op == "lab_destroy":
+        return lab_destroy(home, project, name)
+    raise ApiError(f"unknown operation: {op}")
+
+
+PIER_LABS_EXTENSION = """// Written by Pier (pier-picker): labs, machines where Pi may do anything.
+// They ask the picker over PIER_GIT_SOCKET (the same broker as the git tools); Pi's own
+// sandbox does not change and has no network to them.
+import { connect } from "node:net";
+import { Type } from "typebox";
+
+function ask(request: any): Promise<any> {
+  const path = process.env.PIER_GIT_SOCKET;
+  return new Promise((resolve, reject) => {
+    if (!path) return reject(new Error("Pier's broker is not available in this session"));
+    const socket = connect(path);
+    let data = "";
+    socket.setEncoding("utf8");
+    socket.on("connect", () => socket.write(JSON.stringify(request) + "\\n"));
+    socket.on("data", (chunk: string) => { data += chunk; });
+    socket.on("end", () => {
+      try {
+        const answer = JSON.parse(data);
+        if (answer.error) reject(new Error(answer.error)); else resolve(answer);
+      } catch { reject(new Error("no answer from Pier's broker")); }
+    });
+    socket.on("error", (error: Error) => reject(error));
+  });
+}
+
+const text = (value: any) => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }], details: value });
+
+export default function (pi: any) {
+  const tool = (name: string, label: string, description: string, parameters: any, op: string) =>
+    pi.registerTool({
+      name, label, description, parameters,
+      async execute(_id: string, params: any) { return text(await ask({ op, ...params })); },
+    });
+  tool("lab_list", "Labs", "The labs of this project (disposable machines where you are root) and the user's machines you may use.",
+    Type.Object({}), "lab_list");
+  tool("lab_create", "New lab", "Make a disposable lab: a fresh Linux where you are root (install packages, run services, Docker). Its work folder is /root/project; copy the project in with lab_push.",
+    Type.Object({ name: Type.Optional(Type.String({ description: "lowercase, e.g. db-tests" })),
+      vm: Type.Optional(Type.Boolean({ description: "a full virtual machine instead of a container, when possible" })),
+      image: Type.Optional(Type.String({ description: "e.g. debian/13, ubuntu/24.04" })) }), "lab_create");
+  tool("lab_run", "Run in lab", "Run a shell command in a lab or on a machine, in its work folder; returns the exit code and the output.",
+    Type.Object({ lab: Type.String(), command: Type.String(), timeout: Type.Optional(Type.Integer({ description: "seconds, at most 900" })),
+      reason: Type.Optional(Type.String({ description: "why, shown to the user when a machine asks for approval" })) }), "lab_run");
+  tool("lab_push", "Copy to lab", "Copy the project (or a path in it) into the lab's work folder.",
+    Type.Object({ lab: Type.String(), path: Type.Optional(Type.String({ description: "inside the project, . by default" })) }), "lab_push");
+  tool("lab_pull", "Bring back", "Bring a file or folder of the lab back into the project, under .pi-files/.",
+    Type.Object({ lab: Type.String(), path: Type.String({ description: "relative to the lab's work folder, or absolute" }) }), "lab_pull");
+  tool("lab_snapshot", "Snapshot", "Save the lab's state under a name, to come back to it with lab_reset.",
+    Type.Object({ lab: Type.String(), snapshot: Type.String() }), "lab_snapshot");
+  tool("lab_reset", "Reset lab", "Put the lab back as it was at a snapshot (clean: as it was made).",
+    Type.Object({ lab: Type.String(), snapshot: Type.Optional(Type.String()) }), "lab_reset");
+  tool("lab_destroy", "Destroy lab", "Destroy a lab once done with it.", Type.Object({ lab: Type.String() }), "lab_destroy");
+}
+"""
+
+
+def pier_labs_extension():
+    """The lab tools' file, written when missing or different; None when it cannot be."""
+    path = os.path.join(pier_dir(), "pier-labs.ts")
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        if read_text(path) == PIER_LABS_EXTENSION and not os.path.islink(path):
+            return path
+        atomic_write(path, PIER_LABS_EXTENSION, os.path.join(home_dir(), ".pi"), 0o644)
+        return path
+    except (OSError, ApiError) as exc:
+        log("warn", "pier.labs-extension-failed", err=str(exc))
+        return None
+
+
+def labs_enabled(home):
+    return bool(load_labs(home)["settings"]["enabled"])
+
+
 
 class GitBroker:
     """The socket Pi's git tools reach (PIER_GIT_SOCKET): one JSON request per
@@ -6089,6 +6737,9 @@ class GitBroker:
 
     def answer(self, request):
         op = request.get("op")
+        if op in LAB_OPS:
+            log("info", f"lab.tool-{op}", project=self.project, lab=request.get("lab"))
+            return lab_answer(self.home, self.project, request)
         if op not in GIT_OPS:
             raise ApiError(f"unknown operation: {op}")
         link = repo_link(self.home, self.project)
@@ -6530,7 +7181,7 @@ def api_write_text(home, path, which, data):
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
-             "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators"}
+             "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -6622,6 +7273,13 @@ API_COMMANDS = {
     "pr-merge": lambda home, config, a: api_pr_merge(home, a[0], a[1], a[2]),
     "repo-settings": lambda home, config, a: api_repo_settings(home, a[0], a[1], a[2], a[3]),
     "team": lambda home, config, a: api_team(home, a[0]),
+    "labs": lambda home, config, a: api_labs(home),
+    "labs-settings": lambda home, config, a: api_labs_settings(home, read_stdin_text()),
+    "lab-journal": lambda home, config, a: api_lab_journal(home, a[0] or "60"),
+    "lab-action": lambda home, config, a: api_lab_action(home, a[0], a[1], a[2]),
+    "machine-add": lambda home, config, a: api_machine_add(home, a[0], a[1], a[2], a[3], a[4]),
+    "machine-remove": lambda home, config, a: api_machine_remove(home, a[0]),
+    "machine-test": lambda home, config, a: api_machine_test(home, a[0]),
     "collaborators": lambda home, config, a: api_collaborators(home, a[0]),
     "task-create": lambda home, config, a: api_task_create(home, a[0], a[1], read_stdin_text()),
     "handoff-give": lambda home, config, a: api_handoff_give(home, a[0], a[1], a[2], read_stdin_text()),
@@ -6700,7 +7358,7 @@ WATCH_TICK = 1.0
 # changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
 # tmux, each one of activity runs git status in its jail: not every second for nothing.
 WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
-               "conversations": 10, "approvals": 30, "team": 120}
+               "conversations": 10, "approvals": 30, "team": 120, "labs": 10}
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
 WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2, "activity": 1.5}
@@ -6749,6 +7407,8 @@ def watch_signature(kind, value, home):
         return stat(log_path())
     if kind == "approvals":
         return stat(approvals_path(home))  # a request of Pi shows at once
+    if kind == "labs":
+        return stat(labs_path(home)), stat(os.path.join(os.path.dirname(state_path(home)), "labs", "journal.jsonl"))
     if kind == "team":
         return stat(repos_path(home))  # the forges are asked every two minutes, or when a repository is connected
     return None
@@ -6771,6 +7431,8 @@ def watch_part(kind, value, home, config):
         return api_approvals(home)
     if kind == "team":
         return api_team_watch(home)
+    if kind == "labs":
+        return {**api_labs(home), "journal": api_lab_journal(home, "40")["journal"]}
     raise ApiError(f"unknown part: {kind}")
 
 
@@ -8013,6 +8675,8 @@ def entry():
         sys.exit(attach(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--attach-control":
         sys.exit(attach_control(sys.argv[2], sys.argv[3:]))
+    if len(sys.argv) == 3 and sys.argv[1] == "--lab-shell":
+        sys.exit(lab_shell(sys.argv[2]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--pi-package":
         sys.exit(pi_package(sys.argv[2:]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--pi-update":

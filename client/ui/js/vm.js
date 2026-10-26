@@ -13,7 +13,7 @@ function canon(value) {
 const vm = (() => {
   // projects: the Pis and recent projects; activity: {project, file} of one conversation;
   // setup and checkpoints: a project; contexts: everything given to Pis; log: new lines.
-  const want = { projects: true, contexts: false, activity: null, setup: null, checkpoints: null, log: false, conversations: false, approvals: true, team: true };
+  const want = { projects: true, contexts: false, activity: null, setup: null, checkpoints: null, log: false, conversations: false, approvals: true, team: true, labs: false };
   const latest = {};
   const listeners = {};
   let active = false; // connected: the watch should be running

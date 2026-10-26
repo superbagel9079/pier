@@ -37,13 +37,13 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 17;
+const API_VERSION: u64 = 18;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators"];
+const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -775,6 +775,21 @@ fn package_command(args: &[String]) -> Result<String, String> {
     }
 }
 
+/// A terminal in a lab or on a machine (the picker's --lab-shell): only a name.
+fn lab_command(args: &[String]) -> Result<String, String> {
+    match args {
+        [name] if lab_name(name) => Ok(format!("--lab-shell {}", sh_quote(name))),
+        _ => Err("unsupported lab".into()),
+    }
+}
+
+fn lab_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && name.len() <= 40
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
 /// kind "picker" runs the picker, "shell" the login shell, "pi" Pi itself in `project`
 /// (with `args`: nothing, --continue, or --session FILE), "update" `pi update` (see
 /// update_command).
@@ -801,6 +816,7 @@ async fn term_open(
         "pi" => Some(remote(&settings, &request, &attach_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
         "update" => Some(remote(&settings, &request, &update_command(args.as_deref().unwrap_or(&[]))?)),
         "package" => Some(remote(&settings, &request, &package_command(args.as_deref().unwrap_or(&[]))?)),
+        "lab" => Some(remote(&settings, &request, &lab_command(args.as_deref().unwrap_or(&[]))?)),
         other => return Err(format!("unknown terminal: {other}")),
     };
     let exit_app = app.clone();
@@ -1077,6 +1093,41 @@ async fn repo_settings(app: AppHandle, state: State<'_, AppState>, project: Stri
         return Err(format!("unknown repository setting: {mode}, {method}, {agents}"));
     }
     api(&app, &state, &["repo-settings", &project, &mode, &method, &agents], &[]).await
+}
+
+/// Labs on or off, and their limits (JSON, checked by the picker).
+#[tauri::command]
+async fn labs_settings(app: AppHandle, state: State<'_, AppState>, settings: String) -> Result<Value, String> {
+    api(&app, &state, &["labs-settings"], settings.as_bytes()).await
+}
+
+/// A lab made (for a project, or none), reset to its clean state, or destroyed.
+#[tauri::command]
+async fn lab_action(app: AppHandle, state: State<'_, AppState>, action: String, name: String, extra: String) -> Result<Value, String> {
+    if !["create", "reset", "destroy"].contains(&action.as_str()) || !["", "vm"].contains(&extra.as_str())
+        || (action != "create" && !lab_name(&name)) {
+        return Err("unsupported lab action".into());
+    }
+    api(&app, &state, &["lab-action", &action, &name, &extra], &[]).await
+}
+
+/// A machine Pi may use over SSH (the picker makes the key), removed, or tried.
+#[tauri::command]
+async fn machine_add(app: AppHandle, state: State<'_, AppState>, name: String, host: String, port: u16, user: String, policy: String) -> Result<Value, String> {
+    if !lab_name(&name) || !["ask", "auto"].contains(&policy.as_str()) {
+        return Err("a machine's name, and ask or auto".into());
+    }
+    api(&app, &state, &["machine-add", &name, &host, &port.to_string(), &user, &policy], &[]).await
+}
+
+#[tauri::command]
+async fn machine_remove(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    api(&app, &state, &["machine-remove", &name], &[]).await
+}
+
+#[tauri::command]
+async fn machine_test(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    api(&app, &state, &["machine-test", &name], &[]).await
 }
 
 /// A task for the team's Pis: an issue labelled pi-task (its description on stdin).
@@ -1807,6 +1858,11 @@ pub fn run() {
             repo_create,
             repo_settings,
             task_create,
+            labs_settings,
+            lab_action,
+            machine_add,
+            machine_remove,
+            machine_test,
             handoff_give,
             handoff_take,
             pr_merge,
@@ -1878,6 +1934,9 @@ mod tests {
         assert!(attach_command("/x", &["--continue".into()]).is_ok());
         assert!(attach_command("/x", &["--new".into()]).is_ok());
         assert!(attach_command("/x", &["--agent-task".into(), "review".into(), "14".into()]).is_ok());
+        assert_eq!(lab_command(&["db-tests".into()]).unwrap(), "--lab-shell 'db-tests'");
+        assert!(lab_command(&["x; rm -rf ~".into()]).is_err());
+        assert!(lab_command(&["Lab".into()]).is_err());
         assert!(attach_command("/x", &["--agent-task".into(), "shell".into(), "14".into()]).is_err());
         assert!(attach_command("/x", &["--agent-task".into(), "task".into(), "1; rm -rf ~".into()]).is_err());
         assert_eq!(attach_command("/x", &["--slot".into(), "pi-work-a1b2c3-2".into()]).unwrap(), "--attach-control '/x' '--slot' 'pi-work-a1b2c3-2'");

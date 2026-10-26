@@ -188,6 +188,7 @@ function makeGitManager(box, currentProject) {
   function approvalRow(a) {
     const what = a.kind === "merge" ? `merge pull request #${a.args.number}${a.args.method && a.args.method !== "merge" ? ` (${a.args.method})` : ""}`
       : a.kind === "review" ? `post a review of #${a.args.number} (${String(a.args.verdict || "").replace("_", " ")})`
+      : a.kind === "lab" ? `${a.args.what} (on ${a.args.machine})`
       : a.kind === "create_repo" ? `create the repository ${a.args.name}${a.args.private === false ? " (public)" : " (private)"}` : a.kind;
     const answer = (yes) => async () => {
       try {
@@ -328,7 +329,7 @@ function makeGitManager(box, currentProject) {
       seen.add(a.id);
       if (first) continue; // those from before this window opened: shown in Setup, not announced
       const project = a.project.replace(/^\/home\/[^/]+/, "~");
-      const what = a.kind === "merge" ? `merge pull request #${a.args.number}` : a.kind === "review" ? `post a review of #${a.args.number}` : `create the repository ${a.args.name}`;
+      const what = a.kind === "merge" ? `merge pull request #${a.args.number}` : a.kind === "review" ? `post a review of #${a.args.number}` : a.kind === "lab" ? `${String(a.args.what || "").slice(0, 80)} on ${a.args.machine}` : `create the repository ${a.args.name}`;
       backend.notify("Pi asks for your approval", `${project}: ${what}. Answer in Setup > Git.`).catch(() => {});
       flashStatus(`Pi asks to ${what}: Setup > Git`);
     }

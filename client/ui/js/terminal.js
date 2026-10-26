@@ -38,6 +38,7 @@ document.addEventListener("paste", () => { lastPasteEvent = performance.now(); }
 
 function makeTerminal(tab, kind) {
   if (kind === "pi" && tab.params) tab.title = `pi · ${tab.params.label}`;
+  if (kind === "lab" && tab.params) tab.title = `lab · ${tab.params.label}`;
   if (kind === "update" && tab.params) tab.title = tab.params.termKind === "package" ? `pi ${tab.params.label}` : `pi update · ${tab.params.label}`;
   tab.pane.classList.add("terminal");
   const term = new window.Terminal({

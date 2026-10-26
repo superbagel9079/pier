@@ -16,6 +16,8 @@ const KINDS = {
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
   takeback: { title: "take back", make: (tab) => makeTakeBack(tab) },
   logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
+  labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },
+  lab: { title: "lab", terminal: true },
 };
 const DOCKS = ["left", "center", "right"];
 const DOCK_NAMES = { left: "left", center: "center", right: "right" };
@@ -195,7 +197,7 @@ const workspace = (() => {
     const main = find("main");
     if (main && main.dock !== name) items.push([`picker (main) · move here`, () => move(main, name)]);
     // Every panel: the closed ones to open again, the others to bring here.
-    for (const kind of ["conversations", "project", "context", "setup", "logs"]) {
+    for (const kind of ["conversations", "project", "context", "setup", "logs", "labs"]) {
       const open = find(kind);
       const title = KINDS[kind].title;
       if (!open) items.push([title, () => add(kind, name)]);

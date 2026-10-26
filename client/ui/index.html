@@ -135,6 +135,7 @@
         <button role="tab" data-page="behavior">Behavior</button>
         <button role="tab" data-page="picker">Picker</button>
         <button role="tab" data-page="diagnostics">Diagnostics</button>
+        <button role="tab" data-page="labs">Labs</button>
         <button role="tab" data-page="updates">Updates</button>
         <button role="tab" data-page="connection">Connection</button>
       </div>
@@ -238,6 +239,30 @@
       </div>
       <p class="hint">A report holds the versions, the connection (never a password), and the end of both logs: what is needed to understand a problem.</p>
       <p id="prefs-diag-note" class="notice" hidden></p>
+      </section>
+
+      <section class="prefs-page" data-page="labs" role="tabpanel" hidden>
+      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: let Pi make disposable machines where it may do anything (install packages, run services, Docker), and use your machines over SSH. Its own sandbox does not change.</span></label>
+      <p id="labs-state" class="dim"></p>
+      <pre id="labs-install" hidden></pre>
+      <p id="labs-relogin" class="hint" hidden>Then reconnect Pier, so the picker's next SSH login is in the incus group. For virtual machines too, set the VM's CPU type to host in Proxmox (Hardware &gt; Processors).</p>
+      <div class="labs-on" hidden>
+        <h2>Limits</h2>
+        <div id="labs-limits" class="grid"></div>
+        <h2>Machines</h2>
+        <ul id="labs-machines" class="resource-items"></ul>
+        <div id="labs-key" hidden>
+          <p class="hint">Pier's key, to put in ~/.ssh/authorized_keys on each machine:</p>
+          <pre id="labs-key-text"></pre>
+        </div>
+        <div class="actions wrap">
+          <button id="labs-machine-add" class="secondary">Add a machine…</button>
+          <button id="labs-key-copy" class="link">copy Pier's key</button>
+          <button id="labs-open" class="link">open the Labs tab</button>
+        </div>
+      </div>
+      <p id="labs-error" class="error" hidden></p>
+      <p class="hint">A lab is an Incus container (or a VM) on your VM: root inside, nothing of your VM or home, only what Pi copies in; it goes after its lifetime, and goes back to its clean state on Reset. Every command Pi runs in a lab or on a machine is written in the Labs tab.</p>
       </section>
 
       <section class="prefs-page" data-page="updates" role="tabpanel" hidden>
@@ -486,6 +511,7 @@
   <script src="js/resources.js"></script>
   <script src="js/git.js"></script>
   <script src="js/team.js"></script>
+  <script src="js/labs.js"></script>
   <script src="js/setup.js"></script>
   <script src="js/logs.js"></script>
   <script src="js/palette.js"></script>

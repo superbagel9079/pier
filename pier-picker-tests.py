@@ -803,6 +803,135 @@ def git_broker_test():
     cleanup(str(work))
 
 
+LABS_SCRIPT = r"""
+import importlib.util, json, os, subprocess, sys, threading, time
+spec = importlib.util.spec_from_file_location("pier_picker", sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+home = m.home_dir()
+proj = os.path.realpath(os.path.join(home, "proj"))
+os.makedirs(os.path.join(proj, ".pi-files"), exist_ok=True)
+open(os.path.join(proj, "a.txt"), "w").write("hello lab")
+open(os.path.join(proj, ".pi-files", "given.txt"), "w").write("not for the lab")
+secret = os.path.join(home, "secret.txt")
+open(secret, "w").write("never copied")
+os.symlink(secret, os.path.join(proj, "link-out"))
+out = {}
+def tried(f, *a, **k):
+    try:
+        return f(*a, **k)
+    except m.ApiError as exc:
+        return {"error": str(exc)}
+out["off_by_default"] = "labs are off" in tried(m.lab_answer, home, proj, {"op": "lab_list"}).get("error", "")
+out["bad_setting"] = "error" in tried(m.api_labs_settings, home, json.dumps({"network": "everywhere"}))
+m.api_labs_settings(home, json.dumps({"enabled": True}))
+out["bad_machine"] = "error" in tried(m.api_machine_add, home, "box", "evil;host", "22", "leo", "auto")
+out["machine_added"] = "ssh-ed25519" in m.api_machine_add(home, "box", "127.0.0.1", "22", "leo", "auto")["public_key"]
+# The machine stands in a local folder: ssh is replaced by a shell there.
+remote = os.path.join(home, "remote")
+os.makedirs(remote)
+m.ssh_argv = lambda machine, command=None, tty=False: ["sh", "-c", command.replace("~", remote)]
+pushed = m.lab_answer(home, proj, {"op": "lab_push", "lab": "box"})
+landed = os.path.join(remote, "pier-lab")
+out["push_files"] = open(os.path.join(landed, "a.txt")).read() == "hello lab"
+out["push_skips_given"] = not os.path.exists(os.path.join(landed, ".pi-files"))
+out["push_link_stays_link"] = os.path.islink(os.path.join(landed, "link-out"))
+ran = m.lab_answer(home, proj, {"op": "lab_run", "lab": "box", "command": "cat a.txt; echo oops >&2; exit 3"})
+out["run"] = ran["stdout"] == "hello lab" and "oops" in ran["stderr"] and ran["exit"] == 3
+open(os.path.join(landed, "result.txt"), "w").write("42")
+pulled = m.lab_answer(home, proj, {"op": "lab_pull", "lab": "box", "path": "result.txt"})
+out["pull"] = open(os.path.join(proj, pulled["into"], "result.txt")).read() == "42"
+journal = m.api_lab_journal(home)["journal"]
+out["journal"] = any(j.get("command", "").startswith("cat a.txt") and j.get("exit") == 3 for j in journal)
+# A machine set to ask: nothing runs before the user approves.
+m.api_machine_add(home, "careful", "127.0.0.1", "22", "leo", "ask")
+answer = {}
+worker = threading.Thread(target=lambda: answer.update(tried(m.lab_answer, home, proj, {"op": "lab_run", "lab": "careful", "command": "echo approved > done.txt"})))
+worker.start()
+asked = None
+for _ in range(50):
+    asked = next((a for a in m.load_approvals(home) if a.get("kind") == "lab" and a.get("state") == "pending"), None)
+    if asked:
+        break
+    time.sleep(0.1)
+out["waits"] = asked is not None and not os.path.exists(os.path.join(remote, "pier-lab", "done.txt"))
+m.api_approval_answer(home, asked["id"], "yes")
+worker.join(10)
+out["approved_runs"] = answer.get("exit") == 0 and os.path.exists(os.path.join(remote, "pier-lab", "done.txt"))
+answer.clear()
+worker = threading.Thread(target=lambda: answer.update(tried(m.lab_answer, home, proj, {"op": "lab_run", "lab": "careful", "command": "touch refused.txt"})))
+worker.start()
+for _ in range(50):
+    asked = next((a for a in m.load_approvals(home) if a.get("kind") == "lab" and a.get("state") == "pending"), None)
+    if asked:
+        break
+    time.sleep(0.1)
+m.api_approval_answer(home, asked["id"], "no")
+worker.join(10)
+out["refused"] = "refused" in answer.get("error", "") and not os.path.exists(os.path.join(remote, "pier-lab", "refused.txt"))
+out["other_project"] = "error" in tried(m.lab_answer, home, proj, {"op": "lab_reset", "lab": "nothing"})
+usable, why, kvm = m.incus_state()
+out["incus"] = usable
+if usable:
+    # One error is reported, not thrown: the checks above still count, and no lab stays.
+    try:
+        made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test"})
+        out["lab_snapshots"] = made.get("snapshots")
+        m.lab_answer(home, proj, {"op": "lab_push", "lab": made["lab"]})
+        ran = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "cat a.txt && id -u"})
+        out["lab_runs_as_root"] = ran["stdout"].split() == ["hello", "lab0"]
+        m.lab_answer(home, proj, {"op": "lab_reset", "lab": made["lab"]})
+        gone = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "test -e a.txt"})
+        out["lab_reset"] = gone["exit"] != 0
+        m.lab_answer(home, proj, {"op": "lab_destroy", "lab": made["lab"]})
+        out["lab_destroyed"] = not m.load_labs(home)["labs"]
+    except Exception as exc:
+        out["lab_error"] = f"{type(exc).__name__}: {exc}"
+        subprocess.run(["incus", "delete", "--force", "pier-pier-test"], capture_output=True)
+else:
+    out["no_incus_said"] = "Incus" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "") or bool(why)
+print(json.dumps(out))
+"""
+
+
+def labs_test():
+    """Labs: off by default; on a machine (a local folder standing for it), the project
+    copied without what was given to Pi nor what its links point to, commands run and
+    journaled, files brought back, an approval awaited; with Incus there, a real lab."""
+    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
+    home = Path(os.path.realpath(work / "home"))
+    home.mkdir()
+    script = work / "labs.py"
+    script.write_text(LABS_SCRIPT)
+    env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "XDG_STATE_HOME")}
+    env["HOME"] = str(home)
+    run = subprocess.run([sys.executable, "-B", str(script), str(APP)], env=env, capture_output=True, text=True, timeout=900)
+    try:
+        out = json.loads(run.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        check("labs run", False, run.stdout[-400:] + run.stderr[-800:])
+        cleanup(str(work))
+        return
+    check("labs: off until turned on, bad settings refused", out["off_by_default"] and out["bad_setting"], out)
+    check("labs: a machine added with Pier's key, a bad host refused", out["machine_added"] and out["bad_machine"], out)
+    check("labs: the project copied, without what was given to Pi", out["push_files"] and out["push_skips_given"], out)
+    check("labs: a link is copied as a link, never what it points to", out["push_link_stays_link"], out)
+    check("labs: a command runs, with its output and exit code", out["run"], out)
+    check("labs: a file brought back into .pi-files", out["pull"], out)
+    check("labs: every command journaled", out["journal"], out)
+    check("labs: a machine set to ask waits for the approval", out["waits"] and out["approved_runs"], out)
+    check("labs: a refused command does not run", out["refused"], out)
+    check("labs: an unknown lab refused", out["other_project"], out)
+    if out.get("incus"):
+        how = "a snapshot" if out.get("lab_snapshots") else "a rebuild (no snapshots in this Incus project)"
+        check("labs: Incus lab made, project inside, root", out.get("lab_runs_as_root"), out.get("lab_error") or out)
+        check(f"labs: reset goes back to the clean state, by {how}", out.get("lab_reset"), out.get("lab_error") or out)
+        check("labs: destroyed", out.get("lab_destroyed"), out.get("lab_error") or out)
+    else:
+        check("labs: without Incus, making a lab says why", out["no_incus_said"], out)
+    cleanup(str(work))
+
+
 def resources_test():
     """Setup's list of what Pi loads: packages with their version, skills, prompts, MCP
     servers, from a made-up agent dir and project; nothing is run."""
@@ -1160,6 +1289,7 @@ def main():
     multi_pi_test()
     resources_test()
     git_broker_test()
+    labs_test()
     worktree_test()
 
     home, screens, work = session([])
