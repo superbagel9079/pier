@@ -167,7 +167,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 21 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 22 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -490,7 +490,7 @@ Pi gets git tools (from a small extension, `~/.pi/pier/pier-git.ts`, like the on
 | push a branch | not when the repository is set to **Work locally**; otherwise only branches named `pi/…` (the default branch only while the repository is still empty), never forced: a rewritten branch is refused by the forge |
 | fetch | the forge's branches land in `origin/*` in the project; Pi merges or rebases itself |
 | open, list, read pull requests | done at once (opening one: not with **Work locally**) |
-| **merge** a pull request | with **Push, ask to merge**, **never by itself**: the request appears in **Setup > Git > Waiting for you**, with a Windows notification, and is done only when you click **approve**. So "merge it" said to Pi works, and an instruction hidden in a file cannot merge anything. With **Push and merge**, done at once if the pull request is open and its checks have not failed or are not still running |
+| **merge** a pull request | with **Push, ask to merge**, **never by itself**: the request appears in **Setup > Git > Waiting for you**, with a Windows notification, and is done only when you click **Approve**. It shows the pull request (its title, branches and author) and the commit it is at: if a commit is pushed to it before you answer, nothing is merged, and Pi is told to ask again. So "merge it" said to Pi works, and an instruction hidden in a file cannot merge anything. With **Push and merge**, done at once if the pull request is open and its checks have not failed or are not still running |
 | create a repository | always waits for your approval, whatever the setting |
 
 You can also merge yourself from the list of pull requests, at any time.
@@ -520,7 +520,7 @@ Pi gets more git tools for this: `list_tasks`, `get_task`, `create_task`, `claim
 |---|---|
 | take a task | the issue gets the label `pi-doing` and is assigned to your account; a task already taken is refused, so two Pis never do the same one. The work goes on `pi/task-N`, then a pull request saying "Closes #N" |
 | ask a colleague's Pis for a review | the colleague's account is asked as reviewer, with the label `pi-review`; their Pier tells them |
-| post a review | with the repository set to **Push, ask to merge**, it waits for your approval in Setup > Git, like a merge; with **Push and merge**, posted at once. At most **3 reviews** by one account on one pull request: then a human decides |
+| post a review | with the repository set to **Push, ask to merge**, it waits for your approval in Setup > Git, like a merge, shown whole and bound to the commit Pi reviewed; with **Push and merge**, posted at once. At most **3 reviews** by one account on one pull request: then a human decides |
 
 **Giving a conversation:** in Conversations, ⋯ > **Give to a colleague…** sends the whole conversation (and its `pi/…` branch, pushed) on a branch `pi-handoff/<colleague>/…` that only they take. In their Team page, **take it over** adds it to their conversations and opens it in a Pi, with a word on the branch to switch to; the handoff branch is then deleted. The conversation holds everything said in it, including what was pasted: Pier says so before it leaves.
 
@@ -545,7 +545,7 @@ Pi's VM: Pi in bubblewrap ── lab_* tools ──┬──> lab host A (Incus)
 
 - **Lab hosts:** VMs where Incus runs and labs are made. **Add a lab host…** (Settings > Labs): another VM, which Pier reaches over SSH with its own key, running `incus` there. Or **Use Pi's VM as a lab host**, if you want the labs beside Pi. One host is the **default**; Pi (`lab_create`'s `host`) or New lab… may name another, and Pi reads each host's description in `lab_list`. **No lab host, no lab**: Pi is told so, and so are you.
 - **Labs:** disposable [Incus](https://linuxcontainers.org/incus/) containers on a lab host (or full virtual machines when that host has `/dev/kvm`), made by Pi on its own, or by you (**New lab…** in the Labs tab), each with a name and a description of what it is for. Root inside, nothing of the VM or of home: only what Pi copies in. Each has CPU, memory and disk limits, a lifetime after which it goes (24 h by default), a **clean** snapshot to go back to, and the network open or cut.
-- **Machines:** computers of yours (a server with a GPU, a test server) that Pi reaches over SSH. Pier makes a key of its own on the VM, which you put in the machine's `~/.ssh/authorized_keys`; Pi never sees it. Give each a description Pi reads in `lab_list`: what it is for, and what to leave alone there ("GPU with CUDA 12, never touch /data"). Each machine has its rule: **each command waits for your approval** (the default, shown with the other requests in Setup > Git and as a notification) or Pi runs commands freely.
+- **Machines:** computers of yours (a server with a GPU, a test server) that Pi reaches over SSH. Pier makes a key of its own on the VM, which you put in the machine's `~/.ssh/authorized_keys`; Pi never sees it. Give each a description Pi reads in `lab_list`: what it is for, and what to leave alone there ("GPU with CUDA 12, never touch /data"). Each machine has its rule: **each command waits for your approval** (the default, shown with the other requests in Setup > Git and in the Labs tab, and as a notification) or Pi runs commands freely. A command waiting for you is shown whole, and what runs is exactly what was shown: at most 4000 characters, written plainly (a character that would not show, such as a direction change, is refused before you are asked). Unanswered after ten minutes, the request goes.
 
 Pi's tools: `lab_list` (its labs, the lab hosts with their networks, the machines), `lab_create` (a name, a description, the host, its networks), `lab_run` (a command, its output and exit code), `lab_push` (the project, or a part, into the lab: what was given to Pi stays out, links stay links), `lab_pull` (a file or folder back into `.pi-files/`), `lab_snapshot`, `lab_reset`, `lab_destroy`. They go through the picker's broker, like the git tools; Pi's sandbox has no network to the labs.
 

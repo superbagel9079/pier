@@ -77,8 +77,13 @@ function mockBackend() {
   let handed = [];
   let mockForges = [{ id: "github:github.com:leo", kind: "github", url: "https://github.com", login: "leo" }];
   let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" };
-  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" },
-    { id: "a2", project: "/home/leo/work", kind: "lab_create", args: { name: "db-tests", vm: false, image: "debian/13", networks: null, description: "Postgres 16 for the integration tests" }, reason: "you asked me to run the integration tests against a real Postgres", at: Date.now() / 1000, state: "pending" }];
+  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending",
+      args: { number: 12, method: "squash", repo: "leo/work", sha: "3f9c2a1b7e4d5c6a8b9f0e1d2c3b4a5f6e7d8c9b", title: "Fix the login redirect", author: "leo", head: "pi/fix-login", base: "main", draft: false } },
+    { id: "a2", project: "/home/leo/work", kind: "lab", reason: "you asked me to check the GPU before the training", at: Date.now() / 1000, state: "pending",
+      args: { machine: "gpu-box", where: "leo@192.168.1.40:22", op: "lab_run", command: "nvidia-smi\npython train.py --epochs 3 --data /data/small", what: "run: nvidia-smi…" } },
+    { id: "a3", project: "/home/leo/work", kind: "review", reason: "alex asked this account's Pis for a review", at: Date.now() / 1000, state: "pending",
+      args: { number: 14, verdict: "request_changes", repo: "leo/work", sha: "9a8b7c6d5e4f", title: "Rate-limit the API", author: "alex", head: "pi/task-9", base: "main", draft: false,
+        body: "The limiter counts per process, not per user:\n\n- two workers double the limit\n- the counter is never reset\n\nKeep it in Redis, keyed by user." } }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,

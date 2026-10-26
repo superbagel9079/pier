@@ -534,7 +534,7 @@ def checkpoint_test():
 
 
 GIT_BROKER_SCRIPT = r'''
-import importlib.util, json, os, subprocess, sys, threading
+import importlib.util, json, os, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 spec = importlib.util.spec_from_file_location("pier_picker", sys.argv[1])
 m = importlib.util.module_from_spec(spec)
@@ -646,14 +646,51 @@ out["push_pi"] = tried({"op": "push", "branch": "pi/work"}).get("pushed")
 out["remote_branches"] = subprocess.run(["git", "--git-dir", remote, "branch"], capture_output=True, text=True).stdout.split()
 out["pr"] = tried({"op": "open_pr", "branch": "pi/work", "title": "Work"}).get("number")
 asked = tried({"op": "request_merge", "number": 1})
+held = next((a["args"] for a in m.load_approvals(home) if a["id"] == asked.get("asked")), {})
+out["merge_bound"] = held.get("sha") == "x" and held.get("title") == "Work" and held.get("head") == "pi/work" and held.get("repo") == "leo/demo"
 out["merged_before"] = any(c[0] == "PUT" for c in calls)
 m.api_approval_answer(home, asked["asked"], "yes")
 out["merged_after"] = any(c[0] == "PUT" for c in calls)
+out["merged_at_commit"] = [c[2] for c in calls if c[0] == "PUT"][-1].get("sha") == "x"
+try:
+    m.api_approval_answer(home, asked["asked"], "yes"); out["answered_twice"] = False
+except m.ApiError as exc:
+    out["answered_twice"] = "no longer waiting" in str(exc)
+# A commit pushed to the pull request after Pi asked: the approval merges nothing.
+moved = tried({"op": "request_merge", "number": 1})
+prs[0]["head"]["sha"] = "y"
+puts = sum(1 for c in calls if c[0] == "PUT")
+try:
+    m.api_approval_answer(home, moved["asked"], "yes"); out["moved_refused"] = False
+except m.ApiError as exc:
+    out["moved_refused"] = "changed since" in str(exc) and sum(1 for c in calls if c[0] == "PUT") == puts
+# Asked while another answer is being carried out (a merge is a round trip): none is lost.
+slow = tried({"op": "request_merge", "number": 1})
+real_merge = m.merge_pr
+m.merge_pr = lambda *a, **k: (time.sleep(1.0), real_merge(*a, **k))[1]
+answering = threading.Thread(target=m.api_approval_answer, args=(home, slow["asked"], "yes"))
+answering.start()
+time.sleep(0.3)
+meanwhile = m.ask_approval(home, broker.project, "lab", {"machine": "gpu", "op": "lab_run", "command": "true", "what": "run: true"}, "")
+answering.join(10)
+m.merge_pr = real_merge
+states = {a["id"]: a["state"] for a in m.load_approvals(home)}
+out["none_lost"] = states.get(meanwhile["id"]) == "pending" and states.get(slow["asked"]) == "done"
+if states.get(meanwhile["id"]) == "pending":
+    m.api_approval_answer(home, meanwhile["id"], "no")
 out["mode_default"] = (m.repo_link(home, broker.project) or {}).get("mode")
+# A repository asked for: the account it would be made on is in the request.
+other = os.path.join(home, "other")
+os.makedirs(other, exist_ok=True)
+elsewhere = object.__new__(m.GitBroker); elsewhere.project = os.path.realpath(other); elsewhere.home = home
+made = elsewhere.answer({"op": "create_repo", "name": "fresh", "description": "for the tests"})
+held = next((a["args"] for a in m.load_approvals(home) if a["id"] == made["asked"]), {})
+out["repo_account_shown"] = held.get("account") == "leo" and held.get("forge_kind") == "github" and held.get("description") == "for the tests"
+m.api_approval_answer(home, made["asked"], "no")
 m.api_repo_settings(home, proj, "auto", "squash")
 second = tried({"op": "open_pr", "branch": "pi/work", "title": "Again"}).get("number")
 merged = tried({"op": "request_merge", "number": second})
-out["auto_merged"] = merged.get("merged") == second and [c[2] for c in calls if c[0] == "PUT"][-1] == {"merge_method": "squash"}
+out["auto_merged"] = merged.get("merged") == second and [c[2] for c in calls if c[0] == "PUT"][-1] == {"merge_method": "squash", "sha": "x"}
 m.api_repo_settings(home, proj, "local", "merge")
 out["local_push"] = "error" in tried({"op": "push", "branch": "pi/work"})
 out["local_pr"] = "error" in tried({"op": "open_pr", "branch": "pi/work", "title": "No"})
@@ -674,7 +711,8 @@ out["diff"] = "diff --git" in tried({"op": "pr_diff", "number": 1}).get("diff", 
 out["review_asked"] = tried({"op": "request_review", "number": 1, "reviewer": "alex"}).get("asked") == "alex"
 out["review_self"] = "error" in tried({"op": "request_review", "number": 1, "reviewer": "leo"})
 waiting = tried({"op": "review_pr", "number": 1, "verdict": "approve", "body": "Looks right."})
-out["review_waits"] = "asked" in waiting and not reviews.get(1)
+held = next((a["args"] for a in m.load_approvals(home) if a["id"] == waiting.get("asked")), {})
+out["review_waits"] = "asked" in waiting and not reviews.get(1) and held.get("sha") == "y" and held.get("body") == "Looks right."
 m.api_approval_answer(home, waiting["asked"], "yes")
 out["review_posted"] = [r["state"] for r in reviews.get(1, [])] == ["APPROVE"]
 m.api_repo_settings(home, proj, "auto", "merge")
@@ -786,6 +824,11 @@ def git_broker_test():
     check("git: a pi/ branch pushed through the mirror", out["push_pi"] == "pi/work" and "pi/work" in out["remote_branches"], out)
     check("git: a pull request opened", out["pr"] == 1, out)
     check("git: no merge before the user approves", not out["merged_before"] and out["merged_after"], out)
+    check("git: a merge request holds its pull request and commit, merged at that commit", out["merge_bound"] and out["merged_at_commit"], out)
+    check("git: an answered request cannot be answered again", out["answered_twice"], out)
+    check("git: a pull request changed after Pi asked is not merged", out["moved_refused"], out)
+    check("git: a request asked while another is answered is not lost", out["none_lost"], out)
+    check("git: a repository asked for says which account it goes to", out["repo_account_shown"], out)
     check("git: a repository asks to merge by default", out["mode_default"] == "ask", out)
     check("git: set to merge itself, Pi merges with the chosen method", out["auto_merged"], out)
     check("git: set to local work, nothing is pushed", out["local_push"] and out["local_pr"], out)
@@ -855,9 +898,24 @@ for _ in range(50):
         break
     time.sleep(0.1)
 out["waits"] = asked is not None and not os.path.exists(os.path.join(remote, "pier-lab", "done.txt"))
+out["approval_holds_command"] = (asked or {}).get("args", {}).get("command") == "echo approved > done.txt" and \
+    (asked or {}).get("args", {}).get("where") == "leo@127.0.0.1:22"
 m.api_approval_answer(home, asked["id"], "yes")
 worker.join(10)
 out["approved_runs"] = answer.get("exit") == 0 and os.path.exists(os.path.join(remote, "pier-lab", "done.txt"))
+# What the user could not read whole is refused before it is asked: too long, or hidden characters.
+out["ask_long_refused"] = "at most" in tried(m.lab_answer, home, proj, {"op": "lab_run", "lab": "careful", "command": "true" + " " * 5000}).get("error", "")
+out["ask_hidden_refused"] = "would not see" in tried(m.lab_answer, home, proj, {"op": "lab_run", "lab": "careful", "command": "echo a‮"}).get("error", "")
+# Unanswered: the request leaves the list, a late click approves nothing.
+m.LAB_APPROVAL_WAIT = 1
+late = tried(m.lab_answer, home, proj, {"op": "lab_run", "lab": "careful", "command": "touch late.txt"})
+m.LAB_APPROVAL_WAIT = 600
+left = [a for a in m.load_approvals(home) if (a.get("args") or {}).get("command") == "touch late.txt"]
+out["expired"] = "ten minutes" in late.get("error", "") and bool(left) and left[-1]["state"] == "expired"
+# The journal keeps the whole command.
+whole = "echo " + "x" * 600
+m.lab_answer(home, proj, {"op": "lab_run", "lab": "box", "command": whole})
+out["journal_whole"] = any(j.get("command") == whole for j in m.api_lab_journal(home)["journal"])
 answer.clear()
 worker = threading.Thread(target=lambda: answer.update(tried(m.lab_answer, home, proj, {"op": "lab_run", "lab": "careful", "command": "touch refused.txt"})))
 worker.start()
@@ -959,6 +1017,11 @@ def labs_test():
     check("labs: a file brought back into .pi-files", out["pull"], out)
     check("labs: every command journaled", out["journal"], out)
     check("labs: a machine set to ask waits for the approval", out["waits"] and out["approved_runs"], out)
+    check("labs: the approval holds the whole command, and where it runs", out["approval_holds_command"], out)
+    check("labs: on a machine that asks, a command too long or with hidden characters is refused",
+          out["ask_long_refused"] and out["ask_hidden_refused"], out)
+    check("labs: an unanswered request goes, a late click approves nothing", out["expired"], out)
+    check("labs: the journal keeps the whole command", out["journal_whole"], out)
     check("labs: a refused command does not run", out["refused"], out)
     check("labs: an unknown lab refused", out["other_project"], out)
     check("labs: the network set to a VLAN", out["vlan_setting"], out)

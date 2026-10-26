@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.29"
+VERSION = "4.30"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2665,7 +2665,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 21
+API_VERSION = 22
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -5338,7 +5338,7 @@ def pr_from(forge, item):
         state = {"opened": "open", "merged": "merged", "closed": "closed"}.get(item.get("state"), item.get("state"))
         pipeline = (item.get("head_pipeline") or {}).get("status") if isinstance(item.get("head_pipeline"), dict) else None
         return {"number": item.get("iid"), "title": item.get("title"), "state": state, "head": item.get("source_branch"),
-                "base": item.get("target_branch"), "url": item.get("web_url"), "draft": bool(item.get("draft")),
+                "base": item.get("target_branch"), "url": item.get("web_url"), "draft": bool(item.get("draft")), "sha": item.get("sha"),
                 "checks": {"success": "success", "failed": "failure", "running": "pending", "pending": "pending"}.get(pipeline, "none" if not pipeline else pipeline),
                 "author": (item.get("author") or {}).get("username"),
                 "requested": [r.get("username") for r in item.get("reviewers") or [] if isinstance(r, dict)],
@@ -5411,20 +5411,30 @@ def open_pr(home, project, link, branch, title, body, base, draft):
     return pr
 
 
-def merge_pr(home, project, link, number, method=None):
+def merge_pr(home, project, link, number, method=None, sha=None):
     """Merges a pull request: from Pier, a request of Pi the user approved, or Pi itself
-    when the repository is set to auto and the checks have passed."""
+    when the repository is set to auto and the checks have passed. sha: the commit the
+    user (or the checks) saw; the forge refuses the merge if the pull request moved on."""
     forge = forge_by_id(home, link["forge"])
     method = method if method in MERGE_METHODS else link.get("merge_method") or "merge"
     if forge["kind"] == "gitlab":
         api, _ = forge_repo(forge, link["repo"])
-        forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash"})
+        forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash", **({"sha": sha} if sha else {})})
     elif forge["kind"] == "github":
-        forge_request(forge, "PUT", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"merge_method": method})
+        forge_request(forge, "PUT", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"merge_method": method, **({"sha": sha} if sha else {})})
     else:
-        forge_request(forge, "POST", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"Do": method})
+        forge_request(forge, "POST", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"Do": method, **({"head_commit_id": sha} if sha else {})})
     log("info", "git.merged", project=project, repo=link["repo"], number=int(number), method=method)
     return {"merged": int(number)}
+
+
+# Pi's requests waiting for the user, in approvals.json. Several processes write it at
+# once (each Pi's broker asks, Pier answers): every change is made under its lock, on
+# what the file holds then. A request holds exactly what is done once approved (the
+# command, the pull request and the commit it is at), and leaves "pending" before
+# anything is done: a second click finds it taken.
+APPROVALS_KEPT = 200        # answered requests kept for the record; waiting ones always stay
+APPROVALS_WAITING_MAX = 20  # per project: past that, Pi waits for the user's answers
 
 
 def load_approvals(home):
@@ -5432,16 +5442,40 @@ def load_approvals(home):
     return [a for a in data.get("approvals", []) if isinstance(a, dict)]
 
 
+def approvals_lock(home):
+    return file_lock(approvals_path(home) + ".lock")
+
+
 def save_approvals(home, approvals):
-    save_private_json(approvals_path(home), {"approvals": approvals[-200:]})
+    """Every request still waiting, and the latest answered ones (under approvals_lock)."""
+    answered = {id(a) for a in [a for a in approvals if a.get("state") != "pending"][-APPROVALS_KEPT:]}
+    save_private_json(approvals_path(home), {"approvals": [a for a in approvals if a.get("state") == "pending" or id(a) in answered]})
 
 
-def ask_approval(home, project, kind, args, reason):
+def change_approval(home, ident, when=None, **fields):
+    """A request changed (its state, its result), if it is still there and, with when, still
+    in that state: the request as changed, or None."""
+    with approvals_lock(home):
+        approvals = load_approvals(home)
+        approval = next((a for a in approvals if a.get("id") == ident and (when is None or a.get("state") == when)), None)
+        if approval is not None:
+            approval.update(fields)
+            save_approvals(home, approvals)
+    return approval
+
+
+def ask_approval(home, project, kind, args, reason, replaces=None):
+    """A request of Pi, waiting for the user in Pier. replaces: which earlier waiting
+    request of the project, of the same kind, it makes stale (by default the same args)."""
     approval = {"id": uuid.uuid4().hex[:12], "project": project, "kind": kind, "args": args,
                 "reason": " ".join((reason or "").split())[:500], "at": int(time.time()), "state": "pending"}
-    approvals = [a for a in load_approvals(home)
-                 if not (a.get("state") == "pending" and a.get("project") == project and a.get("kind") == kind and a.get("args") == args)]
-    save_approvals(home, approvals + [approval])
+    stale = replaces or (lambda a: a.get("args") == args)
+    with approvals_lock(home):
+        approvals = [a for a in load_approvals(home)
+                     if not (a.get("state") == "pending" and a.get("project") == project and a.get("kind") == kind and stale(a))]
+        if sum(1 for a in approvals if a.get("state") == "pending" and a.get("project") == project) >= APPROVALS_WAITING_MAX:
+            raise ApiError(f"{APPROVALS_WAITING_MAX} requests of this project already wait for the user: wait for the answers")
+        save_approvals(home, approvals + [approval])
     log("info", "git.approval-asked", project=project, kind=kind, id=approval["id"])
     return approval
 
@@ -5452,45 +5486,61 @@ def api_approvals(home):
 
 
 def api_approval_answer(home, ident, answer):
-    """The user's answer to a request of Pi (from Pier): done now when approved."""
-    approvals = load_approvals(home)
-    for approval in approvals:
-        if approval.get("id") != ident or approval.get("state") != "pending":
-            continue
-        if answer != "yes":
-            approval["state"] = "refused"
-            save_approvals(home, approvals)
-            log("info", "git.approval-refused", id=ident, kind=approval.get("kind"))
-            return {"id": ident, "state": "refused"}
-        project, args = approval["project"], approval.get("args") or {}
-        try:
-            if approval["kind"] == "merge":
-                link = repo_link(home, project)
-                if not link:
-                    raise ApiError("the project is no longer connected to a repository")
-                result = merge_pr(home, project, link, args.get("number"), args.get("method"))
-            elif approval["kind"] in ("lab", "lab_create"):
-                approval.update(state="approved")
-                save_approvals(home, approvals)
-                log("info", "lab.approved", id=ident, machine=args.get("machine"))
-                return {"id": ident, "state": "approved"}
-            elif approval["kind"] == "review":
-                link = repo_link(home, project)
-                if not link:
-                    raise ApiError("the project is no longer connected to a repository")
-                result = post_review(home, link, args.get("number"), args.get("verdict"), args.get("body") or "")
-            elif approval["kind"] == "create_repo":
-                result = create_forge_repo(home, project, args.get("forge"), args.get("name"), args.get("private", True), args.get("description", ""))
-            else:
-                raise ApiError("unknown request")
-            approval.update(state="done", result=result)
-        except ApiError as exc:
-            approval.update(state="failed", error=str(exc))
+    """The user's answer to a request of Pi (from Pier). A command on a machine is run by
+    the broker waiting for it, from the request; the others are done here, now."""
+    with approvals_lock(home):
+        approvals = load_approvals(home)
+        approval = next((a for a in approvals if a.get("id") == ident and a.get("state") == "pending"), None)
+        if approval is None:
+            raise ApiError("that request is no longer waiting")
+        kind = approval.get("kind")
+        approval.update(state="refused" if answer != "yes" else "approved" if kind == "lab" else "running", answered=int(time.time()))
         save_approvals(home, approvals)
-        if approval["state"] == "failed":
-            raise ApiError(approval["error"])
-        return {"id": ident, "state": "done", "result": approval.get("result")}
-    raise ApiError("that request is no longer waiting")
+    if answer != "yes":
+        log("info", "git.approval-refused", id=ident, kind=kind)
+        return {"id": ident, "state": "refused"}
+    if kind == "lab":
+        log("info", "lab.approved", id=ident, machine=(approval.get("args") or {}).get("machine"))
+        return {"id": ident, "state": "approved"}
+    try:
+        result = approved_action(home, approval)
+    except Exception as exc:  # noqa: BLE001 - recorded, then raised as it came
+        change_approval(home, ident, state="failed", error=str(exc) if isinstance(exc, ApiError) else type(exc).__name__)
+        raise
+    change_approval(home, ident, state="done", result=result)
+    return {"id": ident, "state": "done", "result": result}
+
+
+def approved_action(home, approval):
+    """What the user approved, done as the request holds it: a merge or a review only while
+    the pull request is still at the commit the user was shown."""
+    project, args, kind = approval["project"], approval.get("args") or {}, approval.get("kind")
+    if kind == "create_repo":
+        return create_forge_repo(home, project, args.get("forge"), args.get("name"), args.get("private", True), args.get("description", ""))
+    if kind not in ("merge", "review"):
+        raise ApiError("unknown request")
+    link = repo_link(home, project)
+    if not link:
+        raise ApiError("the project is no longer connected to a repository")
+    if not args.get("sha"):
+        raise ApiError("this request was made by an older picker, without the commit it is for: nothing was done; ask Pi again")
+    if args.get("repo") != link["repo"]:
+        raise ApiError(f"this request was for {args.get('repo')}, and the project is now connected to {link['repo']}: nothing was done")
+    number = args.get("number")
+    pr = get_pr(home, link, number)
+    if pr.get("state") != "open":
+        raise ApiError(f"pull request #{number} is {pr.get('state')}: nothing was done")
+    if pr.get("sha") != args["sha"]:
+        raise ApiError(f"pull request #{number} changed since Pi asked (new commits): nothing was done; ask Pi again")
+    if kind == "merge":
+        return merge_pr(home, project, link, number, args.get("method"), sha=args["sha"])
+    return post_review(home, link, number, args.get("verdict"), args.get("body") or "")
+
+
+def pr_facts(link, pr):
+    """What a request about a pull request shows the user, and the commit it is bound to."""
+    return {"repo": link["repo"], "sha": pr.get("sha"), "title": " ".join(str(pr.get("title") or "").split())[:300],
+            "author": pr.get("author"), "head": pr.get("head"), "base": pr.get("base"), "url": pr.get("url"), "draft": bool(pr.get("draft"))}
 
 
 def api_repo(home, path):
@@ -5763,6 +5813,7 @@ def my_reviews(forge, link, number, login):
 
 
 def check_review(home, link, number, verdict):
+    """(forge, login, reviews done, the pull request) when this account may post that verdict."""
     forge, login = account_of(home, link)
     if verdict not in REVIEW_VERDICTS:
         raise ApiError(f"a verdict: {', '.join(REVIEW_VERDICTS)}")
@@ -5774,11 +5825,11 @@ def check_review(home, link, number, verdict):
     done = my_reviews(forge, link, number, login)
     if done >= REVIEW_ROUNDS:
         raise ApiError(f"{login}'s Pis already reviewed #{number} {done} times: a human decides now")
-    return forge, login, done
+    return forge, login, done, pr
 
 
 def post_review(home, link, number, verdict, body):
-    forge, login, done = check_review(home, link, number, verdict)
+    forge, login, done, _ = check_review(home, link, number, verdict)
     text = (body or "").strip()[:60000] + f"\n\n_review by {login}'s Pi (Pier), round {done + 1} of {REVIEW_ROUNDS}_"
     if forge["kind"] == "gitlab":
         comment(forge, link, number, text, merge_request=True)
@@ -6064,6 +6115,7 @@ LAB_RUN_MAX = 900
 LAB_OUTPUT = 60 * 1024
 LAB_PUSH_SKIP = {IMAGE_DIR, FILES_DIR, SHARE_DIR, ".pi-worktrees"}
 LAB_APPROVAL_WAIT = 600
+LAB_ASK_MAX = 4000  # a command waiting for the user's approval is shown whole: no longer than this
 
 
 def labs_dir():
@@ -6528,7 +6580,7 @@ def lab_run(home, project, name, command, timeout=300):
     except OSError as exc:
         raise ApiError(f"could not run it: {exc}")
     ms = int((time.monotonic() - started) * 1000)
-    lab_journal({"lab": name, "project": project, "command": command[:500], "exit": code, "ms": ms})
+    lab_journal({"lab": name, "project": project, "command": command, "exit": code, "ms": ms})  # whole: what was done
     tail = lambda b: b.decode("utf-8", "replace")[-LAB_OUTPUT:]
     return {"lab": name, "exit": code, "ms": ms, "stdout": tail(out), "stderr": tail(err),
             "truncated": len(out) > LAB_OUTPUT or len(err) > LAB_OUTPUT}
@@ -6850,23 +6902,62 @@ LAB_OPS = ("lab_list", "lab_create", "lab_run", "lab_push", "lab_pull", "lab_sna
 
 
 def wait_approval(home, approval, what):
-    """Until the user answers a request of Pi in Pier (at most ten minutes)."""
+    """The request, once the user approved it in Pier (at most ten minutes): what it holds is
+    what is done. Refused, unanswered or gone (asked again since): an ApiError for Pi."""
     deadline = time.monotonic() + LAB_APPROVAL_WAIT
     while True:
-        state = next((a.get("state") for a in load_approvals(home) if a.get("id") == approval["id"]), "gone")
+        found = next((a for a in load_approvals(home) if a.get("id") == approval["id"]), None)
+        state = found.get("state") if found else None
         if state == "approved":
-            return
-        if state in ("refused", "gone", "failed"):
+            return found
+        if state == "refused":
             raise ApiError(f"the user refused it ({what[:120]})")
+        if state != "pending":
+            raise ApiError("this request is no longer waiting for the user (asked again since?): nothing was done")
         if time.monotonic() > deadline:
-            raise ApiError("no answer from the user within ten minutes: ask again later, or say why you need it")
+            # Out of the list, so that a late click cannot approve what nobody waits for.
+            if change_approval(home, approval["id"], when="pending", state="expired"):
+                raise ApiError("no answer from the user within ten minutes: ask again later, or say why you need it")
+            continue  # answered meanwhile
         time.sleep(1)
+
+
+def shown_whole(text, what):
+    """text, refused when the user could not read it whole before approving it: too long,
+    or with a character that does not show (control, invisible, direction-changing,
+    an unusual space). Newlines and tabs show; they stay."""
+    if len(text) > LAB_ASK_MAX:
+        raise ApiError(f"{what}: at most {LAB_ASK_MAX} characters on a machine that asks first, so that the user reads it "
+                       "whole; for more, copy a script with lab_push, then run it")
+    for ch in text:
+        if ch not in "\n\t " and unicodedata.category(ch)[0] in "CZ":
+            raise ApiError(f"{what}: a character the user would not see (U+{ord(ch):04X}): write it plainly")
+    return text
+
+
+def machine_request(name, record, op, request):
+    """The args of a request on a machine set to ask: exactly what will be done (the command,
+    the path), where, and a short line for notifications."""
+    where = f"{record.get('user')}@{record.get('host')}:{int(record.get('port') or 22)}"
+    args = {"machine": name, "where": where, "op": op}
+    if op == "lab_run":
+        command = shown_whole(str(request.get("command") or ""), "the command")
+        lines = command.strip().split("\n")
+        shown = lines[0][:120] + ("…" if len(lines[0]) > 120 or len(lines) > 1 else "")
+        args.update(command=command, what=f"run: {shown}")
+    elif op in ("lab_push", "lab_pull"):
+        path = shown_whole(str(request.get("path") or ("." if op == "lab_push" else "")), "the path")
+        args.update(path=path, what=f"copy {path} of the project there" if op == "lab_push" else f"bring back {path}")
+    else:
+        args["what"] = op
+    return args
 
 
 def lab_answer(home, project, request):
     """A lab operation of Pi (from the broker). Anything on a machine set to ask waits for
-    the user's approval in Pier (at most ten minutes). Pi makes labs on the lab hosts the
-    user added, none if there is none."""
+    the user's approval in Pier (at most ten minutes), and then what is done is what the
+    approved request holds. Pi makes labs on the lab hosts the user added, none if there
+    is none."""
     op = request.get("op")
     name = str(request.get("lab") or "")
     if op == "lab_list":
@@ -6880,10 +6971,10 @@ def lab_answer(home, project, request):
                           str(request.get("description") or ""), networks, host=str(host) if host else None)
     kind, record = lab_target(home, project, name)
     if kind == "machine" and record.get("policy") != "auto":
-        what = {"lab_run": f"run: {str(request.get('command') or '')[:2000]}", "lab_push": f"copy {request.get('path') or '.'} of the project there",
-                "lab_pull": f"bring back {request.get('path')}"}.get(op, op)
-        approval = ask_approval(home, project, "lab", {"machine": name, "op": op, "what": what}, request.get("reason"))
-        wait_approval(home, approval, what)
+        args = machine_request(name, record, op, request)
+        approval = ask_approval(home, project, "lab", args, request.get("reason"))
+        approved = wait_approval(home, approval, args["what"])["args"]
+        request = {**request, **{key: approved[key] for key in ("command", "path") if key in approved}}
     if op == "lab_run":
         return lab_run(home, project, name, request.get("command"), request.get("timeout") or 300)
     if op == "lab_push":
@@ -6941,7 +7032,7 @@ export default function (pi: any) {
       description: Type.Optional(Type.String({ description: "what this lab is for, shown to the user" })),
       host: Type.Optional(Type.String({ description: "the lab host, from lab_list; the default one when left out" })),
       networks: Type.Optional(Type.Array(Type.String(), { description: "networks to plug it into, from lab_list: one interface each (eth0, eth1...), several for a router between them, [] for none; left out, the user's default" })) }), "lab_create");
-  tool("lab_run", "Run in lab", "Run a shell command in a lab or on a machine, in its work folder; returns the exit code and the output.",
+  tool("lab_run", "Run in lab", "Run a shell command in a lab or on a machine, in its work folder; returns the exit code and the output. On a machine that asks first, the user reads the whole command before it runs: at most 4000 characters, written plainly (for more, copy a script with lab_push and run it).",
     Type.Object({ lab: Type.String(), command: Type.String(), timeout: Type.Optional(Type.Integer({ description: "seconds, at most 900" })),
       reason: Type.Optional(Type.String({ description: "why, shown to the user when a machine asks for approval" })) }), "lab_run");
   tool("lab_push", "Copy to lab", "Copy the project (or a path in it) into the lab's work folder.",
@@ -7068,9 +7159,12 @@ class GitBroker:
             name = str(request.get("name") or "")
             if not REPO_NAME_RE.fullmatch(name):
                 raise ApiError("a repository's name: letters, digits, '.', '_' and '-'")
+            # Which account it goes to is said too: Pi may name any of those connected.
             approval = ask_approval(self.home, self.project, "create_repo",
                                     {"forge": forge["id"], "name": name, "private": request.get("private", True) is not False,
-                                     "description": str(request.get("description") or "")[:300]}, request.get("reason"))
+                                     "description": " ".join(str(request.get("description") or "").split())[:300],
+                                     "account": forge.get("login"), "forge_kind": forge["kind"], "forge_url": forge["url"]},
+                                    request.get("reason"), replaces=lambda a: (a.get("args") or {}).get("name") == name)
             return {"asked": approval["id"], "waiting": "the user approves creating it in Pier; ask again later with info"}
         if not link:
             raise ApiError("no repository connected to this project: the user connects one in Pier (Setup > Git), "
@@ -7113,22 +7207,28 @@ class GitBroker:
         if op == "review_pr":
             verdict = str(request.get("verdict") or "")
             body = str(request.get("body") or "")
-            check_review(self.home, link, number, verdict)
+            _, _, _, pr = check_review(self.home, link, number, verdict)
             if link["mode"] == "auto":
                 return post_review(self.home, link, number, verdict, body)
-            approval = ask_approval(self.home, self.project, "review", {"number": number, "verdict": verdict, "body": body[:60000]},
-                                    request.get("reason"))
+            # Bound to the commit reviewed: posted only if the pull request is still there.
+            approval = ask_approval(self.home, self.project, "review",
+                                    {"number": number, "verdict": verdict, "body": body[:60000], **pr_facts(link, pr)},
+                                    request.get("reason"), replaces=lambda a: (a.get("args") or {}).get("number") == number)
             return {"asked": approval["id"], "waiting": "the user approves posting the review in Pier"}
         method = request.get("method") if request.get("method") in MERGE_METHODS else link["merge_method"]
+        pr = get_pr(self.home, link, number)
+        if pr.get("state") != "open":
+            raise ApiError(f"pull request {number} is {pr.get('state')}")
+        if not pr.get("sha"):
+            raise ApiError(f"the forge did not say which commit pull request {number} is at: try again later")
         if link["mode"] == "auto":
-            pr = get_pr(self.home, link, number)
-            if pr.get("state") != "open":
-                raise ApiError(f"pull request {number} is {pr.get('state')}")
             if pr.get("checks") in ("pending", "failure"):
                 raise ApiError(f"pull request {number}: its checks have {'not finished' if pr['checks'] == 'pending' else 'failed'}; "
                                "merge once they pass")
-            return merge_pr(self.home, self.project, link, number, method)
-        approval = ask_approval(self.home, self.project, "merge", {"number": number, "method": method}, request.get("reason"))
+            return merge_pr(self.home, self.project, link, number, method, sha=pr["sha"])
+        # Bound to the commit the user is shown: merged only if the pull request is still there.
+        approval = ask_approval(self.home, self.project, "merge", {"number": number, "method": method, **pr_facts(link, pr)},
+                                request.get("reason"), replaces=lambda a: (a.get("args") or {}).get("number") == number)
         return {"asked": approval["id"], "waiting": "the user approves the merge in Pier; check the pull request later"}
 
     def close(self):
@@ -7189,7 +7289,7 @@ export default function (pi: any) {
   tool("list_pull_requests", "Pull requests", "The open pull requests of the repository.", Type.Object({}), "list_prs");
   tool("pull_request_status", "Pull request", "A pull request's state, its checks (CI) and whether it can be merged.",
     Type.Object({ number: Type.Integer() }), "pr");
-  tool("request_merge", "Merge", "Merge a pull request, when the user asked for it. Depending on the repository's setting in Pier (see git_repo_info), it merges at once once the checks have passed, or waits for the user's approval.",
+  tool("request_merge", "Merge", "Merge a pull request, when the user asked for it. Depending on the repository's setting in Pier (see git_repo_info), it merges at once once the checks have passed, or waits for the user's approval of the pull request as it is now: a commit pushed to it afterwards cancels that approval (ask again).",
     Type.Object({ number: Type.Integer(), method: Type.Optional(Type.String({ description: "merge, squash or rebase" })),
       reason: Type.Optional(Type.String()) }), "request_merge");
   tool("list_tasks", "Tasks", "The team's open tasks for the Pis (issues labelled pi-task), and which are taken.",
