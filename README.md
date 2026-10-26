@@ -167,7 +167,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 16 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 17 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -185,6 +185,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `resources`, `toggle-resource`, `skill-new`, `skill-read`, `skill-write`, `skill-delete`, `skill-import`, `gallery` | skills, extensions and prompts: listed with their state, turned on or off, local skills made, edited, put in the bin or imported; the gallery |
 | `worktrees`, `worktree-remove` | the Pis' worktrees of a project, and removing one |
 | `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `repo-settings`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
+| `team`, `collaborators`, `task-create`, `handoff-give`, `handoff-take` | the team: tasks for the Pis, everyone's pull requests, what waits for this account, giving and taking a conversation |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
 | `checkpoints`, `checkpoint`, `checkpoint-diff`, `restore` | restore points: list, make one, what changed since, go back |
@@ -415,11 +416,13 @@ Pier reads Pi's sessions folder (`~/.pi/agent/sessions`). The view is only updat
 
 ### Part XII. The Setup tab: a project's configuration, as in Claude Projects
 
-For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top sums the project up (Pi's version, packages, skills and how many are off, MCP servers, conversations, with **open them in Conversations**), then four pages, the one chosen being remembered:
+For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top sums the project up (Pi's version, packages, skills and how many are off, MCP servers, conversations, with **open them in Conversations**), then six pages, the one chosen being remembered:
 
 - **Instructions:** `AGENTS.md` and, folded, what Pi reads at startup;
 - **Skills:** skills, extensions and prompt templates, with a filter and **+ Add**;
 - **Packages:** Pi, the packages, **Install a package…** and the gallery;
+- **Git:** the project's repository, its pull requests, Pi's requests waiting for you (Part XIII);
+- **Team:** tasks, reviews between Pis and conversations shared with colleagues (Part XIII, D);
 - **Advanced:** MCP servers, the default model, and Pi's system prompt.
 
 What each page holds:
@@ -500,7 +503,28 @@ Two Pis in the same folder would step on each other's files. In a git project, t
 - `worktrees = false` in the picker's config turns this off.
 - Known: the worktree holds its own copy of the project's `AGENTS.md`, so a Pi there reads it twice (the worktree's and the folder's); and Activity shows its files under `.pi-worktrees/…`.
 
-#### D. Why the token is safe
+#### D. The team: several people, several Pis
+
+Each colleague has their Pier, their VM and their Pis; **they meet in the repository**, as a team of developers does. **Setup > Team** shows, for the project's repository:
+
+- **For you:** the pull requests whose review is asked of your account (**let a Pi review it**), and the conversations a colleague gave you (**take it over**).
+- **Tasks:** issues labelled `pi-task`, free or taken by someone's Pi; **let a Pi do it** on a free one, **New task…** to add one (a Pi can also split a large piece of work into tasks).
+- **Who works on what:** every open pull request, its author, its branch, its checks, and whose review it waits for.
+- **When something waits for your Pis:** do nothing, **notify me** (the default: a notification, a Pi on your click), or **start a Pi by itself** while Pier is connected (one every two minutes at most).
+
+Pi gets more git tools for this: `list_tasks`, `get_task`, `create_task`, `claim_task`, `release_task`, `pull_request_diff`, `review_pull_request`, `request_review`.
+
+| Pi asks to | What happens |
+|---|---|
+| take a task | the issue gets the label `pi-doing` and is assigned to your account; a task already taken is refused, so two Pis never do the same one. The work goes on `pi/task-N`, then a pull request saying "Closes #N" |
+| ask a colleague's Pis for a review | the colleague's account is asked as reviewer, with the label `pi-review`; their Pier tells them |
+| post a review | with the repository set to **Push, ask to merge**, it waits for your approval in Setup > Git, like a merge; with **Push and merge**, posted at once. At most **3 reviews** by one account on one pull request: then a human decides |
+
+**Giving a conversation:** in Conversations, ⋯ > **Give to a colleague…** sends the whole conversation (and its `pi/…` branch, pushed) on a branch `pi-handoff/<colleague>/…` that only they take. In their Team page, **take it over** adds it to their conversations and opens it in a Pi, with a word on the branch to switch to; the handoff branch is then deleted. The conversation holds everything said in it, including what was pasted: Pier says so before it leaves.
+
+**Safety:** what colleagues and their Pis wrote (tasks, pull requests, reviews, notes) reaches your Pi marked as written by others, data to read and never orders. A Pi that Pier starts for the team gets its prompt from the picker, written from fixed words and a number, never from a colleague's text. Each Pi acts with its own account's token, never a colleague's.
+
+#### E. Why the token is safe
 
 The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. git receives the token in its environment, never on a command line, and it is never written to a log.
 
@@ -541,7 +565,7 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
 | **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
-| **Pi and git** | Pi pushes only `pi/…` branches, never forced, and opens pull requests; merging waits for the user's approval in Pier unless the user lets it merge once the checks pass (or keeps it local), and creating a repository always does. The forge's token never enters the sandbox: the picker holds it and pushes from a mirror of its own, after fetching Pi's commits in git's jail. |
+| **Pi and git** | Pi pushes only `pi/…` branches, never forced, and opens pull requests; merging waits for the user's approval in Pier unless the user lets it merge once the checks pass (or keeps it local), and creating a repository always does. With colleagues, Pis take tasks, ask each other for reviews (at most 3 per pull request and account) and read what others wrote as data, never as orders. The forge's token never enters the sandbox: the picker holds it and pushes from a mirror of its own, after fetching Pi's commits in git's jail. |
 | **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only its model providers, npm, GitHub, PyPI and what `network_allow` adds, through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
 | **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. `~/.pi` is Pi's to write: a link put in place of the key is not followed (only a plain file is read). |
