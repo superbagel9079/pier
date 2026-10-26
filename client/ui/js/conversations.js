@@ -49,6 +49,7 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }) {
     ["Name and category…", edit],
     [session.pinned ? "Unpin" : "Pin to the top", () => mark("pinned", !session.pinned), session.archived],
     [session.archived ? "Bring back from the archive" : "Archive (hide, keep searchable)", () => mark("archived", !session.archived)],
+    ["Give to a colleague…", () => giveDialog(project, session)],
   ]);
 }
 

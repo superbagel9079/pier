@@ -37,13 +37,13 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 16;
+const API_VERSION: u64 = 17;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees"];
+const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators"];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -726,6 +726,9 @@ fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
         [flag] => flag == "--continue" || flag == "--new",
         [flag, file] if flag == "--session" => file.ends_with(".jsonl") && file.contains("/.pi/") && !file.contains('\n'),
         [flag, name] if flag == "--slot" => slot_name(name),
+        // A new Pi asked to take a task or review a pull request: the picker writes the
+        // prompt itself, from fixed words and this number (see AGENT_PROMPTS there).
+        [flag, kind, n] if flag == "--agent-task" => (kind == "task" || kind == "review") && !n.is_empty() && n.len() < 8 && n.chars().all(|c| c.is_ascii_digit()),
         _ => false,
     };
     if !allowed || project.is_empty() {
@@ -1068,11 +1071,36 @@ async fn repo_create(app: AppHandle, state: State<'_, AppState>, project: String
 
 /// What Pi may do alone with the project's repository (local, ask, auto), and how it merges.
 #[tauri::command]
-async fn repo_settings(app: AppHandle, state: State<'_, AppState>, project: String, mode: String, method: String) -> Result<Value, String> {
-    if !["local", "ask", "auto"].contains(&mode.as_str()) || !["merge", "squash", "rebase"].contains(&method.as_str()) {
-        return Err(format!("unknown repository setting: {mode}, {method}"));
+async fn repo_settings(app: AppHandle, state: State<'_, AppState>, project: String, mode: String, method: String, agents: String) -> Result<Value, String> {
+    if !["local", "ask", "auto"].contains(&mode.as_str()) || !["merge", "squash", "rebase"].contains(&method.as_str())
+        || !["", "off", "ask", "auto"].contains(&agents.as_str()) {
+        return Err(format!("unknown repository setting: {mode}, {method}, {agents}"));
     }
-    api(&app, &state, &["repo-settings", &project, &mode, &method], &[]).await
+    api(&app, &state, &["repo-settings", &project, &mode, &method, &agents], &[]).await
+}
+
+/// A task for the team's Pis: an issue labelled pi-task (its description on stdin).
+#[tauri::command]
+async fn task_create(app: AppHandle, state: State<'_, AppState>, project: String, title: String, body: String) -> Result<Value, String> {
+    api(&app, &state, &["task-create", &project, &title], body.as_bytes()).await
+}
+
+/// A conversation given to a colleague (the user's own act; the note on stdin).
+#[tauri::command]
+async fn handoff_give(app: AppHandle, state: State<'_, AppState>, project: String, file: String, to: String, note: String) -> Result<Value, String> {
+    if !file.ends_with(".jsonl") || to.is_empty() || to.len() > 64 || !to.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c)) {
+        return Err("a conversation and a colleague's login".into());
+    }
+    api(&app, &state, &["handoff-give", &project, &file, &to], note.as_bytes()).await
+}
+
+/// A colleague's conversation taken over: it lands among this project's conversations.
+#[tauri::command]
+async fn handoff_take(app: AppHandle, state: State<'_, AppState>, project: String, branch: String) -> Result<Value, String> {
+    if !branch.starts_with("pi-handoff/") {
+        return Err("not a handoff".into());
+    }
+    api(&app, &state, &["handoff-take", &project, &branch], &[]).await
 }
 
 /// Merges a pull request, from Pier.
@@ -1778,6 +1806,9 @@ pub fn run() {
             repo_unlink,
             repo_create,
             repo_settings,
+            task_create,
+            handoff_give,
+            handoff_take,
             pr_merge,
             update_check,
             update_install,
@@ -1846,6 +1877,9 @@ mod tests {
         assert!(resume.ends_with("'--session' '/home/leo/.pi/agent/sessions/--x--/a.jsonl'"), "{resume}");
         assert!(attach_command("/x", &["--continue".into()]).is_ok());
         assert!(attach_command("/x", &["--new".into()]).is_ok());
+        assert!(attach_command("/x", &["--agent-task".into(), "review".into(), "14".into()]).is_ok());
+        assert!(attach_command("/x", &["--agent-task".into(), "shell".into(), "14".into()]).is_err());
+        assert!(attach_command("/x", &["--agent-task".into(), "task".into(), "1; rm -rf ~".into()]).is_err());
         assert_eq!(attach_command("/x", &["--slot".into(), "pi-work-a1b2c3-2".into()]).unwrap(), "--attach-control '/x' '--slot' 'pi-work-a1b2c3-2'");
         for bad in [
             vec!["--model".to_string(), "x".into()],

@@ -48,11 +48,12 @@ function makeSetup(tab) {
   const editors = {};
   const manager = makeResourceManager($$(".resource-manager"), () => data?.project || project(), () => { if (data) renderSummary(); });
   const gitManager = makeGitManager($$(".git-manager"), () => data?.project || project());
+  const teamManager = makeTeamManager($$(".team-manager"), () => data?.project || project());
   const packageTools = makePackageTools($$(".package-tools"), () => data?.project || project(), () => manager.load());
 
   // The four pages; the one chosen is remembered.
   function showPage(page, initial = false) {
-    if (!["instructions", "skills", "packages", "git", "advanced"].includes(page)) page = "instructions";
+    if (!["instructions", "skills", "packages", "git", "team", "advanced"].includes(page)) page = "instructions";
     for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.classList.toggle("active", b.dataset.page === page);
     for (const section of tab.pane.querySelectorAll(".setup-page")) section.hidden = section.dataset.page !== page;
     if (prefs.setupPage !== page) { prefs.setupPage = page; savePrefs(); }
@@ -60,6 +61,7 @@ function makeSetup(tab) {
     if (initial) return;
     if (page === "packages") packageTools.shown();
     if (page === "git") gitManager.shown();
+    if (page === "team") teamManager.shown();
   }
   for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
   showPage(prefs.setupPage, true);
@@ -311,6 +313,7 @@ function makeSetup(tab) {
     if (outdated > 1) list.append(el("li", { className: "note small" }, update("all packages", ["--extensions"], "pi update --extensions, in a terminal")));
     manager.loadFor(data.project);
     if (prefs.setupPage === "git") gitManager.shown();
+    if (prefs.setupPage === "team") teamManager.shown();
     if (prefs.setupPage === "packages") packageTools.shown();
     packageTools.installed(r.packages);
     if (!r.packages.length) list.append(el("li", { className: "dim small note", textContent: "No package yet: install one, or find one in the gallery below." }));
@@ -375,7 +378,8 @@ function makeSetup(tab) {
   const unlisten = vm.on("setup", onSetup);
   // A request of Pi (merge, new repository): the Git page shows it at once.
   const unlistenApprovals = vm.on("approvals", () => { if (prefs.setupPage === "git" && tab.shown !== false) gitManager.load(); });
-  tab.onClose = () => { unlisten(); unlistenApprovals(); vm.follow({ setup: null }); };
+  const unlistenTeam = vm.on("team", () => { if (prefs.setupPage === "team" && tab.shown !== false) teamManager.load(); });
+  tab.onClose = () => { unlisten(); unlistenApprovals(); unlistenTeam(); vm.follow({ setup: null }); };
   tab.onVisible = (shown) => { if (shown) load(); else vm.follow({ setup: null }); };
   fillProjects().then(load);
 }

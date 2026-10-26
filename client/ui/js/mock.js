@@ -5,6 +5,10 @@ function mockBackend() {
   let saved = null;
   let mockClipboard = "";
   const updateListeners = [];
+  const mockTasks = [
+    { number: 9, title: "Rate-limit the public API", author: "alex", taken: true, taken_by: "alex", url: "https://github.com/leo/work/issues/9" },
+    { number: 10, title: "Add an export to CSV", author: "leo", taken: false, url: "https://github.com/leo/work/issues/10" },
+  ];
   let trusted = false;
   let pickerVersion = "3.8"; // the demo's VM has an old picker: Pier updates it
   const logLines = [];
@@ -154,6 +158,18 @@ function mockBackend() {
           approvals: mockApprovals };
       }
       if (args[0] === "approvals") return { approvals: mockApprovals };
+      if (args[0] === "team") {
+        if (!mockForges.length || !mockLink) return { project: args[1], link: null };
+        return { project: args[1], link: mockLink, login: "leo", errors: [],
+          tasks: mockTasks,
+          prs: [{ number: 12, title: "Fix the login redirect", head: "pi/fix-login", base: "main", url: "https://github.com/leo/work/pull/12", checks: "success", author: "leo", requested: ["alex"] },
+            { number: 14, title: "Rate-limit the API", head: "pi/task-9", base: "main", url: "https://github.com/leo/work/pull/14", checks: "pending", author: "alex", requested: ["leo"] }],
+          handoffs: [{ branch: "pi-handoff/leo/alex-20261026101500", from: "alex", when: "20261026101500" }],
+          waiting: [{ kind: "review", number: 14, title: "Rate-limit the API", from: "alex" },
+            { kind: "handoff", branch: "pi-handoff/leo/alex-20261026101500", from: "alex" },
+            ...mockTasks.filter((t) => !t.taken).map((t) => ({ kind: "task", number: t.number, title: t.title, from: t.author }))] };
+      }
+      if (args[0] === "collaborators") return { login: "leo", collaborators: ["alex", "sam"] };
       if (args[0] === "worktrees") return { worktrees: [{ name: "pi-work-1a2b3c-2", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-2", branch: "pi/agent-2-20261016-1530-ab12", changed: 2, ahead: 3, running: true }] };
       if (args[0] === "skill-read") return { name: args[3], text: `---\nname: ${args[3]}\ndescription: demo\n---\n\n# ${args[3]}\n` };
       if (args[0] === "projects") {
@@ -314,7 +330,15 @@ function mockBackend() {
     },
     forgeRemove: async (id) => { mockForges = mockForges.filter((f) => f.id !== id); return { removed: id }; },
     repoLink: async (project, forge, repo) => { mockLink = { forge, repo, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
-    repoSettings: async (project, mode, method) => { Object.assign(mockLink, { mode, merge_method: method }); return mockLink; },
+    repoSettings: async (project, mode, method, agents) => { Object.assign(mockLink, { mode, merge_method: method }, agents ? { agents } : {}); return mockLink; },
+    taskCreate: async (project, title) => {
+      if (!title) throw "a task needs a title";
+      const task = { number: 11 + mockTasks.length, title, author: "leo", taken: false, url: "https://github.com/leo/work/issues/12" };
+      mockTasks.push(task);
+      return task;
+    },
+    handoffGive: async (project, file, to) => ({ given: `pi-handoff/${to}/leo-20261026120000`, to, branch: "pi/fix-login" }),
+    handoffTake: async () => { throw "the demo has no conversation to take"; },
     repoUnlink: async () => { mockLink = null; return {}; },
     repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
     prMerge: async (project, number) => ({ merged: number }),

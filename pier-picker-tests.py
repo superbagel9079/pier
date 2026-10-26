@@ -542,29 +542,80 @@ spec.loader.exec_module(m)
 home = m.home_dir()
 proj = os.path.join(home, "proj")
 os.makedirs(proj, exist_ok=True)
-calls, prs = [], []
+calls, prs, issues, reviews = [], [], {}, {}
+import re as _re
 
 class Forge(BaseHTTPRequestHandler):
+    """A GitHub as small as the picker needs: pull requests, issues with labels,
+    reviews, a diff, branches (those of the local bare repository standing for it)."""
     def log_message(self, *a): pass
     def reply(self, code, obj):
         body = json.dumps(obj).encode()
         self.send_response(code); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def text(self, data):
+        body = data.encode()
+        self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def body(self):
+        return json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
     def do_GET(self):
         calls.append(("GET", self.path, self.headers.get("Authorization")))
-        if self.path == "/user": return self.reply(200, {"login": "leo"})
-        if self.path == "/repos/leo/demo": return self.reply(200, {"default_branch": "main"})
-        if self.path.startswith("/repos/leo/demo/branches"): return self.reply(200, [{"name": "main"}])
-        if self.path.startswith("/repos/leo/demo/pulls/"): return self.reply(200, prs[int(self.path.split("/")[-1]) - 1])
-        if self.path.startswith("/repos/leo/demo/pulls"): return self.reply(200, prs)
-        if "check-runs" in self.path: return self.reply(200, {"check_runs": []})
+        path = self.path.split("?")[0]
+        if path == "/user": return self.reply(200, {"login": "leo"})
+        if path == "/repos/leo/demo": return self.reply(200, {"default_branch": "main"})
+        if path == "/repos/leo/demo/branches":
+            names = subprocess.run(["git", "--git-dir", remote, "for-each-ref", "--format=%(refname:short)", "refs/heads"],
+                                   capture_output=True, text=True).stdout.split()
+            # The remote stands for a repository that already has its main branch: pushing
+            # main is then refused (only a still empty repository takes it).
+            return self.reply(200, [{"name": n} for n in (names or ["main"])])
+        if path == "/repos/leo/demo/collaborators": return self.reply(200, [{"login": "leo"}, {"login": "alex"}])
+        hit = _re.fullmatch(r"/repos/leo/demo/pulls/(\d+)(/reviews)?", path)
+        if hit:
+            n = int(hit.group(1))
+            if hit.group(2): return self.reply(200, reviews.get(n, []))
+            if "diff" in (self.headers.get("Accept") or ""): return self.text("diff --git a/b.txt b/b.txt\n+b\n")
+            return self.reply(200, prs[n - 1])
+        if path == "/repos/leo/demo/pulls": return self.reply(200, prs)
+        hit = _re.fullmatch(r"/repos/leo/demo/issues/(\d+)", path)
+        if hit: return self.reply(200, issues[int(hit.group(1))])
+        if path == "/repos/leo/demo/issues":
+            return self.reply(200, [i for i in issues.values() if any(l["name"] == "pi-task" for l in i["labels"])])
+        if "check-runs" in path: return self.reply(200, {"check_runs": []})
         self.reply(404, {"message": "Not Found"})
     def do_POST(self):
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        body = self.body()
         calls.append(("POST", self.path, body))
-        pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x"}, "base": {"ref": body.get("base")}}
+        path = self.path.split("?")[0]
+        if path == "/repos/leo/demo/issues":
+            n = 100 + len(issues)
+            issues[n] = {"number": n, "title": body.get("title"), "body": body.get("body"), "state": "open", "user": {"login": "leo"},
+                         "labels": [{"name": l} for l in body.get("labels", [])], "assignees": [], "html_url": f"https://x/{n}"}
+            return self.reply(201, issues[n])
+        hit = _re.fullmatch(r"/repos/leo/demo/issues/(\d+)/(labels|assignees|comments)", path)
+        if hit:
+            n, what = int(hit.group(1)), hit.group(2)
+            if n in issues and what == "labels": issues[n]["labels"] += [{"name": l} for l in body["labels"]]
+            if n in issues and what == "assignees": issues[n]["assignees"] = [{"login": a} for a in body["assignees"]]
+            if n <= len(prs) and what == "labels": prs[n - 1].setdefault("labels", []).extend({"name": l} for l in body["labels"])
+            return self.reply(200, {})
+        hit = _re.fullmatch(r"/repos/leo/demo/pulls/(\d+)/(reviews|requested_reviewers)", path)
+        if hit:
+            n = int(hit.group(1))
+            if hit.group(2) == "reviews": reviews.setdefault(n, []).append({"user": {"login": "leo"}, "state": body["event"]})
+            else: prs[n - 1]["requested_reviewers"] = [{"login": r} for r in body["reviewers"]]
+            return self.reply(200, {})
+        pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x"},
+              "base": {"ref": body.get("base")}, "user": {"login": "alex"}}
         prs.append(pr); self.reply(201, pr)
+    def do_DELETE(self):
+        calls.append(("DELETE", self.path, None))
+        hit = _re.fullmatch(r"/repos/leo/demo/issues/(\d+)/labels/(.+)", self.path)
+        if hit and int(hit.group(1)) in issues:
+            issue = issues[int(hit.group(1))]
+            issue["labels"] = [l for l in issue["labels"] if l["name"] != hit.group(2)]
+        self.reply(200, {})
     def do_PUT(self):
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+        body = self.body()
         calls.append(("PUT", self.path, body)); self.reply(200, {"merged": True})
 
 server = HTTPServer(("127.0.0.1", 0), Forge)
@@ -611,6 +662,43 @@ try:
 except m.ApiError:
     out["bad_setting"] = True
 m.api_repo_settings(home, proj, "ask", "merge")
+# The team: tasks, reviews between Pis, a handoff.
+made = tried({"op": "create_task", "title": "Write the changelog", "body": "every release"})
+number = made.get("created")
+out["task_listed"] = [t["number"] for t in tried({"op": "list_tasks"}).get("tasks", [])] == [number]
+out["task_claimed"] = tried({"op": "claim_task", "number": number}).get("branch") == f"pi/task-{number}"
+out["task_twice"] = "already taken" in tried({"op": "claim_task", "number": number}).get("error", "")
+tried({"op": "release_task", "number": number, "done": True})
+out["task_released"] = not tried({"op": "get_task", "number": number}).get("taken", True)
+out["diff"] = "diff --git" in tried({"op": "pr_diff", "number": 1}).get("diff", "")
+out["review_asked"] = tried({"op": "request_review", "number": 1, "reviewer": "alex"}).get("asked") == "alex"
+out["review_self"] = "error" in tried({"op": "request_review", "number": 1, "reviewer": "leo"})
+waiting = tried({"op": "review_pr", "number": 1, "verdict": "approve", "body": "Looks right."})
+out["review_waits"] = "asked" in waiting and not reviews.get(1)
+m.api_approval_answer(home, waiting["asked"], "yes")
+out["review_posted"] = [r["state"] for r in reviews.get(1, [])] == ["APPROVE"]
+m.api_repo_settings(home, proj, "auto", "merge")
+tried({"op": "review_pr", "number": 1, "verdict": "comment", "body": "Again."})
+tried({"op": "review_pr", "number": 1, "verdict": "comment", "body": "Third."})
+out["review_rounds"] = "human decides" in tried({"op": "review_pr", "number": 1, "verdict": "comment", "body": "Fourth."}).get("error", "")
+m.api_repo_settings(home, proj, "ask", "merge")
+out["prompt_fixed"] = "#7" in m.agent_prompt("review", 7)
+try:
+    m.agent_prompt("shell", 7); out["prompt_kinds"] = False
+except m.ApiError:
+    out["prompt_kinds"] = True
+session_dir = m.session_dir(os.path.realpath(proj)); os.makedirs(session_dir, exist_ok=True)
+conversation = os.path.join(session_dir, "2026-10-26T10-00-00-000Z_x.jsonl")
+open(conversation, "w").write(json.dumps({"type": "session", "cwd": "/home/someone/proj"}) + "\n" + json.dumps({"type": "message"}) + "\n")
+given = m.api_handoff_give(home, proj, conversation, "alex", "the tests are left")
+out["handoff_branch"] = given["given"].startswith("pi-handoff/alex/leo-") and given["branch"] == "pi/work"
+forges = m.private_json(m.forges_path(home)); forges["forges"][0]["login"] = "alex"; m.save_private_json(m.forges_path(home), forges)
+out["handoff_waiting"] = any(w["kind"] == "handoff" for w in m.api_team(home, proj)["waiting"])
+taken = m.api_handoff_take(home, proj, given["given"])
+header = json.loads(open(taken["session"]).readline())
+out["handoff_taken"] = taken["from"] == "leo" and taken["note"] == "the tests are left" and header["cwd"] == os.path.realpath(proj)
+out["handoff_deleted"] = given["given"] not in subprocess.run(["git", "--git-dir", remote, "branch"], capture_output=True, text=True).stdout
+forges["forges"][0]["login"] = "leo"; m.save_private_json(m.forges_path(home), forges)
 out["pull"] = tried({"op": "pull"}).get("into")
 out["origin"] = git("branch", "-r").split()
 out["token_sent"] = any(c[2] == "Bearer tok-secret" for c in calls if c[0] == "GET")
@@ -704,6 +792,14 @@ def git_broker_test():
     check("git: an unknown setting refused", out["bad_setting"], out)
     check("git: pull fills origin/*", "origin/pi/work" in out["origin"], out)
     check("git: the token used, never logged", out["token_sent"] and not out["token_in_log"], out)
+    check("team: a task made, listed, taken once, released", out["task_listed"] and out["task_claimed"] and out["task_twice"] and out["task_released"], out)
+    check("team: a pull request's diff read", out["diff"], out)
+    check("team: a review asked of a colleague, never of oneself", out["review_asked"] and out["review_self"], out)
+    check("team: a review waits for approval, then is posted", out["review_waits"] and out["review_posted"], out)
+    check("team: at most 3 reviews by one account", out["review_rounds"], out)
+    check("team: Pi's prompt from fixed words only", out["prompt_fixed"] and out["prompt_kinds"], out)
+    check("team: a conversation given with its branch", out["handoff_branch"] and out["handoff_waiting"], out)
+    check("team: taken over here, its branch deleted", out["handoff_taken"] and out["handoff_deleted"], out)
     cleanup(str(work))
 
 
