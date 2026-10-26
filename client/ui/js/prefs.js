@@ -53,6 +53,7 @@ function openPrefs() {
   $("#prefs-picker-note").hidden = true;
   $("#prefs-diag-note").hidden = true;
   fillPickerInfo();
+  fillLabsPrefs();
   backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
   $("#prefs-shortcut-note").hidden = true;
   backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !prefs.shortcut; }).catch(() => {});

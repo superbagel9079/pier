@@ -167,7 +167,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 17 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 18 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -186,6 +186,8 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `worktrees`, `worktree-remove` | the Pis' worktrees of a project, and removing one |
 | `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `repo-settings`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
 | `team`, `collaborators`, `task-create`, `handoff-give`, `handoff-take` | the team: tasks for the Pis, everyone's pull requests, what waits for this account, giving and taking a conversation |
+| `labs`, `labs-settings`, `lab-journal`, `lab-action`, `machine-add`, `machine-remove`, `machine-test` | labs: whether they can be made, their limits (JSON on stdin), what was run in them, a lab made, reset or destroyed, the machines reached over SSH |
+| `--lab-shell NAME` | a terminal in a lab or on a machine (Pier's Labs tab) |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
 | `checkpoints`, `checkpoint`, `checkpoint-diff`, `restore` | restore points: list, make one, what changed since, go back |
@@ -528,14 +530,35 @@ Pi gets more git tools for this: `list_tasks`, `get_task`, `create_task`, `claim
 
 The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. git receives the token in its environment, never on a command line, and it is never written to a log.
 
-### Part XIV. Notifications and shortcut
+### Part XIV. Labs: machines where Pi may do anything
+
+**An option, off until you turn it on** (Settings > Labs): Pi's sandbox stays exactly as it is, and Pi gets tools to use machines of its own besides, to run tests with services, build with Docker, install system packages, try things out.
+
+- **Labs:** disposable [Incus](https://linuxcontainers.org/incus/) containers on the VM (or full virtual machines when the VM has `/dev/kvm`), made by Pi (`lab_create`) or by you (**New lab** in the Labs tab). Root inside, nothing of the VM or of home: only what Pi copies in. Each has CPU, memory and disk limits, a lifetime after which it goes (24 h by default), a **clean** snapshot to go back to, and the network open or cut.
+- **Machines:** computers of yours (a server with a GPU, a test server) that Pi reaches over SSH. Pier makes a key of its own on the VM, which you put in the machine's `~/.ssh/authorized_keys`; Pi never sees it. Each machine has its rule: **each command waits for your approval** (the default, shown with the other requests in Setup > Git and as a notification) or Pi runs commands freely.
+
+Pi's tools: `lab_list`, `lab_create`, `lab_run` (a command, its output and exit code), `lab_push` (the project, or a part, into the lab: what was given to Pi stays out, links stay links), `lab_pull` (a file or folder back into `.pi-files/`), `lab_snapshot`, `lab_reset`, `lab_destroy`. They go through the picker's broker, like the git tools; Pi's sandbox has no network to the labs.
+
+The **Labs tab** (the **+** of a tab bar) lists the labs and machines, opens a **terminal** in any of them, resets or destroys a lab, and shows **what was done**: every command run by Pi, with its exit code and time.
+
+To make labs, on the VM, once:
+
+```bash
+sudo apt install incus
+sudo incus admin init --minimal
+sudo adduser $USER incus
+```
+
+then reconnect Pier (the group counts from the next login). The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged. For virtual machines too, under Proxmox: the VM's CPU type set to **host** (Hardware > Processors), so that `/dev/kvm` exists in it.
+
+### Part XV. Notifications and shortcut
 
 - **A Windows notification** when a Pi goes from "working" to "idle", for every Pi started. Nothing shows when Pier is already in front.
 - **Ctrl+Alt+V,** from any application: sends the clipboard's image or files to Pi. When another program already uses it, the Settings say so.
 - **One Pier at a time:** starting it again brings the running one forward (even minimised to the notification area) instead of opening a second one.
 - **Closing the window** leaves Pier in the notification area. To quit it: right-click the icon, then Quit.
 
-### Part XV. Settings (once connected)
+### Part XVI. Settings (once connected)
 
 The categories in a column on the left, the page on the right; the window opens again on the last page shown.
 
@@ -552,6 +575,7 @@ The categories in a column on the left, the page on the right; the window opens 
   - resuming shares after a reconnection.
 - **Picker:** its version and Pier's, automatic updates (on by default), and a button to install it again.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
+- **Labs:** turning labs on, whether Incus answers on the VM (and how to install it otherwise), the limits (labs at a time, lifetime, CPUs, memory, disk, network, default image), and the machines with Pier's key.
 - **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](RELEASING.md).
 - **Connection:** where Pier connects (changed from the login screen).
 
@@ -917,7 +941,6 @@ Tested only locally or in simulation so far (the sandbox, its network and git's 
 - **A second factor (TOTP)** in Pier.
 - **Signing certificates** for the GitHub Actions builds (the workflow is ready for them).
 - **Several VMs** saved, chosen at login.
-- **A disposable "clean room"** where Pi can try things without touching the real project or system.
 
 ## License
 

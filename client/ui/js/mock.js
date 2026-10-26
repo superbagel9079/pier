@@ -5,6 +5,12 @@ function mockBackend() {
   let saved = null;
   let mockClipboard = "";
   const updateListeners = [];
+  const labsState = { settings: { enabled: false, max: 3, ttl_hours: 24, network: "open", cpu: 2, memory_gib: 4, disk_gib: 20, image: "debian/13" },
+    labs: [{ name: "db-tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
+    machines: [] };
+  const mockLabs = () => ({ ...labsState, incus: true, why: "", kvm: true, public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
+    journal: [{ at: Date.now() / 1000 - 60, lab: "db-tests", project: "/home/leo/work", command: "pytest -q", exit: 0, ms: 8200 },
+      { at: Date.now() / 1000 - 300, lab: "db-tests", project: "/home/leo/work", what: "pushed . (1240 kB)" }] });
   const mockTasks = [
     { number: 9, title: "Rate-limit the public API", author: "alex", taken: true, taken_by: "alex", url: "https://github.com/leo/work/issues/9" },
     { number: 10, title: "Add an export to CSV", author: "leo", taken: false, url: "https://github.com/leo/work/issues/10" },
@@ -41,6 +47,7 @@ function mockBackend() {
       setup: () => self.api(["setup", want.setup]),
       checkpoints: () => self.api(["checkpoints", want.checkpoints]),
       conversations: () => self.api(["conversations"]),
+      labs: () => self.api(["labs"]),
     };
     for (const [kind, make] of Object.entries(parts)) {
       if (!want[kind]) continue;
@@ -169,6 +176,7 @@ function mockBackend() {
             { kind: "handoff", branch: "pi-handoff/leo/alex-20261026101500", from: "alex" },
             ...mockTasks.filter((t) => !t.taken).map((t) => ({ kind: "task", number: t.number, title: t.title, from: t.author }))] };
       }
+      if (args[0] === "labs") return mockLabs();
       if (args[0] === "collaborators") return { login: "leo", collaborators: ["alex", "sam"] };
       if (args[0] === "worktrees") return { worktrees: [{ name: "pi-work-1a2b3c-2", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-2", branch: "pi/agent-2-20261016-1530-ab12", changed: 2, ahead: 3, running: true }] };
       if (args[0] === "skill-read") return { name: args[3], text: `---\nname: ${args[3]}\ndescription: demo\n---\n\n# ${args[3]}\n` };
@@ -331,6 +339,15 @@ function mockBackend() {
     forgeRemove: async (id) => { mockForges = mockForges.filter((f) => f.id !== id); return { removed: id }; },
     repoLink: async (project, forge, repo) => { mockLink = { forge, repo, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
     repoSettings: async (project, mode, method, agents) => { Object.assign(mockLink, { mode, merge_method: method }, agents ? { agents } : {}); return mockLink; },
+    labsSettings: async (text) => { Object.assign(labsState.settings, JSON.parse(text)); return mockLabs(); },
+    labAction: async (action, name) => {
+      if (action === "destroy") labsState.labs = labsState.labs.filter((l) => l.name !== name);
+      if (action === "create") { const lab = { name: `lab-${labsState.labs.length + 1}`, project: "", image: "debian/13", vm: false, status: "Running", expires: Date.now() / 1000 + 86400 }; labsState.labs.push(lab); return { lab: lab.name }; }
+      return { lab: name };
+    },
+    machineAdd: async (name, host, port, user, policy) => { labsState.machines.push({ name, host, port, user, policy }); return { machine: name, public_key: mockLabs().public_key }; },
+    machineRemove: async (name) => { labsState.machines = labsState.machines.filter((m) => m.name !== name); return {}; },
+    machineTest: async (name) => ({ machine: name, answer: "Linux 6.12.0 x86_64" }),
     taskCreate: async (project, title) => {
       if (!title) throw "a task needs a title";
       const task = { number: 11 + mockTasks.length, title, author: "leo", taken: false, url: "https://github.com/leo/work/issues/12" };
