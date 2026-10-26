@@ -13,6 +13,20 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** Text from the VM or a forge as it really is, for what the user decides on: characters
+ *  that do not show (control, invisible, direction-changing, unusual spaces) appear as
+ *  ⟨U+202E⟩. lines: newlines and tabs kept (a command, a review), else shown as ⏎ and ⇥. */
+function visibleText(text, { lines = false } = {}) {
+  let value = String(text ?? "");
+  if (lines) value = value.replace(/\r\n/g, "\n");
+  return value.replace(/[\p{C}\p{Z}]/gu, (c) => {
+    if (c === " " || (lines && (c === "\n" || c === "\t"))) return c;
+    if (c === "\n") return "⏎";
+    if (c === "\t") return "⇥";
+    return `⟨U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}⟩`;
+  });
+}
+
 let settings = null;
 let password = "";          // kept for the trust round trip only, then dropped
 let bastionPassword = "";

@@ -378,6 +378,20 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .resource-items li > .row-actions { flex: 0 0 auto; display: flex; gap: var(--s2); }
 .resource-items li > .more { visibility: hidden; padding: 0 var(--s1); }
 .resource-items li:hover > .more, .resource-items li > .more:focus-visible { visibility: visible; }
+/* Pi's requests: what will be done, whole (never cut to a line or two), what Pi says, then
+   Refuse and Approve as real buttons. A command is never in a box of its own to scroll:
+   Approve comes after all of it. It keeps the order it runs in, whatever its letters:
+   nothing is reordered right to left. */
+.resource-items li.approval { display: block; padding: var(--s2); }
+.resource-items li.approval:hover { background: none; }
+.resource-items li.approval > .dim { text-align: left; }
+.approval-what { font-weight: 600; overflow-wrap: anywhere; }
+.approval-fact { font-family: var(--code); font-size: var(--t-small); margin-top: 2px; overflow-wrap: anywhere; }
+.approval-whole { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 20em; overflow: auto; margin: var(--s2) 0 2px; font-size: var(--t-small); unicode-bidi: isolate; }
+.approval-whole.command { unicode-bidi: bidi-override; direction: ltr; max-height: none; }
+.approval-reason { font-size: var(--t-small); font-style: italic; margin-top: var(--s1); overflow-wrap: anywhere; }
+.approval-asked { margin-top: var(--s1); }
+.approval-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s2); }
 .resources li > .link { flex: 0 0 auto; }
 .resource-bar { display: flex; gap: var(--s2); align-items: center; }
 .resource-bar input[type="search"] { flex: 1; min-width: 0; }

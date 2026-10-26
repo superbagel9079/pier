@@ -302,27 +302,20 @@ function makeLabs(tab) {
   const make = el("button", { className: "secondary", textContent: "New lab…" });
   const settings = el("button", { className: "link", textContent: "settings", title: "Settings > Labs" });
   const bar = el("div", { className: "toolbar" }, make, el("span", { className: "dim small", style: "flex:1" }), settings);
-  // Pi's requests about labs (a lab to make, a command on a machine set to ask), answered here.
+  // Pi's requests on a machine set to ask (a command, a copy), answered here.
   const waiting = el("div");
   tab.pane.append(el("div", { className: "pane-labs" }, bar, error, waiting, body));
   function renderWaiting(message) {
-    const asks = (message?.data?.approvals || []).filter((a) => a.kind === "lab_create" || a.kind === "lab");
+    const asks = (message?.data?.approvals || []).filter((a) => a.kind === "lab");
     waiting.innerHTML = "";
     if (!asks.length) return;
     waiting.append(el("h2", { textContent: "Waiting for you" }));
     const list = el("ul", { className: "resource-items" });
     for (const a of asks) {
-      const nets = a.args.networks === null || a.args.networks === undefined ? "Incus's NAT" : a.args.networks.length ? a.args.networks.join(" + ") : "no network";
-      const what = a.kind === "lab_create"
-        ? `Pi asks for a lab: ${a.args.name}`
-        : `Pi asks to ${String(a.args.what || "").slice(0, 200)}`;
-      const detail = a.kind === "lab_create"
-        ? [`${a.args.vm ? "VM" : "container"} · ${a.args.image} · ${nets}`, a.args.description, a.reason ? `why: ${a.reason}` : "", projectLabel(a.project)]
-        : [`on ${a.args.machine}`, a.reason ? `why: ${a.reason}` : "", projectLabel(a.project)];
-      const answer = (yes) => async () => {
-        try { await backend.approvalAnswer(a.id, yes); flashStatus(yes ? "Approved: Pi goes on" : "Refused: Pi is told"); vm.poke(); } catch (e) { showError(error, String(e)); }
-      };
-      list.append(line(what, detail.filter(Boolean), action("approve", "Pi goes on", answer(true)), action("refuse", "Pi is told no", answer(false))));
+      list.append(approvalItem(a, async (yes) => {
+        try { await backend.approvalAnswer(a.id, yes); flashStatus(yes ? "Approved: Pi goes on" : "Refused: Pi is told"); } catch (e) { showError(error, String(e)); }
+        vm.poke();
+      }));
     }
     waiting.append(list);
   }
@@ -473,9 +466,13 @@ function makeLabs(tab) {
     const journal = el("ul", { className: "resource-items" });
     for (const j of (message.data.journal || []).slice(0, 40)) {
       const when = new Date(j.at * 1000).toLocaleTimeString();
-      const what = j.command ? `$ ${j.command}` : j.what;
+      // The journal keeps a command whole: the row says how much it leaves out, the pointer shows it all.
+      const chars = [...String(j.command || "")];
+      const what = j.command ? `$ ${visibleText(chars.slice(0, 300).join(""))}${chars.length > 300 ? `… (${chars.length - 300} more characters)` : ""}` : j.what;
       const result = j.command ? (j.exit === 0 ? "ok" : j.exit === null ? "stopped" : `exit ${j.exit}`) : "";
-      journal.append(line(`${j.lab} · ${what}`, [when, result, j.ms ? `${(j.ms / 1000).toFixed(1)} s` : "", j.project ? projectLabel(j.project) : ""].filter(Boolean).join(" · ")));
+      const row = line(`${j.lab} · ${what}`, [when, result, j.ms ? `${(j.ms / 1000).toFixed(1)} s` : "", j.project ? projectLabel(j.project) : ""].filter(Boolean).join(" · "));
+      if (j.command) row.title = visibleText(j.command, { lines: true });
+      journal.append(row);
     }
     if (!(message.data.journal || []).length) journal.append(el("li", { className: "dim small note", textContent: "Nothing yet. Every command Pi runs in a lab or on a machine is written here." }));
     body.append(journal);
