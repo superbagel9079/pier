@@ -870,12 +870,20 @@ m.api_approval_answer(home, asked["id"], "no")
 worker.join(10)
 out["refused"] = "refused" in answer.get("error", "") and not os.path.exists(os.path.join(remote, "pier-lab", "refused.txt"))
 out["other_project"] = "error" in tried(m.lab_answer, home, proj, {"op": "lab_reset", "lab": "nothing"})
+m.api_machine_add(home, "gpu-box", "127.0.0.1", "22", "leo", "auto", "GPU box:\n never touch /data")
+seen = {x["name"]: x for x in m.lab_answer(home, proj, {"op": "lab_list"})["machines"]}
+out["machine_described"] = seen.get("gpu-box", {}).get("description") == "GPU box: never touch /data"
+m.api_lab_edit(home, "gpu-box", "cuda-box", "CUDA 12")
+names = {n: v.get("description") for n, v in m.load_labs(home)["machines"].items()}
+out["machine_renamed"] = names.get("cuda-box") == "CUDA 12" and "gpu-box" not in names
+out["rename_taken"] = "error" in tried(m.api_lab_edit, home, "cuda-box", "box", "")
 usable, why, kvm = m.incus_state()
 out["incus"] = usable
 if usable:
     # One error is reported, not thrown: the checks above still count, and no lab stays.
     try:
-        made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test"})
+        made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test", "description": "for the tests"})
+        out["lab_described"] = made.get("description") == "for the tests"
         out["lab_snapshots"] = made.get("snapshots")
         m.lab_answer(home, proj, {"op": "lab_push", "lab": made["lab"]})
         ran = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "cat a.txt && id -u"})
@@ -883,11 +891,15 @@ if usable:
         m.lab_answer(home, proj, {"op": "lab_reset", "lab": made["lab"]})
         gone = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "test -e a.txt"})
         out["lab_reset"] = gone["exit"] != 0
-        m.lab_answer(home, proj, {"op": "lab_destroy", "lab": made["lab"]})
+        m.api_lab_edit(home, made["lab"], "pier-test2", "renamed")
+        back = m.lab_answer(home, proj, {"op": "lab_run", "lab": "pier-test2", "command": "true"})
+        out["lab_renamed"] = back["exit"] == 0 and "pier-test2" in m.load_labs(home)["labs"]
+        m.lab_answer(home, proj, {"op": "lab_destroy", "lab": "pier-test2"})
         out["lab_destroyed"] = not m.load_labs(home)["labs"]
     except Exception as exc:
         out["lab_error"] = f"{type(exc).__name__}: {exc}"
-        subprocess.run(["incus", "delete", "--force", "pier-pier-test"], capture_output=True)
+        for leftover in ("pier-pier-test", "pier-pier-test2"):
+            subprocess.run(["incus", "delete", "--force", leftover], capture_output=True)
 else:
     out["no_incus_said"] = "Incus" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "") or bool(why)
 print(json.dumps(out))
@@ -922,10 +934,13 @@ def labs_test():
     check("labs: a machine set to ask waits for the approval", out["waits"] and out["approved_runs"], out)
     check("labs: a refused command does not run", out["refused"], out)
     check("labs: an unknown lab refused", out["other_project"], out)
+    check("labs: a machine's description reaches Pi, on one line", out["machine_described"], out)
+    check("labs: a machine renamed and described again, a taken name refused", out["machine_renamed"] and out["rename_taken"], out)
     if out.get("incus"):
         how = "a snapshot" if out.get("lab_snapshots") else "a rebuild (no snapshots in this Incus project)"
         check("labs: Incus lab made, project inside, root", out.get("lab_runs_as_root"), out.get("lab_error") or out)
         check(f"labs: reset goes back to the clean state, by {how}", out.get("lab_reset"), out.get("lab_error") or out)
+        check("labs: a lab described at its making, renamed, still running", out.get("lab_described") and out.get("lab_renamed"), out.get("lab_error") or out)
         check("labs: destroyed", out.get("lab_destroyed"), out.get("lab_error") or out)
     else:
         check("labs: without Incus, making a lab says why", out["no_incus_said"], out)

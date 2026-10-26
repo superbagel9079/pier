@@ -167,7 +167,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 18 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 19 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -186,7 +186,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `worktrees`, `worktree-remove` | the Pis' worktrees of a project, and removing one |
 | `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `repo-settings`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
 | `team`, `collaborators`, `task-create`, `handoff-give`, `handoff-take` | the team: tasks for the Pis, everyone's pull requests, what waits for this account, giving and taking a conversation |
-| `labs`, `labs-settings`, `lab-journal`, `lab-action`, `machine-add`, `machine-remove`, `machine-test` | labs: whether they can be made, their limits (JSON on stdin), what was run in them, a lab made, reset or destroyed, the machines reached over SSH |
+| `labs`, `labs-settings`, `lab-journal`, `lab-new`, `lab-edit`, `lab-action`, `machine-add`, `machine-remove`, `machine-test` | labs: whether they can be made, their limits (JSON on stdin), what was run in them, a lab made by the user, a lab or machine renamed and described (the description on stdin), a lab reset or destroyed, the machines reached over SSH |
 | `--lab-shell NAME` | a terminal in a lab or on a machine (Pier's Labs tab) |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
@@ -534,12 +534,12 @@ The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by y
 
 **An option, off until you turn it on** (Settings > Labs): Pi's sandbox stays exactly as it is, and Pi gets tools to use machines of its own besides, to run tests with services, build with Docker, install system packages, try things out.
 
-- **Labs:** disposable [Incus](https://linuxcontainers.org/incus/) containers on the VM (or full virtual machines when the VM has `/dev/kvm`), made by Pi (`lab_create`) or by you (**New lab** in the Labs tab). Root inside, nothing of the VM or of home: only what Pi copies in. Each has CPU, memory and disk limits, a lifetime after which it goes (24 h by default), a **clean** snapshot to go back to, and the network open or cut.
-- **Machines:** computers of yours (a server with a GPU, a test server) that Pi reaches over SSH. Pier makes a key of its own on the VM, which you put in the machine's `~/.ssh/authorized_keys`; Pi never sees it. Each machine has its rule: **each command waits for your approval** (the default, shown with the other requests in Setup > Git and as a notification) or Pi runs commands freely.
+- **Labs:** disposable [Incus](https://linuxcontainers.org/incus/) containers on the VM (or full virtual machines when the VM has `/dev/kvm`), made by Pi (`lab_create`) or by you (**New lab…** in the Labs tab), each with a name and a description of what it is for. Root inside, nothing of the VM or of home: only what Pi copies in. Each has CPU, memory and disk limits, a lifetime after which it goes (24 h by default), a **clean** snapshot to go back to, and the network open or cut.
+- **Machines:** computers of yours (a server with a GPU, a test server) that Pi reaches over SSH. Pier makes a key of its own on the VM, which you put in the machine's `~/.ssh/authorized_keys`; Pi never sees it. Give each a description Pi reads in `lab_list`: what it is for, and what to leave alone there ("GPU with CUDA 12, never touch /data"). Each machine has its rule: **each command waits for your approval** (the default, shown with the other requests in Setup > Git and as a notification) or Pi runs commands freely.
 
 Pi's tools: `lab_list`, `lab_create`, `lab_run` (a command, its output and exit code), `lab_push` (the project, or a part, into the lab: what was given to Pi stays out, links stay links), `lab_pull` (a file or folder back into `.pi-files/`), `lab_snapshot`, `lab_reset`, `lab_destroy`. They go through the picker's broker, like the git tools; Pi's sandbox has no network to the labs.
 
-The **Labs tab** (the **+** of a tab bar) lists the labs and machines, opens a **terminal** in any of them, resets or destroys a lab, and shows **what was done**: every command run by Pi, with its exit code and time.
+The **Labs tab** (the **+** of a tab bar) lists the labs and machines with their descriptions, opens a **terminal** in any of them, **edits** a name or a description (a lab is stopped for a moment to be renamed), resets or destroys a lab, and shows **what was done**: every command run by Pi, with its exit code and time.
 
 To make labs, on the VM, once:
 

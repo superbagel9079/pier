@@ -37,7 +37,7 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 18;
+const API_VERSION: u64 = 19;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
@@ -1113,11 +1113,29 @@ async fn lab_action(app: AppHandle, state: State<'_, AppState>, action: String, 
 
 /// A machine Pi may use over SSH (the picker makes the key), removed, or tried.
 #[tauri::command]
-async fn machine_add(app: AppHandle, state: State<'_, AppState>, name: String, host: String, port: u16, user: String, policy: String) -> Result<Value, String> {
+async fn machine_add(app: AppHandle, state: State<'_, AppState>, name: String, host: String, port: u16, user: String, policy: String, description: String) -> Result<Value, String> {
     if !lab_name(&name) || !["ask", "auto"].contains(&policy.as_str()) {
         return Err("a machine's name, and ask or auto".into());
     }
-    api(&app, &state, &["machine-add", &name, &host, &port.to_string(), &user, &policy], &[]).await
+    api(&app, &state, &["machine-add", &name, &host, &port.to_string(), &user, &policy], description.as_bytes()).await
+}
+
+/// A lab of the user's own, named (or "lab-N") and described.
+#[tauri::command]
+async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: String, vm: bool, description: String) -> Result<Value, String> {
+    if !name.is_empty() && !lab_name(&name) {
+        return Err("a lab's name: lowercase letters, digits and '-', starting with a letter".into());
+    }
+    api(&app, &state, &["lab-new", &name, if vm { "vm" } else { "" }], description.as_bytes()).await
+}
+
+/// A lab or machine renamed, its description changed.
+#[tauri::command]
+async fn lab_edit(app: AppHandle, state: State<'_, AppState>, name: String, new_name: String, description: String) -> Result<Value, String> {
+    if !lab_name(&name) || !lab_name(&new_name) {
+        return Err("a name: lowercase letters, digits and '-', starting with a letter".into());
+    }
+    api(&app, &state, &["lab-edit", &name, &new_name], description.as_bytes()).await
 }
 
 #[tauri::command]
@@ -1861,6 +1879,8 @@ pub fn run() {
             labs_settings,
             lab_action,
             machine_add,
+            lab_new,
+            lab_edit,
             machine_remove,
             machine_test,
             handoff_give,

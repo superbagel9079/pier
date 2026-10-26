@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.26"
+VERSION = "4.27"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2665,7 +2665,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 18
+API_VERSION = 19
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -6218,7 +6218,7 @@ def api_labs(home):
     labs = []
     for name, lab in sorted(data["labs"].items()):
         labs.append({"name": name, **lab, **live.get(lab_instance(name), {"status": "missing"})})
-    machines = [{"name": n, **{k: m.get(k) for k in ("host", "port", "user", "policy", "added")}} for n, m in sorted(data["machines"].items())]
+    machines = [{"name": n, **{k: m.get(k) for k in ("host", "port", "user", "policy", "added", "description")}} for n, m in sorted(data["machines"].items())]
     try:
         public_key = machine_key()[1] if data["machines"] or data["settings"]["enabled"] else None
     except (OSError, subprocess.SubprocessError):
@@ -6303,7 +6303,12 @@ def lab_build(name, image, vm, settings):
     return nesting, snapshots
 
 
-def lab_create(home, project, name, vm=False, image=None):
+def lab_description(text):
+    """A lab's or machine's description: one line, at most 500 characters."""
+    return " ".join(str(text or "").split())[:500]
+
+
+def lab_create(home, project, name, vm=False, image=None, description=""):
     labs_expire(home)
     data = load_labs(home)
     settings = data["settings"]
@@ -6328,7 +6333,7 @@ def lab_create(home, project, name, vm=False, image=None):
         raise ApiError("virtual machines need /dev/kvm on the VM (Proxmox: CPU type host); make a container instead")
     nesting, snapshots = lab_build(name, image, bool(vm), settings)
     record = {"project": project, "image": image, "vm": bool(vm), "network": settings["network"], "docker": nesting,
-              "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
+              "description": lab_description(description), "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
     data = load_labs(home)
     data["labs"][name] = record
     save_labs(home, data)
@@ -6483,14 +6488,16 @@ def lab_list(home, project):
     status = api_labs(home)
     if not status["settings"]["enabled"]:
         raise ApiError("labs are off: the user turns them on in Pier (Settings > Labs)")
-    return {"labs": [{k: l.get(k) for k in ("name", "status", "image", "vm", "network", "docker", "snapshots", "expires")}
+    return {"labs": [{k: l.get(k) for k in ("name", "description", "status", "image", "vm", "network", "docker", "snapshots", "expires")}
                      for l in status["labs"] if l.get("project") == project],
-            "machines": [{"name": m["name"], "host": m["host"], "needs_approval": m.get("policy") != "auto"} for m in status["machines"]],
+            "machines": [{"name": m["name"], "description": m.get("description") or "", "host": m["host"],
+                          "needs_approval": m.get("policy") != "auto"} for m in status["machines"]],
+            "note": "descriptions are the user's: what each machine is for, and what to leave alone there",
             "can_create": status["incus"] and len(status["labs"]) < status["settings"]["max"],
             "vm_possible": status["kvm"], "why_not": status["why"] or None}
 
 
-def api_machine_add(home, name, host, port, user, policy):
+def api_machine_add(home, name, host, port, user, policy, description=""):
     data = load_labs(home)
     if not LAB_NAME_RE.fullmatch(name or "") or name in data["labs"]:
         raise ApiError("a machine's name: lowercase letters, digits and '-', starting with a letter")
@@ -6499,7 +6506,8 @@ def api_machine_add(home, name, host, port, user, policy):
     if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536 or policy not in ("ask", "auto"):
         raise ApiError("a port, and ask or auto")
     _, public = machine_key()
-    data["machines"][name] = {"host": host, "port": int(port or 22), "user": user, "policy": policy, "added": int(time.time())}
+    data["machines"][name] = {"host": host, "port": int(port or 22), "user": user, "policy": policy, "added": int(time.time()),
+                              "description": lab_description(description)}
     save_labs(home, data)
     log("info", "lab.machine-added", machine=name, host=host, policy=policy)
     return {"machine": name, "public_key": public,
@@ -6526,6 +6534,34 @@ def api_machine_test(home, name):
     if result.returncode != 0:
         raise ApiError(result.stderr.decode("utf-8", "replace").strip()[-300:] or "the connection failed")
     return {"machine": name, "answer": result.stdout.decode("utf-8", "replace").strip()}
+
+
+def api_lab_new(home, name, vm, description):
+    """From Pier: a lab of the user's own (no project's Pi uses it), named and described."""
+    return lab_create(home, "", name or "", vm=vm == "vm", description=description)
+
+
+def api_lab_edit(home, name, new_name, description):
+    """From Pier: a lab or a machine renamed and described again. A lab is stopped for the
+    rename (Incus renames only a stopped instance), then started again."""
+    data = load_labs(home)
+    new_name = new_name or name
+    kind = "machines" if name in data["machines"] else "labs" if name in data["labs"] else None
+    if not kind:
+        raise ApiError(f"no lab or machine named {name}")
+    if new_name != name:
+        if not LAB_NAME_RE.fullmatch(new_name) or new_name in data["labs"] or new_name in data["machines"]:
+            raise ApiError("a name: lowercase letters, digits and '-', starting with a letter, not taken")
+        if kind == "labs":
+            incus("stop", "--force", lab_instance(name), timeout=120)
+            incus("rename", lab_instance(name), lab_instance(new_name), timeout=120)
+            incus("start", lab_instance(new_name), timeout=120)
+        data[kind][new_name] = data[kind].pop(name)
+    data[kind][new_name]["description"] = lab_description(description)
+    save_labs(home, data)
+    lab_journal({"lab": new_name, "what": f"renamed from {name}" if new_name != name else "description changed"})
+    log("info", "lab.edited", kind=kind, old=name, new=new_name)
+    return {"name": new_name, "description": data[kind][new_name]["description"]}
 
 
 def api_lab_action(home, action, name, extra=""):
@@ -6570,7 +6606,8 @@ def lab_answer(home, project, request):
     if op == "lab_list":
         return lab_list(home, project)
     if op == "lab_create":
-        return lab_create(home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"))
+        return lab_create(home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"),
+                          str(request.get("description") or ""))
     kind, record = lab_target(home, project, name)
     if kind == "machine" and record.get("policy") != "auto":
         what = {"lab_run": f"run: {str(request.get('command') or '')[:2000]}", "lab_push": f"copy {request.get('path') or '.'} of the project there",
@@ -6639,7 +6676,8 @@ export default function (pi: any) {
   tool("lab_create", "New lab", "Make a disposable lab: a fresh Linux where you are root (install packages, run services, Docker). Its work folder is /root/project; copy the project in with lab_push.",
     Type.Object({ name: Type.Optional(Type.String({ description: "lowercase, e.g. db-tests" })),
       vm: Type.Optional(Type.Boolean({ description: "a full virtual machine instead of a container, when possible" })),
-      image: Type.Optional(Type.String({ description: "e.g. debian/13, ubuntu/24.04" })) }), "lab_create");
+      image: Type.Optional(Type.String({ description: "e.g. debian/13, ubuntu/24.04" })),
+      description: Type.Optional(Type.String({ description: "what this lab is for, shown to the user" })) }), "lab_create");
   tool("lab_run", "Run in lab", "Run a shell command in a lab or on a machine, in its work folder; returns the exit code and the output.",
     Type.Object({ lab: Type.String(), command: Type.String(), timeout: Type.Optional(Type.Integer({ description: "seconds, at most 900" })),
       reason: Type.Optional(Type.String({ description: "why, shown to the user when a machine asks for approval" })) }), "lab_run");
@@ -7277,7 +7315,9 @@ API_COMMANDS = {
     "labs-settings": lambda home, config, a: api_labs_settings(home, read_stdin_text()),
     "lab-journal": lambda home, config, a: api_lab_journal(home, a[0] or "60"),
     "lab-action": lambda home, config, a: api_lab_action(home, a[0], a[1], a[2]),
-    "machine-add": lambda home, config, a: api_machine_add(home, a[0], a[1], a[2], a[3], a[4]),
+    "machine-add": lambda home, config, a: api_machine_add(home, a[0], a[1], a[2], a[3], a[4], read_stdin_text()),
+    "lab-new": lambda home, config, a: api_lab_new(home, a[0], a[1], read_stdin_text()),
+    "lab-edit": lambda home, config, a: api_lab_edit(home, a[0], a[1], read_stdin_text()),
     "machine-remove": lambda home, config, a: api_machine_remove(home, a[0]),
     "machine-test": lambda home, config, a: api_machine_test(home, a[0]),
     "collaborators": lambda home, config, a: api_collaborators(home, a[0]),

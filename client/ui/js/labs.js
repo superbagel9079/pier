@@ -107,6 +107,7 @@ function renderLabsPrefs() {
     });
     list.append(el("li", { className: "two-lines" },
       el("div", { className: "line" }, el("span", { className: "name", textContent: m.name }), el("span", { className: "dim" }), test, remove),
+      m.description ? el("div", { className: "desc dim small", textContent: m.description }) : null,
       el("div", { className: "desc dim small", textContent: `${m.user}@${m.host}:${m.port} · ${m.policy === "auto" ? "Pi runs commands freely" : "each command waits for your approval"}` })));
   }
   if (!s.machines.length) list.append(el("li", { className: "dim small note", textContent: "None. A machine is a computer of yours Pi may use over SSH: a server with a GPU, a test server…" }));
@@ -139,6 +140,7 @@ $("#labs-machine-add").addEventListener("click", () => {
   const host = el("input", { placeholder: "192.168.1.30 or box.example.org", spellcheck: false });
   const port = el("input", { type: "number", value: 22, min: 1, max: 65535 });
   const user = el("input", { placeholder: "leo", spellcheck: false });
+  const description = el("input", { placeholder: "what it is for, what to leave alone there", spellcheck: false });
   const policy = el("select");
   policy.add(new Option("each command waits for my approval", "ask"));
   policy.add(new Option("Pi runs commands freely", "auto"));
@@ -148,13 +150,14 @@ $("#labs-machine-add").addEventListener("click", () => {
     el("div", { className: "grid fields" },
       el("label", { textContent: "Name" }), name, el("label", { textContent: "Address" }), host,
       el("label", { textContent: "Port" }), port, el("label", { textContent: "User" }), user,
+      el("label", { textContent: "Description" }), description,
       el("label", { textContent: "Pi's commands" }), policy),
     el("p", { className: "hint", textContent: "Pier makes a key of its own on the VM (Pi never sees it). Once added, put its public key in that user's ~/.ssh/authorized_keys on the machine, then test it. Prefer a user made for this, without sudo." }),
     problem], [go]);
   go.addEventListener("click", async () => {
     go.disabled = true;
     try {
-      const added = await backend.machineAdd(name.value.trim(), host.value.trim(), Number(port.value) || 22, user.value.trim(), policy.value);
+      const added = await backend.machineAdd(name.value.trim(), host.value.trim(), Number(port.value) || 22, user.value.trim(), policy.value, description.value.trim());
       dialog.close();
       await fillLabsPrefs();
       try { await backend.copyText(added.public_key); } catch { /* shown anyway */ }
@@ -169,32 +172,70 @@ $("#labs-machine-add").addEventListener("click", () => {
 function makeLabs(tab) {
   const error = el("p", { className: "error", hidden: true });
   const body = el("div");
-  const make = el("button", { className: "secondary", textContent: "New lab" });
-  const makeVm = el("button", { className: "secondary", textContent: "New VM lab", hidden: true });
+  const make = el("button", { className: "secondary", textContent: "New lab…" });
   const settings = el("button", { className: "link", textContent: "settings", title: "Settings > Labs" });
-  const bar = el("div", { className: "toolbar" }, make, makeVm, el("span", { className: "dim small", style: "flex:1" }), settings);
+  const bar = el("div", { className: "toolbar" }, make, el("span", { className: "dim small", style: "flex:1" }), settings);
   tab.pane.append(el("div", { className: "pane-labs" }, bar, error, body));
   settings.addEventListener("click", () => { openPrefs(); showPrefsPage("labs"); fillLabsPrefs(); });
-  const create = (vmKind) => async () => {
-    make.disabled = makeVm.disabled = true;
-    flashStatus(vmKind ? "Making a VM lab (a minute or two)…" : "Making a lab…");
-    try {
-      const made = await backend.labAction("create", "", vmKind ? "vm" : "");
-      flashStatus(`${made.lab} is ready`);
-      vm.poke();
-    } catch (e) { showError(error, String(e)); } finally { make.disabled = makeVm.disabled = false; }
-  };
-  make.addEventListener("click", create(false));
-  makeVm.addEventListener("click", create(true));
+  make.addEventListener("click", () => newLabDialog());
+
+  /** A lab of your own: a name, what it is for, a container or a VM. */
+  function newLabDialog() {
+    const name = el("input", { placeholder: "lab-N when left empty", spellcheck: false });
+    const description = el("input", { placeholder: "what it is for (optional)", spellcheck: false });
+    const kind = el("select");
+    kind.add(new Option("container (seconds to make)", ""));
+    if (labsStatus?.kvm) kind.add(new Option("virtual machine (a minute or two)", "vm"));
+    const problem = dialogError();
+    const go = el("button", { textContent: "Make it" });
+    const dialog = resourceDialog("A new lab", [
+      el("div", { className: "grid fields" }, el("label", { textContent: "Name" }), name, el("label", { textContent: "Description" }), description,
+        el("label", { textContent: "Kind" }), kind),
+      el("p", { className: "hint", textContent: "Yours: no project's Pi uses it. Open a terminal in it from the list once it is ready." }), problem], [go]);
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      go.textContent = "Making it…";
+      try {
+        const made = await backend.labNew(name.value.trim(), kind.value === "vm", description.value.trim());
+        dialog.close();
+        flashStatus(`${made.lab} is ready`);
+        vm.poke();
+      } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; go.textContent = "Make it"; }
+    });
+    name.focus();
+  }
+
+  /** A lab or a machine renamed, its description changed. */
+  function editDialog(item, what) {
+    const name = el("input", { value: item.name, spellcheck: false });
+    const description = el("input", { value: item.description || "", placeholder: what === "machine" ? "what it is for, what to leave alone there" : "what it is for", spellcheck: false });
+    const problem = dialogError();
+    const go = el("button", { textContent: "Save" });
+    const dialog = resourceDialog(`Edit ${item.name}`, [
+      el("div", { className: "grid fields" }, el("label", { textContent: "Name" }), name, el("label", { textContent: "Description" }), description),
+      el("p", { className: "hint", textContent: what === "machine"
+        ? "Pi reads the description in lab_list: say what the machine is for, and what it must not touch."
+        : "Renaming stops the lab for a moment (Incus renames a stopped lab), then starts it again." }), problem], [go]);
+    go.addEventListener("click", async () => {
+      go.disabled = true;
+      try {
+        await backend.labEdit(item.name, name.value.trim(), description.value.trim());
+        dialog.close();
+        vm.poke();
+      } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; }
+    });
+    description.focus();
+  }
 
   const action = (text, title, run) => {
     const b = el("button", { className: "link", textContent: text, title });
     b.addEventListener("click", run);
     return b;
   };
+  // A name, its actions, then its description (if any) and its facts, each on its line.
   const line = (name, detail, ...actions) => el("li", { className: "two-lines" },
     el("div", { className: "line" }, el("span", { className: "name", textContent: name }), el("span", { className: "dim" }), ...actions),
-    detail ? el("div", { className: "desc dim small", textContent: detail }) : null);
+    ...[].concat(detail || []).filter(Boolean).map((text) => el("div", { className: "desc dim small", textContent: text })));
 
   function render(message) {
     if (message.error) { showError(error, message.error); return; }
@@ -203,7 +244,6 @@ function makeLabs(tab) {
     labsStatus = s;
     body.innerHTML = "";
     bar.hidden = !s.settings.enabled || !s.incus;
-    makeVm.hidden = !s.kvm;
     if (!s.settings.enabled) {
       body.append(el("p", { className: "dim small", textContent: "Labs are off. They let Pi make disposable machines where it may do anything (install packages, run services, Docker) and use your machines over SSH, without changing its own sandbox." }));
       const on = el("button", { className: "secondary", textContent: "Turn them on in Settings…" });
@@ -219,8 +259,9 @@ function makeLabs(tab) {
       const owner = lab.project ? projectLabel(lab.project) : "yours";
       const facts = [owner, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(), lab.network === "none" ? "no network" : lab.address,
         lab.docker === false && !lab.vm ? "no Docker" : "", lab.snapshots === false ? "reset rebuilds it" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
-      labs.append(line(lab.name, facts.join(" · "),
+      labs.append(line(lab.name, [lab.description, facts.join(" · ")],
         action("terminal", "A shell in the lab, as root", () => openLabTerminal(lab.name)),
+        action("edit", "Rename it, describe it", () => editDialog(lab, "lab")),
         action("reset", "Back to how it was made", async () => {
           if (!(await ask(`Put ${lab.name} back as it was made? What was done in it since is lost.`))) return;
           try { await backend.labAction("reset", lab.name, ""); flashStatus(`${lab.name} is clean again`); vm.poke(); } catch (e) { showError(error, String(e)); }
@@ -230,15 +271,16 @@ function makeLabs(tab) {
           try { await backend.labAction("destroy", lab.name, ""); vm.poke(); } catch (e) { showError(error, String(e)); }
         })));
     }
-    if (!s.labs.length) labs.append(el("li", { className: "dim small note", textContent: "No lab. Pi makes one when it needs it (lab_create), or New lab makes one for you." }));
+    if (!s.labs.length) labs.append(el("li", { className: "dim small note", textContent: "No lab. Pi makes one when it needs it (lab_create), or New lab… makes one for you." }));
     body.append(labs);
 
     if (s.machines.length) {
       body.append(el("h2", { textContent: `Machines · ${s.machines.length}` }));
       const machines = el("ul", { className: "resource-items" });
       for (const m of s.machines) {
-        machines.append(line(m.name, `${m.user}@${m.host} · ${m.policy === "auto" ? "Pi runs commands freely" : "each command waits for your approval"}`,
-          action("terminal", "A shell there", () => openLabTerminal(m.name))));
+        machines.append(line(m.name, [m.description, `${m.user}@${m.host} · ${m.policy === "auto" ? "Pi runs commands freely" : "each command waits for your approval"}`],
+          action("terminal", "A shell there", () => openLabTerminal(m.name)),
+          action("edit", "Rename it, describe it for Pi", () => editDialog(m, "machine"))));
       }
       body.append(machines);
     }
