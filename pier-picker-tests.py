@@ -879,33 +879,18 @@ out["machine_renamed"] = names.get("cuda-box") == "CUDA 12" and "gpu-box" not in
 out["rename_taken"] = "error" in tried(m.api_lab_edit, home, "cuda-box", "box", "")
 usable, why, kvm = m.incus_state()
 out["incus"] = usable
+out["no_host_said"] = "no lab host" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "")
+out["bad_host"] = "error" in tried(m.api_host_add, home, "box2", "evil;host", "22", "leo", "")
 out["vlan_setting"] = "error" not in tried(m.api_labs_settings, home, json.dumps({"network": "vlan", "vlan_network": "pier-labs-test"}))
 if usable:
+    m.api_host_local(home, "1")
     out["vlan_missing_said"] = "not there" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "")
 m.api_labs_settings(home, json.dumps({"network": "open"}))
-def answered(request, yes=True):
-    # Pi's lab_create, with the user's answer given in Pier meanwhile.
-    result, before = {}, {a["id"] for a in m.load_approvals(home)}
-    worker = threading.Thread(target=lambda: result.update(tried(m.lab_answer, home, proj, request)))
-    worker.start()
-    asked = None
-    for _ in range(100):
-        asked = next((a for a in m.load_approvals(home) if a["id"] not in before and a.get("kind") == "lab_create"), None)
-        if asked:
-            break
-        time.sleep(0.1)
-    result["asked_first"] = asked is not None and not m.load_labs(home)["labs"]
-    if asked:
-        m.api_approval_answer(home, asked["id"], "yes" if yes else "no")
-    worker.join(600)
-    return result
 if usable:
     # One error is reported, not thrown: the checks above still count, and no lab stays.
     try:
-        refused = answered({"op": "lab_create", "name": "pier-no"}, yes=False)
-        out["lab_refused"] = refused.get("asked_first") and "refused" in refused.get("error", "") and not m.load_labs(home)["labs"]
-        made = answered({"op": "lab_create", "name": "pier-test", "description": "for the tests", "reason": "the tests"})
-        out["lab_asked_first"] = made.get("asked_first")
+        made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test", "description": "for the tests"})
+        out["lab_on_host"] = made.get("host") == "pi-vm"
         out["lab_described"] = made.get("description") == "for the tests"
         out["lab_snapshots"] = made.get("snapshots")
         m.lab_answer(home, proj, {"op": "lab_push", "lab": made["lab"]})
@@ -916,11 +901,22 @@ if usable:
         out["lab_reset"] = gone["exit"] != 0
         listed = m.lab_answer(home, proj, {"op": "lab_list"})
         out["networks_listed"] = any(n.get("kind_label", "").startswith("the internet") for n in listed.get("networks", []))
+        out["hosts_listed"] = [h["name"] for h in listed.get("hosts", [])] == ["pi-vm"]
         out["unknown_network"] = "no network" in tried(m.lab_answer, home, proj, {"op": "lab_create", "name": "pier-x", "networks": ["nope"]}).get("error", "")
-        cut = answered({"op": "lab_create", "name": "pier-cut", "networks": []})
+        cut = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-cut", "networks": []})
         nics = m.lab_answer(home, proj, {"op": "lab_run", "lab": cut["lab"], "command": "ls /sys/class/net"})
         out["lab_cut"] = nics["stdout"].split() == ["lo"]
         m.lab_answer(home, proj, {"op": "lab_destroy", "lab": cut["lab"]})
+        # Another lab host, over SSH: ssh is stood in by a local shell here, so the commands
+        # Pier would send there run against this Incus.
+        m.api_host_add(home, "far", "127.0.0.1", "22", "leo", "a host over SSH")
+        far = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-far", "host": "far"})
+        said = m.lab_answer(home, proj, {"op": "lab_run", "lab": "pier-far", "command": "echo 'far away'"})
+        out["remote_host"] = far.get("host") == "far" and said["stdout"].strip() == "far away"
+        out["host_busy"] = "destroy them first" in tried(m.api_host_remove, home, "far").get("error", "")
+        out["unknown_host"] = "no lab host" in tried(m.lab_answer, home, proj, {"op": "lab_create", "name": "pier-y", "host": "nowhere"}).get("error", "")
+        m.lab_answer(home, proj, {"op": "lab_destroy", "lab": "pier-far"})
+        m.api_host_remove(home, "far")
         m.api_lab_edit(home, made["lab"], "pier-test2", "renamed")
         back = m.lab_answer(home, proj, {"op": "lab_run", "lab": "pier-test2", "command": "true"})
         out["lab_renamed"] = back["exit"] == 0 and "pier-test2" in m.load_labs(home)["labs"]
@@ -928,9 +924,10 @@ if usable:
         out["lab_destroyed"] = not m.load_labs(home)["labs"]
     except Exception as exc:
         out["lab_error"] = f"{type(exc).__name__}: {exc}"
-        for leftover in ("pier-pier-test", "pier-pier-test2", "pier-pier-cut"):
+        for leftover in ("pier-pier-test", "pier-pier-test2", "pier-pier-cut", "pier-pier-far"):
             subprocess.run(["incus", "delete", "--force", leftover], capture_output=True)
 else:
+    m.api_host_local(home, "1")
     out["no_incus_said"] = "Incus" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "") or bool(why)
 print(json.dumps(out))
 """
@@ -965,14 +962,17 @@ def labs_test():
     check("labs: a refused command does not run", out["refused"], out)
     check("labs: an unknown lab refused", out["other_project"], out)
     check("labs: the network set to a VLAN", out["vlan_setting"], out)
+    check("labs: no lab host, no lab; a bad host refused", out["no_host_said"] and out["bad_host"], out)
     if out.get("incus"):
         check("labs: without the VLAN's Incus network, making a lab says why", out["vlan_missing_said"], out)
     check("labs: a machine's description reaches Pi, on one line", out["machine_described"], out)
     check("labs: a machine renamed and described again, a taken name refused", out["machine_renamed"] and out["rename_taken"], out)
     if out.get("incus"):
         how = "a snapshot" if out.get("lab_snapshots") else "a rebuild (no snapshots in this Incus project)"
-        check("labs: Pi's lab waits for the approval, a refused one is not made", out.get("lab_asked_first") and out.get("lab_refused"), out.get("lab_error") or out)
+        check("labs: Pi makes a lab on the default host", out.get("lab_on_host") and out.get("hosts_listed"), out.get("lab_error") or out)
         check("labs: Incus lab made, project inside, root", out.get("lab_runs_as_root"), out.get("lab_error") or out)
+        check("labs: a lab on another host, over SSH (stood in)", out.get("remote_host"), out.get("lab_error") or out)
+        check("labs: a host with labs is not removed, an unknown host refused", out.get("host_busy") and out.get("unknown_host"), out.get("lab_error") or out)
         check(f"labs: reset goes back to the clean state, by {how}", out.get("lab_reset"), out.get("lab_error") or out)
         check("labs: a lab described at its making, renamed, still running", out.get("lab_described") and out.get("lab_renamed"), out.get("lab_error") or out)
         check("labs: Pi sees the networks, an unknown one refused", out.get("networks_listed") and out.get("unknown_network"), out.get("lab_error") or out)

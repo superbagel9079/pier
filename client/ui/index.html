@@ -242,15 +242,22 @@
       </section>
 
       <section class="prefs-page" data-page="labs" role="tabpanel" hidden>
-      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: disposable machines where Pi may do anything (install packages, run services, Docker), and your machines over SSH. Pi stays in its own sandbox: it drives them from there. It never makes a lab by itself: it asks, and you approve it (Setup &gt; Git, Waiting for you, and a notification).</span></label>
+      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: disposable machines where Pi may do anything (install packages, run services, Docker), made on lab hosts you add, and your machines over SSH. Pi stays in its own sandbox: it drives them from there. Turning this on sets nothing up: without a lab host, no lab.</span></label>
       <p id="labs-state" class="dim"></p>
       <pre id="labs-install" hidden></pre>
       <p id="labs-relogin" class="hint" hidden>Then reconnect Pier, so the picker's next SSH login is in the incus group. For virtual machines too, set the VM's CPU type to host in Proxmox (Hardware &gt; Processors).</p>
       <div class="labs-on" hidden>
+        <h2>Lab hosts</h2>
+        <p class="hint">Where labs are made: a VM with Incus. Another VM you add (Pier runs Incus there over SSH, with its key), or Pi's own VM if you choose it. New labs go to the default host, unless Pi or New lab… names another. No host, no lab.</p>
+        <ul id="labs-hosts" class="resource-items"></ul>
+        <div class="actions wrap">
+          <button id="labs-host-add" class="secondary">Add a lab host…</button>
+          <button id="labs-host-local" class="link">Use Pi's VM as a lab host</button>
+        </div>
         <h2>Limits</h2>
         <div id="labs-limits" class="grid"></div>
         <h2>Networks</h2>
-        <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the VM, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
+        <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the lab host, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
         <ul id="labs-networks" class="resource-items"></ul>
         <details class="labs-howto">
           <summary>Add a network (an admin, once for each)</summary>

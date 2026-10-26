@@ -37,7 +37,7 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 20;
+const API_VERSION: u64 = 21;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
@@ -1122,13 +1122,39 @@ async fn machine_add(app: AppHandle, state: State<'_, AppState>, name: String, h
 
 /// A lab of the user's own, named (or "lab-N") and described.
 #[tauri::command]
-async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: String, vm: bool, description: String, networks: Option<Vec<String>>) -> Result<Value, String> {
+async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: String, vm: bool, description: String, networks: Option<Vec<String>>, host: Option<String>) -> Result<Value, String> {
     if !name.is_empty() && !lab_name(&name) {
         return Err("a lab's name: lowercase letters, digits and '-', starting with a letter".into());
     }
-    // The networks, null for the default: the picker checks each against those Incus allows.
-    let wanted = json!({ "description": description, "networks": networks }).to_string();
+    // The networks, null for the default, and the host, null for the default one: the picker
+    // checks them against the lab hosts and what their Incus allows.
+    let wanted = json!({ "description": description, "networks": networks, "host": host }).to_string();
     api(&app, &state, &["lab-new", &name, if vm { "vm" } else { "" }], wanted.as_bytes()).await
+}
+
+/// Another VM where labs are made (Incus there, the picker's key authorized).
+#[tauri::command]
+async fn host_add(app: AppHandle, state: State<'_, AppState>, name: String, host: String, port: u16, user: String, description: String) -> Result<Value, String> {
+    if !lab_name(&name) {
+        return Err("a lab host's name: lowercase letters, digits and '-', starting with a letter".into());
+    }
+    api(&app, &state, &["host-add", &name, &host, &port.to_string(), &user], description.as_bytes()).await
+}
+
+/// Pi's own VM used as a lab host, or no longer.
+#[tauri::command]
+async fn host_local(app: AppHandle, state: State<'_, AppState>, on: bool, description: String) -> Result<Value, String> {
+    api(&app, &state, &["host-local", if on { "1" } else { "0" }], description.as_bytes()).await
+}
+
+#[tauri::command]
+async fn host_remove(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    api(&app, &state, &["host-remove", &name], &[]).await
+}
+
+#[tauri::command]
+async fn host_test(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    api(&app, &state, &["host-test", &name], &[]).await
 }
 
 /// What a network is for, in the user's words: Pi reads it in lab_list.
@@ -1890,6 +1916,10 @@ pub fn run() {
             lab_new,
             lab_edit,
             lab_network_describe,
+            host_add,
+            host_local,
+            host_remove,
+            host_test,
             machine_remove,
             machine_test,
             handoff_give,

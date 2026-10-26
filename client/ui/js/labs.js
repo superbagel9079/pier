@@ -2,9 +2,10 @@
 // limits and the machines; the Labs tab shows them, with a terminal in each.
 
 // ============================================================================
-// An option, off until turned on: Pi's sandbox does not change. A lab is a disposable
-// Incus container (or a VM) on the VM, made by Pi or by you; a machine is a computer
-// you add, reached over SSH with a key the picker makes. See "labs" in the picker.
+// An option, off until turned on: Pi's sandbox does not change. Labs are made on lab
+// hosts the user adds (another VM with Incus, reached over SSH, or Pi's own VM when
+// chosen): none, no lab. A lab is a disposable Incus container (or a VM), made by Pi or
+// by you; a machine is a computer Pi drives directly over SSH. See "labs" in the picker.
 // ============================================================================
 
 let labsStatus = null; // the last answer of the picker: settings, labs, machines
@@ -60,15 +61,14 @@ function renderLabsPrefs() {
   const s = labsStatus;
   if (!s) return;
   $("#labs-enabled").checked = s.settings.enabled;
-  $("#labs-state").textContent = s.incus
-    ? `Incus answers on the VM · ${s.kvm ? "containers and virtual machines" : "containers (virtual machines need /dev/kvm: in Proxmox, the VM's CPU type set to host)"} · ${s.labs.length} lab${s.labs.length === 1 ? "" : "s"} now`
-    : `${s.why}. To make labs, on the VM:`;
-  if (s.incus && s.labs.some((l) => l.snapshots === false)) {
-    $("#labs-state").textContent += " · this Incus project refuses snapshots: Reset rebuilds a lab from its image (allow them: sudo incus project set user-$(id -u) restricted.snapshots=allow)";
-  }
-  $("#labs-install").hidden = s.incus;
-  $("#labs-install").textContent = LABS_INSTALL;
-  $("#labs-relogin").hidden = s.incus;
+  const hosts = s.hosts || [];
+  const ready = hosts.filter((h) => h.incus);
+  $("#labs-state").textContent = !hosts.length
+    ? "No lab host yet: no lab can be made. Add one below (another VM with Incus), or use Pi's VM."
+    : `${hosts.length} lab host${hosts.length === 1 ? "" : "s"}, ${ready.length} ready · default: ${s.default_host || "none"} · ${s.labs.length} lab${s.labs.length === 1 ? "" : "s"} now`;
+  $("#labs-install").hidden = true;
+  $("#labs-relogin").hidden = true;
+  renderLabHosts(s);
   for (const section of document.querySelectorAll(".labs-on")) section.hidden = !s.settings.enabled;
 
   const grid = $("#labs-limits");
@@ -77,7 +77,7 @@ function renderLabsPrefs() {
     let input;
     if (type === "select") {
       input = el("select");
-      input.add(new Option("Incus's NAT: the internet through the VM", "open"));
+      input.add(new Option("Incus's NAT: the internet through the host", "open"));
       input.add(new Option("your VLAN: an address from your firewall", "vlan"));
       input.add(new Option("none: nothing in or out", "none"));
     } else {
@@ -128,11 +128,67 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   $("#labs-key-text").textContent = s.public_key || "";
 }
 
-/** Settings > Labs > Networks: those a lab may be plugged into, what each is for. */
+/** Settings > Labs > Lab hosts: where labs are made, whether Incus answers there. */
+function renderLabHosts(s) {
+  const list = $("#labs-hosts");
+  list.innerHTML = "";
+  const hosts = s.hosts || [];
+  const link = (text, title, run) => {
+    const b = el("button", { className: "link", textContent: text, title });
+    b.addEventListener("click", run);
+    return b;
+  };
+  for (const h of hosts) {
+    const state = h.incus ? (h.kvm ? "ready: containers and virtual machines" : "ready: containers (virtual machines need /dev/kvm there)") : `not ready: ${h.why}`;
+    const actions = [
+      link("test", "Ask its Incus", async () => {
+        try { const r = await backend.hostTest(h.name); flashStatus(`${h.name}: ${r.answer}`); } catch (e) { showError($("#labs-error"), `${h.name}: ${e}`); }
+        fillLabsPrefs();
+      }),
+      h.default ? null : link("make default", "New labs go there when none is named", () => saveLabsSettings({ default_host: h.name })),
+      h.kind === "ssh" ? link("edit", "Rename it, describe it for Pi", () => labHostEdit(h)) : null,
+      link("×", h.kind === "local" ? "Pi's VM no longer makes labs" : "No more labs made there", async () => {
+        if (!(await ask(`Stop making labs on ${h.name}? Its labs must be destroyed first.`))) return;
+        try { await (h.kind === "local" ? backend.hostLocal(false, "") : backend.hostRemove(h.name)); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }
+      }),
+    ].filter(Boolean);
+    const li = el("li", { className: "two-lines" },
+      el("div", { className: "line" }, el("span", { className: "name", textContent: `${h.name}${h.default ? " · default" : ""}` }), el("span", { className: "dim" }), ...actions),
+      h.description ? el("div", { className: "desc dim small", textContent: h.description }) : null,
+      el("div", { className: "desc dim small", textContent: `${h.where} · ${state}` }));
+    if (!h.incus) {
+      li.append(el("p", { className: "hint", textContent: `To make it ready, on ${h.kind === "local" ? "Pi's VM" : h.where.split(":")[0]} (then test it again):` }),
+        el("pre", { className: "labs-host-install", textContent: LABS_INSTALL }));
+    }
+    list.append(li);
+  }
+  if (!hosts.length) list.append(el("li", { className: "dim small note", textContent: "None. Labs are made on a lab host: another VM where Incus runs (Add a lab host…), or Pi's own VM if you choose it." }));
+  const local = hosts.some((h) => h.kind === "local");
+  $("#labs-host-local").textContent = local ? "" : "Use Pi's VM as a lab host";
+  $("#labs-host-local").hidden = local;
+}
+
+function labHostEdit(h) {
+  const name = el("input", { value: h.name, spellcheck: false });
+  const description = el("input", { value: h.description || "", placeholder: "what it is for: fast disks, a GPU, near the database…", spellcheck: false });
+  const problem = dialogError();
+  const go = el("button", { textContent: "Save" });
+  const dialog = resourceDialog(`Edit ${h.name}`, [
+    el("div", { className: "grid fields" }, el("label", { textContent: "Name" }), name, el("label", { textContent: "Description" }), description),
+    el("p", { className: "hint", textContent: "Pi reads the description in lab_list when it chooses where to make a lab." }), problem], [go]);
+  go.addEventListener("click", async () => {
+    try { await backend.labEdit(h.name, name.value.trim(), description.value.trim()); dialog.close(); fillLabsPrefs(); } catch (e) { showError(problem, String(e)); }
+  });
+  description.focus();
+}
+
+/** Settings > Labs > Networks: those a lab may be plugged into on each host, what each is for. */
 function renderLabNetworks(s) {
   const list = $("#labs-networks");
   list.innerHTML = "";
-  for (const n of s.networks || []) {
+  const all = (s.hosts || []).flatMap((h) => h.networks.map((n) => ({ ...n, host: h.name })));
+  const several = (s.hosts || []).length > 1;
+  for (const n of all) {
     const facts = [n.kind_label, n.address, n.vlan ? `VLAN ${n.vlan}` : "", n.parent ? `on ${n.parent}` : ""].filter(Boolean).join(" · ");
     const describe = el("button", { className: "link", textContent: "describe", title: "Say what it is for: Pi reads it when it chooses a lab's networks" });
     describe.addEventListener("click", () => {
@@ -148,11 +204,11 @@ function renderLabNetworks(s) {
       text.focus();
     });
     list.append(el("li", { className: "two-lines" },
-      el("div", { className: "line" }, el("span", { className: "name", textContent: n.name }), el("span", { className: "dim" }), describe),
+      el("div", { className: "line" }, el("span", { className: "name", textContent: several ? `${n.host} · ${n.name}` : n.name }), el("span", { className: "dim" }), describe),
       n.description ? el("div", { className: "desc dim small", textContent: n.description }) : null,
       el("div", { className: "desc dim small", textContent: facts })));
   }
-  if (!(s.networks || []).length) list.append(el("li", { className: "dim small note", textContent: s.incus ? "Incus shows no network to this account." : "Incus is not ready yet." }));
+  if (!all.length) list.append(el("li", { className: "dim small note", textContent: (s.hosts || []).length ? "No ready lab host shows a network yet." : "Add a lab host first." }));
 }
 
 async function saveLabsSettings(changes) {
@@ -168,6 +224,37 @@ async function saveLabsSettings(changes) {
 }
 
 $("#labs-enabled").addEventListener("change", (e) => saveLabsSettings({ enabled: e.target.checked }));
+$("#labs-host-local").addEventListener("click", async () => {
+  if (!(await ask("Make labs on Pi's own VM too? They are Incus containers there, beside Pi, cut off from its files. Incus must be installed on it."))) return;
+  try { await backend.hostLocal(true, ""); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }
+});
+$("#labs-host-add").addEventListener("click", () => {
+  const name = el("input", { placeholder: "lab-box", spellcheck: false });
+  const host = el("input", { placeholder: "192.168.1.40 or labs.example.org", spellcheck: false });
+  const port = el("input", { type: "number", value: 22, min: 1, max: 65535 });
+  const user = el("input", { placeholder: "leo", spellcheck: false });
+  const description = el("input", { placeholder: "what it is for (optional)", spellcheck: false });
+  const problem = dialogError();
+  const go = el("button", { textContent: "Add" });
+  const dialog = resourceDialog("A lab host", [
+    el("div", { className: "grid fields" },
+      el("label", { textContent: "Name" }), name, el("label", { textContent: "Address" }), host,
+      el("label", { textContent: "Port" }), port, el("label", { textContent: "User" }), user,
+      el("label", { textContent: "Description" }), description),
+    el("p", { className: "hint", textContent: "A VM where labs are made. On it: Incus installed, the user in its incus group, and Pier's key (copied when you add it) in that user's ~/.ssh/authorized_keys. Then test it here." }),
+    problem], [go]);
+  go.addEventListener("click", async () => {
+    go.disabled = true;
+    try {
+      const added = await backend.hostAdd(name.value.trim(), host.value.trim(), Number(port.value) || 22, user.value.trim(), description.value.trim());
+      dialog.close();
+      try { await backend.copyText(added.public_key); } catch { /* shown anyway */ }
+      flashStatus(`${added.host} added: Pier's key copied, put it in ~/.ssh/authorized_keys there`);
+      fillLabsPrefs();
+    } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; }
+  });
+  name.focus();
+});
 $("#labs-open").addEventListener("click", () => {
   closePrefs();
   workspace.add("labs", workspace.find("setup")?.dock || "right");
@@ -246,40 +333,56 @@ function makeLabs(tab) {
   function newLabDialog() {
     const name = el("input", { placeholder: "lab-N when left empty", spellcheck: false });
     const description = el("input", { placeholder: "what it is for (optional)", spellcheck: false });
+    const readyHosts = (labsStatus?.hosts || []).filter((h) => h.incus);
+    const hostPick = el("select");
+    for (const h of readyHosts) hostPick.add(new Option(`${h.name}${h.default ? " (default)" : ""}${h.description ? ` · ${h.description}` : ""}`, h.name));
+    hostPick.value = (readyHosts.find((h) => h.default) || readyHosts[0])?.name || "";
     const kind = el("select");
-    kind.add(new Option("container (seconds to make)", ""));
-    if (labsStatus?.kvm) kind.add(new Option("virtual machine (a minute or two)", "vm"));
-    // Its networks: one interface on each ticked one (eth0, eth1…), the default ones ticked.
-    const defaults = labsStatus?.default_networks;
-    const nets = labsStatus?.networks || [];
-    const boxes = nets.map((n) => {
-      const box = el("input", { type: "checkbox" });
-      box.checked = defaults === null || defaults === undefined ? n.kind === "nat" && n === nets.find((x) => x.kind === "nat") : defaults.includes(n.name);
-      box.value = n.name;
-      return el("label", { className: "check net-choice" }, box,
-        el("span", {}, el("strong", { textContent: n.name }), ` · ${n.kind_label}${n.description ? ` · ${n.description}` : ""}`));
-    });
+    const netBox = el("div");
+    let boxes = [];
+    // Its networks, on the host chosen: one interface on each ticked one (eth0, eth1…),
+    // the default ones ticked.
+    const showHost = () => {
+      const h = readyHosts.find((x) => x.name === hostPick.value);
+      kind.innerHTML = "";
+      kind.add(new Option("container (seconds to make)", ""));
+      if (h?.kvm) kind.add(new Option("virtual machine (a minute or two)", "vm"));
+      boxes = networkBoxes(h?.networks || []);
+      netBox.replaceChildren(...(boxes.length ? boxes : [el("p", { className: "dim small", textContent: "This host shows no network: the lab will have none." })]));
+    };
+    hostPick.addEventListener("change", showHost);
     const problem = dialogError();
     const go = el("button", { textContent: "Make it" });
     const dialog = resourceDialog("A new lab", [
       el("div", { className: "grid fields" }, el("label", { textContent: "Name" }), name, el("label", { textContent: "Description" }), description,
-        el("label", { textContent: "Kind" }), kind),
-      el("h3", { textContent: "Networks" }),
-      ...(boxes.length ? boxes : [el("p", { className: "dim small", textContent: "Incus shows no network: the lab will have none." })]),
-      el("p", { className: "hint", textContent: "One interface on each network ticked, in this order: eth0, eth1… Several make a lab that sits between them (a router, a firewall, a VPN). None ticked: a lab cut from everything. The kinds: the internet through the VM (Incus's NAT, unseen by your firewall); a VLAN of your firewall (it gives the address and applies its rules); between labs only (no way out)." }),
+        el("label", { textContent: "Host" }), hostPick, el("label", { textContent: "Kind" }), kind),
+      el("h3", { textContent: "Networks" }), netBox,
+      el("p", { className: "hint", textContent: "One interface on each network ticked, in this order: eth0, eth1… Several make a lab that sits between them (a router, a firewall, a VPN). None ticked: a lab cut from everything. The kinds: the internet through the host (Incus's NAT, unseen by your firewall); a VLAN of your firewall (it gives the address and applies its rules); between labs only (no way out)." }),
       el("p", { className: "hint", textContent: "Yours: no project's Pi uses it. Open a terminal in it from the list once it is ready." }), problem], [go]);
+    showHost();
     go.addEventListener("click", async () => {
       go.disabled = true;
       go.textContent = "Making it…";
       try {
         const chosen = boxes.map((b) => b.querySelector("input")).filter((b) => b.checked).map((b) => b.value);
-        const made = await backend.labNew(name.value.trim(), kind.value === "vm", description.value.trim(), boxes.length ? chosen : null);
+        const made = await backend.labNew(name.value.trim(), kind.value === "vm", description.value.trim(), boxes.length ? chosen : null, hostPick.value || null);
         dialog.close();
         flashStatus(`${made.lab} is ready`);
         vm.poke();
       } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; go.textContent = "Make it"; }
     });
     name.focus();
+  }
+
+  function networkBoxes(nets) {
+    const defaults = labsStatus?.default_networks;
+    return nets.map((n) => {
+      const box = el("input", { type: "checkbox" });
+      box.checked = defaults === null || defaults === undefined ? n.kind === "nat" && n === nets.find((x) => x.kind === "nat") : defaults.includes(n.name);
+      box.value = n.name;
+      return el("label", { className: "check net-choice" }, box,
+        el("span", {}, el("strong", { textContent: n.name }), ` · ${n.kind_label}${n.description ? ` · ${n.description}` : ""}`));
+    });
   }
 
   /** A lab or a machine renamed, its description changed. */
@@ -320,7 +423,7 @@ function makeLabs(tab) {
     const s = message.data;
     labsStatus = s;
     body.innerHTML = "";
-    bar.hidden = !s.settings.enabled || !s.incus;
+    bar.hidden = !s.settings.enabled || !(s.hosts || []).some((h) => h.incus);
     if (!s.settings.enabled) {
       body.append(el("p", { className: "dim small", textContent: "Labs are off. They let Pi make disposable machines where it may do anything (install packages, run services, Docker) and use your machines over SSH, without changing its own sandbox." }));
       const on = el("button", { className: "secondary", textContent: "Turn them on in Settings…" });
@@ -328,7 +431,8 @@ function makeLabs(tab) {
       body.append(on);
       return;
     }
-    if (!s.incus) body.append(el("p", { className: "notice", textContent: `No lab can be made: ${s.why}. See Settings > Labs.` }));
+    if (!(s.hosts || []).length) body.append(el("p", { className: "notice", textContent: "No lab host yet, so no lab can be made, by you or by Pi. Add one in Settings > Labs: another VM with Incus, or Pi's own VM." }));
+    else if (!(s.hosts || []).some((h) => h.incus)) body.append(el("p", { className: "notice", textContent: "No lab host is ready: see Settings > Labs > Lab hosts." }));
 
     body.append(el("h2", { textContent: `Labs · ${s.labs.length} of ${s.settings.max}` }));
     const labs = el("ul", { className: "resource-items" });
@@ -336,7 +440,7 @@ function makeLabs(tab) {
       const owner = lab.project ? projectLabel(lab.project) : "yours";
       const nets = lab.networks === undefined || lab.networks === null ? null : lab.networks;
       const nics = (lab.interfaces || []).map((i, k) => `${i.name}${nets?.[k] ? ` ${nets[k]}` : ""} ${i.address || "(no address yet)"}`);
-      const facts = [owner, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(),
+      const facts = [owner, `on ${lab.host}`, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(),
         nets && !nets.length ? "no network" : nics.join(" · ") || (nets ? nets.join(", ") : lab.address),
         lab.docker === false && !lab.vm ? "no Docker" : "", lab.snapshots === false ? "reset rebuilds it" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
       labs.append(line(lab.name, [lab.description, facts.join(" · ")],
