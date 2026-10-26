@@ -249,6 +249,21 @@
       <div class="labs-on" hidden>
         <h2>Limits</h2>
         <div id="labs-limits" class="grid"></div>
+        <h2>Networks</h2>
+        <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the VM, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
+        <ul id="labs-networks" class="resource-items"></ul>
+        <details class="labs-howto">
+          <summary>Add a network (an admin, once for each)</summary>
+          <p class="hint">On the VM. Then let your account use it, with every network it should see (your own NAT, often incusbr-1000, included). The README tells it in full (Labs: networks).</p>
+          <pre>&#35; a VLAN of the firewall, on a trunk card of the VM (Proxmox: no VLAN tag on it)
+sudo incus network create pier-labs-30 --type=macvlan parent=ens19 vlan=30
+
+&#35; a network between labs only, without NAT
+sudo incus network create lab-lan --type=bridge ipv4.address=10.50.0.1/24 ipv4.nat=false
+
+&#35; then, for your account
+sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u),pier-labs-30,lab-lan</pre>
+        </details>
         <div id="labs-vlan" hidden>
           <p id="labs-vlan-state" class="hint"></p>
           <pre id="labs-vlan-commands" hidden></pre>

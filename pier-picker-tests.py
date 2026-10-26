@@ -895,6 +895,13 @@ if usable:
         m.lab_answer(home, proj, {"op": "lab_reset", "lab": made["lab"]})
         gone = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "test -e a.txt"})
         out["lab_reset"] = gone["exit"] != 0
+        listed = m.lab_answer(home, proj, {"op": "lab_list"})
+        out["networks_listed"] = any(n.get("kind_label", "").startswith("the internet") for n in listed.get("networks", []))
+        out["unknown_network"] = "no network" in tried(m.lab_answer, home, proj, {"op": "lab_create", "name": "pier-x", "networks": ["nope"]}).get("error", "")
+        cut = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-cut", "networks": []})
+        nics = m.lab_answer(home, proj, {"op": "lab_run", "lab": cut["lab"], "command": "ls /sys/class/net"})
+        out["lab_cut"] = nics["stdout"].split() == ["lo"]
+        m.lab_answer(home, proj, {"op": "lab_destroy", "lab": cut["lab"]})
         m.api_lab_edit(home, made["lab"], "pier-test2", "renamed")
         back = m.lab_answer(home, proj, {"op": "lab_run", "lab": "pier-test2", "command": "true"})
         out["lab_renamed"] = back["exit"] == 0 and "pier-test2" in m.load_labs(home)["labs"]
@@ -902,7 +909,7 @@ if usable:
         out["lab_destroyed"] = not m.load_labs(home)["labs"]
     except Exception as exc:
         out["lab_error"] = f"{type(exc).__name__}: {exc}"
-        for leftover in ("pier-pier-test", "pier-pier-test2"):
+        for leftover in ("pier-pier-test", "pier-pier-test2", "pier-pier-cut"):
             subprocess.run(["incus", "delete", "--force", leftover], capture_output=True)
 else:
     out["no_incus_said"] = "Incus" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "") or bool(why)
@@ -948,6 +955,8 @@ def labs_test():
         check("labs: Incus lab made, project inside, root", out.get("lab_runs_as_root"), out.get("lab_error") or out)
         check(f"labs: reset goes back to the clean state, by {how}", out.get("lab_reset"), out.get("lab_error") or out)
         check("labs: a lab described at its making, renamed, still running", out.get("lab_described") and out.get("lab_renamed"), out.get("lab_error") or out)
+        check("labs: Pi sees the networks, an unknown one refused", out.get("networks_listed") and out.get("unknown_network"), out.get("lab_error") or out)
+        check("labs: a lab on no network has none", out.get("lab_cut"), out.get("lab_error") or out)
         check("labs: destroyed", out.get("lab_destroyed"), out.get("lab_error") or out)
     else:
         check("labs: without Incus, making a lab says why", out["no_incus_said"], out)

@@ -38,7 +38,7 @@ const LAB_LIMITS = [
   ["cpu", "CPUs per lab", "number", 1, 64],
   ["memory_gib", "Memory per lab (GiB)", "number", 1, 256],
   ["disk_gib", "Disk per lab (GiB)", "number", 2, 2000],
-  ["network", "Network", "select"],
+  ["network", "Network of a new lab, by default", "select"],
   ["image", "Default image", "text"],
 ];
 
@@ -77,9 +77,9 @@ function renderLabsPrefs() {
     let input;
     if (type === "select") {
       input = el("select");
-      input.add(new Option("open: Incus's NAT (apt, git, the internet)", "open"));
-      input.add(new Option("your VLAN (an IP from your firewall)", "vlan"));
-      input.add(new Option("cut (nothing in or out)", "none"));
+      input.add(new Option("Incus's NAT: the internet through the VM", "open"));
+      input.add(new Option("your VLAN: an address from your firewall", "vlan"));
+      input.add(new Option("none: nothing in or out", "none"));
     } else {
       input = el("input", { type, spellcheck: false });
       if (type === "number") Object.assign(input, { min, max });
@@ -123,8 +123,36 @@ function renderLabsPrefs() {
 sudo incus network create ${vlan.network} --type=macvlan parent=ens19
 incus network list  # your own network's name (often incusbr-1000)
 sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u),${vlan.network}`;
+  renderLabNetworks(s);
   $("#labs-key").hidden = !s.public_key;
   $("#labs-key-text").textContent = s.public_key || "";
+}
+
+/** Settings > Labs > Networks: those a lab may be plugged into, what each is for. */
+function renderLabNetworks(s) {
+  const list = $("#labs-networks");
+  list.innerHTML = "";
+  for (const n of s.networks || []) {
+    const facts = [n.kind_label, n.address, n.vlan ? `VLAN ${n.vlan}` : "", n.parent ? `on ${n.parent}` : ""].filter(Boolean).join(" · ");
+    const describe = el("button", { className: "link", textContent: "describe", title: "Say what it is for: Pi reads it when it chooses a lab's networks" });
+    describe.addEventListener("click", () => {
+      const text = el("input", { value: n.description || "", placeholder: "what it is for, e.g. the DMZ of the firewall tests", spellcheck: false });
+      const problem = dialogError();
+      const go = el("button", { textContent: "Save" });
+      const dialog = resourceDialog(`The network ${n.name}`, [
+        el("div", { className: "grid fields" }, el("label", { textContent: "Description" }), text),
+        el("p", { className: "hint", textContent: "Shown here, in New lab…, and to Pi in lab_list." }), problem], [go]);
+      go.addEventListener("click", async () => {
+        try { await backend.labNetworkDescribe(n.name, text.value.trim()); dialog.close(); fillLabsPrefs(); } catch (e) { showError(problem, String(e)); }
+      });
+      text.focus();
+    });
+    list.append(el("li", { className: "two-lines" },
+      el("div", { className: "line" }, el("span", { className: "name", textContent: n.name }), el("span", { className: "dim" }), describe),
+      n.description ? el("div", { className: "desc dim small", textContent: n.description }) : null,
+      el("div", { className: "desc dim small", textContent: facts })));
+  }
+  if (!(s.networks || []).length) list.append(el("li", { className: "dim small note", textContent: s.incus ? "Incus shows no network to this account." : "Incus is not ready yet." }));
 }
 
 async function saveLabsSettings(changes) {
@@ -198,17 +226,31 @@ function makeLabs(tab) {
     const kind = el("select");
     kind.add(new Option("container (seconds to make)", ""));
     if (labsStatus?.kvm) kind.add(new Option("virtual machine (a minute or two)", "vm"));
+    // Its networks: one interface on each ticked one (eth0, eth1…), the default ones ticked.
+    const defaults = labsStatus?.default_networks;
+    const nets = labsStatus?.networks || [];
+    const boxes = nets.map((n) => {
+      const box = el("input", { type: "checkbox" });
+      box.checked = defaults === null || defaults === undefined ? n.kind === "nat" && n === nets.find((x) => x.kind === "nat") : defaults.includes(n.name);
+      box.value = n.name;
+      return el("label", { className: "check net-choice" }, box,
+        el("span", {}, el("strong", { textContent: n.name }), ` · ${n.kind_label}${n.description ? ` · ${n.description}` : ""}`));
+    });
     const problem = dialogError();
     const go = el("button", { textContent: "Make it" });
     const dialog = resourceDialog("A new lab", [
       el("div", { className: "grid fields" }, el("label", { textContent: "Name" }), name, el("label", { textContent: "Description" }), description,
         el("label", { textContent: "Kind" }), kind),
+      el("h3", { textContent: "Networks" }),
+      ...(boxes.length ? boxes : [el("p", { className: "dim small", textContent: "Incus shows no network: the lab will have none." })]),
+      el("p", { className: "hint", textContent: "One interface on each network ticked, in this order: eth0, eth1… Several make a lab that sits between them (a router, a firewall, a VPN). None ticked: a lab cut from everything. The kinds: the internet through the VM (Incus's NAT, unseen by your firewall); a VLAN of your firewall (it gives the address and applies its rules); between labs only (no way out)." }),
       el("p", { className: "hint", textContent: "Yours: no project's Pi uses it. Open a terminal in it from the list once it is ready." }), problem], [go]);
     go.addEventListener("click", async () => {
       go.disabled = true;
       go.textContent = "Making it…";
       try {
-        const made = await backend.labNew(name.value.trim(), kind.value === "vm", description.value.trim());
+        const chosen = boxes.map((b) => b.querySelector("input")).filter((b) => b.checked).map((b) => b.value);
+        const made = await backend.labNew(name.value.trim(), kind.value === "vm", description.value.trim(), boxes.length ? chosen : null);
         dialog.close();
         flashStatus(`${made.lab} is ready`);
         vm.poke();
@@ -269,8 +311,10 @@ function makeLabs(tab) {
     const labs = el("ul", { className: "resource-items" });
     for (const lab of s.labs) {
       const owner = lab.project ? projectLabel(lab.project) : "yours";
+      const nets = lab.networks === undefined || lab.networks === null ? null : lab.networks;
+      const nics = (lab.interfaces || []).map((i, k) => `${i.name}${nets?.[k] ? ` ${nets[k]}` : ""} ${i.address || "(no address yet)"}`);
       const facts = [owner, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(),
-        lab.network === "none" ? "no network" : lab.network === "vlan" ? `VLAN ${lab.address || "(waiting for its address)"}` : lab.address,
+        nets && !nets.length ? "no network" : nics.join(" · ") || (nets ? nets.join(", ") : lab.address),
         lab.docker === false && !lab.vm ? "no Docker" : "", lab.snapshots === false ? "reset rebuilds it" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
       labs.append(line(lab.name, [lab.description, facts.join(" · ")],
         action("terminal", "A shell in the lab, as root", () => openLabTerminal(lab.name)),

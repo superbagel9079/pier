@@ -167,7 +167,7 @@ Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the P
 
 ### Part VII. The API for Pier
 
-The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 19 today): Pier recognises a picker that is too old and updates it.
+The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `--api` and reads its JSON answer. The API is versioned (version 20 today): Pier recognises a picker that is too old and updates it.
 
 #### A. The commands
 
@@ -186,7 +186,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `worktrees`, `worktree-remove` | the Pis' worktrees of a project, and removing one |
 | `forges`, `forge-add`, `forge-remove`, `repo`, `repo-link`, `repo-unlink`, `repo-create`, `repo-settings`, `pr-merge`, `approvals`, `approval-answer` | git forges: accounts (the token on stdin), the project's repository, pull requests, merging, and Pi's requests waiting for the user |
 | `team`, `collaborators`, `task-create`, `handoff-give`, `handoff-take` | the team: tasks for the Pis, everyone's pull requests, what waits for this account, giving and taking a conversation |
-| `labs`, `labs-settings`, `lab-journal`, `lab-new`, `lab-edit`, `lab-action`, `machine-add`, `machine-remove`, `machine-test` | labs: whether they can be made, their limits (JSON on stdin), what was run in them, a lab made by the user, a lab or machine renamed and described (the description on stdin), a lab reset or destroyed, the machines reached over SSH |
+| `labs`, `labs-settings`, `lab-journal`, `lab-new`, `lab-edit`, `lab-network-describe`, `lab-action`, `machine-add`, `machine-remove`, `machine-test` | labs: whether they can be made, their limits (JSON on stdin), what was run in them, a lab made by the user, a lab or machine renamed and described (the description on stdin), a lab reset or destroyed, the machines reached over SSH |
 | `--lab-shell NAME` | a terminal in a lab or on a machine (Pier's Labs tab) |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
 | `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
@@ -537,7 +537,7 @@ The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by y
 - **Labs:** disposable [Incus](https://linuxcontainers.org/incus/) containers on the VM (or full virtual machines when the VM has `/dev/kvm`), made by Pi (`lab_create`) or by you (**New lab…** in the Labs tab), each with a name and a description of what it is for. Root inside, nothing of the VM or of home: only what Pi copies in. Each has CPU, memory and disk limits, a lifetime after which it goes (24 h by default), a **clean** snapshot to go back to, and the network open or cut.
 - **Machines:** computers of yours (a server with a GPU, a test server) that Pi reaches over SSH. Pier makes a key of its own on the VM, which you put in the machine's `~/.ssh/authorized_keys`; Pi never sees it. Give each a description Pi reads in `lab_list`: what it is for, and what to leave alone there ("GPU with CUDA 12, never touch /data"). Each machine has its rule: **each command waits for your approval** (the default, shown with the other requests in Setup > Git and as a notification) or Pi runs commands freely.
 
-Pi's tools: `lab_list`, `lab_create`, `lab_run` (a command, its output and exit code), `lab_push` (the project, or a part, into the lab: what was given to Pi stays out, links stay links), `lab_pull` (a file or folder back into `.pi-files/`), `lab_snapshot`, `lab_reset`, `lab_destroy`. They go through the picker's broker, like the git tools; Pi's sandbox has no network to the labs.
+Pi's tools: `lab_list`, `lab_create` (a name, a description, its networks), `lab_run` (a command, its output and exit code), `lab_push` (the project, or a part, into the lab: what was given to Pi stays out, links stay links), `lab_pull` (a file or folder back into `.pi-files/`), `lab_snapshot`, `lab_reset`, `lab_destroy`. They go through the picker's broker, like the git tools; Pi's sandbox has no network to the labs.
 
 The **Labs tab** (the **+** of a tab bar) lists the labs and machines with their descriptions, opens a **terminal** in any of them, **edits** a name or a description (a lab is stopped for a moment to be renamed), resets or destroys a lab, and shows **what was done**: every command run by Pi, with its exit code and time.
 
@@ -594,6 +594,63 @@ By default (**Network: open**), the labs are behind Incus's NAT inside the VM: t
 
 The VM itself has no address on that VLAN, and needs none: the labs talk to the firewall, never to the VM through it (a limit of macvlan, here a wall more).
 
+#### Networks: what each lab is plugged into
+
+A lab can be plugged into **any network Incus lets your account use**, and into **several at once**. You choose in **New lab…** (the networks are ticked there, the default ones already ticked), and Pi chooses with `lab_create`'s `networks`. **Settings > Labs > Networks** lists them, with what each is for.
+
+**The three kinds of network**
+
+| Kind | What it is | What the lab can reach | Seen by your firewall |
+|---|---|---|---|
+| **The internet through the VM (NAT)** | Incus's own bridge (`incusbr-1000`), there from the start | the internet, through the VM; not your LAN's machines from outside | no: only the VM is |
+| **A VLAN of your firewall** | a macvlan network on a card of the VM, tagged with a VLAN of pfSense | what pfSense allows on that VLAN | yes: the lab is a machine of its own, with its address from pfSense's DHCP and its rules |
+| **Between labs only** | an Incus bridge without NAT | the other labs on it, nothing else | no, and nothing goes out |
+
+**One interface per network.** A lab on two networks gets `eth0` on the first ticked and `eth1` on the second, each with its address (Pier configures DHCP on the extra interfaces). The Labs tab shows each interface with its network and address. With nothing ticked, the lab has no network at all.
+
+**What it is for, with examples**
+
+- *Run the project's tests with a database:* one lab on the NAT (default), Postgres inside.
+- *Test what your firewall lets through:* a lab on the VLAN, then look at its traffic in pfSense.
+- *Test a router or a firewall between two networks:* three labs. `client` on `lab-lan`, `server` on `lab-dmz`, and `router` on both `lab-lan` and `lab-dmz` (plus the NAT if it should reach the internet). Then check with `lab_run` that `client` reaches `server` only through what `router` allows.
+- *A VPN between two labs, a DNS server, a mail relay:* labs on a network between labs only, so nothing they do leaks out.
+
+**Describe the networks.** In Settings > Labs > Networks, **describe** says what a network is for ("the DMZ of the firewall tests"). The description shows there and in New lab…, and Pi reads it in `lab_list` to choose a lab's networks.
+
+**The network of a new lab, by default** (Settings > Labs): the NAT (the default), your VLAN (Part above), or none. It is what a lab gets when nobody chooses: Pi without `networks`, or New lab… left as it is.
+
+**Adding a network: an admin, once for each.**
+
+> **Once for each network.** A network made and allowed stays: every lab can then be plugged into it, with nothing more to do.
+
+On the VM. **A VLAN of the firewall, several on one card:** in Proxmox, give the VM's second card **no VLAN Tag** (it then carries every VLAN, a "trunk"; its *trunks* option can limit them), and make one Incus network per VLAN on it:
+
+```bash
+sudo incus network create pier-labs-30 --type=macvlan parent=ens19 vlan=30
+```
+
+```bash
+sudo incus network create pier-labs-40 --type=macvlan parent=ens19 vlan=40
+```
+
+(each VLAN made in pfSense too, with its DHCP and rules). **A network between labs only:** no card, nothing in pfSense:
+
+```bash
+sudo incus network create lab-lan --type=bridge ipv4.address=10.50.0.1/24 ipv4.nat=false
+```
+
+```bash
+sudo incus network create lab-dmz --type=bridge ipv4.address=10.60.0.1/24 ipv4.nat=false
+```
+
+**Then let your account use them**, listing every network it should see, your own NAT included (`incus network list` gives its name, often `incusbr-1000`; left out, labs on the NAT stop working):
+
+```bash
+sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u),pier-labs-30,pier-labs-40,lab-lan,lab-dmz
+```
+
+Settings > Labs > Networks shows them as soon as they are allowed, and the same commands in **Add a network**.
+
 ### Part XV. Notifications and shortcut
 
 - **A Windows notification** when a Pi goes from "working" to "idle", for every Pi started. Nothing shows when Pier is already in front.
@@ -618,7 +675,7 @@ The categories in a column on the left, the page on the right; the window opens 
   - resuming shares after a reconnection.
 - **Picker:** its version and Pier's, automatic updates (on by default), and a button to install it again.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
-- **Labs:** turning labs on, whether Incus answers on the VM (and how to install it otherwise), the limits (labs at a time, lifetime, CPUs, memory, disk, default image), the network (Incus's NAT, your VLAN with its one-time setup, or cut), and the machines with Pier's key.
+- **Labs:** turning labs on, whether Incus answers on the VM (and how to install it otherwise), the limits (labs at a time, lifetime, CPUs, memory, disk, default image), the network of a new lab by default (Incus's NAT, your VLAN with its one-time setup, or none), the **networks** labs can be plugged into (what each is for, and how to add one), and the machines with Pier's key.
 - **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](RELEASING.md).
 - **Connection:** where Pier connects (changed from the login screen).
 

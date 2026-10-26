@@ -8,7 +8,10 @@ function mockBackend() {
   const labsState = { settings: { enabled: false, max: 3, ttl_hours: 24, network: "open", cpu: 2, memory_gib: 4, disk_gib: 20, image: "debian/13" },
     labs: [{ name: "db-tests", description: "Postgres 16 for the integration tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
     machines: [] };
-  const mockLabs = () => ({ ...labsState, incus: true, why: "", kvm: true, vlan: { network: "pier-labs", ready: false, networks: ["incusbr-1000"] }, public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
+  const mockLabs = () => ({ ...labsState, incus: true, why: "", kvm: true, vlan: { network: "pier-labs", ready: false, networks: ["incusbr-1000", "lab-lan"] }, default_networks: null,
+    networks: [{ name: "incusbr-1000", kind: "nat", kind_label: "the internet through the VM (NAT)", address: "10.88.1.1/24", description: "" },
+      { name: "lab-lan", kind: "internal", kind_label: "between labs only", address: "10.50.0.1/24", description: "the LAN side of the firewall tests" },
+      { name: "lab-dmz", kind: "internal", kind_label: "between labs only", address: "10.60.0.1/24", description: "" }], public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
     journal: [{ at: Date.now() / 1000 - 60, lab: "db-tests", project: "/home/leo/work", command: "pytest -q", exit: 0, ms: 8200 },
       { at: Date.now() / 1000 - 300, lab: "db-tests", project: "/home/leo/work", what: "pushed . (1240 kB)" }] });
   const mockTasks = [
@@ -346,7 +349,9 @@ function mockBackend() {
       return { lab: name };
     },
     machineAdd: async (name, host, port, user, policy, description) => { labsState.machines.push({ name, host, port, user, policy, description }); return { machine: name, public_key: mockLabs().public_key }; },
-    labNew: async (name, vm, description) => { const lab = { name: name || `lab-${labsState.labs.length + 1}`, project: "", image: "debian/13", vm, description, status: "Running", expires: Date.now() / 1000 + 86400 }; labsState.labs.push(lab); return { lab: lab.name }; },
+    labNew: async (name, vm, description, networks) => { const lab = { name: name || `lab-${labsState.labs.length + 1}`, project: "", image: "debian/13", vm, description, networks, status: "Running",
+      interfaces: (networks || ["incusbr-1000"]).map((n, i) => ({ name: `eth${i}`, address: `10.${50 + i * 10}.0.${12 + i}` })), expires: Date.now() / 1000 + 86400 }; labsState.labs.push(lab); return { lab: lab.name }; },
+    labNetworkDescribe: async (name, description) => ({ network: name, description }),
     labEdit: async (name, newName, description) => {
       const item = labsState.labs.find((l) => l.name === name) || labsState.machines.find((m) => m.name === name);
       Object.assign(item, { name: newName, description });

@@ -37,7 +37,7 @@ use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
 
 /// The picker's API version this client speaks.
-const API_VERSION: u64 = 19;
+const API_VERSION: u64 = 20;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
@@ -1122,11 +1122,19 @@ async fn machine_add(app: AppHandle, state: State<'_, AppState>, name: String, h
 
 /// A lab of the user's own, named (or "lab-N") and described.
 #[tauri::command]
-async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: String, vm: bool, description: String) -> Result<Value, String> {
+async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: String, vm: bool, description: String, networks: Option<Vec<String>>) -> Result<Value, String> {
     if !name.is_empty() && !lab_name(&name) {
         return Err("a lab's name: lowercase letters, digits and '-', starting with a letter".into());
     }
-    api(&app, &state, &["lab-new", &name, if vm { "vm" } else { "" }], description.as_bytes()).await
+    // The networks, null for the default: the picker checks each against those Incus allows.
+    let wanted = json!({ "description": description, "networks": networks }).to_string();
+    api(&app, &state, &["lab-new", &name, if vm { "vm" } else { "" }], wanted.as_bytes()).await
+}
+
+/// What a network is for, in the user's words: Pi reads it in lab_list.
+#[tauri::command]
+async fn lab_network_describe(app: AppHandle, state: State<'_, AppState>, name: String, description: String) -> Result<Value, String> {
+    api(&app, &state, &["lab-network-describe", &name], description.as_bytes()).await
 }
 
 /// A lab or machine renamed, its description changed.
@@ -1881,6 +1889,7 @@ pub fn run() {
             machine_add,
             lab_new,
             lab_edit,
+            lab_network_describe,
             machine_remove,
             machine_test,
             handoff_give,

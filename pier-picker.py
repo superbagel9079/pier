@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.27"
+VERSION = "4.28"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2665,7 +2665,7 @@ def api_restore(home, path, ident, files):
 # Errors come back as {"api": N, "error": "..."} with exit status 1. API_VERSION
 # changes when a reply changes shape, so an old client can tell.
 
-API_VERSION = 19
+API_VERSION = 20
 IMAGE_DIR = ".pi-images"
 IMAGE_MAX_BYTES = 20 * 1024 * 1024
 FILES_DIR = ".pi-files"
@@ -6077,7 +6077,8 @@ def load_labs(home):
     settings = dict(LABS_DEFAULTS)
     settings.update({k: v for k, v in (data.get("settings") or {}).items() if k in LABS_DEFAULTS})
     return {"settings": settings, "labs": data.get("labs") if isinstance(data.get("labs"), dict) else {},
-            "machines": data.get("machines") if isinstance(data.get("machines"), dict) else {}}
+            "machines": data.get("machines") if isinstance(data.get("machines"), dict) else {},
+            "network_notes": data.get("network_notes") if isinstance(data.get("network_notes"), dict) else {}}
 
 
 def save_labs(home, data):
@@ -6211,11 +6212,13 @@ def api_labs(home):
         try:
             for item in json.loads(incus("list", "pier-", "--format", "json", timeout=20) or b"[]"):
                 state = item.get("state") or {}
+                interfaces = [{"name": nic, "address": next((a.get("address") for a in info.get("addresses", [])
+                                                             if a.get("family") == "inet" and a.get("scope") == "global"), None)}
+                              for nic, info in sorted((state.get("network") or {}).items()) if nic != "lo"]
                 live[item.get("name")] = {"status": item.get("status"), "type": item.get("type"),
                                           "memory": (state.get("memory") or {}).get("usage"),
-                                          "address": next((a.get("address") for n in (state.get("network") or {}).values()
-                                                           for a in n.get("addresses", []) if a.get("family") == "inet"
-                                                           and a.get("scope") == "global"), None)}
+                                          "interfaces": interfaces,
+                                          "address": next((i["address"] for i in interfaces if i["address"]), None)}
         except (ApiError, ValueError):
             pass
     labs = []
@@ -6226,16 +6229,68 @@ def api_labs(home):
         public_key = machine_key()[1] if data["machines"] or data["settings"]["enabled"] else None
     except (OSError, subprocess.SubprocessError):
         public_key = None
-    vlan = {"network": data["settings"].get("vlan_network") or "pier-labs", "ready": False}
-    if usable and data["settings"]["network"] == "vlan":
-        try:  # a restricted project lists only the networks it may use
-            names = [n.get("name") for n in json.loads(incus("network", "list", "--format", "json", timeout=15) or b"[]")]
-            vlan["ready"] = vlan["network"] in names
-            vlan["networks"] = [n for n in names if n]
-        except (ApiError, ValueError):
-            pass
+    networks = lab_networks(home) if usable else []
+    names = [n["name"] for n in networks]
+    vlan = {"network": data["settings"].get("vlan_network") or "pier-labs", "networks": names}
+    vlan["ready"] = vlan["network"] in names
     return {"settings": data["settings"], "incus": usable, "why": why, "kvm": kvm, "labs": labs, "machines": machines,
-            "public_key": public_key, "vlan": vlan}
+            "public_key": public_key, "vlan": vlan, "networks": networks, "default_networks": default_networks(data["settings"])}
+
+
+# The networks a lab may be plugged into: those Incus lets this account use (a restricted
+# project lists only them). Three kinds, told apart by their settings:
+#   nat       a bridge with NAT (Incus's own, incusbr-*): the internet through the VM,
+#             unseen by the firewall and the LAN;
+#   vlan      a macvlan on a card of the VM (often with vlan=N on a trunk): a machine of its
+#             own on a VLAN of the firewall, which gives its address and applies its rules;
+#   internal  a bridge without NAT: between the labs on it only, for routers, DMZs, VPNs.
+LAB_NETWORK_KINDS = {"nat": "the internet through the VM (NAT)", "vlan": "a VLAN of your firewall",
+                     "internal": "between labs only", "other": "an Incus network"}
+
+
+def lab_networks(home):
+    try:
+        items = json.loads(incus("network", "list", "--format", "json", timeout=15) or b"[]")
+    except (ApiError, ValueError):
+        return []
+    said = load_labs(home).get("network_notes") or {}
+    out = []
+    for item in items:
+        name, config = item.get("name"), item.get("config") or {}
+        if not name or not item.get("managed", True) or item.get("type") not in ("bridge", "macvlan", "sriov", "physical"):
+            continue
+        if item.get("type") == "bridge":
+            kind = "internal" if str(config.get("ipv4.nat", "true")).lower() == "false" else "nat"
+        else:
+            kind = "vlan"
+        out.append({"name": name, "kind": kind, "kind_label": LAB_NETWORK_KINDS[kind], "type": item.get("type"),
+                    "address": config.get("ipv4.address") if config.get("ipv4.address") not in (None, "none") else None,
+                    "vlan": config.get("vlan"), "parent": config.get("parent"),
+                    "description": said.get(name) or item.get("description") or ""})
+    return sorted(out, key=lambda n: ({"nat": 0, "vlan": 1, "internal": 2}.get(n["kind"], 3), n["name"]))
+
+
+def default_networks(settings):
+    """What a lab is plugged into when nothing is said: None (Incus's own, from the profile),
+    [] (cut), or the VLAN network."""
+    if settings["network"] == "none":
+        return []
+    if settings["network"] == "vlan":
+        return [settings.get("vlan_network") or "pier-labs"]
+    return None
+
+
+def api_lab_network_describe(home, name, text):
+    """From Pier: what a network is for, in the user's words (Pi reads it in lab_list)."""
+    if not LAB_NAME_RE.fullmatch(name or "") and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", name or ""):
+        raise ApiError("a network's name")
+    data = load_labs(home)
+    notes = data.get("network_notes") if isinstance(data.get("network_notes"), dict) else {}
+    notes[name] = lab_description(text)
+    if not notes[name]:
+        notes.pop(name)
+    save_labs(home, {**data, "network_notes": notes})
+    return {"network": name, "description": notes.get(name, "")}
 
 
 def api_labs_settings(home, text):
@@ -6265,7 +6320,22 @@ LAB_NO_SNAPSHOTS = ("snapshots are not allowed in this Incus project: lab_reset 
                     "To allow them (an admin, once): sudo incus project set user-$(id -u) restricted.snapshots=allow")
 
 
-def lab_build(name, image, vm, settings):
+# A lab plugged into more than one network gets one interface per network: eth0, eth1...
+# Images configure DHCP on eth0 only; the others are given it here (systemd-networkd on
+# Debian, netplan on Ubuntu), so each interface gets its address from its network.
+LAB_EXTRA_DHCP = r"""for nic in "$@"; do
+  if command -v netplan >/dev/null 2>&1; then
+    printf 'network:\n  version: 2\n  ethernets:\n    %s:\n      dhcp4: true\n' "$nic" > "/etc/netplan/60-pier-$nic.yaml"
+  else
+    mkdir -p /etc/systemd/network
+    printf '[Match]\nName=%s\n\n[Network]\nDHCP=ipv4\n' "$nic" > "/etc/systemd/network/60-pier-$nic.network"
+  fi
+done
+if command -v netplan >/dev/null 2>&1; then netplan apply; else systemctl restart systemd-networkd 2>/dev/null || networkctl reload; fi
+"""
+
+
+def lab_build(name, image, vm, settings, networks=None):
     """The Incus instance of a lab, started, with its work folder and, when the project
     allows it, a "clean" snapshot: (Docker possible, snapshots possible). Nothing stays
     when it fails."""
@@ -6287,14 +6357,19 @@ def lab_build(name, image, vm, settings):
             incus("config", "device", "override", instance, "root", f"size={settings['disk_gib']}GiB", timeout=30)
         except ApiError:
             pass  # a storage pool without quotas: the disk is not limited
-        if settings["network"] == "none":
+        if networks is None:
+            networks = default_networks(settings)
+        if networks is not None and not networks:
             incus("config", "device", "add", instance, "eth0", "none", timeout=30)
-        elif settings["network"] == "vlan":
-            vlan = settings.get("vlan_network") or "pier-labs"
-            try:  # the profile's eth0, moved onto the labs' network
-                incus("config", "device", "override", instance, "eth0", f"network={vlan}", timeout=30)
-            except ApiError:
-                incus("config", "device", "add", instance, "eth0", "nic", f"network={vlan}", timeout=30)
+        for index, network in enumerate(networks or []):
+            nic = f"eth{index}"
+            if index == 0:
+                try:  # the profile's eth0, moved onto the chosen network
+                    incus("config", "device", "override", instance, "eth0", f"network={network}", timeout=30)
+                    continue
+                except ApiError:
+                    pass
+            incus("config", "device", "add", instance, nic, "nic", f"network={network}", f"name={nic}", timeout=30)
         incus("start", instance, timeout=120)
         deadline = time.monotonic() + (180 if vm else 60)
         while True:  # a VM answers once its agent runs
@@ -6305,6 +6380,11 @@ def lab_build(name, image, vm, settings):
                 if time.monotonic() > deadline:
                     raise ApiError("the lab did not start in time")
                 time.sleep(2)
+        if networks and len(networks) > 1:
+            try:
+                incus("exec", instance, "--", "sh", "-c", LAB_EXTRA_DHCP, "sh", *[f"eth{i}" for i in range(1, len(networks))], timeout=60)
+            except ApiError as exc:
+                log("warn", "lab.extra-dhcp-failed", lab=name, err=str(exc))
         try:
             incus("snapshot", "create", instance, "clean", timeout=300)
         except ApiError as exc:
@@ -6326,7 +6406,7 @@ def lab_description(text):
     return " ".join(str(text or "").split())[:500]
 
 
-def lab_create(home, project, name, vm=False, image=None, description=""):
+def lab_create(home, project, name, vm=False, image=None, description="", networks=None):
     labs_expire(home)
     data = load_labs(home)
     settings = data["settings"]
@@ -6335,7 +6415,14 @@ def lab_create(home, project, name, vm=False, image=None, description=""):
     usable, why, kvm = incus_state()
     if not usable:
         raise ApiError(f"no lab can be made: {why}")
-    if settings["network"] == "vlan" and not api_labs(home)["vlan"]["ready"]:
+    known = [n["name"] for n in lab_networks(home)]
+    if networks is not None:
+        if not isinstance(networks, list) or len(networks) > 4 or len(set(networks)) != len(networks):
+            raise ApiError("networks: a list of at most 4 different networks (see lab_list), or [] for none")
+        missing = [n for n in networks if n not in known]
+        if missing:
+            raise ApiError(f"no network {', '.join(map(str, missing))} for labs: those of lab_list are {', '.join(known) or 'none'}")
+    elif settings["network"] == "vlan" and (settings.get("vlan_network") or "pier-labs") not in known:
         raise ApiError(f"the labs' network {settings.get('vlan_network') or 'pier-labs'} is not there or not allowed to this "
                        "account: see Settings > Labs (made once by an admin)")
     if len(data["labs"]) >= settings["max"]:
@@ -6352,8 +6439,9 @@ def lab_create(home, project, name, vm=False, image=None, description=""):
         raise ApiError("an image of images.linuxcontainers.org, like debian/13 or ubuntu/24.04")
     if vm and not kvm:
         raise ApiError("virtual machines need /dev/kvm on the VM (Proxmox: CPU type host); make a container instead")
-    nesting, snapshots = lab_build(name, image, bool(vm), settings)
-    record = {"project": project, "image": image, "vm": bool(vm), "network": settings["network"], "docker": nesting,
+    chosen = networks if networks is not None else default_networks(settings)
+    nesting, snapshots = lab_build(name, image, bool(vm), settings, chosen)
+    record = {"project": project, "image": image, "vm": bool(vm), "network": settings["network"], "networks": chosen, "docker": nesting,
               "description": lab_description(description), "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
     data = load_labs(home)
     data["labs"][name] = record
@@ -6473,7 +6561,7 @@ def lab_snapshot(home, project, name, snapshot, restore=False):
         # No snapshot: the lab is made again from its image, under the same name.
         incus("delete", "--force", lab_instance(name), timeout=180)
         settings = {**load_labs(home)["settings"], "network": lab.get("network", "open")}
-        nesting, snapshots = lab_build(name, lab.get("image") or settings["image"], bool(lab.get("vm")), settings)
+        nesting, snapshots = lab_build(name, lab.get("image") or settings["image"], bool(lab.get("vm")), settings, lab.get("networks"))
         data = load_labs(home)
         if name in data["labs"]:
             data["labs"][name].update(docker=nesting, snapshots=snapshots)
@@ -6513,7 +6601,9 @@ def lab_list(home, project):
                      for l in status["labs"] if l.get("project") == project],
             "machines": [{"name": m["name"], "description": m.get("description") or "", "host": m["host"],
                           "needs_approval": m.get("policy") != "auto"} for m in status["machines"]],
-            "note": "descriptions are the user's: what each machine is for, and what to leave alone there",
+            "networks": [{k: n.get(k) for k in ("name", "kind_label", "address", "vlan", "description")} for n in status["networks"]],
+            "default_networks": status["default_networks"] if status["default_networks"] is not None else "Incus's own NAT",
+            "note": "descriptions are the user's: what each machine or network is for, and what to leave alone there",
             "can_create": status["incus"] and len(status["labs"]) < status["settings"]["max"],
             "vm_possible": status["kvm"], "why_not": status["why"] or None}
 
@@ -6557,9 +6647,16 @@ def api_machine_test(home, name):
     return {"machine": name, "answer": result.stdout.decode("utf-8", "replace").strip()}
 
 
-def api_lab_new(home, name, vm, description):
-    """From Pier: a lab of the user's own (no project's Pi uses it), named and described."""
-    return lab_create(home, "", name or "", vm=vm == "vm", description=description)
+def api_lab_new(home, name, vm, text):
+    """From Pier: a lab of the user's own (no project's Pi uses it), named, described, on the
+    networks chosen (JSON on stdin: description, networks or null for the default)."""
+    try:
+        wanted = json.loads(text or "{}")
+    except ValueError:
+        wanted = {"description": text}
+    networks = wanted.get("networks") if isinstance(wanted, dict) else None
+    return lab_create(home, "", name or "", vm=vm == "vm", description=str((wanted or {}).get("description") or ""),
+                      networks=networks if isinstance(networks, list) else None)
 
 
 def api_lab_edit(home, name, new_name, description):
@@ -6627,8 +6724,11 @@ def lab_answer(home, project, request):
     if op == "lab_list":
         return lab_list(home, project)
     if op == "lab_create":
+        networks = request.get("networks")
+        if networks is not None and not (isinstance(networks, list) and all(isinstance(n, str) for n in networks)):
+            raise ApiError("networks: a list of network names")
         return lab_create(home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"),
-                          str(request.get("description") or ""))
+                          str(request.get("description") or ""), networks)
     kind, record = lab_target(home, project, name)
     if kind == "machine" and record.get("policy") != "auto":
         what = {"lab_run": f"run: {str(request.get('command') or '')[:2000]}", "lab_push": f"copy {request.get('path') or '.'} of the project there",
@@ -6698,7 +6798,8 @@ export default function (pi: any) {
     Type.Object({ name: Type.Optional(Type.String({ description: "lowercase, e.g. db-tests" })),
       vm: Type.Optional(Type.Boolean({ description: "a full virtual machine instead of a container, when possible" })),
       image: Type.Optional(Type.String({ description: "e.g. debian/13, ubuntu/24.04" })),
-      description: Type.Optional(Type.String({ description: "what this lab is for, shown to the user" })) }), "lab_create");
+      description: Type.Optional(Type.String({ description: "what this lab is for, shown to the user" })),
+      networks: Type.Optional(Type.Array(Type.String(), { description: "networks to plug it into, from lab_list: one interface each (eth0, eth1...), several for a router between them, [] for none; left out, the user's default" })) }), "lab_create");
   tool("lab_run", "Run in lab", "Run a shell command in a lab or on a machine, in its work folder; returns the exit code and the output.",
     Type.Object({ lab: Type.String(), command: Type.String(), timeout: Type.Optional(Type.Integer({ description: "seconds, at most 900" })),
       reason: Type.Optional(Type.String({ description: "why, shown to the user when a machine asks for approval" })) }), "lab_run");
@@ -7339,6 +7440,7 @@ API_COMMANDS = {
     "machine-add": lambda home, config, a: api_machine_add(home, a[0], a[1], a[2], a[3], a[4], read_stdin_text()),
     "lab-new": lambda home, config, a: api_lab_new(home, a[0], a[1], read_stdin_text()),
     "lab-edit": lambda home, config, a: api_lab_edit(home, a[0], a[1], read_stdin_text()),
+    "lab-network-describe": lambda home, config, a: api_lab_network_describe(home, a[0], read_stdin_text()),
     "machine-remove": lambda home, config, a: api_machine_remove(home, a[0]),
     "machine-test": lambda home, config, a: api_machine_test(home, a[0]),
     "collaborators": lambda home, config, a: api_collaborators(home, a[0]),
