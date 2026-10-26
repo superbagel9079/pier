@@ -90,7 +90,9 @@ code, kbd, pre, .code, .editor, .path, .rel, .file-name, .log-lines, .diff, .tre
 }
 code, kbd { background: var(--chip); padding: 0 var(--s1); font-size: var(--t-small); }
 pre { background: var(--chip); padding: 10px; overflow-x: auto; margin: var(--s2) 0; }
-#labs-key-text, #labs-install { white-space: pre-wrap; word-break: break-all; }
+#labs-key-text, #labs-install, #labs-vlan-commands, .labs-howto pre, .labs-host-install { white-space: pre-wrap; word-break: break-all; }
+.dialog .net-choice { margin: 4px 0; }
+.dialog .net-choice span { font-size: var(--t-small); }
 
 /* ---------------------------------------------------------------- controls */
 
@@ -119,7 +121,10 @@ select {
   background-repeat: no-repeat;
   cursor: pointer;
 }
-select:hover, input:hover:not([type="checkbox"]):not(:focus) { background-color: var(--raise); }
+/* No hover tint on fields: hovering a field's <label> counts as hovering the field, so a
+   setting lit up with the pointer on its name. A number's arrows show once it has focus. */
+input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { opacity: 0; }
+input[type="number"]:focus::-webkit-inner-spin-button { opacity: 1; }
 select option { background: var(--bg); color: var(--fg); }
 /* The focus ring on the field's own edge: never cut by the panel around it. */
 input:focus, select:focus, textarea:focus, .drop:focus { outline: 1px solid var(--fg); outline-offset: -1px; }

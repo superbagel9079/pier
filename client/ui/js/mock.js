@@ -6,9 +6,15 @@ function mockBackend() {
   let mockClipboard = "";
   const updateListeners = [];
   const labsState = { settings: { enabled: false, max: 3, ttl_hours: 24, network: "open", cpu: 2, memory_gib: 4, disk_gib: 20, image: "debian/13" },
-    labs: [{ name: "db-tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
-    machines: [] };
-  const mockLabs = () => ({ ...labsState, incus: true, why: "", kvm: true, public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
+    labs: [{ name: "db-tests", host: "lab-box", description: "Postgres 16 for the integration tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
+    machines: [],
+    hosts: [{ name: "lab-box", kind: "ssh", where: "leo@192.168.1.40:22", description: "fast disks", default: true, incus: true, why: "", kvm: false,
+      networks: [{ name: "incusbr-1000", kind: "nat", kind_label: "the internet through the host (NAT)", address: "10.88.1.1/24", description: "" },
+        { name: "lab-lan", kind: "internal", kind_label: "between labs only", address: "10.50.0.1/24", description: "the LAN side of the firewall tests" }] }] };
+  const mockLabs = () => ({ ...labsState, incus: labsState.hosts.some((h) => h.incus), why: "", kvm: true, default_host: labsState.hosts.find((h) => h.default)?.name || null, vlan: { network: "pier-labs", ready: false, networks: ["incusbr-1000", "lab-lan"] }, default_networks: null,
+    networks: [{ name: "incusbr-1000", kind: "nat", kind_label: "the internet through the host (NAT)", address: "10.88.1.1/24", description: "" },
+      { name: "lab-lan", kind: "internal", kind_label: "between labs only", address: "10.50.0.1/24", description: "the LAN side of the firewall tests" },
+      { name: "lab-dmz", kind: "internal", kind_label: "between labs only", address: "10.60.0.1/24", description: "" }], public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
     journal: [{ at: Date.now() / 1000 - 60, lab: "db-tests", project: "/home/leo/work", command: "pytest -q", exit: 0, ms: 8200 },
       { at: Date.now() / 1000 - 300, lab: "db-tests", project: "/home/leo/work", what: "pushed . (1240 kB)" }] });
   const mockTasks = [
@@ -48,6 +54,7 @@ function mockBackend() {
       checkpoints: () => self.api(["checkpoints", want.checkpoints]),
       conversations: () => self.api(["conversations"]),
       labs: () => self.api(["labs"]),
+      approvals: () => self.api(["approvals"]),
     };
     for (const [kind, make] of Object.entries(parts)) {
       if (!want[kind]) continue;
@@ -70,7 +77,8 @@ function mockBackend() {
   let handed = [];
   let mockForges = [{ id: "github:github.com:leo", kind: "github", url: "https://github.com", login: "leo" }];
   let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" };
-  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" }];
+  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" },
+    { id: "a2", project: "/home/leo/work", kind: "lab_create", args: { name: "db-tests", vm: false, image: "debian/13", networks: null, description: "Postgres 16 for the integration tests" }, reason: "you asked me to run the integration tests against a real Postgres", at: Date.now() / 1000, state: "pending" }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,
@@ -345,7 +353,19 @@ function mockBackend() {
       if (action === "create") { const lab = { name: `lab-${labsState.labs.length + 1}`, project: "", image: "debian/13", vm: false, status: "Running", expires: Date.now() / 1000 + 86400 }; labsState.labs.push(lab); return { lab: lab.name }; }
       return { lab: name };
     },
-    machineAdd: async (name, host, port, user, policy) => { labsState.machines.push({ name, host, port, user, policy }); return { machine: name, public_key: mockLabs().public_key }; },
+    machineAdd: async (name, host, port, user, policy, description) => { labsState.machines.push({ name, host, port, user, policy, description }); return { machine: name, public_key: mockLabs().public_key }; },
+    labNew: async (name, vm, description, networks, host) => { const lab = { name: name || `lab-${labsState.labs.length + 1}`, host: host || "lab-box", project: "", image: "debian/13", vm, description, networks, status: "Running",
+      interfaces: (networks || ["incusbr-1000"]).map((n, i) => ({ name: `eth${i}`, address: `10.${50 + i * 10}.0.${12 + i}` })), expires: Date.now() / 1000 + 86400 }; labsState.labs.push(lab); return { lab: lab.name }; },
+    labNetworkDescribe: async (name, description) => ({ network: name, description }),
+    hostAdd: async (name, host, port, user, description) => { labsState.hosts.push({ name, kind: "ssh", where: `${user}@${host}:${port}`, description, default: false, incus: false, why: "Incus does not answer: installed, and the user in the incus group?", kvm: false, networks: [] }); return { host: name, public_key: mockLabs().public_key }; },
+    hostLocal: async (on) => { if (on) labsState.hosts.push({ name: "pi-vm", kind: "local", where: "Pi's VM", description: "", default: false, incus: true, why: "", kvm: false, networks: [] }); else labsState.hosts = labsState.hosts.filter((h) => h.kind !== "local"); return { local: on }; },
+    hostRemove: async (name) => { labsState.hosts = labsState.hosts.filter((h) => h.name !== name); return {}; },
+    hostTest: async (name) => ({ host: name, answer: "Incus answers: containers" }),
+    labEdit: async (name, newName, description) => {
+      const item = labsState.labs.find((l) => l.name === name) || labsState.machines.find((m) => m.name === name);
+      Object.assign(item, { name: newName, description });
+      return { name: newName, description };
+    },
     machineRemove: async (name) => { labsState.machines = labsState.machines.filter((m) => m.name !== name); return {}; },
     machineTest: async (name) => ({ machine: name, answer: "Linux 6.12.0 x86_64" }),
     taskCreate: async (project, title) => {

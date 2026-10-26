@@ -189,6 +189,7 @@ function makeGitManager(box, currentProject) {
     const what = a.kind === "merge" ? `merge pull request #${a.args.number}${a.args.method && a.args.method !== "merge" ? ` (${a.args.method})` : ""}`
       : a.kind === "review" ? `post a review of #${a.args.number} (${String(a.args.verdict || "").replace("_", " ")})`
       : a.kind === "lab" ? `${a.args.what} (on ${a.args.machine})`
+      : a.kind === "lab_create" ? `create the lab ${a.args.name} (${a.args.vm ? "VM" : "container"}, ${a.args.image}, ${a.args.networks === null || a.args.networks === undefined ? "Incus's NAT" : a.args.networks.length ? a.args.networks.join(" + ") : "no network"})`
       : a.kind === "create_repo" ? `create the repository ${a.args.name}${a.args.private === false ? " (public)" : " (private)"}` : a.kind;
     const answer = (yes) => async () => {
       try {
@@ -197,7 +198,7 @@ function makeGitManager(box, currentProject) {
         if (done) load();
       } catch (e) { showError(error, String(e)); load(); }
     };
-    return line(`Pi asks to ${what}`, a.kind === "review" ? String(a.args.body || "").slice(0, 600) : a.reason || "", `asked ${new Date(a.at * 1000).toLocaleString()}`,
+    return line(`Pi asks to ${what}`, a.kind === "review" ? String(a.args.body || "").slice(0, 600) : a.kind === "lab_create" ? [a.args.description, a.reason].filter(Boolean).join(" · ") : a.reason || "", `asked ${new Date(a.at * 1000).toLocaleString()}`,
       action("approve", "Do it now", answer(true)), action("refuse", "Pi is told no when it looks again", answer(false)));
   }
 
@@ -329,7 +330,7 @@ function makeGitManager(box, currentProject) {
       seen.add(a.id);
       if (first) continue; // those from before this window opened: shown in Setup, not announced
       const project = a.project.replace(/^\/home\/[^/]+/, "~");
-      const what = a.kind === "merge" ? `merge pull request #${a.args.number}` : a.kind === "review" ? `post a review of #${a.args.number}` : a.kind === "lab" ? `${String(a.args.what || "").slice(0, 80)} on ${a.args.machine}` : `create the repository ${a.args.name}`;
+      const what = a.kind === "merge" ? `merge pull request #${a.args.number}` : a.kind === "review" ? `post a review of #${a.args.number}` : a.kind === "lab" ? `${String(a.args.what || "").slice(0, 80)} on ${a.args.machine}` : a.kind === "lab_create" ? `create the lab ${a.args.name}` : `create the repository ${a.args.name}`;
       backend.notify("Pi asks for your approval", `${project}: ${what}. Answer in Setup > Git.`).catch(() => {});
       flashStatus(`Pi asks to ${what}: Setup > Git`);
     }
