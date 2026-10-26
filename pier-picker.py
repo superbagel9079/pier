@@ -6249,6 +6249,60 @@ def api_labs_settings(home, text):
     return api_labs(home)
 
 
+LAB_NO_SNAPSHOTS = ("snapshots are not allowed in this Incus project: lab_reset rebuilds the lab from its image instead. "
+                    "To allow them (an admin, once): sudo incus project set user-$(id -u) restricted.snapshots=allow")
+
+
+def lab_build(name, image, vm, settings):
+    """The Incus instance of a lab, started, with its work folder and, when the project
+    allows it, a "clean" snapshot: (Docker possible, snapshots possible). Nothing stays
+    when it fails."""
+    instance = lab_instance(name)
+    args = ["init", f"images:{image}", instance, "-c", f"limits.cpu={settings['cpu']}", "-c", f"limits.memory={settings['memory_gib']}GiB"]
+    if vm:
+        args.append("--vm")
+    nesting = not vm
+    try:
+        incus(*args, *(["-c", "security.nesting=true"] if nesting else []), timeout=600)
+    except ApiError:
+        if not nesting:
+            raise
+        nesting = False  # a restricted Incus project may refuse it: no Docker inside then
+        incus(*args, timeout=600)
+    snapshots = True
+    try:
+        try:
+            incus("config", "device", "override", instance, "root", f"size={settings['disk_gib']}GiB", timeout=30)
+        except ApiError:
+            pass  # a storage pool without quotas: the disk is not limited
+        if settings["network"] == "none":
+            incus("config", "device", "add", instance, "eth0", "none", timeout=30)
+        incus("start", instance, timeout=120)
+        deadline = time.monotonic() + (180 if vm else 60)
+        while True:  # a VM answers once its agent runs
+            try:
+                incus("exec", instance, "--", "mkdir", "-p", "/root/project", timeout=20)
+                break
+            except ApiError:
+                if time.monotonic() > deadline:
+                    raise ApiError("the lab did not start in time")
+                time.sleep(2)
+        try:
+            incus("snapshot", "create", instance, "clean", timeout=300)
+        except ApiError as exc:
+            if "snapshot" not in str(exc).lower():
+                raise
+            snapshots = False  # the user's restricted Incus project: reset rebuilds instead
+            log("info", "lab.no-snapshots", lab=name, err=str(exc))
+    except ApiError:
+        try:
+            incus("delete", "--force", instance, timeout=120)
+        except ApiError:
+            pass
+        raise
+    return nesting, snapshots
+
+
 def lab_create(home, project, name, vm=False, image=None):
     labs_expire(home)
     data = load_labs(home)
@@ -6272,44 +6326,9 @@ def lab_create(home, project, name, vm=False, image=None):
         raise ApiError("an image of images.linuxcontainers.org, like debian/13 or ubuntu/24.04")
     if vm and not kvm:
         raise ApiError("virtual machines need /dev/kvm on the VM (Proxmox: CPU type host); make a container instead")
-    instance = lab_instance(name)
-    args = ["init", f"images:{image}", instance, "-c", f"limits.cpu={settings['cpu']}", "-c", f"limits.memory={settings['memory_gib']}GiB"]
-    if vm:
-        args.append("--vm")
-    nesting = not vm
-    try:
-        incus(*args, *(["-c", "security.nesting=true"] if nesting else []), timeout=600)
-    except ApiError:
-        if not nesting:
-            raise
-        nesting = False  # a restricted Incus project may refuse it: no Docker inside then
-        incus(*args, timeout=600)
-    try:
-        try:
-            incus("config", "device", "override", instance, "root", f"size={settings['disk_gib']}GiB", timeout=30)
-        except ApiError:
-            pass  # a storage pool without quotas: the disk is not limited
-        if settings["network"] == "none":
-            incus("config", "device", "add", instance, "eth0", "none", timeout=30)
-        incus("start", instance, timeout=120)
-        deadline = time.monotonic() + (180 if vm else 60)
-        while True:  # a VM answers once its agent runs
-            try:
-                incus("exec", instance, "--", "mkdir", "-p", "/root/project", timeout=20)
-                break
-            except ApiError:
-                if time.monotonic() > deadline:
-                    raise ApiError("the lab did not start in time")
-                time.sleep(2)
-        incus("snapshot", "create", instance, "clean", timeout=300)
-    except ApiError:
-        try:
-            incus("delete", "--force", instance, timeout=120)
-        except ApiError:
-            pass
-        raise
+    nesting, snapshots = lab_build(name, image, bool(vm), settings)
     record = {"project": project, "image": image, "vm": bool(vm), "network": settings["network"], "docker": nesting,
-              "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
+              "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
     data = load_labs(home)
     data["labs"][name] = record
     save_labs(home, data)
@@ -6421,6 +6440,20 @@ def lab_snapshot(home, project, name, snapshot, restore=False):
     snapshot = snapshot or "clean"
     if not LAB_NAME_RE.fullmatch(snapshot):
         raise ApiError("a snapshot's name: lowercase letters, digits and '-'")
+    lab = load_labs(home)["labs"].get(name) or {}
+    if lab.get("snapshots") is False:
+        if not restore or snapshot != "clean":
+            raise ApiError(LAB_NO_SNAPSHOTS)
+        # No snapshot: the lab is made again from its image, under the same name.
+        incus("delete", "--force", lab_instance(name), timeout=180)
+        settings = {**load_labs(home)["settings"], "network": lab.get("network", "open")}
+        nesting, snapshots = lab_build(name, lab.get("image") or settings["image"], bool(lab.get("vm")), settings)
+        data = load_labs(home)
+        if name in data["labs"]:
+            data["labs"][name].update(docker=nesting, snapshots=snapshots)
+            save_labs(home, data)
+        lab_journal({"lab": name, "project": project, "what": "rebuilt from its image (back to clean)"})
+        return {"lab": name, "restored": "clean", "rebuilt": True}
     if restore:
         incus("snapshot", "restore", lab_instance(name), snapshot, timeout=300)
     else:
@@ -6450,7 +6483,7 @@ def lab_list(home, project):
     status = api_labs(home)
     if not status["settings"]["enabled"]:
         raise ApiError("labs are off: the user turns them on in Pier (Settings > Labs)")
-    return {"labs": [{k: l.get(k) for k in ("name", "status", "image", "vm", "network", "docker", "expires")}
+    return {"labs": [{k: l.get(k) for k in ("name", "status", "image", "vm", "network", "docker", "snapshots", "expires")}
                      for l in status["labs"] if l.get("project") == project],
             "machines": [{"name": m["name"], "host": m["host"], "needs_approval": m.get("policy") != "auto"} for m in status["machines"]],
             "can_create": status["incus"] and len(status["labs"]) < status["settings"]["max"],

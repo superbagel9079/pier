@@ -11,7 +11,10 @@ let labsStatus = null; // the last answer of the picker: settings, labs, machine
 
 const LABS_INSTALL = `sudo apt install incus
 sudo incus admin init --minimal
-sudo adduser $USER incus`;
+sudo adduser $USER incus
+
+# optional, once you reconnected (instant reset; Docker in containers):
+sudo incus project set user-$(id -u) restricted.snapshots=allow restricted.containers.nesting=allow`;
 
 function labsAge(seconds) {
   const left = seconds - Date.now() / 1000;
@@ -60,6 +63,9 @@ function renderLabsPrefs() {
   $("#labs-state").textContent = s.incus
     ? `Incus answers on the VM · ${s.kvm ? "containers and virtual machines" : "containers (virtual machines need /dev/kvm: in Proxmox, the VM's CPU type set to host)"} · ${s.labs.length} lab${s.labs.length === 1 ? "" : "s"} now`
     : `${s.why}. To make labs, on the VM:`;
+  if (s.incus && s.labs.some((l) => l.snapshots === false)) {
+    $("#labs-state").textContent += " · this Incus project refuses snapshots: Reset rebuilds a lab from its image (allow them: sudo incus project set user-$(id -u) restricted.snapshots=allow)";
+  }
   $("#labs-install").hidden = s.incus;
   $("#labs-install").textContent = LABS_INSTALL;
   $("#labs-relogin").hidden = s.incus;
@@ -212,7 +218,7 @@ function makeLabs(tab) {
     for (const lab of s.labs) {
       const owner = lab.project ? projectLabel(lab.project) : "yours";
       const facts = [owner, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(), lab.network === "none" ? "no network" : lab.address,
-        lab.docker === false && !lab.vm ? "no Docker" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
+        lab.docker === false && !lab.vm ? "no Docker" : "", lab.snapshots === false ? "reset rebuilds it" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
       labs.append(line(lab.name, facts.join(" · "),
         action("terminal", "A shell in the lab, as root", () => openLabTerminal(lab.name)),
         action("reset", "Back to how it was made", async () => {

@@ -873,15 +873,21 @@ out["other_project"] = "error" in tried(m.lab_answer, home, proj, {"op": "lab_re
 usable, why, kvm = m.incus_state()
 out["incus"] = usable
 if usable:
-    made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test"})
-    m.lab_answer(home, proj, {"op": "lab_push", "lab": made["lab"]})
-    ran = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "cat a.txt && id -u"})
-    out["lab_runs_as_root"] = ran["stdout"].split() == ["hello", "lab0"] or ran["stdout"].startswith("hello lab")
-    m.lab_answer(home, proj, {"op": "lab_reset", "lab": made["lab"]})
-    gone = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "test -e a.txt"})
-    out["lab_reset"] = gone["exit"] != 0
-    m.lab_answer(home, proj, {"op": "lab_destroy", "lab": made["lab"]})
-    out["lab_destroyed"] = not m.load_labs(home)["labs"]
+    # One error is reported, not thrown: the checks above still count, and no lab stays.
+    try:
+        made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test"})
+        out["lab_snapshots"] = made.get("snapshots")
+        m.lab_answer(home, proj, {"op": "lab_push", "lab": made["lab"]})
+        ran = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "cat a.txt && id -u"})
+        out["lab_runs_as_root"] = ran["stdout"].split() == ["hello", "lab0"]
+        m.lab_answer(home, proj, {"op": "lab_reset", "lab": made["lab"]})
+        gone = m.lab_answer(home, proj, {"op": "lab_run", "lab": made["lab"], "command": "test -e a.txt"})
+        out["lab_reset"] = gone["exit"] != 0
+        m.lab_answer(home, proj, {"op": "lab_destroy", "lab": made["lab"]})
+        out["lab_destroyed"] = not m.load_labs(home)["labs"]
+    except Exception as exc:
+        out["lab_error"] = f"{type(exc).__name__}: {exc}"
+        subprocess.run(["incus", "delete", "--force", "pier-pier-test"], capture_output=True)
 else:
     out["no_incus_said"] = "Incus" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "") or bool(why)
 print(json.dumps(out))
@@ -917,9 +923,10 @@ def labs_test():
     check("labs: a refused command does not run", out["refused"], out)
     check("labs: an unknown lab refused", out["other_project"], out)
     if out.get("incus"):
-        check("labs: Incus lab made, project inside, root", out["lab_runs_as_root"], out)
-        check("labs: reset goes back to the clean state", out["lab_reset"], out)
-        check("labs: destroyed", out["lab_destroyed"], out)
+        how = "a snapshot" if out.get("lab_snapshots") else "a rebuild (no snapshots in this Incus project)"
+        check("labs: Incus lab made, project inside, root", out.get("lab_runs_as_root"), out.get("lab_error") or out)
+        check(f"labs: reset goes back to the clean state, by {how}", out.get("lab_reset"), out.get("lab_error") or out)
+        check("labs: destroyed", out.get("lab_destroyed"), out.get("lab_error") or out)
     else:
         check("labs: without Incus, making a lab says why", out["no_incus_said"], out)
     cleanup(str(work))

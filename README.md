@@ -549,7 +549,13 @@ sudo incus admin init --minimal
 sudo adduser $USER incus
 ```
 
-then reconnect Pier (the group counts from the next login). The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged. For virtual machines too, under Proxmox: the VM's CPU type set to **host** (Hardware > Processors), so that `/dev/kvm` exists in it.
+then reconnect Pier (the group counts from the next login). That restricted project refuses snapshots and nested containers by default: labs still work, a **reset** then rebuilds the lab from its image, and Docker needs a VM lab. To have instant resets and Docker in containers, once (after the first lab, which makes the project):
+
+```bash
+sudo incus project set user-$(id -u) restricted.snapshots=allow restricted.containers.nesting=allow
+```
+
+ The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged. For virtual machines too, under Proxmox: the VM's CPU type set to **host** (Hardware > Processors), so that `/dev/kvm` exists in it.
 
 ### Part XV. Notifications and shortcut
 
