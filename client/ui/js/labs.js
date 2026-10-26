@@ -77,7 +77,8 @@ function renderLabsPrefs() {
     let input;
     if (type === "select") {
       input = el("select");
-      input.add(new Option("open (apt, git, the internet)", "open"));
+      input.add(new Option("open: Incus's NAT (apt, git, the internet)", "open"));
+      input.add(new Option("your VLAN (an IP from your firewall)", "vlan"));
       input.add(new Option("cut (nothing in or out)", "none"));
     } else {
       input = el("input", { type, spellcheck: false });
@@ -111,6 +112,17 @@ function renderLabsPrefs() {
       el("div", { className: "desc dim small", textContent: `${m.user}@${m.host}:${m.port} · ${m.policy === "auto" ? "Pi runs commands freely" : "each command waits for your approval"}` })));
   }
   if (!s.machines.length) list.append(el("li", { className: "dim small note", textContent: "None. A machine is a computer of yours Pi may use over SSH: a server with a GPU, a test server…" }));
+  const vlan = s.vlan || {};
+  const vlanSetup = $("#labs-vlan");
+  vlanSetup.hidden = s.settings.network !== "vlan";
+  $("#labs-vlan-state").textContent = vlan.ready
+    ? `The labs get their address from your firewall, on the Incus network ${vlan.network}.`
+    : `The Incus network ${vlan.network} is not there, or this account may not use it${vlan.networks?.length ? ` (it sees: ${vlan.networks.join(", ")})` : ""}. Once, as described in the README (Labs on a VLAN of their own): the VLAN on the firewall, a second network card of the VM on it in Proxmox, then on the VM:`;
+  $("#labs-vlan-commands").hidden = Boolean(vlan.ready);
+  $("#labs-vlan-commands").textContent = `ip -br link        # the new card, without an address (often ens19)
+sudo incus network create ${vlan.network} --type=macvlan parent=ens19
+incus network list  # your own network's name (often incusbr-1000)
+sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u),${vlan.network}`;
   $("#labs-key").hidden = !s.public_key;
   $("#labs-key-text").textContent = s.public_key || "";
 }
@@ -257,7 +269,8 @@ function makeLabs(tab) {
     const labs = el("ul", { className: "resource-items" });
     for (const lab of s.labs) {
       const owner = lab.project ? projectLabel(lab.project) : "yours";
-      const facts = [owner, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(), lab.network === "none" ? "no network" : lab.address,
+      const facts = [owner, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(),
+        lab.network === "none" ? "no network" : lab.network === "vlan" ? `VLAN ${lab.address || "(waiting for its address)"}` : lab.address,
         lab.docker === false && !lab.vm ? "no Docker" : "", lab.snapshots === false ? "reset rebuilds it" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
       labs.append(line(lab.name, [lab.description, facts.join(" · ")],
         action("terminal", "A shell in the lab, as root", () => openLabTerminal(lab.name)),

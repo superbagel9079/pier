@@ -879,6 +879,10 @@ out["machine_renamed"] = names.get("cuda-box") == "CUDA 12" and "gpu-box" not in
 out["rename_taken"] = "error" in tried(m.api_lab_edit, home, "cuda-box", "box", "")
 usable, why, kvm = m.incus_state()
 out["incus"] = usable
+out["vlan_setting"] = "error" not in tried(m.api_labs_settings, home, json.dumps({"network": "vlan", "vlan_network": "pier-labs-test"}))
+if usable:
+    out["vlan_missing_said"] = "not there" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "")
+m.api_labs_settings(home, json.dumps({"network": "open"}))
 if usable:
     # One error is reported, not thrown: the checks above still count, and no lab stays.
     try:
@@ -934,6 +938,9 @@ def labs_test():
     check("labs: a machine set to ask waits for the approval", out["waits"] and out["approved_runs"], out)
     check("labs: a refused command does not run", out["refused"], out)
     check("labs: an unknown lab refused", out["other_project"], out)
+    check("labs: the network set to a VLAN", out["vlan_setting"], out)
+    if out.get("incus"):
+        check("labs: without the VLAN's Incus network, making a lab says why", out["vlan_missing_said"], out)
     check("labs: a machine's description reaches Pi, on one line", out["machine_described"], out)
     check("labs: a machine renamed and described again, a taken name refused", out["machine_renamed"] and out["rename_taken"], out)
     if out.get("incus"):

@@ -555,7 +555,44 @@ then reconnect Pier (the group counts from the next login). That restricted proj
 sudo incus project set user-$(id -u) restricted.snapshots=allow restricted.containers.nesting=allow
 ```
 
- The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged. For virtual machines too, under Proxmox: the VM's CPU type set to **host** (Hardware > Processors), so that `/dev/kvm` exists in it.
+The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged.
+
+**Virtual machines too (optional, once):** labs are containers by default (a full Debian with systemd, its own IP, SSH, services, Docker, firewall rules inside; only the kernel is the VM's). For real virtual machines, the VM must see the processor's virtualisation. Check in the VM: `grep -cE 'vmx|svm' /proc/cpuinfo` must give more than 0, and `/dev/kvm` must exist. If not, under Proxmox:
+
+1. on the Proxmox host, nested virtualisation on: `cat /sys/module/kvm_intel/parameters/nested` (or `kvm_amd`) says `Y` or `1`; otherwise `options kvm-intel nested=Y` (or `options kvm-amd nested=1`) in `/etc/modprobe.d/`, then restart the host;
+2. the VM's CPU type set to **host** (Hardware > Processors);
+3. the VM stopped then started from Proxmox (a reboot from inside the VM is not enough).
+
+#### Labs on a VLAN of their own (pfSense or another firewall)
+
+By default (**Network: open**), the labs are behind Incus's NAT inside the VM: the firewall sees only the VM. With **Network: your VLAN**, each lab is a machine of its own on a VLAN of the firewall: it gets its address from the firewall's DHCP, and the firewall's rules apply to it.
+
+> **Once, and once only.** These steps are made a single time. Afterwards every lab made with Network: your VLAN lands on it by itself, with nothing more to do.
+
+1. **The firewall (pfSense):** *Interfaces > Assignments > VLANs*, a VLAN (say **30**) on the interface towards Proxmox; assign it as a new interface (**LABS**, say `10.30.0.1/24`) with **DHCP** on. Rules on LABS: the internet and the firewall's DNS allowed, **your LAN and the VM blocked**, then what you want, lab by lab.
+2. **Proxmox:** `vmbr0` marked **VLAN aware** (System > Network), the link to the firewall carrying VLAN 30. On the VM, *Hardware > Add > Network Device*: bridge `vmbr0`, **VLAN Tag 30**, Proxmox's firewall unticked on that card (its MAC filter would stop the labs).
+3. **The VM:** find the new card, the one without an address (often `ens19`), then make the labs' Incus network on it and let your Incus project use it:
+
+   ```bash
+   ip -br link
+   ```
+
+   ```bash
+   sudo incus network create pier-labs --type=macvlan parent=ens19
+   ```
+
+   ```bash
+   incus network list
+   ```
+
+   ```bash
+   sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u),pier-labs
+   ```
+
+   (`incus network list` gives your own network's name, often `incusbr-1000`: keep it in that list, or the labs on Incus's NAT stop working.)
+4. **Pier:** Settings > Labs > Network: **your VLAN**. The page says whether the network `pier-labs` is there and allowed, and shows these commands otherwise. In the Labs tab, each lab then shows `VLAN` and the address the firewall gave it.
+
+The VM itself has no address on that VLAN, and needs none: the labs talk to the firewall, never to the VM through it (a limit of macvlan, here a wall more).
 
 ### Part XV. Notifications and shortcut
 
@@ -581,7 +618,7 @@ The categories in a column on the left, the page on the right; the window opens 
   - resuming shares after a reconnection.
 - **Picker:** its version and Pier's, automatic updates (on by default), and a button to install it again.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
-- **Labs:** turning labs on, whether Incus answers on the VM (and how to install it otherwise), the limits (labs at a time, lifetime, CPUs, memory, disk, network, default image), and the machines with Pier's key.
+- **Labs:** turning labs on, whether Incus answers on the VM (and how to install it otherwise), the limits (labs at a time, lifetime, CPUs, memory, disk, default image), the network (Incus's NAT, your VLAN with its one-time setup, or cut), and the machines with Pier's key.
 - **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](RELEASING.md).
 - **Connection:** where Pier connects (changed from the login screen).
 

@@ -6047,8 +6047,11 @@ TEAM_WRITES = ("create_task", "claim_task", "release_task", "review_pr", "reques
 # Pi reaches both through the broker socket (lab_* operations), never directly: its
 # sandbox has no network to them. Every command is written to the labs journal.
 
+# network: "open" (Incus's own NAT, the default), "none" (cut), or "vlan": the labs on an
+# Incus network the admin made once on a second card of the VM (vlan_network), a VLAN of
+# the firewall (pfSense...) that gives them their addresses and rules.
 LABS_DEFAULTS = {"enabled": False, "max": 3, "ttl_hours": 24, "network": "open", "cpu": 2, "memory_gib": 4,
-                 "disk_gib": 20, "image": "debian/13"}
+                 "disk_gib": 20, "image": "debian/13", "vlan_network": "pier-labs"}
 LAB_NAME_RE = re.compile(r"[a-z][a-z0-9-]{0,39}")
 LAB_IMAGE_RE = re.compile(r"[a-z0-9][a-z0-9._/-]{0,60}")
 LAB_HOST_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}|\[[0-9A-Fa-f:]+\]")
@@ -6223,8 +6226,16 @@ def api_labs(home):
         public_key = machine_key()[1] if data["machines"] or data["settings"]["enabled"] else None
     except (OSError, subprocess.SubprocessError):
         public_key = None
+    vlan = {"network": data["settings"].get("vlan_network") or "pier-labs", "ready": False}
+    if usable and data["settings"]["network"] == "vlan":
+        try:  # a restricted project lists only the networks it may use
+            names = [n.get("name") for n in json.loads(incus("network", "list", "--format", "json", timeout=15) or b"[]")]
+            vlan["ready"] = vlan["network"] in names
+            vlan["networks"] = [n for n in names if n]
+        except (ApiError, ValueError):
+            pass
     return {"settings": data["settings"], "incus": usable, "why": why, "kvm": kvm, "labs": labs, "machines": machines,
-            "public_key": public_key}
+            "public_key": public_key, "vlan": vlan}
 
 
 def api_labs_settings(home, text):
@@ -6236,7 +6247,8 @@ def api_labs_settings(home, text):
     data = load_labs(home)
     settings = data["settings"]
     checks = {"enabled": lambda v: isinstance(v, bool), "max": lambda v: isinstance(v, int) and 1 <= v <= 10,
-              "ttl_hours": lambda v: isinstance(v, int) and 1 <= v <= 24 * 30, "network": lambda v: v in ("open", "none"),
+              "ttl_hours": lambda v: isinstance(v, int) and 1 <= v <= 24 * 30, "network": lambda v: v in ("open", "none", "vlan"),
+              "vlan_network": lambda v: isinstance(v, str) and bool(LAB_NAME_RE.fullmatch(v)),
               "cpu": lambda v: isinstance(v, int) and 1 <= v <= 64, "memory_gib": lambda v: isinstance(v, int) and 1 <= v <= 256,
               "disk_gib": lambda v: isinstance(v, int) and 2 <= v <= 2000, "image": lambda v: isinstance(v, str) and bool(LAB_IMAGE_RE.fullmatch(v))}
     for key, value in (wanted.items() if isinstance(wanted, dict) else []):
@@ -6277,6 +6289,12 @@ def lab_build(name, image, vm, settings):
             pass  # a storage pool without quotas: the disk is not limited
         if settings["network"] == "none":
             incus("config", "device", "add", instance, "eth0", "none", timeout=30)
+        elif settings["network"] == "vlan":
+            vlan = settings.get("vlan_network") or "pier-labs"
+            try:  # the profile's eth0, moved onto the labs' network
+                incus("config", "device", "override", instance, "eth0", f"network={vlan}", timeout=30)
+            except ApiError:
+                incus("config", "device", "add", instance, "eth0", "nic", f"network={vlan}", timeout=30)
         incus("start", instance, timeout=120)
         deadline = time.monotonic() + (180 if vm else 60)
         while True:  # a VM answers once its agent runs
@@ -6317,6 +6335,9 @@ def lab_create(home, project, name, vm=False, image=None, description=""):
     usable, why, kvm = incus_state()
     if not usable:
         raise ApiError(f"no lab can be made: {why}")
+    if settings["network"] == "vlan" and not api_labs(home)["vlan"]["ready"]:
+        raise ApiError(f"the labs' network {settings.get('vlan_network') or 'pier-labs'} is not there or not allowed to this "
+                       "account: see Settings > Labs (made once by an admin)")
     if len(data["labs"]) >= settings["max"]:
         raise ApiError(f"already {len(data['labs'])} labs, the most allowed: destroy one first (lab_destroy)")
     if not name:

@@ -8,7 +8,7 @@ function mockBackend() {
   const labsState = { settings: { enabled: false, max: 3, ttl_hours: 24, network: "open", cpu: 2, memory_gib: 4, disk_gib: 20, image: "debian/13" },
     labs: [{ name: "db-tests", description: "Postgres 16 for the integration tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
     machines: [] };
-  const mockLabs = () => ({ ...labsState, incus: true, why: "", kvm: true, public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
+  const mockLabs = () => ({ ...labsState, incus: true, why: "", kvm: true, vlan: { network: "pier-labs", ready: false, networks: ["incusbr-1000"] }, public_key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDemoKeyForThePierMockOnly pier-labs",
     journal: [{ at: Date.now() / 1000 - 60, lab: "db-tests", project: "/home/leo/work", command: "pytest -q", exit: 0, ms: 8200 },
       { at: Date.now() / 1000 - 300, lab: "db-tests", project: "/home/leo/work", what: "pushed . (1240 kB)" }] });
   const mockTasks = [

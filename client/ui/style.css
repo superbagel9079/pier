@@ -90,7 +90,7 @@ code, kbd, pre, .code, .editor, .path, .rel, .file-name, .log-lines, .diff, .tre
 }
 code, kbd { background: var(--chip); padding: 0 var(--s1); font-size: var(--t-small); }
 pre { background: var(--chip); padding: 10px; overflow-x: auto; margin: var(--s2) 0; }
-#labs-key-text, #labs-install { white-space: pre-wrap; word-break: break-all; }
+#labs-key-text, #labs-install, #labs-vlan-commands { white-space: pre-wrap; word-break: break-all; }
 
 /* ---------------------------------------------------------------- controls */
 
