@@ -51,6 +51,7 @@ function mockBackend() {
       checkpoints: () => self.api(["checkpoints", want.checkpoints]),
       conversations: () => self.api(["conversations"]),
       labs: () => self.api(["labs"]),
+      approvals: () => self.api(["approvals"]),
     };
     for (const [kind, make] of Object.entries(parts)) {
       if (!want[kind]) continue;
@@ -73,7 +74,8 @@ function mockBackend() {
   let handed = [];
   let mockForges = [{ id: "github:github.com:leo", kind: "github", url: "https://github.com", login: "leo" }];
   let mockLink = { forge: "github:github.com:leo", repo: "leo/work", default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" };
-  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" }];
+  let mockApprovals = [{ id: "a1", project: "/home/leo/work", kind: "merge", args: { number: 12, method: "squash" }, reason: "the user asked to merge the login fix", at: Date.now() / 1000, state: "pending" },
+    { id: "a2", project: "/home/leo/work", kind: "lab_create", args: { name: "db-tests", vm: false, image: "debian/13", networks: null, description: "Postgres 16 for the integration tests" }, reason: "you asked me to run the integration tests against a real Postgres", at: Date.now() / 1000, state: "pending" }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   const mockLabels = {};
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,

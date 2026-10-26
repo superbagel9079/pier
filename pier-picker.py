@@ -5469,7 +5469,7 @@ def api_approval_answer(home, ident, answer):
                 if not link:
                     raise ApiError("the project is no longer connected to a repository")
                 result = merge_pr(home, project, link, args.get("number"), args.get("method"))
-            elif approval["kind"] == "lab":
+            elif approval["kind"] in ("lab", "lab_create"):
                 approval.update(state="approved")
                 save_approvals(home, approvals)
                 log("info", "lab.approved", id=ident, machine=args.get("machine"))
@@ -6406,7 +6406,7 @@ def lab_description(text):
     return " ".join(str(text or "").split())[:500]
 
 
-def lab_create(home, project, name, vm=False, image=None, description="", networks=None):
+def lab_create(home, project, name, vm=False, image=None, description="", networks=None, check_only=False):
     labs_expire(home)
     data = load_labs(home)
     settings = data["settings"]
@@ -6440,6 +6440,8 @@ def lab_create(home, project, name, vm=False, image=None, description="", networ
     if vm and not kvm:
         raise ApiError("virtual machines need /dev/kvm on the VM (Proxmox: CPU type host); make a container instead")
     chosen = networks if networks is not None else default_networks(settings)
+    if check_only:  # what would be made, said before the user is asked
+        return {"name": name, "image": image, "vm": bool(vm), "networks": chosen}
     nesting, snapshots = lab_build(name, image, bool(vm), settings, chosen)
     record = {"project": project, "image": image, "vm": bool(vm), "network": settings["network"], "networks": chosen, "docker": nesting,
               "description": lab_description(description), "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
@@ -6716,9 +6718,24 @@ def lab_shell(name):
 LAB_OPS = ("lab_list", "lab_create", "lab_run", "lab_push", "lab_pull", "lab_snapshot", "lab_reset", "lab_destroy")
 
 
+def wait_approval(home, approval, what):
+    """Until the user answers a request of Pi in Pier (at most ten minutes)."""
+    deadline = time.monotonic() + LAB_APPROVAL_WAIT
+    while True:
+        state = next((a.get("state") for a in load_approvals(home) if a.get("id") == approval["id"]), "gone")
+        if state == "approved":
+            return
+        if state in ("refused", "gone", "failed"):
+            raise ApiError(f"the user refused it ({what[:120]})")
+        if time.monotonic() > deadline:
+            raise ApiError("no answer from the user within ten minutes: ask again later, or say why you need it")
+        time.sleep(1)
+
+
 def lab_answer(home, project, request):
-    """A lab operation of Pi (from the broker). On a machine set to ask, it waits for the
-    user's approval in Pier (at most ten minutes)."""
+    """A lab operation of Pi (from the broker). Making a lab, and anything on a machine set
+    to ask, waits for the user's approval in Pier (at most ten minutes): Pi never makes a
+    lab the user did not approve."""
     op = request.get("op")
     name = str(request.get("lab") or "")
     if op == "lab_list":
@@ -6727,23 +6744,19 @@ def lab_answer(home, project, request):
         networks = request.get("networks")
         if networks is not None and not (isinstance(networks, list) and all(isinstance(n, str) for n in networks)):
             raise ApiError("networks: a list of network names")
-        return lab_create(home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"),
-                          str(request.get("description") or ""), networks)
+        args = (home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"),
+                str(request.get("description") or ""), networks)
+        plan = lab_create(*args, check_only=True)  # refused now when it could not be made anyway
+        ask = {**plan, "description": lab_description(request.get("description"))}
+        approval = ask_approval(home, project, "lab_create", ask, request.get("reason"))
+        wait_approval(home, approval, f"create the lab {plan['name']}")
+        return lab_create(*args)
     kind, record = lab_target(home, project, name)
     if kind == "machine" and record.get("policy") != "auto":
         what = {"lab_run": f"run: {str(request.get('command') or '')[:2000]}", "lab_push": f"copy {request.get('path') or '.'} of the project there",
                 "lab_pull": f"bring back {request.get('path')}"}.get(op, op)
         approval = ask_approval(home, project, "lab", {"machine": name, "op": op, "what": what}, request.get("reason"))
-        deadline = time.monotonic() + LAB_APPROVAL_WAIT
-        while True:
-            state = next((a.get("state") for a in load_approvals(home) if a.get("id") == approval["id"]), "gone")
-            if state == "approved":
-                break
-            if state in ("refused", "gone", "failed"):
-                raise ApiError(f"the user refused it ({what[:120]})")
-            if time.monotonic() > deadline:
-                raise ApiError("no answer from the user within ten minutes: ask again later")
-            time.sleep(1)
+        wait_approval(home, approval, what)
     if op == "lab_run":
         return lab_run(home, project, name, request.get("command"), request.get("timeout") or 300)
     if op == "lab_push":
@@ -6794,11 +6807,12 @@ export default function (pi: any) {
     });
   tool("lab_list", "Labs", "The labs of this project (disposable machines where you are root) and the user's machines you may use.",
     Type.Object({}), "lab_list");
-  tool("lab_create", "New lab", "Make a disposable lab: a fresh Linux where you are root (install packages, run services, Docker). Its work folder is /root/project; copy the project in with lab_push.",
+  tool("lab_create", "Ask for a lab", "Ask the user for a disposable lab: a fresh Linux where you are root (install packages, run services, Docker). Only when the user asked for it or agreed: the request waits for their approval in Pier, then the lab is made. Say why in reason. Its work folder is /root/project; copy the project in with lab_push.",
     Type.Object({ name: Type.Optional(Type.String({ description: "lowercase, e.g. db-tests" })),
       vm: Type.Optional(Type.Boolean({ description: "a full virtual machine instead of a container, when possible" })),
       image: Type.Optional(Type.String({ description: "e.g. debian/13, ubuntu/24.04" })),
       description: Type.Optional(Type.String({ description: "what this lab is for, shown to the user" })),
+      reason: Type.Optional(Type.String({ description: "why you need it, shown with the request" })),
       networks: Type.Optional(Type.Array(Type.String(), { description: "networks to plug it into, from lab_list: one interface each (eth0, eth1...), several for a router between them, [] for none; left out, the user's default" })) }), "lab_create");
   tool("lab_run", "Run in lab", "Run a shell command in a lab or on a machine, in its work folder; returns the exit code and the output.",
     Type.Object({ lab: Type.String(), command: Type.String(), timeout: Type.Optional(Type.Integer({ description: "seconds, at most 900" })),

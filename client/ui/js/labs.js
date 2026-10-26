@@ -215,7 +215,30 @@ function makeLabs(tab) {
   const make = el("button", { className: "secondary", textContent: "New lab…" });
   const settings = el("button", { className: "link", textContent: "settings", title: "Settings > Labs" });
   const bar = el("div", { className: "toolbar" }, make, el("span", { className: "dim small", style: "flex:1" }), settings);
-  tab.pane.append(el("div", { className: "pane-labs" }, bar, error, body));
+  // Pi's requests about labs (a lab to make, a command on a machine set to ask), answered here.
+  const waiting = el("div");
+  tab.pane.append(el("div", { className: "pane-labs" }, bar, error, waiting, body));
+  function renderWaiting(message) {
+    const asks = (message?.data?.approvals || []).filter((a) => a.kind === "lab_create" || a.kind === "lab");
+    waiting.innerHTML = "";
+    if (!asks.length) return;
+    waiting.append(el("h2", { textContent: "Waiting for you" }));
+    const list = el("ul", { className: "resource-items" });
+    for (const a of asks) {
+      const nets = a.args.networks === null || a.args.networks === undefined ? "Incus's NAT" : a.args.networks.length ? a.args.networks.join(" + ") : "no network";
+      const what = a.kind === "lab_create"
+        ? `Pi asks for a lab: ${a.args.name}`
+        : `Pi asks to ${String(a.args.what || "").slice(0, 200)}`;
+      const detail = a.kind === "lab_create"
+        ? [`${a.args.vm ? "VM" : "container"} · ${a.args.image} · ${nets}`, a.args.description, a.reason ? `why: ${a.reason}` : "", projectLabel(a.project)]
+        : [`on ${a.args.machine}`, a.reason ? `why: ${a.reason}` : "", projectLabel(a.project)];
+      const answer = (yes) => async () => {
+        try { await backend.approvalAnswer(a.id, yes); flashStatus(yes ? "Approved: Pi goes on" : "Refused: Pi is told"); vm.poke(); } catch (e) { showError(error, String(e)); }
+      };
+      list.append(line(what, detail.filter(Boolean), action("approve", "Pi goes on", answer(true)), action("refuse", "Pi is told no", answer(false))));
+    }
+    waiting.append(list);
+  }
   settings.addEventListener("click", () => { openPrefs(); showPrefsPage("labs"); fillLabsPrefs(); });
   make.addEventListener("click", () => newLabDialog());
 
@@ -356,5 +379,6 @@ function makeLabs(tab) {
 
   vm.follow({ labs: true });
   const unlisten = vm.on("labs", render);
-  tab.onClose = () => { unlisten(); vm.follow({ labs: false }); };
+  const unlistenApprovals = vm.on("approvals", renderWaiting);
+  tab.onClose = () => { unlisten(); unlistenApprovals(); vm.follow({ labs: false }); };
 }

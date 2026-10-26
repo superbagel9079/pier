@@ -883,10 +883,29 @@ out["vlan_setting"] = "error" not in tried(m.api_labs_settings, home, json.dumps
 if usable:
     out["vlan_missing_said"] = "not there" in tried(m.lab_answer, home, proj, {"op": "lab_create"}).get("error", "")
 m.api_labs_settings(home, json.dumps({"network": "open"}))
+def answered(request, yes=True):
+    # Pi's lab_create, with the user's answer given in Pier meanwhile.
+    result, before = {}, {a["id"] for a in m.load_approvals(home)}
+    worker = threading.Thread(target=lambda: result.update(tried(m.lab_answer, home, proj, request)))
+    worker.start()
+    asked = None
+    for _ in range(100):
+        asked = next((a for a in m.load_approvals(home) if a["id"] not in before and a.get("kind") == "lab_create"), None)
+        if asked:
+            break
+        time.sleep(0.1)
+    result["asked_first"] = asked is not None and not m.load_labs(home)["labs"]
+    if asked:
+        m.api_approval_answer(home, asked["id"], "yes" if yes else "no")
+    worker.join(600)
+    return result
 if usable:
     # One error is reported, not thrown: the checks above still count, and no lab stays.
     try:
-        made = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-test", "description": "for the tests"})
+        refused = answered({"op": "lab_create", "name": "pier-no"}, yes=False)
+        out["lab_refused"] = refused.get("asked_first") and "refused" in refused.get("error", "") and not m.load_labs(home)["labs"]
+        made = answered({"op": "lab_create", "name": "pier-test", "description": "for the tests", "reason": "the tests"})
+        out["lab_asked_first"] = made.get("asked_first")
         out["lab_described"] = made.get("description") == "for the tests"
         out["lab_snapshots"] = made.get("snapshots")
         m.lab_answer(home, proj, {"op": "lab_push", "lab": made["lab"]})
@@ -898,7 +917,7 @@ if usable:
         listed = m.lab_answer(home, proj, {"op": "lab_list"})
         out["networks_listed"] = any(n.get("kind_label", "").startswith("the internet") for n in listed.get("networks", []))
         out["unknown_network"] = "no network" in tried(m.lab_answer, home, proj, {"op": "lab_create", "name": "pier-x", "networks": ["nope"]}).get("error", "")
-        cut = m.lab_answer(home, proj, {"op": "lab_create", "name": "pier-cut", "networks": []})
+        cut = answered({"op": "lab_create", "name": "pier-cut", "networks": []})
         nics = m.lab_answer(home, proj, {"op": "lab_run", "lab": cut["lab"], "command": "ls /sys/class/net"})
         out["lab_cut"] = nics["stdout"].split() == ["lo"]
         m.lab_answer(home, proj, {"op": "lab_destroy", "lab": cut["lab"]})
@@ -952,6 +971,7 @@ def labs_test():
     check("labs: a machine renamed and described again, a taken name refused", out["machine_renamed"] and out["rename_taken"], out)
     if out.get("incus"):
         how = "a snapshot" if out.get("lab_snapshots") else "a rebuild (no snapshots in this Incus project)"
+        check("labs: Pi's lab waits for the approval, a refused one is not made", out.get("lab_asked_first") and out.get("lab_refused"), out.get("lab_error") or out)
         check("labs: Incus lab made, project inside, root", out.get("lab_runs_as_root"), out.get("lab_error") or out)
         check(f"labs: reset goes back to the clean state, by {how}", out.get("lab_reset"), out.get("lab_error") or out)
         check("labs: a lab described at its making, renamed, still running", out.get("lab_described") and out.get("lab_renamed"), out.get("lab_error") or out)

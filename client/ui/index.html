@@ -242,7 +242,7 @@
       </section>
 
       <section class="prefs-page" data-page="labs" role="tabpanel" hidden>
-      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: let Pi make disposable machines where it may do anything (install packages, run services, Docker), and use your machines over SSH. Its own sandbox does not change.</span></label>
+      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: disposable machines where Pi may do anything (install packages, run services, Docker), and your machines over SSH. Pi stays in its own sandbox: it drives them from there. It never makes a lab by itself: it asks, and you approve it (Setup &gt; Git, Waiting for you, and a notification).</span></label>
       <p id="labs-state" class="dim"></p>
       <pre id="labs-install" hidden></pre>
       <p id="labs-relogin" class="hint" hidden>Then reconnect Pier, so the picker's next SSH login is in the incus group. For virtual machines too, set the VM's CPU type to host in Proxmox (Hardware &gt; Processors).</p>
