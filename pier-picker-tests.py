@@ -565,7 +565,9 @@ class Forge(BaseHTTPRequestHandler):
         if path == "/repos/leo/demo/branches":
             names = subprocess.run(["git", "--git-dir", remote, "for-each-ref", "--format=%(refname:short)", "refs/heads"],
                                    capture_output=True, text=True).stdout.split()
-            return self.reply(200, [{"name": n} for n in names])
+            # The remote stands for a repository that already has its main branch: pushing
+            # main is then refused (only a still empty repository takes it).
+            return self.reply(200, [{"name": n} for n in (names or ["main"])])
         if path == "/repos/leo/demo/collaborators": return self.reply(200, [{"login": "leo"}, {"login": "alex"}])
         hit = _re.fullmatch(r"/repos/leo/demo/pulls/(\d+)(/reviews)?", path)
         if hit:
