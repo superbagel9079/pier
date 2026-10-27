@@ -83,6 +83,26 @@ jobs:
               sys.exit(f"tag {tag}, tauri.conf.json {conf}, Cargo.toml {cargo}: they must be the same")
           EOF
 
+  # The picker: its unit tests (no VM needed), then the suite of the VM on a real tmux,
+  # bubblewrap and git (user namespaces work on Ubuntu 22.04's runners). Incus and the
+  # forges are stood in by the suite itself.
+  picker:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - name: tmux, bubblewrap, git
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tmux bubblewrap git
+      - name: Unit tests
+        run: python -B pier-picker-unit.py
+      - name: The suite of the VM
+        run: python -B pier-picker-tests.py
+
   # Known vulnerabilities in the Rust dependencies. Its own job: a new advisory shows here
   # without stopping the builds.
   audit:
