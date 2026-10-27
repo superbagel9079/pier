@@ -1,18 +1,23 @@
 # Pier for Windows, macOS and Linux.
 #
-# Every push and pull request: the tests (Rust, and the picker compiled), then Pier
-# built on the three systems, kept as artifacts of the run. A tag "v*" (git tag v0.3.0
-# && git push --tags) also publishes them as a GitHub release, with their SHA-256.
+# Every push to main and every pull request: the tests (Rust on Linux and Windows, and the
+# picker compiled), then Pier built on the three systems, kept as artifacts of the run. A
+# tag "v*" (git tag -a v0.3.0 && git push origin v0.3.0) also publishes them as a draft
+# GitHub release, with their SHA-256.
 #
-# Updates: with TAURI_SIGNING_PRIVATE_KEY (and TAURI_SIGNING_PRIVATE_KEY_PASSWORD, empty if
-# the key has none), the installers are also signed for Pier's updater, and the release
-# gets the latest.json Pier reads (see RELEASING.md). Without it, nothing changes.
+# Updates: only for a tag, and only in the steps that sign, TAURI_SIGNING_PRIVATE_KEY (and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD) sign the installers for Pier's updater, and the
+# release gets the latest.json Pier reads (see RELEASING.md). A push or a pull request is
+# built unsigned: the key never reaches what a branch builds.
 #
 # Signing is optional: without these secrets the files are built unsigned (Windows and
 # macOS then warn on first start).
 #   Windows (Authenticode): WINDOWS_CERTIFICATE (the .pfx in base64), WINDOWS_CERTIFICATE_PASSWORD
 #   macOS (Developer ID, notarized): APPLE_CERTIFICATE (.p12 in base64), APPLE_CERTIFICATE_PASSWORD,
 #     APPLE_SIGNING_IDENTITY, APPLE_ID, APPLE_PASSWORD (an app-specific password), APPLE_TEAM_ID
+#
+# Every action is pinned to a commit (its tag in the comment): a tag moved on the action's
+# side cannot change what runs here. Dependabot proposes the updates.
 
 name: build
 
@@ -32,28 +37,65 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  TAURI_CLI_VERSION: "2.12.2"
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - name: System libraries for Tauri
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: System libraries for Tauri (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev build-essential
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: client/src-tauri
+          cache-bin: false
       - name: Rust tests
         working-directory: client/src-tauri
         run: cargo test --locked
       - name: The picker compiles (Python 3.12, as on the VM)
-        uses: actions/setup-python@v5
+        if: runner.os == 'Linux'
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - run: python -m py_compile pier-picker.py pier-picker-tests.py
+      - if: runner.os == 'Linux'
+        run: python -m py_compile pier-picker.py pier-picker-tests.py
+      - name: A tag names the version it ships
+        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          python3 - "${GITHUB_REF_NAME#v}" <<'EOF'
+          import json, re, sys
+          tag = sys.argv[1]
+          conf = json.load(open("client/src-tauri/tauri.conf.json"))["version"]
+          cargo = re.search(r'^version = "([^"]+)"', open("client/src-tauri/Cargo.toml").read(), re.M).group(1)
+          if not tag == conf == cargo:
+              sys.exit(f"tag {tag}, tauri.conf.json {conf}, Cargo.toml {cargo}: they must be the same")
+          EOF
+
+  # Known vulnerabilities in the Rust dependencies. Its own job: a new advisory shows here
+  # without stopping the builds.
+  audit:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - run: cargo install cargo-audit --locked
+      - working-directory: client/src-tauri
+        run: cargo audit
 
   build:
     needs: test
@@ -72,28 +114,34 @@ jobs:
             name: linux-x64
             bundles: deb,appimage
     runs-on: ${{ matrix.os }}
-    # Secrets cannot be tested in "if:"; their copies in env can (empty when not set).
+    timeout-minutes: 60
+    # Secrets cannot be tested in "if:"; these copies in env can (empty when not set).
+    # SIGN_UPDATER says, without the key itself, whether this run signs for the updater.
     env:
       APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      SIGN_UPDATER: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY != '' && 'yes' || '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: System libraries for Tauri (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev build-essential
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
+      # No cache for a tag: what builds a release comes from nothing a branch wrote. Never
+      # the cached ~/.cargo/bin either, where the program that signs would come from.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           workspaces: client/src-tauri
           key: ${{ matrix.name }}
+          cache-bin: false
       - name: Tauri's command line
-        run: cargo install tauri-cli --version "^2.12" --locked
+        run: cargo install tauri-cli --version "=${{ env.TAURI_CLI_VERSION }}" --locked --force
       - name: Apple signing keychain (only with the secrets)
         if: runner.os == 'macOS' && env.APPLE_CERTIFICATE != ''
         env:
@@ -106,6 +154,13 @@ jobs:
           security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k build build.keychain
           rm certificate.p12
+      - name: Windows signing certificate (only with the secrets)
+        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "certificate.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          "WINDOWS_PFX=$pfx" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build
         working-directory: client/src-tauri
         shell: bash
@@ -114,38 +169,40 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
         run: |
           # Without a signing identity, Tauri must not try to sign: the empty ones go.
-          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          for name in APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY; do
             if [ -z "${!name}" ]; then unset "$name"; fi
           done
           args=(--bundles "${{ matrix.bundles }}")
           if [ -n "${{ matrix.target }}" ]; then args+=(--target "${{ matrix.target }}"); fi
           # With the updater's key: the installers signed for Pier's updater too (.sig).
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}'); fi
-          cargo tauri build "${args[@]}"
-      - name: Sign for Windows (only with the secrets)
-        if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
-        shell: pwsh
+          if [ -n "$SIGN_UPDATER" ]; then args+=(--config '{"bundle":{"createUpdaterArtifacts":true}}'); fi
+          # Authenticode by Tauri itself: pier.exe signed before it goes into the
+          # installer, then the installer, then the updater's signature of the signed one.
+          if [ -n "$WINDOWS_PFX" ]; then
+            sign="pwsh -NoProfile -File $(cygpath -w "$GITHUB_WORKSPACE/.github/sign-windows.ps1") %1"
+            args+=(--config "$(python3 -c 'import json, sys; print(json.dumps({"bundle": {"windows": {"signCommand": sys.argv[1]}}}))' "$sign")")
+          fi
+          cargo tauri build "${args[@]}" -- --locked
+      - name: The .deb signed for the updater too (Linux)
+        if: runner.os == 'Linux' && env.SIGN_UPDATER != ''
+        shell: bash
         env:
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $pfx = Join-Path $env:RUNNER_TEMP "certificate.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe | Where-Object FullName -like "*x64*" | Select-Object -Last 1
-          $files = @("client/src-tauri/target/release/pier.exe") + (Get-ChildItem client/src-tauri/target/release/bundle/nsis/*.exe).FullName
-          foreach ($file in $files) {
-            & $signtool.FullName sign /f $pfx /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd sha256 /tr http://timestamp.digicert.com /td sha256 $file
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-          Remove-Item $pfx
-          # The installer changed: its signature for the updater is made again.
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            foreach ($file in (Get-ChildItem client/src-tauri/target/release/bundle/nsis/*-setup.exe).FullName) {
-              cargo tauri signer sign $file
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            }
-          }
+          version=$(python3 -c 'import json; print(json.load(open("client/src-tauri/tauri.conf.json"))["version"])')
+          for f in client/src-tauri/target/release/bundle/deb/*.deb; do
+            [ -f "$f.sig" ] || cargo tauri signer sign --app-version "$version" "$f"
+          done
+      - name: Forget the Windows certificate
+        if: always() && runner.os == 'Windows' && env.WINDOWS_PFX != ''
+        shell: pwsh
+        run: Remove-Item -ErrorAction SilentlyContinue $env:WINDOWS_PFX
       - name: Gather the files, with their SHA-256
         shell: bash
         run: |
@@ -157,20 +214,22 @@ jobs:
             macOS) cp "$release"/bundle/dmg/*.dmg out/ ;;
             Linux) cp "$release"/bundle/deb/*.deb "$release"/bundle/appimage/*.AppImage out/ ;;
           esac
-          # What Pier's updater downloads, with its signature (only with the updater's key).
-          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+          # What Pier's updater downloads, with its signature (only for a signed tag).
+          if [ -n "$SIGN_UPDATER" ]; then
             case "${{ runner.os }}" in
               Windows) cp "$release"/bundle/nsis/*-setup.exe.sig out/ ;;
               macOS) cp "$release"/bundle/macos/*.app.tar.gz "$release"/bundle/macos/*.app.tar.gz.sig out/ ;;
-              Linux) cp "$release"/bundle/appimage/*.AppImage.sig out/ ;;
+              Linux) cp "$release"/bundle/appimage/*.AppImage.sig "$release"/bundle/deb/*.deb.sig out/ ;;
             esac
           fi
-          cd out
-          for f in $(ls | grep -v '\.sig$'); do
+          # Written beside, then moved in: the list must not hold its own (empty) line.
+          sums="$RUNNER_TEMP/SHA256SUMS-${{ matrix.name }}.txt"
+          (cd out && for f in $(ls | grep -v '\.sig$'); do
             if command -v sha256sum >/dev/null; then sha256sum "$f"; else shasum -a 256 "$f"; fi
-          done > "SHA256SUMS-${{ matrix.name }}.txt"
-          cat "SHA256SUMS-${{ matrix.name }}.txt"
-      - uses: actions/upload-artifact@v4
+          done) > "$sums"
+          mv "$sums" out/
+          cat "out/SHA256SUMS-${{ matrix.name }}.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pier-${{ matrix.name }}
           path: out/*
@@ -180,13 +239,26 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Publishing waits for a reviewer of the "release" environment (see RELEASING.md).
+    environment: release
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: out
           merge-multiple: true
+      - name: The tag's message, as the notes Pier shows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          object=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --jq '.object.type + " " + .object.sha')
+          if [ "${object%% *}" = "tag" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/tags/${object#* }" --jq .message > notes.txt
+          else
+            : > notes.txt
+          fi
       - name: latest.json, for Pier's updater (when the installers were signed for it)
         shell: bash
         run: |
@@ -202,19 +274,22 @@ jobs:
               return {"signature": open(path + ".sig").read().strip(), "url": url(os.path.basename(path))}
           platforms = {}
           for key, pattern in [("windows-x86_64", "*-setup.exe"), ("darwin-x86_64", "*.app.tar.gz"),
-                               ("darwin-aarch64", "*.app.tar.gz"), ("linux-x86_64", "*.AppImage")]:
+                               ("darwin-aarch64", "*.app.tar.gz"), ("linux-x86_64", "*.AppImage"),
+                               ("linux-x86_64-deb", "*.deb")]:
               if (found := entry(pattern)):
                   platforms[key] = found
           if not platforms:
               print("no updater signatures: no latest.json")
               sys.exit(0)
-          latest = {"version": tag.lstrip("v"), "notes": f"https://github.com/{repo}/releases/tag/{tag}",
+          page = f"https://github.com/{repo}/releases/tag/{tag}"
+          said = open("notes.txt").read().strip()
+          latest = {"version": tag.lstrip("v"), "notes": f"{said}\n\n{page}" if said else page,
                     "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "platforms": platforms}
           json.dump(latest, open("out/latest.json", "w"), indent=2)
           print(json.dumps(latest, indent=2))
           EOF
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: out/*
           draft: true
