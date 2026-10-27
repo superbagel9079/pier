@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.37"
+VERSION = "4.38"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2877,11 +2877,64 @@ def latest_session(sessions, home):
     return max(candidates, key=lambda s: (s["attached"], s["last_attached"]), default=None)
 
 
+def sshd_max_sessions():
+    """MaxSessions of the VM's sshd as its configuration says (10 when it says nothing),
+    None when it cannot be read."""
+    found = None
+    paths = ["/etc/ssh/sshd_config"]
+    try:
+        paths += sorted(os.path.join("/etc/ssh/sshd_config.d", n) for n in os.listdir("/etc/ssh/sshd_config.d") if n.endswith(".conf"))
+    except OSError:
+        pass
+    readable = False
+    for path in paths:
+        text = read_text(path, 256 * 1024)
+        if text is None:
+            continue
+        readable = True
+        for line in text.splitlines():
+            parts = line.split("#", 1)[0].split()
+            # sshd keeps the first value it reads; Match blocks are left aside.
+            if parts and parts[0].lower() == "match":
+                break
+            if len(parts) == 2 and parts[0].lower() == "maxsessions" and parts[1].isdigit() and found is None:
+                found = int(parts[1])
+    return found if found is not None else (10 if readable else None)
+
+
+def vm_checks(home, config):
+    """What Pier needs on the VM, each {"name", "ok", "detail", "fix"}: what Settings >
+    Picker and the page "Is the VM ready?" show, with the command that puts it right."""
+    env = child_env(home)
+    have = lambda name: bool(shutil.which(name, path=env.get("PATH")))
+    node = node_major(env)
+    sessions = sshd_max_sessions()
+    python = ".".join(str(n) for n in sys.version_info[:3])
+    return [
+        {"name": "tmux", "ok": have("tmux"), "detail": "keeps Pi running when Pier disconnects", "fix": "sudo apt install tmux"},
+        {"name": "bubblewrap", "ok": have("bwrap") or not sandbox_wanted(config), "detail": "Pi's sandbox: without it, Pi refuses to start",
+         "fix": "sudo apt install bubblewrap"},
+        {"name": "git", "ok": have("git"), "detail": "restore points, the git jail, the forges", "fix": "sudo apt install git"},
+        {"name": "sshfs", "ok": have("sshfs"), "detail": "sharing a folder of this computer live", "fix": "sudo apt install sshfs"},
+        {"name": "Python 3.12 or newer", "ok": sys.version_info >= (3, 12), "detail": f"the picker runs on {python}"
+         + ("" if tarfile_fixed() else "; lab_pull needs 3.12.11 or 3.13.4"), "fix": "sudo apt install python3 (Debian 13 has 3.13)"},
+        {"name": "Node 24 or newer", "ok": node is not None and node >= 24,
+         "detail": f"Pi runs on Node {node}" if node else "no node found", "fix": "install Node 24 (nodejs.org, or nvm install 24): "
+         "with an older one, Pi's network is not limited"},
+        {"name": "Pi", "ok": pi_argv(config, env) is not None, "detail": "the agent itself",
+         "fix": 'export PATH="$HOME/.npm-global/bin:$PATH" && npm install -g --ignore-scripts @earendil-works/pi-coding-agent'},
+        {"name": "MaxSessions", "ok": sessions is None or sessions >= 20,
+         "detail": f"sshd allows {sessions} channels per connection" if sessions else "sshd's configuration could not be read",
+         "fix": "MaxSessions 30 in /etc/ssh/sshd_config, then sudo systemctl reload ssh (Pier opens another connection otherwise)"},
+    ]
+
+
 def api_version(home, config):
     return {
         "version": VERSION,
         "tmux": bool(shutil.which("tmux")),
         "pi": pi_argv(config, child_env(home)) is not None,
+        "checks": vm_checks(home, config),
     }
 
 

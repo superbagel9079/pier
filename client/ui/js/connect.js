@@ -13,6 +13,7 @@ function showConnect(view) {
   $("#btn-prefs").hidden = true;
   $("#btn-palette").hidden = true;
   $("#btn-handoff").hidden = true;
+  $("#btn-waiting").hidden = true; // shown again by the next approvals (firstuse.js)
   $("#btn-disconnect").hidden = true;
   $("#target").hidden = true;
 }
@@ -122,7 +123,7 @@ async function connect() {
     uiLog("info", "connect-outcome", { status: outcome.status });
     if (outcome.status === "connected") {
       forgetPasswords();
-      await enterWorkspace();
+      await enterWorkspace("", outcome.version);
     } else if (outcome.status.startsWith("picker_")) {
       forgetPasswords(); // connected: Pier keeps them, to reconnect
       await pickerOutcome(outcome);
@@ -154,7 +155,7 @@ async function connect() {
   }
 }
 
-async function enterWorkspace(note = "") {
+async function enterWorkspace(note = "", version = null) {
   setStatus(`connected · ${describe(settings)}`);
   if (note) flashStatus(note);
   showWorkspace();
@@ -163,6 +164,7 @@ async function enterWorkspace(note = "") {
   await refreshTarget();
   vm.start();
   resumeShares();
+  vmReadyAfterConnect(version); // what is missing on the VM, said once (firstuse.js)
 }
 
 // The picker Pier carries, against the one on the VM: installed when missing (after
@@ -203,7 +205,7 @@ async function installPicker(status) {
   try {
     const outcome = await backend.installPicker();
     if (outcome.status === "connected") {
-      await enterWorkspace(`picker ${outcome.bundled} installed on the VM`);
+      await enterWorkspace(`picker ${outcome.bundled} installed on the VM`, outcome.version);
     } else {
       await pickerOutcome(outcome, { tried: true });
     }

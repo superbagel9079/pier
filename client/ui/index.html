@@ -15,6 +15,7 @@
     <nav>
       <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
       <button id="btn-palette" class="link" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)">search <kbd>Ctrl Shift K</kbd></button>
+      <button id="btn-waiting" class="link" hidden title="Pi's requests waiting for your approval, all in one list"></button>
       <button id="btn-handoff" class="link" hidden title="Let Pi keep working with this computer off">hand off</button>
       <button id="btn-prefs" class="link" hidden>settings</button>
       <button id="btn-disconnect" class="link" hidden>disconnect</button>
@@ -129,14 +130,14 @@
     <div class="dialog" role="dialog" aria-labelledby="prefs-title">
       <h1 id="prefs-title">Settings</h1>
       <div class="prefs-tabs" role="tablist">
-        <button role="tab" data-page="layout">Layout</button>
+        <button role="tab" data-page="picker">Picker</button>
+        <button role="tab" data-page="behavior">Behavior</button>
+        <button role="tab" data-page="updates">Updates</button>
         <button role="tab" data-page="appearance">Appearance</button>
         <button role="tab" data-page="terminals">Terminals</button>
-        <button role="tab" data-page="behavior">Behavior</button>
-        <button role="tab" data-page="picker">Picker</button>
-        <button role="tab" data-page="diagnostics">Diagnostics</button>
+        <button role="tab" data-page="layout">Layout</button>
         <button role="tab" data-page="labs">Labs</button>
-        <button role="tab" data-page="updates">Updates</button>
+        <button role="tab" data-page="diagnostics">Diagnostics</button>
         <button role="tab" data-page="connection">Connection</button>
       </div>
 
@@ -146,7 +147,7 @@
         <label for="prefs-side">Panels (Conversations, Activity, Context, Setup)</label>
         <select id="prefs-side"><option value="right">on the right</option><option value="left">on the left</option></select>
       </div>
-      <p class="hint">The terminals stay in the middle. Each tab can still go anywhere: drag it onto another bar, use its ⋯ menu, or choose here.</p>
+      <p class="hint">The terminals stay in the middle. Each tab can still go anywhere: drag it onto another bar, right-click it, or choose here.</p>
       <div id="prefs-layout" class="grid"></div>
       <div class="actions"><button id="prefs-reset" class="secondary">Reset layout</button></div>
       </section>
@@ -195,7 +196,7 @@
 
       <section class="prefs-page" data-page="behavior" role="tabpanel" hidden>
       <label class="check"><input id="prefs-shortcut" type="checkbox"> <span><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> sends the clipboard's image from anywhere</span></label>
-      <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an old devbox in the tray?), then turn this off and on again.</p>
+      <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an older Pier still in the tray?), then turn this off and on again.</p>
       <label class="check"><input id="prefs-autostop" type="checkbox"> <span>Stop a share when the Pi of its project ends</span></label>
       <label class="check"><input id="prefs-notify" type="checkbox"> <span>Notify me when a Pi finishes working (while Pier is in the background)</span></label>
       <label class="check"><input id="prefs-clear" type="checkbox"> <span>When a project's Pi ends, also delete the images, files and folder copies given to it</span></label>
@@ -540,6 +541,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   <script src="js/team.js"></script>
   <script src="js/labs.js"></script>
   <script src="js/setup.js"></script>
+  <script src="js/firstuse.js"></script>
   <script src="js/logs.js"></script>
   <script src="js/palette.js"></script>
   <script src="js/main.js"></script>

@@ -22,7 +22,7 @@ function mockBackend() {
     { number: 10, title: "Add an export to CSV", author: "leo", taken: false, url: "https://github.com/leo/work/issues/10" },
   ];
   let trusted = false;
-  let pickerVersion = "3.8"; // the demo's VM has an old picker: Pier updates it
+  let pickerVersion = "4.36"; // the demo's VM has an old picker: Pier updates it
   const logLines = [];
   const logListeners = [];
   const mockLog = (level, event, fields = {}) => {
@@ -30,7 +30,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.2.0", os: "browser", picker: "3.9" });
+  mockLog("info", "app.start", { version: "0.6.0", os: "browser", picker: "4.37" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -120,16 +120,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "3.9") return { status: "picker_outdated", remote: pickerVersion, remote_api: 7, bundled: "3.9", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "3.9" };
+      if (pickerVersion !== "4.37") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.37", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.37" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "3.9", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "3.9";
-      return { status: "connected", bundled: "3.9" };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.37", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.37";
+      return { status: "connected", bundled: "4.37", version: { version: "4.37", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "3.9" ? 8 : 7 }, bundled: "3.9", api: 8, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.37" ? 22 : 21 }, bundled: "4.37", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -205,8 +205,18 @@ function mockBackend() {
           edits: [{ tool: "edit", at: "2026-10-12T10:00:00Z", state: "done", changes: [{ old: "    println!(\"hi\");", new: "    println!(\"hello\");\n    run();" }] }],
         };
       }
+      if (args[0] === "version") {
+        return { version: "4.37", checks: [
+          { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
+          { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
+          { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
+          { name: "sshfs", ok: false, detail: "sharing a folder of this computer live", fix: "sudo apt install sshfs" },
+          { name: "Node 24 or newer", ok: false, detail: "Pi runs on Node 22", fix: "install Node 24 (nodejs.org, or nvm install 24)" },
+          { name: "Pi", ok: true, detail: "the agent itself" }] };
+      }
       if (args[0] === "ls") {
-        const dir = args[1];
+        const dir = args[1] || "/home/leo";
+        if (dir === "/home/leo") return { path: dir, label: "~", entries: [{ name: "work", kind: "dir", path: "/home/leo/work" }, { name: "clients", kind: "dir", path: "/home/leo/clients" }], truncated: false };
         return { entries: (files[dir] || []).map((e) => ({ size: 0, hidden: false, ...e, path: `${dir}/${e.name}` })), truncated: false };
       }
       if (args[0] === "activity") {
@@ -426,7 +436,7 @@ function mockBackend() {
     pickFiles: async () => ["C:\\Users\\leo\\Documents\\notes.pdf"],
     onDragDrop() {},
     onClipboardSent() {},
-    updateCheck: async () => ({ current: "0.2.0", version: "0.3.0", date: "2026-10-20 09:00:00 +00:00",
+    updateCheck: async () => ({ current: "0.6.0", version: "0.7.0", date: "2026-10-20 09:00:00 +00:00",
       notes: ["- Per-repository Git settings", "- A font for Pier in Settings", "- 13 more themes"].join("\n") }),
     async updateInstall() {
       for (let done = 0; done <= 8; done++) {

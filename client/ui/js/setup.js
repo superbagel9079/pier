@@ -64,6 +64,7 @@ function makeSetup(tab) {
     if (page === "team") teamManager.shown();
   }
   for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
+  tab.showPage = (page) => showPage(page); // from the palette
   showPage(prefs.setupPage, true);
 
   const project = () => chosen || target?.path || select.value || "";
