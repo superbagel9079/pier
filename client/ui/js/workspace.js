@@ -100,6 +100,21 @@ const workspace = (() => {
     const node = el("div");
     node.className = "tab" + (tab === dock.active && !dock.collapsed ? " active" : "") + (tab.pinned ? " pinned" : "");
     node.setAttribute("role", "tab");
+    // The keyboard: the shown tab is the one Tab reaches, arrows go to its neighbours.
+    const shown = tab === dock.active && !dock.collapsed;
+    node.setAttribute("aria-selected", shown ? "true" : "false");
+    node.tabIndex = shown ? 0 : -1;
+    node.addEventListener("keydown", (e) => {
+      const tabs = dock.tabs || [];
+      const at = tabs.indexOf(tab);
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(tab); return; }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const next = tabs[(at + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+      if (!next) return;
+      e.preventDefault();
+      show(next);
+      requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
+    });
     node.title = tab.pinned ? "picker: the main terminal (cannot be closed)" : tab.title;
     node.append(el("span", { textContent: tab.title }));
     const actions = el("span");
@@ -169,6 +184,7 @@ const workspace = (() => {
     b.className = "icon";
     b.textContent = text;
     b.title = title;
+    b.setAttribute("aria-label", title); // a glyph: its title is what a screen reader says
     b.addEventListener("pointerdown", (e) => e.stopPropagation());
     b.addEventListener("click", (e) => { e.stopPropagation(); action(b); });
     return b;

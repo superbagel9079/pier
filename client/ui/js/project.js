@@ -210,7 +210,7 @@ function makeProject(tab) {
     const row = el("div");
     row.className = "node" + (entry.hidden ? " hidden-entry" : "");
     row.setAttribute("role", "treeitem");
-    const label = (open) => (entry.kind === "dir" ? `${open ? "▾" : "▸"} ${entry.name}/` : `${entry.name}${entry.kind === "link" ? " ↗" : ""}`);
+    const label = (open) => (entry.kind === "dir" ? `${open ? "▾" : "▸"} ${entry.name}/` : `${entry.name}${entry.kind === "link" ? " \u2197\uFE0E" : ""}`);
     const name = el("span", { textContent: label(false) });
     row.append(el("span", { className: "badge" }), el("span", { className: "git" }), name);
     if (entry.kind === "file") row.append(el("span", { className: "size", textContent: humanSize(entry.size) }));
@@ -260,7 +260,7 @@ function makeProject(tab) {
 
   // --- restore points ---
 
-  const POINT_MARKS = { start: "▶", prompt: "›", idle: "■", manual: "★", "before-restore": "↺" };
+  const POINT_MARKS = { start: "\u25B6\uFE0E", prompt: "›", idle: "■", manual: "★", "before-restore": "↺" };
   const CHANGE_MARKS = { created: ["+", "created since: going back removes it"], modified: ["~", "changed since"], deleted: ["−", "deleted since: going back brings it back"] };
   let pointsData = null;
   let openPoint = null;
