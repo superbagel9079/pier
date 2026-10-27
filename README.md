@@ -160,7 +160,7 @@ Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [co
 | `track_sessions` | each Pi tells Pier which conversation it holds (an extension Pier gives it) | `true` |
 | `git_tools` | Pi gets git tools for the forge (push, pull requests), through the picker (see [Git](#part-xiii-git-pi-with-a-repository-as-a-developer)) | `true` |
 | `worktrees` | in a git project, a Pi beside another works in a worktree of its own | `true` |
-| `network_limit` | in the sandbox, Pi reaches only its model providers, npm, GitHub, PyPI and `network_allow` (see [Security](#chapter-v-security)) | `true` |
+| `network_limit` | in the sandbox, Pi reaches only Anthropic, OpenRouter, DeepSeek, npm, GitHub, PyPI and `network_allow` (see [Security](#chapter-v-security)); another model provider (OpenAI, Google, Mistral…) is to add there | `true` |
 | `network_allow` | more places Pi may reach: `"host"`, `"host:port"`, `".domain"`, `"127.0.0.1:8080"` | `[]` |
 
 Two environment variables exist too: `PI_BIN`, Pi's path when it is not on the PATH, and `PI_PICKER_SANDBOX=0`, which turns the sandbox off (the test suite uses it).
@@ -208,7 +208,7 @@ The picker used to be called **pi-dir-picker**. Its folders on the VM (`~/.confi
 
 Pier used to be called **devbox** (the name was already taken by a well-known tool). Whatever holds data kept the old name, so that nothing is lost: the settings and logs folder (`app.devbox.client`), the interface's preferences, and on the VM the restore points and the history of the instructions (`.pi/devbox-history`).
 
-A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 7 MB.
+A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and JavaScript, without a framework. The terminal is **xterm.js**, built into the app. The executable is about 8.5 MB.
 
 ### Part I. Connecting
 
@@ -225,7 +225,7 @@ The exe contains the picker (`pier-picker.py`, built in at compile time). At eac
 - **It is older**: Pier updates it by itself, unless that setting is turned off in the Settings.
 - **It is newer than Pier**: Pier says so, and still offers to install its own version.
 
-The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. The picker itself goes to `pi-pick.lib/pier_picker.py`, and `pi-pick` is a small launcher that imports it: Python then keeps it compiled, instead of compiling its 5000 lines at every call (about 60 to 100 ms saved on each call Pier makes). `pi-pick.previous` is always a whole picker, which runs by itself. A picker copied by hand to `~/bin/pi-pick` still works as before. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
+The installation is careful: the new file is written next to the old one, Pier checks that it starts and announces the right version, and only then replaces the old one, which is kept as `pi-pick.previous`. The picker itself goes to `pi-pick.lib/pier_picker.py`, and `pi-pick` is a small launcher that imports it: Python then keeps it compiled, instead of compiling its 9,800 lines at every call (about 60 to 100 ms saved on each call Pier makes). `pi-pick.previous` is always a whole picker, which runs by itself. A picker copied by hand to `~/bin/pi-pick` still works as before. Pier only installs when the picker command is a plain path (`~/bin/pi-pick`, `/opt/pi-pick`).
 
 ### Part III. The workspace
 
@@ -706,7 +706,7 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
 | **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi` (of the conversations, only **this project's**: the other projects' are hidden), the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`; never a folder holding the picker's state or settings, nor `~/.ssh`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), and so are Incus's and LXD's sockets (`/var/lib/incus`…: on a VM that is also a lab host, Pi cannot drive Incus), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
 | **Pi and git** | Pi pushes only `pi/…` branches, never forced, and opens pull requests; merging waits for the user's approval in Pier unless the user lets it merge once the checks pass (or keeps it local), and creating a repository always does. With colleagues, Pis take tasks, ask each other for reviews (at most 3 per pull request and account) and read what others wrote as data, never as orders. The forge's token never enters the sandbox: the picker holds it and pushes from a mirror of its own, after fetching Pi's commits in git's jail. |
-| **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only its model providers, npm, GitHub, PyPI and what `network_allow` adds, through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
+| **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only Anthropic, OpenRouter, DeepSeek, npm, GitHub, PyPI and what `network_allow` adds (another model provider is to add there), through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
 | **Hindsight key** | Read by the picker and passed to Pi in its environment, never on the command line, where other users of the VM could read it. The picker warns when the key file is readable by others. `~/.pi` is Pi's to write: a link put in place of the key is not followed (only a plain file is read). |
 | **Shared folders** | Confined to the folder chosen: no `..`, no link leaving it, no tricky Windows path; what cannot be checked is refused. Read-only by default, and a confirmation for writing. |
@@ -796,9 +796,9 @@ None of it needs an SSH key.
 
 4. **A pre-shared key (`PresharedKey`) in WireGuard,** for each device (`wg genpsk`, the same value on both ends). It adds symmetric encryption to the tunnel: traffic recorded today would stay unreadable even if Curve25519 one day fell to a quantum computer.
 
-5. **A second factor (TOTP code)** for SSH, with `libpam-google-authenticator`. **Pier does not handle it yet:** today it answers the password to every hidden question of the server. It would need to ask for the code separately (a small possible change).
+5. **A second factor (TOTP code)** for SSH, with `libpam-google-authenticator`. **Pier does not handle it yet:** it answers the password only to a question asking for a password, and a code asked is left unanswered (the login then fails). It would need to ask for the code separately (a small possible change).
 
-6. **Where Pi can send data** is limited by the picker itself, without root (`network_limit`, on by default): Pi's sandbox has no network of its own, and a relay inside passes its connections to a proxy outside, which lets through only the places allowed (its model providers, npm, GitHub, PyPI, and `network_allow`). An instruction hidden in a file Pi reads can no longer make it send code anywhere else. What is refused is written to the picker's log (`net.blocked host=…`, in the Logs tab): add the host to `network_allow` if Pi needs it (a gateway such as Bifrost, Hindsight's server). Pi, npm, git and curl follow the proxy; Node needs version 24 or newer for that, and with an older Node the network stays open (the picker says so when Pi starts). A firewall rule would also cover a program that ignores the proxy, but needs root.
+6. **Where Pi can send data** is limited by the picker itself, without root (`network_limit`, on by default): Pi's sandbox has no network of its own, and a relay inside passes its connections to a proxy outside, which lets through only the places allowed (Anthropic, OpenRouter, DeepSeek, npm, GitHub, PyPI, and `network_allow`). **This narrows where Pi can send data; it does not stop it sending code.** The places allowed take uploads: a gist, a push to someone else's repository with a token written in an injected instruction, `npm publish`, an account of someone else at a model provider. And a lab on the internet network gives Pi the internet. Who needs only to download from GitHub can replace its entries in `network_allow` by `codeload.github.com` and `objects.githubusercontent.com`. What is refused is written to the picker's log (`net.blocked host=…`, in the Logs tab): add the host to `network_allow` if Pi needs it (a gateway such as Bifrost, Hindsight's server). Pi, npm, git and curl follow the proxy; Node needs version 24 or newer for that, and with an older Node the network stays open (the picker says so when Pi starts). A firewall rule would also cover a program that ignores the proxy, but needs root.
 
 #### C. On the PC
 
@@ -895,7 +895,7 @@ cargo tauri build --no-bundle
 
 Quit Pier before building again (also from the notification area): Windows does not allow replacing a running program.
 
-**GitHub Actions** (`.github/workflows/build.yml`) runs the tests and builds Pier for Windows (installer and exe), macOS (universal `.dmg`) and Linux (`.deb`, AppImage) at every push, kept as the run's artifacts with their SHA-256. A tag `v…` (`git tag v0.3.0`, `git push --tags`) also prepares a draft GitHub release with them. Signing is optional: with the secrets listed at the top of the workflow (an Authenticode certificate for Windows, a Developer ID for macOS, notarized), the files are signed; without them they are not, and Windows and macOS warn on first start. The macOS and Linux versions are built there only, not yet tried by hand.
+**GitHub Actions** (`.github/workflows/build.yml`) runs the tests (Rust on Linux and Windows, the picker's unit tests and the suite of the VM on Linux, `cargo audit`) and builds Pier for Windows (installer and exe), macOS (universal `.dmg`) and Linux (`.deb`, AppImage) at every push to `main`, every tag and every pull request, kept as the run's artifacts with their SHA-256. A tag `v…` (`git tag v0.3.0`, `git push --tags`) also prepares a draft GitHub release with them. Signing is optional: with the secrets listed at the top of the workflow (an Authenticode certificate for Windows, a Developer ID for macOS, notarized), the files are signed; without them they are not, and Windows and macOS warn on first start. The macOS and Linux versions are built there only, not yet tried by hand.
 
 ## Chapter VII. Day to day
 
@@ -907,7 +907,7 @@ Quit Pier before building again (also from the notification area): Windows does 
 
 ### Part II. With Pier
 
-1. Start Pier, then type your password.
+1. Start Pier, then type your password. **Pier logs in with a password only** (or the keyboard-interactive way that asks for it): no SSH key, no agent. The VM's sshd must accept it (`PasswordAuthentication yes`, or `KbdInteractiveAuthentication yes`), which is Debian's default.
 2. The picker opens in the centre: `p` on a project (or **new** / **last** in Conversations, or Ctrl+Shift+K and a few letters).
 3. A screenshot (Win+Shift+S), then Ctrl+V in Pier: the image is in Pi, you write your question.
 4. A folder from the PC to show? Drop it onto Pier, then "Share live, read-only".
@@ -941,6 +941,18 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 | `~/bin/pi-pick.lib/` | the picker, as Pier installs it, and its compiled form (`__pycache__`) |
 | `~/.local/state/pier-picker/incoming/` | where a folder copy or a Hand off is unpacked, out of Pi's reach, before it is moved into the project |
 | `~/.config/pier-picker/config.toml` | its configuration (optional) |
+| `~/.config/pier-picker/forges.json` | the forges' accounts **with their tokens** (readable by you only) |
+| `~/.config/pier-picker/repos.json` | which project is linked to which repository, and its rules |
+| `~/.local/state/pier-picker/approvals.json` | Pi's requests waiting for you, and the latest answered |
+| `~/.local/state/pier-picker/labs.json` | labs' settings, lab hosts, machines and labs |
+| `~/.local/state/pier-picker/labs/id_ed25519` | **the key that opens every lab host and machine** (no passphrase; readable by you only), and its `known_hosts`, `journal.jsonl`, `ssh/` (shared connections) |
+| `~/.local/state/pier-picker/git/` | the bare mirrors the picker pushes from, with the token |
+| `~/.local/state/pier-picker/net/` | the sockets of each Pi's network proxy and broker |
+| `~/.local/state/pier-picker/pi/` | what Pier gives each Pi: its extensions (`ext/`) and what it says (`pis/`) |
+| `~/.local/state/pier-picker/trash/` | skills put in the bin from Setup |
+| `~/.local/state/pier-picker/*.corrupt-<date>` | a file that could not be read, kept aside instead of written over (said in the log as an error) |
+| `/tmp/.pier-net/` (in the sandbox only) | where Pi's sandbox sees its proxy, broker and the relay |
+| `<project>/.pi-worktrees/` | the worktrees of a second Pi in the same project |
 | `~/.local/state/pier-picker/state.json` | recent projects, sorting (readable by you only) |
 | `~/.local/state/pier-picker/picker.log` | the picker's log (`.1`, `.2`: the previous ones) |
 | `~/.local/state/pier-picker/checkpoints/` | the restore points, one git repository per project |
@@ -984,7 +996,7 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 ### Part I. The picker
 
-The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 16 October 2026, picker 4.20): it drives the picker in a real tmux terminal, and checks with the real programs:
+The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 27 October 2026, picker 4.37, on the Debian VM; the CI runs it too, at every push): it drives the picker in a real tmux terminal, and checks with the real programs:
 
 - the screen and its keys, starting Pi (directly and in tmux), the Hindsight key, two Pis in one project and the API that lists them;
 - the real bubblewrap sandbox: what Pi sees, its own `/dev`, `/run` hidden, the TIOCSTI filter, and its network (no direct connection, the proxy refusing what is not allowed);
@@ -1005,7 +1017,7 @@ If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -
 
 ### Part II. Pier
 
-47 Rust tests (`cargo test`), including:
+53 Rust tests (`cargo test`, one of them ignored by default), including:
 
 - Pi tabs in tmux control mode against a local SSH server (decoding `%output`, keys as raw bytes, sizes, end, Pi unable to fake Pier's messages, caps);
 - `watch` against a local SSH server (lines cut across two packets, round trip, end);
@@ -1014,7 +1026,7 @@ If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -
 - the log's format, rotation and UTC time, the built-in picker (its API version must be Pier's, or the tests do not build), the install script (trick paths refused);
 - take back file by file: comparing by content, names from the VM that Windows would read otherwise, bringing files back with a backup, a path climbing out refused.
 
-GitHub Actions runs them at every push, then builds Pier for Windows, macOS and Linux (see [Pier](#part-iii-pier)).
+GitHub Actions runs them at every push to `main` and every pull request, on Linux and Windows, then builds Pier for Windows, macOS and Linux (see [Pier](#part-iii-pier)).
 
 ### Part III. The interface
 
