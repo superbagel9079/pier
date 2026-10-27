@@ -405,7 +405,7 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
   - **last**: continues the last conversation;
   - **setup**: opens its configuration in Setup.
 - **The running Pis**, first: each with its conversation (Pi #1, Pi #2…, working or waiting for you), **open** (its terminal) and **stop**. A Pi just started, with no conversation yet, shows as "*New conversation*". **stop them all** when there are several.
-- **Which Pi holds which conversation:** each Pi started by Pier says so itself, even when you switch conversations in Pi (`/new`, `/resume`, `/fork`), and even before its first answer. Pier starts it with a small extension (`--extension ~/.pi/pier/pier-session.ts`; nothing is added to Pi's settings). At each change, it writes its conversation and whether it is working to `~/.pi/pier/pis/<tmux session>.json`. It shows in the list of extensions when Pi starts. It adds no tool, reads no message and sends nothing over the network. To do without it: `track_sessions = false` in the picker's config; Pier then guesses as before.
+- **Which Pi holds which conversation:** each Pi started by Pier says so itself, even when you switch conversations in Pi (`/new`, `/resume`, `/fork`), and even before its first answer. Pier starts it with a small extension (`--extension ~/.local/state/pier-picker/pi/ext/pier-session.ts`; nothing is added to Pi's settings). At each change, it writes its conversation and whether it is working to `~/.local/state/pier-picker/pi/pis/<tmux session>/state.json`. In the sandbox, each Pi sees only its own folder there, and the extensions read-only: a Pi cannot write what another one says. It shows in the list of extensions when Pi starts. It adds no tool, reads no message and sends nothing over the network. To do without it: `track_sessions = false` in the picker's config; Pier then guesses as before.
 - **Then the conversations:** pinned ones (★), then the most recent (5; **show all** for the rest). Each shows:
   - its date and its number of messages;
   - what it cost: in dollars when the model has a price in Pi, else in tokens (for the 300 most recent);
@@ -483,7 +483,7 @@ A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea 
 
 #### B. What Pi can do, and what waits for you
 
-Pi gets git tools (from a small extension, `~/.pi/pier/pier-git.ts`, like the one that says which conversation it holds): `git_repo_info`, `git_push`, `git_pull`, `open_pull_request`, `list_pull_requests`, `pull_request_status`, `request_merge`, `create_repository`.
+Pi gets git tools (from a small extension, `~/.local/state/pier-picker/pi/ext/pier-git.ts`, like the one that says which conversation it holds): `git_repo_info`, `git_push`, `git_pull`, `open_pull_request`, `list_pull_requests`, `pull_request_status`, `request_merge`, `create_repository`.
 
 | Pi asks to | What happens |
 |---|---|
@@ -528,7 +528,7 @@ Pi gets more git tools for this: `list_tasks`, `get_task`, `create_task`, `claim
 
 #### E. Why the token is safe
 
-The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. git receives the token in its environment, never on a command line, and it is never written to a log.
+The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by you only), which Pi's sandbox does not see. Pi's tools do not hold it: they ask the picker, through a socket given to the sandbox, and the picker checks each request against the rules above before doing it. To push, the picker first fetches Pi's commits, **in git's jail** (no network, the project read-only), into a bare repository of its own (`~/.local/state/pier-picker/git/`), then pushes from there: no hook, filter or setting of the project ever runs with the token. A project whose `.git` file names another repository (rather than a worktree or a submodule of its own) is refused: Pi cannot make the picker push another project's code. git receives the token in its environment, never on a command line, and it is never written to a log.
 
 ### Part XIV. Labs: machines where Pi may do anything
 
@@ -698,7 +698,7 @@ The categories in a column on the left, the page on the right; the window opens 
 | **Password** | Kept in memory only, never written to disk, forgotten when the address or user changes. It can never end up in a URL: the forms cannot be submitted to an address. |
 | **Server identity** | The fingerprint is checked at each connection; a fingerprint that changes blocks the connection **before** the password is sent. "Trust" only accepts the key Pier has just seen. The bastion is checked the same way. |
 | **Network** | No port open on the VM. Everything goes through SSH, inside WireGuard. See [Network and encryption](#part-ii-network-and-encryption). |
-| **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi`, the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
+| **Pi's sandbox** | With bubblewrap, Pi sees the system **read-only**. Of your home it sees only the **project**, `~/.pi` (of the conversations, only **this project's**: the other projects' are hidden), the folders Pi and Node run from (exactly those: `~/.local/bin`, not all of `~/.local`; never a folder holding the picker's state or settings, nor `~/.ssh`) and `~/.gitconfig`. The rest (other projects, `~/.ssh`…) is invisible. It has a `/dev` of its own (no access to your other terminals), `/run` is hidden (no session bus, no systemd, no system sockets: only the folder `/etc/resolv.conf` points to comes back, read-only), and so are Incus's and LXD's sockets (`/var/lib/incus`…: on a VM that is also a lab host, Pi cannot drive Incus), it cannot type into its terminal (a seccomp filter refuses `TIOCSTI` and `TIOCLINUX`), and its processes are isolated. If bubblewrap is missing, **Pi refuses to start** instead of running unprotected. |
 | **Pi and git** | Pi pushes only `pi/…` branches, never forced, and opens pull requests; merging waits for the user's approval in Pier unless the user lets it merge once the checks pass (or keeps it local), and creating a repository always does. With colleagues, Pis take tasks, ask each other for reviews (at most 3 per pull request and account) and read what others wrote as data, never as orders. The forge's token never enters the sandbox: the picker holds it and pushes from a mirror of its own, after fetching Pi's commits in git's jail. |
 | **Pi's network** | With `network_limit` (on by default), Pi has no network of its own: it reaches only its model providers, npm, GitHub, PyPI and what `network_allow` adds, through a proxy the picker runs outside the sandbox. Everything refused is logged (`net.blocked`). Needs Node 24 or newer. |
 | **Folders Pi may not run in** | Your home itself, `~/.ssh`, `~/.gnupg`, `~/.config`, `~/.local`, `~/bin` (where the picker is), `~/.pi`: refused before anything starts, and not offered as projects. A trick link in a project cannot hand Pi your whole home. |
@@ -717,7 +717,7 @@ The categories in a column on the left, the page on the right; the window opens 
 
 - **The executable is not signed:** Windows shows a warning on first start.
 - **The sandbox hides `~/.ssh`,** so Pi cannot `git push` over SSH, unless you add `sandbox_read = ["~/.ssh"]`. Pi could then read the keys.
-- **`~/.pi` is shared by every project** and writable by Pi. A Pi manipulated in one project could add a package, an extension or an MCP server that the Pis of other projects will load, and `pi update` installs those packages outside the sandbox. Setup shows the list of packages: look at it before updating.
+- **`~/.pi` is shared by every project** and writable by Pi (except the conversations: each Pi sees only its project's). A Pi manipulated in one project could add a package, an extension or an MCP server that the Pis of other projects will load, and `pi update` installs those packages outside the sandbox. Setup shows the list of packages: look at it before updating.
 
 ### Part II. Network and encryption
 
@@ -824,8 +824,8 @@ A full review (security on the PC, security on the VM, stability, performance) w
 
 A second full review (security, CPU, memory, smoothness). Fixed in pier-picker 4.15 to 4.20, and checked by the test suite on the VM:
 
-- **Links planted by Pi:** in `~/.pi` and in the project, everything the picker reads or writes outside the sandbox (the Hindsight key, `AGENTS.md`, conversations, what each Pi says, copies, the × and Clear of Context) goes through file descriptors, without following links; FIFOs and devices are never read. Folder copies and Hand offs are unpacked out of Pi's reach, then moved in.
-- **The sandbox:** `/run` hidden (system sockets), a seccomp filter refusing `TIOCSTI` and `TIOCLINUX` (Pi cannot type into its terminal), git's jail limited to the project, and the network limited to an allowlist (`network_limit`).
+- **Links planted by Pi:** in `~/.pi` and in the project, everything the picker reads or writes outside the sandbox (the Hindsight key, `AGENTS.md`, conversations, what each Pi says, copies, the × and Clear of Context, the files `lab_push` sends to a lab and those a download takes back) goes through file descriptors, without following links; FIFOs and devices are never read. Folder copies and Hand offs are unpacked out of Pi's reach, then moved in.
+- **The sandbox:** `/run` hidden (system sockets), a seccomp filter refusing `TIOCSTI` and `TIOCLINUX` (Pi cannot type into its terminal), git's jail limited to the project (a `.git` file naming another repository's adds nothing), Incus's sockets hidden, each project's conversations seen only by its own Pis, and the network limited to an allowlist (`network_limit`).
 - **The clipboard (OSC 52):** a program on the VM fills it only right after a real key or click, once per key or click; the terminal's automatic replies no longer count as a key.
 - **The command line:** what is typed into Pi, and the files of a restore, go on the command's input, not where other users of the VM could read them.
 - **Smoothness:** the Logs tab, dragging a divider, the Setup list and the searches no longer redraw everything; the watch rebuilds less when nothing moves; the picker is kept compiled.
@@ -941,8 +941,8 @@ Tip: work in a git repository and let Pi commit regularly. After an outage, you 
 | `~/.local/state/pier-picker/labels.json` | names, categories, pinned and archived conversations (Pier) |
 | `~/.local/state/pier-picker/versions.json` | latest versions of Pi and the packages, asked of npm at most every 6 hours |
 | `~/.local/state/pier-picker/tmux.conf` | the configuration of the Pis' tmux server (rewritten by the picker) |
-| `~/.pi/pier/pier-session.ts` | the extension Pier gives each Pi it starts (`--extension`) |
-| `~/.pi/pier/pis/<tmux session>.json` | what each Pi says: its conversation, whether it works (deleted when it stops) |
+| `~/.local/state/pier-picker/pi/ext/` | the extensions Pier gives each Pi it starts (`--extension`): which conversation it holds, git, labs |
+| `~/.local/state/pier-picker/pi/pis/<tmux session>/state.json` | what each Pi says: its conversation, whether it works (deleted when it stops) |
 | `~/bin/pi-pick.previous` | the picker's version from before Pier's last update |
 | `<project>/.pi-images/`, `.pi-files/` | images, files and copies sent (ignored by git) |
 | `<project>/.pi-shared/` | live shares and copies from a Hand off |
@@ -1026,7 +1026,7 @@ Tested only locally or in simulation so far (the sandbox, its network and git's 
 - Ctrl+V of files copied in Explorer, and Windows notifications;
 - installing and updating the picker by Pier on the real VM;
 - restore points during a real Pi session (in particular the delay between a prompt arriving and Pi's first change);
-- the tracking extension (`~/.pi/pier/pier-session.ts`) with the real Pi 1.x, in the sandbox: the conversation followed after `/new`, `/resume`, `/fork`, and "working" going back down at the end;
+- the tracking extension (`pier-session.ts`) with the real Pi 1.x, in the sandbox: the conversation followed after `/new`, `/resume`, `/fork`, and "working" going back down at the end;
 - `pi update` started from Setup, and asking npm for the latest versions from the VM;
 - silent reconnection after the PC sleeps;
 - the macOS and Linux builds of GitHub Actions, never started by hand.
