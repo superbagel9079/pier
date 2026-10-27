@@ -16,7 +16,7 @@ use anyhow::{bail, Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::copy::SKIP;
+use crate::copy::take_back_skips;
 
 /// The most files compared, as the picker does (MANIFEST_MAX_FILES).
 const FILES_MAX: usize = 20000;
@@ -26,8 +26,8 @@ const BYTES_MAX: u64 = 2 * 1024 * 1024 * 1024;
 /// relative path ("a/b.txt") -> (size, SHA-256 in hex)
 pub type Manifest = BTreeMap<String, (u64, String)>;
 
-/// The original folder's files, as the picker lists the copy's: links and what SKIP
-/// names are left out.
+/// The original folder's files, as the picker lists the copy's: links and what a hand
+/// off left out (copy::take_back_skips) are left out.
 pub fn local_manifest(root: &Path) -> Result<(Manifest, bool)> {
     let mut files = Manifest::new();
     let mut total = 0u64;
@@ -37,7 +37,7 @@ pub fn local_manifest(root: &Path) -> Result<(Manifest, bool)> {
         entries.sort_by_key(|e| e.file_name());
         for entry in entries {
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else { continue };
-            if SKIP.contains(&name.as_str()) {
+            if take_back_skips(rel.is_empty(), &name) {
                 continue;
             }
             let kind = entry.file_type()?;
