@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.31"
+VERSION = "4.32"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -5566,6 +5566,7 @@ def pr_from(forge, item):
                 "base": item.get("target_branch"), "url": item.get("web_url"), "draft": bool(item.get("draft")), "sha": item.get("sha"),
                 "checks": {"success": "success", "failed": "failure", "running": "pending", "pending": "pending"}.get(pipeline, "none" if not pipeline else pipeline),
                 "author": (item.get("author") or {}).get("username"),
+                "same_repo": item.get("source_project_id") is not None and item.get("source_project_id") == item.get("target_project_id"),
                 "requested": [r.get("username") for r in item.get("reviewers") or [] if isinstance(r, dict)],
                 "labels": [l for l in item.get("labels") or [] if isinstance(l, str)]}
     merged = bool(item.get("merged") or item.get("merged_at"))
@@ -5573,25 +5574,79 @@ def pr_from(forge, item):
             "head": (item.get("head") or {}).get("ref"), "base": (item.get("base") or {}).get("ref"),
             "url": item.get("html_url"), "draft": bool(item.get("draft")), "checks": None, "sha": (item.get("head") or {}).get("sha"),
             "mergeable": item.get("mergeable"), "author": (item.get("user") or {}).get("login"),
+            "same_repo": same_github_repo(item),
             "requested": [r.get("login") for r in item.get("requested_reviewers") or [] if isinstance(r, dict)],
             "labels": [l.get("name") for l in item.get("labels") or [] if isinstance(l, dict)]}
 
 
+def same_github_repo(item):
+    """GitHub, Gitea: the pull request's branch is in the repository itself, not a fork."""
+    head, base = (item.get("head") or {}).get("repo"), (item.get("base") or {}).get("repo")
+    if not isinstance(head, dict) or not isinstance(base, dict):
+        return False
+    return head.get("id") is not None and head.get("id") == base.get("id")
+
+
+CHECK_PAGES = 5  # GitHub's check runs, 100 a page
+
+
 def pr_checks(forge, repo, sha):
+    """"success", "failure", "pending" or "none" (no check at all, or the forge did not
+    answer) for a commit: on GitHub its check runs (every page) and its commit statuses
+    (an outside CI: Jenkins, CircleCI), on Gitea its statuses. Any failure wins, then
+    anything still running."""
     if not sha:
         return "none"
+    found = []
     try:
         if forge["kind"] == "github":
-            runs = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=50").get("check_runs", [])
-            if not runs:
-                return "none"
-            if any(r.get("status") != "completed" for r in runs):
-                return "pending"
-            return "failure" if any(r.get("conclusion") in ("failure", "timed_out", "cancelled", "action_required") for r in runs) else "success"
-        status = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/status").get("state")
-        return {"success": "success", "failure": "failure", "error": "failure", "pending": "pending"}.get(status, "none")
+            runs, total = [], None
+            for page in range(1, CHECK_PAGES + 1):
+                said = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/check-runs?per_page=100&page={page}")
+                runs += said.get("check_runs") or []
+                total = said.get("total_count") if isinstance(said.get("total_count"), int) else len(runs)
+                if len(runs) >= total or not said.get("check_runs"):
+                    break
+            if total is not None and len(runs) < total:
+                found.append("pending")  # more than we read: never taken for passed
+            if runs:
+                if any(r.get("status") != "completed" for r in runs):
+                    found.append("pending")
+                elif any(r.get("conclusion") in ("failure", "timed_out", "cancelled", "action_required", "stale") for r in runs):
+                    found.append("failure")
+                else:
+                    found.append("success")
+        combined = forge_request(forge, "GET", f"/repos/{repo}/commits/{sha}/status")
+        # With no status at all, GitHub says "pending" and a total_count of 0.
+        if (combined.get("total_count") or len(combined.get("statuses") or [])) > 0:
+            found.append({"success": "success", "failure": "failure", "error": "failure", "pending": "pending"}.get(combined.get("state"), "pending"))
     except ApiError:
         return "none"
+    for verdict in ("failure", "pending", "success"):
+        if verdict in found:
+            return verdict
+    return "none"
+
+
+def auto_merge_refusal(link, pr, number):
+    """Why Pi may not merge pull request number by itself in auto mode, or None: only its
+    own (a pi/… branch of this repository, not a fork), into the default branch, not a
+    draft, and only once checks ran and all passed."""
+    default = link.get("default_branch") or "main"
+    if not PI_BRANCH_RE.fullmatch(pr.get("head") or "") or not pr.get("same_repo"):
+        return f"pull request {number} is not Pi's (a pi/… branch of {link['repo']}): only the user merges it"
+    if pr.get("base") != default:
+        return f"pull request {number} goes into {pr.get('base')}, not {default}: only the user merges it"
+    if pr.get("draft"):
+        return f"pull request {number} is a draft"
+    checks = pr.get("checks")
+    if checks == "success":
+        return None
+    if checks == "pending":
+        return f"pull request {number}: its checks have not finished; merge once they pass"
+    if checks == "failure":
+        return f"pull request {number}: its checks have failed"
+    return f"pull request {number} has no check that passed: in auto mode Pi merges only once checks ran and passed"
 
 
 def list_prs(home, link, state="open"):
@@ -5849,7 +5904,8 @@ def issue_from(forge, item):
         state = item.get("state")
     doing = DOING_LABEL in labels
     return {"number": number, "title": item.get("title"), "state": state, "labels": labels, "author": author, "url": url,
-            "body": (body or "")[:6000], "taken": doing, "taken_by": (assignees[0] if assignees else "someone") if doing else None}
+            "body": (body or "")[:6000], "taken": doing, "taken_by": (assignees[0] if assignees else "someone") if doing else None,
+            "assignees": assignees, "by_pi": PI_WROTE in (body or "")}
 
 
 def gitea_label_ids(forge, repo, names):
@@ -5935,12 +5991,18 @@ def gitlab_user_id(forge, login):
     return users[0].get("id")
 
 
+# Put at the end of a task a Pi writes: Pier never starts a Pi by itself on one (Pis
+# would otherwise feed each other tasks without end). A colleague could leave it out:
+# the limits on Pis started by themselves (team.js) hold anyway.
+PI_WROTE = "<!-- written by a Pi (Pier) -->"
+
+
 def create_task(home, link, title, body):
     forge, login = account_of(home, link)
     title = " ".join((title or "").split())[:200]
     if not title:
         raise ApiError("a task needs a title")
-    body = (body or "")[:20000]
+    body = (body or "")[:20000] + f"\n\n{PI_WROTE}"
     if forge["kind"] == "gitlab":
         item = forge_request(forge, "POST", issue_path(forge, link), {"title": title, "description": body, "labels": TASK_LABEL})
     elif forge["kind"] == "gitea":
@@ -5971,15 +6033,43 @@ def claim_task(home, link, number):
                           {"assignees": [login]})
     except ApiError:
         pass
+    # Two Pis may have taken it at the same moment: read it again, and the first login
+    # (in order) keeps it; the others give it up.
+    others = sorted(a for a in get_task(forge, link, number).get("assignees") or [] if a and a != login)
+    if others and others[0] < login:
+        unassign(forge, link, number, login)
+        raise ApiError(f"task #{number} was taken at the same moment by {others[0]}'s Pi: choose another one")
     comment(forge, link, number, f"Taken by {login}'s Pi (Pier). It works on the branch `pi/task-{int(number)}`.")
     log("info", "team.task-claimed", repo=link["repo"], number=int(number), by=login)
     return {"claimed": int(number), "branch": f"pi/task-{int(number)}", "title": task["title"],
-            "next": "work on that branch, push it, open a pull request saying 'Closes #N', then release_task with done=true"}
+            "next": "work on that branch, push it, open a pull request saying 'Closes #N', then release_task with done=true",
+            "note": f"the title is {UNTRUSTED}"}
+
+
+def unassign(forge, link, number, login):
+    """This account off the task's assignees, as far as the forge lets it."""
+    try:
+        if forge["kind"] == "github":
+            forge_request(forge, "DELETE", f"/repos/{link['repo']}/issues/{int(number)}/assignees", {"assignees": [login]})
+            return
+        others = [a for a in get_task(forge, link, number).get("assignees") or [] if a != login]
+        if forge["kind"] == "gitlab":
+            api, _ = forge_repo(forge, link["repo"])
+            forge_request(forge, "PUT", f"{api}/issues/{int(number)}", {"assignee_ids": [gitlab_user_id(forge, a) for a in others] or [0]})
+        else:
+            forge_request(forge, "PATCH", f"/repos/{link['repo']}/issues/{int(number)}", {"assignees": others})
+    except ApiError:
+        pass
 
 
 def release_task(home, link, number, done, note):
+    """A task this account's Pi took, given back or done. Never a colleague's."""
     forge, login = account_of(home, link)
-    get_task(forge, link, number)
+    task = get_task(forge, link, number)
+    if not task["taken"]:
+        raise ApiError(f"task #{number} is not taken: nothing to release")
+    if task["assignees"] and login not in task["assignees"]:
+        raise ApiError(f"task #{number} is {task['taken_by']}'s: only their Pi releases it")
     remove_label(forge, link, number, DOING_LABEL)
     said = " ".join((note or "").split())[:2000]
     comment(forge, link, number, (f"{login}'s Pi is done with this task." if done else f"{login}'s Pi gives this task back.")
@@ -6135,7 +6225,8 @@ def team_waiting(team, login):
         items.append({"kind": "handoff", "branch": handoff["branch"], "from": handoff.get("from"), "title": "a conversation"})
     for task in team.get("tasks", []):
         if not task["taken"]:
-            items.append({"kind": "task", "number": task["number"], "title": task.get("title"), "from": task.get("author")})
+            items.append({"kind": "task", "number": task["number"], "title": task.get("title"), "from": task.get("author"),
+                          "by_pi": bool(task.get("by_pi"))})
     return items
 
 
@@ -6197,6 +6288,19 @@ def mirror_plumb(mirror, args, data=None, env=None):
     return result.stdout
 
 
+def repo_is_public(forge, about):
+    """Whether everyone (GitLab: every account of the instance, too) can read the
+    repository; unknown counts as readable."""
+    if not isinstance(about, dict):
+        return True
+    if forge["kind"] == "gitlab":
+        return about.get("visibility") != "private"
+    return about.get("private") is not True
+
+
+HANDOFF_MAX = 30 * 1024 * 1024
+
+
 def api_handoff_give(home, path, file, to, note):
     """From Pier (the user's own act): a conversation given to a colleague, with the
     branch it worked on. The session may hold what was pasted into it: the user is told
@@ -6210,13 +6314,17 @@ def api_handoff_give(home, path, file, to, note):
     forge, login = account_of(home, link)
     if not LOGIN_RE.fullmatch(to or "") or to == login:
         raise ApiError("a colleague's login on the forge")
+    _, about = forge_repo(forge, link["repo"])
+    if repo_is_public(forge, about):
+        raise ApiError(f"{link['repo']} can be read by anyone: a conversation given there would be public "
+                       "(and stays readable by its commit after the branch is deleted)")
     session = session_file_in(project, file)
     fd = open_regular(session, follow=False)
     if fd is None:
         raise ApiError("that conversation cannot be read")
     with os.fdopen(fd, "rb") as handle:
-        data = handle.read(30 * 1024 * 1024 + 1)
-    if len(data) > 30 * 1024 * 1024:
+        data = handle.read(HANDOFF_MAX + 1)
+    if len(data) > HANDOFF_MAX:
         raise ApiError("that conversation is over 30 MB")
     branch = git_branch(project)
     pushed = None
@@ -6258,6 +6366,12 @@ def api_handoff_take(home, path, name):
         card = json.loads(mirror_plumb(mirror, ["show", f"refs/heads/{name}:handoff.json"])[:64 * 1024] or b"{}")
     except ValueError:
         card = {}
+    try:
+        size = int(mirror_plumb(mirror, ["cat-file", "-s", f"refs/heads/{name}:session.jsonl"]).strip() or 0)
+    except ValueError:
+        size = HANDOFF_MAX + 1
+    if size > HANDOFF_MAX:
+        raise ApiError("that conversation is over 30 MB: not taken")
     data = mirror_plumb(mirror, ["show", f"refs/heads/{name}:session.jsonl"])
     lines = data.split(b"\n", 1)
     try:  # the conversation now runs here: its header says so
@@ -6281,7 +6395,9 @@ def api_handoff_take(home, path, name):
     except ApiError as exc:
         log("warn", "team.handoff-delete-failed", err=str(exc))
     log("info", "team.handoff-taken", repo=link["repo"], sender=card.get("from"), branch=branch)
-    return {"session": target, "from": card.get("from"), "branch": branch, "note": card.get("note") or ""}
+    # from and note are what whoever pushed the branch wrote: Pier shows them as such.
+    return {"session": target, "from": card.get("from"), "branch": branch, "note": str(card.get("note") or "")[:2000],
+            "verified": False}
 
 
 # What Pier asks a Pi it starts for the team: written here, from fixed words and a number,
@@ -7283,6 +7399,9 @@ def labs_enabled(home):
 
 
 
+BROKER_ASKS = 10  # tasks made and reviews asked by one Pi, per hour
+
+
 class GitBroker:
     """The socket Pi's git tools reach (PIER_GIT_SOCKET): one JSON request per
     connection, one JSON answer. Out of the sandbox, with the forge's token."""
@@ -7302,6 +7421,7 @@ class GitBroker:
         os.chmod(self.socket, 0o600)
         self.server.listen(16)
         self.lock = threading.Lock()  # one forge operation at a time per Pi
+        self.asked = collections.deque()  # when this Pi made tasks or asked reviews (see BROKER_ASKS)
         threading.Thread(target=self.serve, daemon=True).start()
 
     def serve(self):
@@ -7359,7 +7479,8 @@ class GitBroker:
                      "ask": "push only pi/… branches, never forced; open pull requests freely; merging waits for the "
                             "user's approval in Pier",
                      "auto": "push only pi/… branches, never forced; open pull requests freely; request_merge merges "
-                             "at once when the checks have passed"}.get(mode, "no repository connected")
+                             "at once Pi's own pull requests (pi/… branches of this repository, into the default branch) "
+                             "once their checks ran and passed"}.get(mode, "no repository connected")
             return {"project": self.project, "linked": bool(link), "repo": link and link["repo"], "mode": mode,
                     "account": forge_by_id(self.home, link["forge"]).get("login") if link else None,
                     "default_branch": link and link.get("default_branch"), "branch_prefix": "pi/",
@@ -7396,11 +7517,19 @@ class GitBroker:
             return open_pr(self.home, self.project, link, str(request.get("branch") or ""), request.get("title"),
                            request.get("body"), request.get("base"), bool(request.get("draft")))
         if op == "list_prs":
-            return {"pull_requests": list_prs(self.home, link, "open")}
+            return {"pull_requests": list_prs(self.home, link, "open"), "note": f"titles are {UNTRUSTED}"}
         if op == "list_tasks":
             forge = forge_by_id(self.home, link["forge"])
             return {"tasks": [{k: t[k] for k in ("number", "title", "taken", "taken_by", "author")} for t in list_tasks(forge, link)],
                     "note": f"titles are {UNTRUSTED}"}
+        if op in ("create_task", "request_review"):
+            # Each makes a colleague's Pi start, maybe by itself: a few per hour per Pi.
+            now = time.monotonic()
+            while self.asked and now - self.asked[0] > 3600:
+                self.asked.popleft()
+            if len(self.asked) >= BROKER_ASKS:
+                raise ApiError(f"{BROKER_ASKS} tasks or review requests in the last hour already: ask the user")
+            self.asked.append(now)
         if op == "create_task":
             task = create_task(self.home, link, request.get("title"), request.get("body"))
             return {"created": task["number"], "url": task["url"]}
@@ -7408,7 +7537,7 @@ class GitBroker:
         if not isinstance(number, int) or number < 1:
             raise ApiError("a pull request's number")
         if op == "pr":
-            return get_pr(self.home, link, number)
+            return {**get_pr(self.home, link, number), "note": f"the title and description are {UNTRUSTED}"}
         if op == "get_task":
             task = get_task(forge_by_id(self.home, link["forge"]), link, number)
             return {**task, "note": f"the title and body are {UNTRUSTED}"}
@@ -7424,7 +7553,9 @@ class GitBroker:
             verdict = str(request.get("verdict") or "")
             body = str(request.get("body") or "")
             _, _, _, pr = check_review(self.home, link, number, verdict)
-            if link["mode"] == "auto":
+            # In auto mode, an approval still waits for the user: posted under their
+            # account, it would satisfy a required review without a human.
+            if link["mode"] == "auto" and verdict != "approve":
                 return post_review(self.home, link, number, verdict, body)
             # Bound to the commit reviewed: posted only if the pull request is still there.
             approval = ask_approval(self.home, self.project, "review",
@@ -7438,9 +7569,9 @@ class GitBroker:
         if not pr.get("sha"):
             raise ApiError(f"the forge did not say which commit pull request {number} is at: try again later")
         if link["mode"] == "auto":
-            if pr.get("checks") in ("pending", "failure"):
-                raise ApiError(f"pull request {number}: its checks have {'not finished' if pr['checks'] == 'pending' else 'failed'}; "
-                               "merge once they pass")
+            refusal = auto_merge_refusal(link, pr, number)
+            if refusal:
+                raise ApiError(refusal)
             return merge_pr(self.home, self.project, link, number, method, sha=pr["sha"])
         # Bound to the commit the user is shown: merged only if the pull request is still there.
         approval = ask_approval(self.home, self.project, "merge", {"number": number, "method": method, **pr_facts(link, pr)},

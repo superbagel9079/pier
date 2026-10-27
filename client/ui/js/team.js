@@ -12,7 +12,7 @@
 const AGENT_WAKE_LABELS = {
   off: ["Do nothing", "Tasks, reviews and conversations for you are listed here; nothing else happens."],
   ask: ["Notify me", "A notification for each new one; a Pi starts on your click."],
-  auto: ["Start a Pi by itself", "While Pier is connected, a Pi starts on each new review asked of you and each new task, one every two minutes at most. Merges still follow the Git page's setting."],
+  auto: ["Start a Pi by itself", "While Pier is connected, a Pi starts on each new review asked of you and each new task a human wrote (not one a Pi wrote), one every two minutes, 3 an hour and 10 a day at most. Merges still follow the Git page's setting."],
 };
 
 const projectLabel = (path) => String(path || "").replace(/^\/home\/[^/]+/, "~");
@@ -23,16 +23,25 @@ function startAgentPi(project, kind, number) {
 }
 
 /** A colleague's conversation taken over, then opened with a word on where their work is
- *  (typed into Pi, not sent: the user reads it first). */
+ *  (typed into that Pi, not sent: the user reads it first). Only fixed words are typed:
+ *  their note, written by whoever pushed the branch, is shown in Pier, never given to
+ *  Pi as if the user had written it. */
 async function takeHandoff(project, branch) {
   const taken = await backend.handoffTake(project, branch);
-  openPiTerminal(project, projectLabel(project), ["--session", taken.session]);
-  const words = [`I'm continuing ${taken.from || "a colleague"}'s conversation here.`];
+  const tab = openPiTerminal(project, projectLabel(project), ["--session", taken.session]);
+  const words = ["I'm continuing a colleague's conversation here."];
   if (taken.branch) words.push(`Their work is on the branch ${taken.branch} (fetched into origin/${taken.branch}): switch to it before going on.`);
-  if (taken.note) words.push(`Their note: ${taken.note}`);
-  setTimeout(() => backend.api(["type", words.join(" "), project]).catch(() => {}), 4000);
+  // The tab learns its Pi's tmux session once attached: typed there, not in another Pi of the project.
+  setTimeout(() => backend.api(["type", words.join(" "), project, tab?.slot || ""]).catch(() => {}), 4000);
   return taken;
 }
+
+/** What a colleague's handoff says about itself, as Pier shows it: their name and note
+ *  come from the branch, which anyone who may push to the repository can write. */
+const handoffSaid = (taken) => [
+  `${visibleText(taken.from || "Their")} conversation is yours now${taken.branch ? `, with the branch ${taken.branch}` : ""}.`,
+  taken.note ? `Their note (from the branch, not verified): ${visibleText(taken.note)}` : "",
+].filter(Boolean).join(" ");
 
 function makeTeamManager(box, currentProject) {
   const error = el("p", { className: "error", hidden: true });
@@ -93,7 +102,7 @@ function makeTeamManager(box, currentProject) {
             action("take it over", "It joins your conversations here and opens in a Pi", async () => {
               try {
                 const taken = await takeHandoff(project, w.branch);
-                say(`${taken.from || "Their"} conversation is yours now${taken.branch ? `, with the branch ${taken.branch}` : ""}.`);
+                say(handoffSaid(taken));
                 load();
               } catch (e) { showError(error, String(e)); }
             })));
@@ -190,7 +199,7 @@ async function giveDialog(project, session) {
   const go = el("button", { textContent: "Give it" });
   const dialog = resourceDialog(`Give "${conversationTitle(session)}" to a colleague`, [
     el("div", { className: "grid fields" }, el("label", { textContent: "To" }), el("div", {}, who, other)), note,
-    el("p", { className: "hint", textContent: "The whole conversation goes to the repository, on a branch only they take: everything said in it, including what was pasted (a key, a password) and what Pi read. Its branch, if it is a pi/… one, is pushed too. They take it from their Team page; the branch is then deleted." }),
+    el("p", { className: "hint", textContent: "The whole conversation goes to the repository, on a branch for them: everything said in it, including what was pasted (a key, a password) and what Pi read. Everyone who can read this repository can read it too, and it stays readable by its commit after the branch is deleted: Pier refuses a public repository. Its branch, if it is a pi/… one, is pushed too. They take it from their Team page; the branch is then deleted." }),
     problem], [go]);
   go.addEventListener("click", async () => {
     const to = who.value === OTHER ? other.value.trim() : who.value;
@@ -204,7 +213,25 @@ async function giveDialog(project, session) {
 }
 
 // What waits for this account's Pis, wherever the user is: a notification for each new
-// one, and with the repository set to "Start a Pi by itself", a Pi on it (one per round).
+// one, and with the repository set to "Start a Pi by itself", a Pi on it (one per round,
+// AUTO_PER_HOUR an hour and AUTO_PER_DAY a day at most, never on a task a Pi wrote:
+// Pis asking each other would otherwise start Pis without end).
+const AUTO_PER_HOUR = 3;
+const AUTO_PER_DAY = 10;
+const AUTO_KEY = "pier.team.autoStarted";
+
+/** Whether one more Pi may start by itself now; counted in this PC's storage. */
+function autoStartAllowed() {
+  let times = [];
+  try { times = JSON.parse(localStorage.getItem(AUTO_KEY) || "[]"); } catch { times = []; }
+  const now = Date.now();
+  times = (Array.isArray(times) ? times : []).filter((t) => typeof t === "number" && now - t < 86400000);
+  if (times.length >= AUTO_PER_DAY || times.filter((t) => now - t < 3600000).length >= AUTO_PER_HOUR) return false;
+  times.push(now);
+  try { localStorage.setItem(AUTO_KEY, JSON.stringify(times)); } catch { /* counted for this window only */ }
+  return true;
+}
+
 (() => {
   const seen = new Set();
   let first = true;
@@ -218,8 +245,13 @@ async function giveDialog(project, session) {
       const what = w.kind === "review" ? `${w.from || "A colleague"} asks your Pis to review #${w.number}`
         : w.kind === "handoff" ? `${w.from || "A colleague"} gives you a conversation`
         : `New task #${w.number}: ${w.title || ""}`;
-      if (w.agents === "auto" && (w.kind === "review" || w.kind === "task")) {
+      if (w.agents === "auto" && (w.kind === "review" || w.kind === "task") && !w.by_pi) {
         if (started) continue; // one Pi per round: this one at the next
+        if (!autoStartAllowed()) {
+          seen.add(key);
+          backend.notify("For your Pis", `${projectLabel(w.project)}: ${what}. Pier started ${AUTO_PER_HOUR} Pis this hour or ${AUTO_PER_DAY} today by themselves: start this one from Setup > Team.`).catch(() => {});
+          continue;
+        }
         started = true;
         seen.add(key);
         startAgentPi(w.project, w.kind, w.number);
