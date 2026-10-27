@@ -1,0 +1,13 @@
+# Updates proposed as pull requests: the Rust dependencies of Pier, and the actions of the
+# workflows (pinned to a commit: Dependabot moves the pin and its tag comment together).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /client/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

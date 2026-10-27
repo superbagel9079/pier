@@ -11,3 +11,12 @@ __pycache__/
 .claude/
 .vscode/
 .idea/
+
+# Never in the repository: audits before their fixes are out, keys and secrets
+AUDIT*.md
+audit-*/
+*.key
+*.pem
+*.p12
+*.pfx
+.env
