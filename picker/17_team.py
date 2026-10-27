@@ -34,7 +34,7 @@ def read_stdin_text(limit=64 * 1024):
 def account_of(home, link):
     forge = forge_by_id(home, link["forge"])
     if not forge.get("login"):
-        raise ApiError("the forge account has no login: connect it again in Pier (Setup > Git)")
+        raise ApiError("the forge account has no login: connect it again in Pier (Repository > Git)")
     return forge, forge["login"]
 
 

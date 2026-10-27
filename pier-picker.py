@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.38"
+VERSION = "4.39"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -1878,7 +1878,7 @@ def open_pi(project, extra, env, home, width, height):
 # merges or pull requests, as a team does. The worktree has links to the project's
 # .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
 # removed when its Pi ends without having changed or committed anything; otherwise it
-# stays, listed in Setup > Git, until the user removes it.
+# stays, listed in Repository > Git, until the user removes it.
 
 WORKTREE_DIR = ".pi-worktrees"
 
@@ -5395,7 +5395,7 @@ def forge_by_id(home, ident):
     for forge in load_forges(home):
         if forge.get("id") == ident:
             return forge
-    raise ApiError(f"no forge account {ident}: connect it in Pier (Setup > Git)")
+    raise ApiError(f"no forge account {ident}: connect it in Pier (Repository > Git)")
 
 
 def public_forge(forge):
@@ -5441,7 +5441,7 @@ def load_repos(home):
     return private_json(repos_path(home))
 
 
-# What Pi may do alone with a repository, chosen in Setup > Git:
+# What Pi may do alone with a repository, chosen in Repository > Git:
 #   local - Pi commits and branches, nothing leaves the VM;
 #   ask   - Pi pushes its pi/... branches and opens pull requests, merges wait for the user;
 #   auto  - as ask, and Pi merges its pull requests itself once their checks have passed.
@@ -6009,7 +6009,7 @@ def read_stdin_text(limit=64 * 1024):
 def account_of(home, link):
     forge = forge_by_id(home, link["forge"])
     if not forge.get("login"):
-        raise ApiError("the forge account has no login: connect it again in Pier (Setup > Git)")
+        raise ApiError("the forge account has no login: connect it again in Pier (Repository > Git)")
     return forge, forge["login"]
 
 
@@ -7833,7 +7833,7 @@ class GitBroker:
         if op == "info":
             mode = link["mode"] if link else None
             rules = {"local": "work locally only: commit and branch as you like; pushing and pull requests are off "
-                              "for this repository (the user can change that in Pier, Setup > Git)",
+                              "for this repository (the user can change that in Pier, Repository > Git)",
                      "ask": "push only pi/… branches, never forced; open pull requests freely; merging waits for the "
                             "user's approval in Pier",
                      "auto": "push only pi/… branches, never forced; open pull requests freely; request_merge merges "
@@ -7849,7 +7849,7 @@ class GitBroker:
                 raise ApiError(f"this project is already connected to {link['repo']}")
             forges = load_forges(self.home)
             if not forges:
-                raise ApiError("no forge account connected: the user connects one in Pier (Setup > Git)")
+                raise ApiError("no forge account connected: the user connects one in Pier (Repository > Git)")
             forge = next((f for f in forges if f.get("id") == request.get("forge")), forges[0])
             name = str(request.get("name") or "")
             if not REPO_NAME_RE.fullmatch(name):
@@ -7862,11 +7862,11 @@ class GitBroker:
                                     request.get("reason"), replaces=lambda a: (a.get("args") or {}).get("name") == name)
             return {"asked": approval["id"], "waiting": "the user approves creating it in Pier; ask again later with info"}
         if not link:
-            raise ApiError("no repository connected to this project: the user connects one in Pier (Setup > Git), "
+            raise ApiError("no repository connected to this project: the user connects one in Pier (Repository > Git), "
                            "or use create_repo")
         if link["mode"] == "local" and op in ("push", "open_pr", "request_merge", *TEAM_WRITES):
             raise ApiError("this repository is set to local work in Pier: commit and branch locally; "
-                           "the user can let Pi push in Setup > Git")
+                           "the user can let Pi push in Repository > Git")
         if op == "push":
             return git_push(self.home, self.project, link, str(request.get("branch") or ""))
         if op == "pull":

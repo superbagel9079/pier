@@ -67,11 +67,17 @@ function closePrefs() {
 }
 
 /** One page of the settings at a time; the one last shown comes back next time. */
-let prefsPage = "picker"; // the essential first: the picker, the VM, updates
+let prefsPage = "general"; // the essential first: the picker, the VM, updates
+// A tab shows its pages one under the other: General the picker, Behavior and Updates,
+// Appearance its own and Layout. A page asked by its own name opens its tab.
+const PREFS_GROUPS = { general: ["picker", "behavior", "updates"], appearance: ["appearance", "layout"] };
+const prefsTabOf = (page) => Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
 function showPrefsPage(page) {
+  page = prefsTabOf(page);
   prefsPage = page;
+  const shown = PREFS_GROUPS[page] || [page];
   for (const tab of document.querySelectorAll("#prefs .prefs-tabs button")) tab.setAttribute("aria-selected", String(tab.dataset.page === page));
-  for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = section.dataset.page !== page;
+  for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = !shown.includes(section.dataset.page);
 }
 for (const tab of document.querySelectorAll("#prefs .prefs-tabs button")) tab.addEventListener("click", () => showPrefsPage(tab.dataset.page));
 showPrefsPage(prefsPage);

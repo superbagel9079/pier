@@ -255,7 +255,7 @@ class GitBroker:
         if op == "info":
             mode = link["mode"] if link else None
             rules = {"local": "work locally only: commit and branch as you like; pushing and pull requests are off "
-                              "for this repository (the user can change that in Pier, Setup > Git)",
+                              "for this repository (the user can change that in Pier, Repository > Git)",
                      "ask": "push only pi/… branches, never forced; open pull requests freely; merging waits for the "
                             "user's approval in Pier",
                      "auto": "push only pi/… branches, never forced; open pull requests freely; request_merge merges "
@@ -271,7 +271,7 @@ class GitBroker:
                 raise ApiError(f"this project is already connected to {link['repo']}")
             forges = load_forges(self.home)
             if not forges:
-                raise ApiError("no forge account connected: the user connects one in Pier (Setup > Git)")
+                raise ApiError("no forge account connected: the user connects one in Pier (Repository > Git)")
             forge = next((f for f in forges if f.get("id") == request.get("forge")), forges[0])
             name = str(request.get("name") or "")
             if not REPO_NAME_RE.fullmatch(name):
@@ -284,11 +284,11 @@ class GitBroker:
                                     request.get("reason"), replaces=lambda a: (a.get("args") or {}).get("name") == name)
             return {"asked": approval["id"], "waiting": "the user approves creating it in Pier; ask again later with info"}
         if not link:
-            raise ApiError("no repository connected to this project: the user connects one in Pier (Setup > Git), "
+            raise ApiError("no repository connected to this project: the user connects one in Pier (Repository > Git), "
                            "or use create_repo")
         if link["mode"] == "local" and op in ("push", "open_pr", "request_merge", *TEAM_WRITES):
             raise ApiError("this repository is set to local work in Pier: commit and branch locally; "
-                           "the user can let Pi push in Setup > Git")
+                           "the user can let Pi push in Repository > Git")
         if op == "push":
             return git_push(self.home, self.project, link, str(request.get("branch") or ""))
         if op == "pull":

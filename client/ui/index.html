@@ -16,7 +16,7 @@
       <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
       <button id="btn-palette" class="link" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)">search <kbd>Ctrl Shift K</kbd></button>
       <button id="btn-waiting" class="link" hidden title="Pi's requests waiting for your approval, all in one list"></button>
-      <button id="btn-handoff" class="link" hidden title="Let Pi keep working with this computer off">hand off</button>
+      <button id="btn-handoff" class="link" hidden title="Hand off: your shares become copies on the VM, so Pi keeps working with this computer off">keep working without this PC…</button>
       <button id="btn-prefs" class="link" hidden>settings</button>
       <button id="btn-disconnect" class="link" hidden>disconnect</button>
     </nav>
@@ -77,13 +77,16 @@
             <label class="narrow">Port <input name="bastion_port" type="number" min="1" max="65535" value="22"></label>
           </div>
           <label>User on the bastion <input name="bastion_user"></label>
+          <label>Bastion password <input name="bastion_password" type="password"></label>
         </fieldset>
+        <label>Password <input name="password" type="password" required></label>
+        <p class="hint">Kept in memory while Pier runs, never written to disk. The next times, only the password is asked.</p>
         <details>
           <summary>Advanced</summary>
           <label>Picker command on the VM <input name="remote_command" value="~/bin/pi-pick"></label>
         </details>
         <p id="setup-error" class="error" hidden></p>
-        <div class="actions"><button type="submit">Save</button></div>
+        <div class="actions"><button type="submit">Connect</button></div>
       </form>
     </div>
 
@@ -130,12 +133,9 @@
     <div class="dialog" role="dialog" aria-labelledby="prefs-title">
       <h1 id="prefs-title">Settings</h1>
       <div class="prefs-tabs" role="tablist">
-        <button role="tab" data-page="picker">Picker</button>
-        <button role="tab" data-page="behavior">Behavior</button>
-        <button role="tab" data-page="updates">Updates</button>
-        <button role="tab" data-page="appearance">Appearance</button>
+        <button role="tab" data-page="general" title="The picker, what Pier does by itself, updates">General</button>
+        <button role="tab" data-page="appearance" title="Theme, fonts, where the panels go">Appearance</button>
         <button role="tab" data-page="terminals">Terminals</button>
-        <button role="tab" data-page="layout">Layout</button>
         <button role="tab" data-page="labs">Labs</button>
         <button role="tab" data-page="diagnostics">Diagnostics</button>
         <button role="tab" data-page="connection">Connection</button>
@@ -165,6 +165,8 @@
       </div>
       <input id="prefs-termfont-other" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
       <p id="prefs-termfont-note" class="hint" hidden></p>
+      <details class="prefs-more">
+      <summary>More: Pier's font, your own themes</summary>
       <div class="grid">
         <label for="prefs-uifont">Pier's font (panels, menus, settings)</label>
         <select id="prefs-uifont"></select>
@@ -191,6 +193,7 @@
           <button id="theme-cancel" class="secondary">Cancel</button>
         </div>
       </div>
+      </details>
 
       </section>
 
@@ -257,7 +260,8 @@
         </div>
         <h2>Limits</h2>
         <div id="labs-limits" class="grid"></div>
-        <h2>Networks</h2>
+        <details class="labs-networks">
+        <summary>Advanced networks: VLANs, networks between labs</summary>
         <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the lab host, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
         <ul id="labs-networks" class="resource-items"></ul>
         <details class="labs-howto">
@@ -276,6 +280,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <p id="labs-vlan-state" class="hint"></p>
           <pre id="labs-vlan-commands" hidden></pre>
         </div>
+        </details>
         <h2>Machines</h2>
         <ul id="labs-machines" class="resource-items"></ul>
         <div id="labs-key" hidden>
@@ -339,7 +344,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <ul id="handoff-shares" class="handoff-list"></ul>
       <p id="handoff-none" class="dim">No folder is shared live: there is nothing to copy, this computer can be turned off as it is.</p>
       <label class="check"><input id="handoff-disconnect" type="checkbox" checked> <span>Disconnect when done</span></label>
-      <p class="hint">No notification can reach you while Pier is off: log in again to see what Pi did, in Activity. Take back a copy from Context.</p>
+      <p class="hint">No notification can reach you while Pier is off: log in again to see what Pi did, in Activity. Bring a copy back from Activity > Given to Pi.</p>
       <p id="handoff-error" class="error" hidden></p>
       <div class="actions end">
         <button id="handoff-cancel" class="secondary">Cancel</button>
@@ -378,6 +383,17 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
     </div>
   </template>
 
+  <template id="tpl-repository">
+    <div class="pane-repository">
+      <div class="toolbar">
+        <span class="repository-project root"></span>
+        <span class="switch repository-pages" role="group"><button class="mode" data-page="git" title="The repository: pull requests, Pi's requests, accounts">Git</button><button class="mode" data-page="team" title="Tasks, reviews and conversations shared with your colleagues' Pis">Team</button></span>
+      </div>
+      <div class="repository-git"><div class="git-manager"></div></div>
+      <div class="repository-team" hidden><div class="team-manager"></div></div>
+    </div>
+  </template>
+
   <template id="tpl-setup">
     <div class="pane-setup">
       <div class="toolbar">
@@ -389,7 +405,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <p class="error" hidden></p>
       <p class="setup-summary small"></p>
       <span class="switch setup-pages" role="group">
-        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="git" title="The repository: pull requests, Pi's requests, accounts">Git</button><button class="mode" data-page="team" title="Tasks, reviews and conversations shared with your colleagues' Pis">Team</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
+        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
       </span>
 
       <section class="setup-page" data-page="instructions">
@@ -421,13 +437,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         <div class="package-tools"></div>
       </section>
 
-      <section class="setup-page" data-page="git" hidden>
-        <div class="git-manager"></div>
-      </section>
 
-      <section class="setup-page" data-page="team" hidden>
-        <div class="team-manager"></div>
-      </section>
 
       <section class="setup-page" data-page="advanced" hidden>
         <h2>MCP servers and model</h2>
@@ -466,14 +476,16 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <div class="toolbar">
         <span class="root"></span>
         <select class="which-pi" hidden title="Several Pis run here: whose work to show"></select>
+        <button class="link undo-prompt" title="The project as it was before the latest prompt (what is there now is saved first)">↶︎ Undo last prompt</button>
         <span class="agent dim"></span>
         <span class="switch" role="group">
-          <button class="mode active" data-mode="activity">Activity</button><button class="mode" data-mode="files">Files</button><button class="mode" data-mode="restore" title="Undo what Pi did: the project as it was before a prompt">Restore</button>
+          <button class="mode active" data-mode="activity">Activity</button><button class="mode" data-mode="files">Files</button><button class="mode" data-mode="given" title="What was given to Pi: images, files, folders, shares">Given to Pi</button><button class="mode" data-mode="restore" title="Undo what Pi did: the project as it was before a prompt">Restore</button>
         </span>
       </div>
       <p class="usage" hidden></p>
       <p class="error" hidden></p>
       <div class="view-activity"></div>
+      <div class="view-given" hidden></div>
       <div class="view-files" hidden>
         <div class="toolbar">
           <label class="check small"><input type="checkbox" class="show-hidden"> hidden</label>
@@ -542,6 +554,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   <script src="js/team.js"></script>
   <script src="js/labs.js"></script>
   <script src="js/setup.js"></script>
+  <script src="js/repository.js"></script>
   <script src="js/firstuse.js"></script>
   <script src="js/logs.js"></script>
   <script src="js/palette.js"></script>

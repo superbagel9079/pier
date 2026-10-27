@@ -42,17 +42,17 @@ Pier checks the VM at the first connection and lists what is missing, with the c
    ```
    Then run `pi` once to sign in to your model provider.
 2. **On the laptop:** install Pier from the [latest release](https://github.com/superbagel9079/pier/releases/latest) (`Pier_…_x64-setup.exe`). Without a code-signing certificate, Windows SmartScreen warns once: "More info", then "Run anyway".
-3. **Connect:** the VM's address, port and user (and a bastion if you need one), then your password. The first time, compare the fingerprint Pier shows with the VM's own (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` there), then trust it.
+3. **Connect:** the VM's address, port, user and password on one screen (and a bastion if you need one); the next times, only the password. The first time, compare the fingerprint Pier shows with the VM's own (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` there), then trust it.
 4. **Pier installs the picker** on the VM, and shows what is missing there, if anything.
 5. **Start Pi:** in the picker, choose a folder with the arrows and press `p`; or **Open a folder…** in Conversations. Ask Pi something.
 
 ## Day to day
 
 - **Give Pi things:** a screenshot (Win+Shift+S), then Ctrl+V in Pier; a file or a folder dropped onto Pier (a folder: shared live, or copied into the project).
-- **Follow it:** **Activity** shows what Pi read and changed, live; a click on a file shows its diff. **Conversations** lists every conversation, to continue, name, pin or archive.
-- **Undo:** **Activity > Restore points** (or Ctrl+Shift+K, "restore"): the project as it was before any prompt.
+- **Follow it:** three panels beside the terminals. **Conversations** lists every conversation, to continue, name, pin or archive. **Activity** shows what Pi read and changed, live (a click on a file shows its diff), what was given to it, and its restore points. **Project** holds the project's instructions, skills and packages. **Repository** (when the project has one) its pull requests, Pi's requests and the team.
+- **Undo:** **↶ Undo last prompt** at the top of Activity, or **Activity > Restore** for any earlier point.
 - **Answer it:** when Pi asks to merge, post a review, create a repository or run a command on a machine of yours, the top bar says "1 waiting": read it whole, then **Approve** or **Refuse**.
-- **Leave it working:** **hand off**, then switch the laptop off. Later, connect again: the result is in Activity, and **Take back** (in Context) brings Pi's changes into your folder, file by file, with a backup of what they replace.
+- **Leave it working:** **keep working without this PC…** (hand off), then switch the laptop off. Later, connect again: the result is in Activity, and **review changes** (Activity > Given to Pi) brings Pi's work back into your folder, file by file, with a backup of what it replaces.
 - **Find anything:** Ctrl+Shift+K, then a few letters: a tab, a project, a conversation, a setting, an action.
 - **Several Pis** can work in one project, each in a git worktree of its own.
 

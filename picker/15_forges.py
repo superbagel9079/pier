@@ -155,7 +155,7 @@ def forge_by_id(home, ident):
     for forge in load_forges(home):
         if forge.get("id") == ident:
             return forge
-    raise ApiError(f"no forge account {ident}: connect it in Pier (Setup > Git)")
+    raise ApiError(f"no forge account {ident}: connect it in Pier (Repository > Git)")
 
 
 def public_forge(forge):
@@ -201,7 +201,7 @@ def load_repos(home):
     return private_json(repos_path(home))
 
 
-# What Pi may do alone with a repository, chosen in Setup > Git:
+# What Pi may do alone with a repository, chosen in Repository > Git:
 #   local - Pi commits and branches, nothing leaves the VM;
 #   ask   - Pi pushes its pi/... branches and opens pull requests, merges wait for the user;
 #   auto  - as ask, and Pi merges its pull requests itself once their checks have passed.

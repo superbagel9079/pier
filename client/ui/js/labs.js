@@ -77,9 +77,9 @@ function renderLabsPrefs() {
     let input;
     if (type === "select") {
       input = el("select");
-      input.add(new Option("Incus's NAT: the internet through the host", "open"));
-      input.add(new Option("your VLAN: an address from your firewall", "vlan"));
-      input.add(new Option("none: nothing in or out", "none"));
+      input.add(new Option("The internet (through the host)", "open"));
+      input.add(new Option("Your firewall's VLAN", "vlan"));
+      input.add(new Option("No network", "none"));
     } else {
       input = el("input", { type, spellcheck: false });
       if (type === "number") Object.assign(input, { min, max });
