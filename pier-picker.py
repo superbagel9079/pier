@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.32"
+VERSION = "4.33"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -3125,13 +3125,20 @@ def mounted_paths():
     return {re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), line.split()[1]) for line in lines if len(line.split()) > 1}
 
 
+def real_parent(path):
+    """path with its folder resolved, but not path itself: resolving it would stat it, and
+    a stalled sshfs mount there answers a stat never (an uninterruptible wait)."""
+    path = os.path.abspath(path)
+    return os.path.join(os.path.realpath(os.path.dirname(path)), os.path.basename(path))
+
+
 def is_mounted(path, mounts=None):
-    return os.path.realpath(path) in (mounts if mounts is not None else mounted_paths())
+    return real_parent(path) in (mounts if mounts is not None else mounted_paths())
 
 
 def share_mountpoint(home, mount):
     """mount, checked to be a share folder this API created, under home."""
-    full = os.path.realpath(mount)
+    full = real_parent(mount)
     if not within(full, home) or os.path.basename(os.path.dirname(full)) != SHARE_DIR:
         raise ApiError(f"not a share folder: {mount}")
     return full
@@ -6512,13 +6519,13 @@ def incus(*args, data=None, timeout=120, stream=None, at=None):
     return result.stdout or b""
 
 
-def incus_state(at=None):
+def incus_state(at=None, timeout=20):
     """(usable, why, kvm): whether labs can be made on a lab host."""
     local = not at or at.get("kind") == "local"
     if local and not shutil.which("incus"):
         return False, "Incus is not installed", False
     try:
-        info = json.loads(incus("query", "/1.0", timeout=20, at=at) or b"{}")
+        info = json.loads(incus("query", "/1.0", timeout=timeout, at=at) or b"{}")
     except (ApiError, ValueError) as exc:
         return False, f"Incus does not answer ({str(exc)[:200]}): installed, and the user in the incus group?", False
     drivers = str((info.get("environment") or {}).get("driver") or "")
@@ -6603,9 +6610,20 @@ def machine_key():
         return key, handle.read().strip()
 
 
+def ssh_control_dir():
+    """Where the SSH connections to lab hosts and machines stay open a little (only this
+    account may enter)."""
+    folder = os.path.join(labs_dir(), "ssh")
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    return folder
+
+
 def ssh_argv(machine, command=None, tty=False):
     key, _ = machine_key()
+    # One connection kept two minutes and shared: the Labs tab asks a host every minute,
+    # each time over a new connection (and a line in its auth log) otherwise.
     argv = ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "-o", "ControlMaster=auto", "-o", f"ControlPath={os.path.join(ssh_control_dir(), '%C')}", "-o", "ControlPersist=120",
             "-o", f"UserKnownHostsFile={os.path.join(labs_dir(), 'known_hosts')}", "-o", "StrictHostKeyChecking=accept-new",
             "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-p", str(int(machine.get("port") or 22))]
     if tty:
@@ -6631,6 +6649,12 @@ def lab_target(home, project, name):
     return "lab", {**lab, "_at": lab_host(data, lab)}
 
 
+# A lab host that did not answer is left alone this long (seconds): one that is off cost
+# the SSH connection's wait at every look.
+HOST_REST = 60
+_HOST_RESTING = {}  # host name -> until when (monotonic)
+
+
 def api_labs(home):
     """Settings > Labs and the Labs tab: whether labs can be made, the labs, the machines."""
     labs_expire(home)
@@ -6638,16 +6662,24 @@ def api_labs(home):
     live, hosts = {}, []
     for host_name in sorted(data["hosts"]):
         at = host_record(data, host_name)
-        usable, why, kvm = incus_state(at)
+        resting = _HOST_RESTING.get(host_name, 0) - time.monotonic()
+        if resting > 0:
+            usable, why, kvm = False, f"did not answer: asked again in {int(resting) + 1} s", False
+        else:
+            usable, why, kvm = incus_state(at, timeout=8)
+            if not usable and at.get("kind") != "local":
+                _HOST_RESTING[host_name] = time.monotonic() + HOST_REST
+            else:
+                _HOST_RESTING.pop(host_name, None)
         record = data["hosts"][host_name]
         hosts.append({"name": host_name, "kind": "local" if at.get("kind") == "local" else "ssh",
                       "where": "Pi's VM" if at.get("kind") == "local" else f"{record.get('user')}@{record.get('host')}:{record.get('port') or 22}",
                       "description": record.get("description") or "", "default": host_name == default_host(data),
-                      "incus": usable, "why": why, "kvm": kvm, "networks": lab_networks(home, at) if usable else []})
+                      "incus": usable, "why": why, "kvm": kvm, "networks": lab_networks(home, at, timeout=8) if usable else []})
         if not usable:
             continue
         try:
-            for item in json.loads(incus("list", "pier-", "--format", "json", timeout=30, at=at) or b"[]"):
+            for item in json.loads(incus("list", "pier-", "--format", "json", timeout=15, at=at) or b"[]"):
                 state = item.get("state") or {}
                 interfaces = [{"name": nic, "address": next((a.get("address") for a in info.get("addresses", [])
                                                              if a.get("family") == "inet" and a.get("scope") == "global"), None)}
@@ -6689,9 +6721,9 @@ LAB_NETWORK_KINDS = {"nat": "the internet through the host (NAT)", "vlan": "a VL
                      "internal": "between labs only", "other": "an Incus network"}
 
 
-def lab_networks(home, at=None):
+def lab_networks(home, at=None, timeout=20):
     try:
-        items = json.loads(incus("network", "list", "--format", "json", timeout=20, at=at) or b"[]")
+        items = json.loads(incus("network", "list", "--format", "json", timeout=timeout, at=at) or b"[]")
     except (ApiError, ValueError):
         return []
     said = load_labs(home).get("network_notes") or {}
@@ -8102,8 +8134,21 @@ WATCH_TICK = 1.0
 # catches what leaves no trace there: a Pi started without Pier's extension, a file
 # changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
 # tmux, each one of activity runs git status in its jail: not every second for nothing.
+# team asks the forges (3 requests a repository, against an hourly quota), labs every lab
+# host (over SSH): both follow what changes here at once (their signatures), and the rest
+# at a slow pace.
 WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
-               "conversations": 10, "approvals": 30, "team": 120, "labs": 10}
+               "conversations": 10, "approvals": 30, "team": 300, "labs": 60}
+# Parts built on a thread of their own, as they wait on the network or read much: a lab
+# host off, a forge not answering or 2000 conversations to read no longer hold the others
+# (Pi done, Activity) for as long. Each sends its last result when it has it.
+WATCH_APART = {"team", "labs", "conversations"}
+# What a "poke" (an action of the user) does not hurry: they ask other machines.
+WATCH_NOT_POKED = {"team", "labs"}
+# Pier says something at least this often (a "ping" when it has nothing else): a watch
+# that hears nothing for WATCH_SILENCE seconds was left by a connection that died
+# without closing, and ends, instead of asking the forges and lab hosts for hours.
+WATCH_SILENCE = 150
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
 WATCH_MIN = {"setup": 3, "conversations": 5, "checkpoints": 2, "activity": 1.5}
@@ -8150,9 +8195,9 @@ def watch_signature(kind, value, home):
             folders = sorted(os.listdir(root))
         except OSError:
             folders = []
-        pis = sorted((n, p["path"], p.get("file")) for n, p in pi_sessions().items())
-        return ([(n, stat(os.path.join(root, n))) for n in folders], said(),
-                stat(labels_path(home)), pis)
+        # What each Pi says, not tmux asked every second: a Pi without Pier's extension is
+        # seen at the next period.
+        return [(n, stat(os.path.join(root, n))) for n in folders], said(), stat(labels_path(home))
     if kind == "checkpoints":
         store = checkpoint_store(value)
         return stat(os.path.join(store, "refs", "devbox")), stat(os.path.join(store, "packed-refs"))
@@ -8204,10 +8249,38 @@ def api_watch(home, config, stdin=None, stdout=None):
 
     threading.Thread(target=read, daemon=True).start()
     started = time.monotonic()
+    heard = started  # when Pier last said something
+    pings = False    # this Pier pings (an older one does not: then no silence ends it)
     want = {"projects": True}
     sent, due, marks, ran = {}, {}, {}, {}
+    last = {}  # kind -> the message last sent, for the parts sent as patches (WATCH_PATCHED)
+    busy = set()  # parts of WATCH_APART being built
     log_offset = None
     log("info", "watch.start")
+
+    def build(kind, value):
+        try:
+            return {"kind": kind, "for": value, "data": watch_part(kind, value, home, config)}
+        except (ApiError, OSError, ValueError) as exc:
+            return {"kind": kind, "for": value, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - one part failing leaves the others
+            log("error", f"watch.{kind}", trace=traceback.format_exc(), err=f"{type(exc).__name__}: {exc}")
+            return {"kind": kind, "for": value, "error": f"the picker failed ({type(exc).__name__}: {exc})"}
+
+    def apart(kind, value):
+        inbox.put(("part", kind, value, build(kind, value)))
+
+    def send(kind, message):
+        text = clean_json(message)
+        if sent.get(kind) == text:
+            return
+        sent[kind] = text
+        before = last.get(kind)
+        last[kind] = message if kind in WATCH_PATCHED else None
+        if kind in WATCH_PATCHED and before and "data" in before and "data" in message:
+            emit({"kind": kind, "for": message["for"], "patch": watch_patch(before["data"], message["data"])})
+        else:
+            emit(message, text)
 
     def emit(message, text=None):
         stdout.write((text or json.dumps(message)) + "\n")
@@ -8222,14 +8295,18 @@ def api_watch(home, config, stdin=None, stdout=None):
             return
         if not isinstance(message, dict):
             return
+        nonlocal pings
+        if message.pop("ping", None):
+            pings = True
         if message.pop("poke", False):
-            for table in (sent, due, marks, ran):
-                table.clear()
+            for kind in [k for k in want if k not in WATCH_NOT_POKED]:
+                for table in (sent, due, marks, ran, last):
+                    table.pop(kind, None)
         for kind, value in message.items():
             if kind not in WATCH_EVERY:
                 continue
             want[kind] = value
-            for table in (sent, due, marks, ran):
+            for table in (sent, due, marks, ran, last):
                 table.pop(kind, None)
             if kind == "log":
                 log_offset = None
@@ -8256,26 +8333,32 @@ def api_watch(home, config, stdin=None, stdout=None):
                     continue
                 if now - ran.get(kind, -1e9) < WATCH_MIN.get(kind, 0):
                     continue  # moved again too soon: rebuilt at a later tick
+                if kind in busy:
+                    continue  # still building the last one: its result comes first
                 ran[kind] = now
                 due[kind] = now + WATCH_EVERY[kind]
                 marks[kind] = signature
-                try:
-                    message = {"kind": kind, "for": value, "data": watch_part(kind, value, home, config)}
-                except (ApiError, OSError, ValueError) as exc:
-                    message = {"kind": kind, "for": value, "error": str(exc)}
-                except Exception as exc:  # noqa: BLE001 - one part failing leaves the others
-                    log("error", f"watch.{kind}", trace=traceback.format_exc(), err=f"{type(exc).__name__}: {exc}")
-                    message = {"kind": kind, "for": value, "error": f"the picker failed ({type(exc).__name__}: {exc})"}
-                text = clean_json(message)
-                if sent.get(kind) != text:
-                    sent[kind] = text
-                    emit(message, text)
+                if kind in WATCH_APART:
+                    busy.add(kind)
+                    threading.Thread(target=apart, args=(kind, value), daemon=True).start()
+                    continue
+                send(kind, build(kind, value))
+            if pings and now - heard > WATCH_SILENCE:
+                log("info", "watch.silent", seconds=int(now - heard), why="nothing from Pier: its connection is gone")
+                break
             try:
                 line = inbox.get(timeout=WATCH_TICK)
             except queue.Empty:
                 continue
             while line is not None:
-                take(line)
+                if isinstance(line, tuple):  # a part built apart
+                    _, kind, value, message = line
+                    busy.discard(kind)
+                    if want.get(kind) == value:
+                        send(kind, message)
+                else:
+                    heard = time.monotonic()
+                    take(line)
                 try:
                     line = inbox.get_nowait()
                 except queue.Empty:
@@ -8286,6 +8369,22 @@ def api_watch(home, config, stdin=None, stdout=None):
         pass
     log("info", "watch.end", seconds=int(time.monotonic() - started))
     return 0
+
+
+# Parts sent, after the first time, as what changed only: Conversations is one block of
+# every project's conversations (a megabyte with 2000 of them), and a working Pi changes
+# one of them at each turn. Pier puts the whole back together (vm.js).
+WATCH_PATCHED = {"conversations"}
+
+
+def watch_patch(before, now):
+    """{"order", "changed", "rest"}: the projects in order, those that changed (whole),
+    and the rest of the data. A project not in changed is as it was."""
+    old = {p.get("project"): clean_json(p) for p in before.get("projects") or []}
+    projects = now.get("projects") or []
+    return {"order": [p.get("project") for p in projects],
+            "changed": {p.get("project"): p for p in projects if old.get(p.get("project")) != clean_json(p)},
+            "rest": {k: v for k, v in now.items() if k != "projects"}}
 
 
 def watch_log(emit, offset):

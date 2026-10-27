@@ -67,7 +67,7 @@ That is what the picker is for. Pi reads its configuration, its instructions (`A
 
 - **One SSH connection.** Pier's terminals, uploads and shares all go through it: the password is asked once. Every terminal, call or share opens a "channel" on it, and OpenSSH limits how many per connection (`MaxSessions`, 10 by default): past that the VM refuses, and Pier opens another connection by itself (with the password kept in memory). To avoid it, set `MaxSessions 30` on the VM (see [Network and encryption](#part-ii-network-and-encryption)).
 - **No port open on the VM.** Pier runs the picker over SSH with options (`pi-pick --api …`), and the picker answers in JSON.
-- **One command stays open** (`pi-pick --api watch`) and sends Pier what changes, when it changes: Pier does not poll the VM.
+- **One command stays open** (`pi-pick --api watch`) and sends Pier what changes, when it changes: Pier does not poll the VM. What asks other machines (the forges for Team, every five minutes; the lab hosts for the Labs tab, every minute and only while it is shown, over one SSH connection kept two minutes) is built apart, so a forge or a lab host that does not answer no longer holds the rest; a lab host that did not answer is left alone a minute. Conversations sends only the projects that changed. Pier says a word every 30 seconds: a watch that hears nothing for 150 seconds (a PC gone to sleep without closing the connection) ends by itself.
 - **Pi runs in tmux,** one tmux session per Pi, on a tmux server reserved for Pier. So it survives disconnections. **Several Pis can run in the same project,** each in its own conversation.
 - **Pi runs in a sandbox** (bubblewrap): it only sees its project.
 - **The picker ships inside Pier.** Pier installs it on the VM and keeps it up to date: the exe is all you need.
@@ -512,7 +512,7 @@ Each colleague has their Pier, their VM and their Pis; **they meet in the reposi
 - **For you:** the pull requests whose review is asked of your account (**let a Pi review it**), and the conversations a colleague gave you (**take it over**).
 - **Tasks:** issues labelled `pi-task`, free or taken by someone's Pi; **let a Pi do it** on a free one, **New task…** to add one (a Pi can also split a large piece of work into tasks).
 - **Who works on what:** every open pull request, its author, its branch, its checks, and whose review it waits for.
-- **When something waits for your Pis:** do nothing, **notify me** (the default: a notification, a Pi on your click), or **start a Pi by itself** while Pier is connected (one every two minutes, 3 an hour and 10 a day at most, and never on a task a Pi wrote: Pis asking each other cannot start Pis without end). One Pi may make at most 10 tasks or review requests an hour. A Pi only gives back a task its own account took.
+- **When something waits for your Pis:** do nothing, **notify me** (the default: a notification, a Pi on your click), or **start a Pi by itself** while Pier is connected (one every five minutes, 3 an hour and 10 a day at most, and never on a task a Pi wrote: Pis asking each other cannot start Pis without end). One Pi may make at most 10 tasks or review requests an hour. A Pi only gives back a task its own account took.
 
 Pi gets more git tools for this: `list_tasks`, `get_task`, `create_task`, `claim_task`, `release_task`, `pull_request_diff`, `review_pull_request`, `request_review`.
 
