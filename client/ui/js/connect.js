@@ -363,12 +363,22 @@ async function projectsEnded() {
   for (const project of ended) {
     const label = project.replace(/^\/home\/[^/]+/, "~");
     if (prefs.autostop) {
-      for (const share of await backend.shareList()) {
-        if (share.project !== project) continue;
-        try { await backend.shareStop(share.id, true); notes.push(`stopped sharing ${share.local}`); } catch { /* next tick */ }
-      }
-      for (const kept of await backend.rememberedShares()) {
-        if (kept.project === project) await backend.forgetShare(kept.local, kept.project).catch(() => {});
+      // A share open for writing must not stay for the next Pi because one call failed
+      // (a reconnection meanwhile): the project is tried again at the next answer.
+      try {
+        for (const share of await backend.shareList()) {
+          if (share.project !== project) continue;
+          await backend.shareStop(share.id, true);
+          notes.push(`stopped sharing ${share.local}`);
+        }
+        for (const kept of await backend.rememberedShares()) {
+          if (kept.project === project) await backend.forgetShare(kept.local, kept.project).catch(() => {});
+        }
+      } catch (error) {
+        uiLog("warn", "autostop-failed", { project, msg: String(error) });
+        missing.set(project, 1); // ended again at the next answer without its Pi
+        wasRunning.add(project);
+        continue;
       }
     }
     if (prefs.clearOnEnd) {

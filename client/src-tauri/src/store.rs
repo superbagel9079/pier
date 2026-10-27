@@ -42,6 +42,11 @@ impl Settings {
         if self.remote_command.trim().is_empty() {
             bail!("the picker command is empty");
         }
+        // Put as it is in every command Pier sends: a path (and its arguments), nothing a
+        // shell would read as another command.
+        if self.remote_command.chars().any(|c| c.is_control() || ";|&$`()<>\"'\\*?![]{}#".contains(c)) {
+            bail!("the picker command is a path, like ~/bin/pi-pick: no ; | & $ quotes or other shell signs");
+        }
         Ok(())
     }
 }
