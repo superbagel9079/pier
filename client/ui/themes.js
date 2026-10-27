@@ -185,7 +185,8 @@ function parseJsonc(text) {
     else if (c === "/" && next === "*") { i += 2; while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++; i++; }
     else out += c;
   }
-  return JSON.parse(out.replace(/^﻿/, "").replace(/,(\s*[}\]])/g, "$1"));
+  // A byte-order mark at the start, as some editors leave one, goes first.
+  return JSON.parse(out.replace(/^\uFEFF/, "").replace(/,(\s*[}\]])/g, "$1"));
 }
 
 /** A VS Code color theme ("colors" and "type"). */

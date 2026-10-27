@@ -265,7 +265,6 @@ function makeContext(tab) {
     if (path) { await giveFolder(path); refresh(); }
   });
   let stale = false;
-  tab.onDrop = tab.give;
   tab.onNote = notify;
   tab.refresh = refresh;
   tab.onShow = () => { if (stale) render(); };

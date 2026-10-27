@@ -214,7 +214,7 @@ class Checks(unittest.TestCase):
     def setUp(self):
         self.answers = {}
         self.real = m.forge_request
-        m.forge_request = lambda forge, method, path, body=None, raw_url=None: next(
+        m.forge_request = lambda forge, method, path, body=None: next(
             (v for k, v in self.answers.items() if k in path), {})
 
     def tearDown(self):

@@ -98,6 +98,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y tmux bubblewrap git
+      - name: pier-picker.py is picker/ joined
+        run: python -B tools/bundle.py --check
       - name: Unit tests
         run: python -B pier-picker-unit.py
       - name: The suite of the VM
