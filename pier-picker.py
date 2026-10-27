@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.33"
+VERSION = "4.34"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -259,7 +259,10 @@ def load_state(home):
     try:
         with open(state_path(home), encoding="utf-8") as handle:
             data = json.load(handle)
-    except (OSError, ValueError):
+    except ValueError as exc:
+        set_aside(state_path(home), exc)
+        data = {}
+    except OSError:
         data = {}
     if not isinstance(data, dict):
         data = {}
@@ -271,14 +274,8 @@ def load_state(home):
 
 def save_state(home, state):
     """Atomic write, readable by the owner only: the paths say what you work on."""
-    path = state_path(home)
-    tmp = f"{path}.{os.getpid()}.tmp"
     try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(state, handle, indent=1)
-        os.replace(tmp, path)
+        write_json(state_path(home), state, indent=1)
     except OSError:
         pass
 
@@ -4331,7 +4328,7 @@ def labels_path(home):
 
 
 def load_labels(home):
-    data = read_json_file(labels_path(home))
+    data = private_json(labels_path(home))
     return data if isinstance(data, dict) else {}
 
 
@@ -4354,14 +4351,20 @@ def label_key(project, file):
 
 
 class file_lock:
-    """One process at a time between enter and exit, on a lock file of the picker's own
-    (never in a folder Pi can write)."""
+    """One process (and one thread) at a time between enter and exit, on a lock file of
+    the picker's own (never in a folder Pi can write). The thread holding it may take it
+    again inside: a function changing labs.json may call another that does."""
+    _held = threading.local()  # path -> how many times this thread holds it
 
     def __init__(self, path):
         self.path = path
         self.handle = None
 
     def __enter__(self):
+        held = self._held.__dict__.setdefault("paths", {})
+        if held.get(self.path):
+            held[self.path] += 1
+            return self
         try:
             import fcntl
             os.makedirs(os.path.dirname(self.path), mode=0o700, exist_ok=True)
@@ -4369,11 +4372,16 @@ class file_lock:
             fcntl.flock(self.handle, fcntl.LOCK_EX)
         except (ImportError, OSError):
             self.handle = None
+        held[self.path] = 1
         return self
 
     def __exit__(self, *exc):
-        if self.handle:
-            self.handle.close()  # closing releases the lock
+        held = self._held.__dict__.setdefault("paths", {})
+        held[self.path] = held.get(self.path, 1) - 1
+        if held[self.path] <= 0:
+            held.pop(self.path, None)
+            if self.handle:
+                self.handle.close()  # closing releases the lock
         return False
 
 
@@ -4417,13 +4425,7 @@ def api_mark(home, path, file, what, value):
 def save_labels(home, labels, file):
     # Forgotten conversations go: a label lives as long as its file.
     labels = {f: v for f, v in labels.items() if os.path.exists(f) or f == file}
-    target = labels_path(home)
-    os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
-    tmp = f"{target}.{os.getpid()}.tmp"
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-        json.dump(labels, handle, indent=1)
-    os.replace(tmp, target)
+    write_json(labels_path(home), labels, indent=1)
 
 
 _SESSION_INFO = {}  # path -> ((size, mtime), info): a session file is read again only when it changed
@@ -5208,27 +5210,68 @@ def approvals_path(home):
 
 
 def private_json(path):
-    """A JSON file of the picker's own; {} when missing or unreadable."""
+    """A JSON file of the picker's own; {} when missing. One that cannot be read (cut by
+    a power loss, a full disk) is put aside as <name>.corrupt-<date>, said in the log as
+    an error, and read as {}: saved over at the next change, it would lose what it held
+    (the forges' accounts, the lab hosts, the labs) without a word."""
     fd = open_regular(path, follow=False)
     if fd is None:
         return {}
     try:
         with os.fdopen(fd, "rb") as handle:
             data = json.loads(handle.read(4 * 1024 * 1024) or b"{}")
-    except (OSError, ValueError):
+    except ValueError as exc:
+        set_aside(path, exc)
+        return {}
+    except OSError:
         return {}
     return data if isinstance(data, dict) else {}
 
 
-def save_private_json(path, data):
-    """A file of the picker's own, readable by its owner only."""
+def set_aside(path, why):
+    """A file of the picker's own that cannot be read, kept beside under another name."""
+    aside = f"{path}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
+    try:
+        os.replace(path, aside)
+    except OSError:
+        aside = None
+    log("error", "store.unreadable", file=path, kept=aside, err=str(why)[:300])
+
+
+def write_json(path, data, mode=0o600, indent=2):
+    """A file of the picker's own, whole or not at all: a temporary file written, flushed
+    to disk, renamed over path, and the folder flushed too (a power loss leaves the old
+    file or the new one, never an empty one). The temporary file goes if anything fails
+    (a full disk), so no copy of a file holding tokens stays behind."""
     folder = os.path.dirname(path)
     os.makedirs(folder, mode=0o700, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=folder, prefix=".pier-", suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        handle.write(json.dumps(data, indent=2))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(data, indent=indent))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    try:
+        dir_fd = os.open(folder, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass  # not every system flushes a folder (nor Windows, in the simulated tests)
+
+
+def save_private_json(path, data):
+    """A file of the picker's own, readable by its owner only."""
+    write_json(path, data)
 
 
 def forge_api_base(kind, url):
@@ -5312,15 +5355,17 @@ def api_forge_add(home, kind, url, data):
     if not isinstance(login, str):
         raise ApiError("the forge did not say who this token belongs to")
     forge.update(id=f"{kind}:{url.split('://', 1)[1]}:{login}", login=login)
-    forges = [f for f in load_forges(home) if f.get("id") != forge["id"]] + [forge]
-    save_private_json(forges_path(home), {"forges": forges})
+    with file_lock(forges_path(home) + ".lock"):
+        forges = [f for f in load_forges(home) if f.get("id") != forge["id"]] + [forge]
+        save_private_json(forges_path(home), {"forges": forges})
     log("info", "forge.added", kind=kind, url=url, login=login)
     return public_forge(forge)
 
 
 def api_forge_remove(home, ident):
-    forges = [f for f in load_forges(home) if f.get("id") != ident]
-    save_private_json(forges_path(home), {"forges": forges})
+    with file_lock(forges_path(home) + ".lock"):
+        forges = [f for f in load_forges(home) if f.get("id") != ident]
+        save_private_json(forges_path(home), {"forges": forges})
     log("info", "forge.removed", id=ident)
     return {"removed": ident}
 
@@ -5377,13 +5422,14 @@ def api_repo_link(home, path, forge_id, repo):
     _, info = forge_repo(forge, repo)
     default = info.get("default_branch") or "main"
     ensure_local_repo(project, default)
-    repos = load_repos(home)
-    before = repos.get(project) if isinstance(repos.get(project), dict) else {}
-    repos[project] = {"forge": forge_id, "repo": repo, "default_branch": default, "prefix": "pi/",
-                      "mode": before.get("mode") if before.get("mode") in REPO_MODES else "ask",
-                      "merge_method": before.get("merge_method") if before.get("merge_method") in MERGE_METHODS else "merge",
-                      "agents": before.get("agents") if before.get("agents") in AGENT_WAKES else "ask"}
-    save_private_json(repos_path(home), repos)
+    with file_lock(repos_path(home) + ".lock"):
+        repos = load_repos(home)
+        before = repos.get(project) if isinstance(repos.get(project), dict) else {}
+        repos[project] = {"forge": forge_id, "repo": repo, "default_branch": default, "prefix": "pi/",
+                          "mode": before.get("mode") if before.get("mode") in REPO_MODES else "ask",
+                          "merge_method": before.get("merge_method") if before.get("merge_method") in MERGE_METHODS else "merge",
+                          "agents": before.get("agents") if before.get("agents") in AGENT_WAKES else "ask"}
+        save_private_json(repos_path(home), repos)
     log("info", "repo.linked", project=project, forge=forge_id, repo=repo)
     return {"project": project, **repos[project]}
 
@@ -5396,23 +5442,25 @@ def api_repo_settings(home, path, mode, method, agents=""):
     if mode not in REPO_MODES or method not in MERGE_METHODS or (agents and agents not in AGENT_WAKES):
         raise ApiError(f"a mode ({', '.join(REPO_MODES)}), a merge method ({', '.join(MERGE_METHODS)}) "
                        f"and how Pis are woken ({', '.join(AGENT_WAKES)})")
-    repos = load_repos(home)
-    link = repos.get(project)
-    if not isinstance(link, dict):
-        raise ApiError("no repository connected to this project")
-    link.update(mode=mode, merge_method=method)
-    if agents:
-        link["agents"] = agents
-    save_private_json(repos_path(home), repos)
+    with file_lock(repos_path(home) + ".lock"):
+        repos = load_repos(home)
+        link = repos.get(project)
+        if not isinstance(link, dict):
+            raise ApiError("no repository connected to this project")
+        link.update(mode=mode, merge_method=method)
+        if agents:
+            link["agents"] = agents
+        save_private_json(repos_path(home), repos)
     log("info", "repo.settings", project=project, mode=mode, method=method, agents=link.get("agents"))
     return {"project": project, **link}
 
 
 def api_repo_unlink(home, path):
     project = resolve_inside(home, path)
-    repos = load_repos(home)
-    repos.pop(project, None)
-    save_private_json(repos_path(home), repos)
+    with file_lock(repos_path(home) + ".lock"):
+        repos = load_repos(home)
+        repos.pop(project, None)
+        save_private_json(repos_path(home), repos)
     log("info", "repo.unlinked", project=project)
     return {"project": project}
 
@@ -6461,6 +6509,7 @@ LAB_HOST_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}|\[[0-9A-Fa-f:]+\]")
 LAB_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 LAB_RUN_MAX = 900
 LAB_OUTPUT = 60 * 1024
+LAB_COPY_MAX = 900  # seconds a lab_push or lab_pull may take
 LAB_PUSH_SKIP = {IMAGE_DIR, FILES_DIR, SHARE_DIR, ".pi-worktrees"}
 LAB_APPROVAL_WAIT = 600
 LAB_ASK_MAX = 4000  # a command waiting for the user's approval is shown whole: no longer than this
@@ -6488,6 +6537,24 @@ def load_labs(home):
 
 def save_labs(home, data):
     save_private_json(labs_path(home), data)
+
+
+def labs_lock(home):
+    """labs.json is changed by Pier's commands and by every Pi's broker at once: each
+    change is made under this lock, on what the file holds then."""
+    return file_lock(labs_path(home) + ".lock")
+
+
+def changing_labs(function):
+    """function(home, ...) run under labs_lock: it reads labs.json, changes it and saves it
+    as one step."""
+    import functools
+
+    @functools.wraps(function)
+    def run(home, *args, **kwargs):
+        with labs_lock(home):
+            return function(home, *args, **kwargs)
+    return run
 
 
 def lab_instance(name):
@@ -6555,19 +6622,28 @@ def default_host(data):
 
 
 def labs_expire(home):
-    """Labs past their lifetime go."""
+    """Labs past their lifetime go. One whose host did not delete it (off, unreachable)
+    stays listed, and goes at a later look: forgotten here, it would run there for good,
+    out of Pier's sight. labs.json is changed under its lock, the deletes made outside."""
     data = load_labs(home)
     now = time.time()
-    gone = [n for n, lab in data["labs"].items() if lab.get("expires") and lab["expires"] < now]
+    gone = [n for n, lab in data["labs"].items() if lab.get("expires") and lab["expires"] < now and not lab.get("building")]
+    deleted = []
     for name in gone:
         try:
             incus("delete", "--force", lab_instance(name), timeout=120, at=lab_host(data, data["labs"][name]))
         except ApiError as exc:
-            log("warn", "lab.expire-failed", lab=name, err=str(exc))
-        data["labs"].pop(name, None)
+            if "not found" not in str(exc).lower():
+                log("warn", "lab.expire-failed", lab=name, err=str(exc))
+                continue
+        deleted.append(name)
         log("info", "lab.expired", lab=name)
-    if gone:
-        save_labs(home, data)
+    if deleted:
+        with labs_lock(home):
+            data = load_labs(home)
+            for name in deleted:
+                data["labs"].pop(name, None)
+            save_labs(home, data)
 
 
 def lab_journal(entry):
@@ -6753,6 +6829,7 @@ def default_networks(settings):
     return None
 
 
+@changing_labs
 def api_lab_network_describe(home, name, text):
     """From Pier: what a network is for, in the user's words (Pi reads it in lab_list)."""
     if not LAB_NAME_RE.fullmatch(name or "") and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", name or ""):
@@ -6766,6 +6843,7 @@ def api_lab_network_describe(home, name, text):
     return {"network": name, "description": notes.get(name, "")}
 
 
+@changing_labs
 def api_labs_settings(home, text):
     """From Pier: labs on or off, and their limits (JSON on stdin)."""
     try:
@@ -6922,16 +7000,65 @@ def lab_create(home, project, name, vm=False, image=None, description="", networ
     chosen = networks if networks is not None else default_networks(settings)
     if check_only:
         return {"name": name, "image": image, "vm": bool(vm), "networks": chosen, "host": host}
-    nesting, snapshots = lab_build(name, image, bool(vm), settings, chosen, at)
-    record = {"project": project, "host": host, "image": image, "vm": bool(vm), "network": settings["network"], "networks": chosen, "docker": nesting,
-              "description": lab_description(description), "snapshots": snapshots, "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
-    data = load_labs(home)
-    data["labs"][name] = record
-    save_labs(home, data)
+    record = {"project": project, "host": host, "image": image, "vm": bool(vm), "network": settings["network"], "networks": chosen,
+              "description": lab_description(description), "created": int(time.time()), "expires": int(time.time() + settings["ttl_hours"] * 3600)}
+    # The name and the place taken under the lock, before the build (minutes): two Pis
+    # asking at once no longer both pass the most allowed.
+    with labs_lock(home):
+        data = load_labs(home)
+        if len(data["labs"]) >= data["settings"]["max"]:
+            raise ApiError(f"already {len(data['labs'])} labs, the most allowed: destroy one first (lab_destroy)")
+        if name in data["labs"] or name in data["machines"] or name in data["hosts"]:
+            raise ApiError(f"the name {name} was just taken: choose another")
+        data["labs"][name] = {**record, "building": True}
+        save_labs(home, data)
+    try:
+        nesting, snapshots = lab_build(name, image, bool(vm), settings, chosen, at)
+    except BaseException:
+        with labs_lock(home):
+            data = load_labs(home)
+            if (data["labs"].get(name) or {}).get("building"):
+                data["labs"].pop(name)
+                save_labs(home, data)
+        raise
+    record.update(docker=nesting, snapshots=snapshots)
+    with labs_lock(home):
+        data = load_labs(home)
+        data["labs"][name] = record
+        save_labs(home, data)
     log("info", "lab.created", lab=name, project=project, image=image, vm=bool(vm), host=host)
     lab_journal({"lab": name, "project": project, "what": f"created on {host} ({'VM' if vm else 'container'}, {image})"})
     return {"lab": name, **record, "workdir": "/root/project",
             "note": "copy the project in with lab_push, run with lab_run; lab_reset goes back to this clean state"}
+
+
+def run_tail(argv, timeout, keep):
+    """(exit code or None when stopped, stdout's last keep bytes, stderr's, stdout's length,
+    stderr's): a command whose output may be endless (a lab is Pi's, as root), read as it
+    comes and only its end kept."""
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               env=dict(os.environ, LC_ALL="C"))
+    tails, sizes = [bytearray(), bytearray()], [0, 0]
+
+    def read(stream, n):
+        for chunk in iter(lambda: stream.read(65536), b""):
+            sizes[n] += len(chunk)
+            tails[n] += chunk
+            if len(tails[n]) > keep:
+                del tails[n][:len(tails[n]) - keep]
+
+    readers = [threading.Thread(target=read, args=(s, n), daemon=True) for n, s in enumerate((process.stdout, process.stderr))]
+    for reader in readers:
+        reader.start()
+    try:
+        code = process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+        code = None
+    for reader in readers:
+        reader.join(5)
+    return code, bytes(tails[0]), bytes(tails[1]), sizes[0], sizes[1]
 
 
 def lab_run(home, project, name, command, timeout=300):
@@ -6946,17 +7073,16 @@ def lab_run(home, project, name, command, timeout=300):
         argv = ssh_argv(record, f"mkdir -p ~/pier-lab && cd ~/pier-lab && {command}")
     started = time.monotonic()
     try:
-        result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, timeout=timeout, env=dict(os.environ, LC_ALL="C"))
-        code, out, err = result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired as exc:
-        code, out, err = None, exc.stdout or b"", (exc.stderr or b"") + f"\n[stopped after {timeout} s]".encode()
+        code, out, err, out_size, err_size = run_tail(argv, timeout, LAB_OUTPUT * 4)
     except OSError as exc:
         raise ApiError(f"could not run it: {exc}")
+    if code is None:
+        err += f"\n[stopped after {timeout} s]".encode()
     ms = int((time.monotonic() - started) * 1000)
     lab_journal({"lab": name, "project": project, "command": command, "exit": code, "ms": ms})  # whole: what was done
     tail = lambda b: b.decode("utf-8", "replace")[-LAB_OUTPUT:]
     return {"lab": name, "exit": code, "ms": ms, "stdout": tail(out), "stderr": tail(err),
-            "truncated": len(out) > LAB_OUTPUT or len(err) > LAB_OUTPUT}
+            "truncated": out_size > LAB_OUTPUT or err_size > LAB_OUTPUT}
 
 
 def lab_push(home, project, name, path="."):
@@ -6982,17 +7108,26 @@ def lab_push(home, project, name, path="."):
     target = "/root/project" if kind == "lab" else "~/pier-lab"
     argv = (incus_argv(record["_at"], "exec", lab_instance(name), "--", "sh", "-c", f"mkdir -p {target} && tar -x -C {target}")
             if kind == "lab" else ssh_argv(record, f"mkdir -p {target} && tar -x -C {target}"))
-    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    # stderr into a file, not a pipe read at the end: tar's warnings (one per file, with a
+    # clock off) would fill it and block both sides. And a limit, the broker's lock held.
+    errors = tempfile.TemporaryFile()
+    process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=errors)
+    watchdog = threading.Timer(LAB_COPY_MAX, process.kill)
+    watchdog.start()
     try:
         with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
             arcname = os.path.relpath(source, real)
             tar_tree(archive, real, source, "." if arcname == "." else arcname.replace(os.sep, "/"), keep)
         process.stdin.close()
-        err = process.stderr.read(4096)
-        code = process.wait(timeout=600)
+        code = process.wait(timeout=LAB_COPY_MAX)
     except BaseException:
         process.kill()
         raise
+    finally:
+        watchdog.cancel()
+        errors.seek(0)
+        err = errors.read()[-4096:]
+        errors.close()
     if code != 0:
         raise ApiError(err.decode("utf-8", "replace").strip()[-300:] or "the copy failed")
     lab_journal({"lab": name, "project": project, "what": f"pushed {path or '.'} ({total[0] // 1024} kB)"})
@@ -7011,11 +7146,16 @@ def lab_pull(home, project, name, path):
     script = f"cd {base} && tar -c -C \"$(dirname {quoted})\" \"$(basename {quoted})\""
     argv = (incus_argv(record["_at"], "exec", lab_instance(name), "--", "sh", "-c", script) if kind == "lab" else ssh_argv(record, script))
     staging = private_staging()
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    errors = tempfile.TemporaryFile()  # as in lab_push: never a pipe left to fill
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errors)
+    watchdog = threading.Timer(LAB_COPY_MAX, process.kill)
+    watchdog.start()
     try:
         count = extract_tar(process.stdout, staging)
-        err = process.stderr.read(4096)
-        if process.wait(timeout=600) != 0 and not count:
+        code = process.wait(timeout=LAB_COPY_MAX)
+        errors.seek(0)
+        err = errors.read()[-4096:]
+        if code != 0 and not count:
             raise ApiError(err.decode("utf-8", "replace").strip()[-300:] or "nothing came back")
         folder = ignored_dir(project, FILES_DIR)
         dest = f"{stamp()}-lab-{name}"
@@ -7025,6 +7165,9 @@ def lab_pull(home, project, name, path):
         process.kill()
         shutil.rmtree(staging, ignore_errors=True)
         raise
+    finally:
+        watchdog.cancel()
+        errors.close()
     shutil.rmtree(staging, ignore_errors=True)
     lab_journal({"lab": name, "project": project, "what": f"pulled {path}"})
     return {"lab": name, "pulled": path, "into": f"{FILES_DIR}/{dest}/", "files": count}
@@ -7046,10 +7189,11 @@ def lab_snapshot(home, project, name, snapshot, restore=False):
         incus("delete", "--force", lab_instance(name), timeout=180, at=at)
         settings = {**load_labs(home)["settings"], "network": lab.get("network", "open")}
         nesting, snapshots = lab_build(name, lab.get("image") or settings["image"], bool(lab.get("vm")), settings, lab.get("networks"), at)
-        data = load_labs(home)
-        if name in data["labs"]:
-            data["labs"][name].update(docker=nesting, snapshots=snapshots)
-            save_labs(home, data)
+        with labs_lock(home):
+            data = load_labs(home)
+            if name in data["labs"]:
+                data["labs"][name].update(docker=nesting, snapshots=snapshots)
+                save_labs(home, data)
         lab_journal({"lab": name, "project": project, "what": "rebuilt from its image (back to clean)"})
         return {"lab": name, "restored": "clean", "rebuilt": True}
     if restore:
@@ -7069,9 +7213,10 @@ def lab_destroy(home, project, name):
     except ApiError as exc:
         if "not found" not in str(exc).lower():
             raise
-    data = load_labs(home)
-    data["labs"].pop(name, None)
-    save_labs(home, data)
+    with labs_lock(home):
+        data = load_labs(home)
+        data["labs"].pop(name, None)
+        save_labs(home, data)
     lab_journal({"lab": name, "project": project, "what": "destroyed"})
     log("info", "lab.destroyed", lab=name)
     return {"destroyed": name}
@@ -7094,6 +7239,7 @@ def lab_list(home, project):
             "vm_possible": status["kvm"], "why_not": status["why"] or None}
 
 
+@changing_labs
 def api_machine_add(home, name, host, port, user, policy, description=""):
     data = load_labs(home)
     if not LAB_NAME_RE.fullmatch(name or "") or name in data["labs"] or name in data["hosts"]:
@@ -7111,6 +7257,7 @@ def api_machine_add(home, name, host, port, user, policy, description=""):
             "next": f"add this key to ~{user}/.ssh/authorized_keys on {host}, then test it"}
 
 
+@changing_labs
 def api_machine_remove(home, name):
     data = load_labs(home)
     data["machines"].pop(name, None)
@@ -7146,6 +7293,7 @@ def api_lab_new(home, name, vm, text):
                       networks=networks if isinstance(networks, list) else None, host=host or None)
 
 
+@changing_labs
 def api_host_add(home, name, host, port, user, description):
     """From Pier: another VM where labs are made (Incus there, the picker's key in the
     user's authorized_keys)."""
@@ -7167,6 +7315,7 @@ def api_host_add(home, name, host, port, user, description):
             "next": f"on {host}: Incus installed, {user} in its incus group, and this key in ~{user}/.ssh/authorized_keys; then test it"}
 
 
+@changing_labs
 def api_host_local(home, on, description=""):
     """From Pier: Pi's own VM used as a lab host, or no longer."""
     data = load_labs(home)
@@ -7184,6 +7333,7 @@ def api_host_local(home, on, description=""):
     return {"local": on == "1"}
 
 
+@changing_labs
 def api_host_remove(home, name):
     data = load_labs(home)
     left = [n for n, lab in data["labs"].items() if (lab.get("host") or LOCAL_HOST) == name]
@@ -7208,6 +7358,7 @@ def api_host_test(home, name):
     return {"host": name, "answer": "Incus answers" + (": containers and virtual machines" if kvm else ": containers")}
 
 
+@changing_labs
 def api_lab_edit(home, name, new_name, description):
     """From Pier: a lab or a machine renamed and described again. A lab is stopped for the
     rename (Incus renames only a stopped instance), then started again."""

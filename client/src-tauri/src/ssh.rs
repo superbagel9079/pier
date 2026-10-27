@@ -243,9 +243,11 @@ async fn authenticate(handle: &mut Handle<Checker>, endpoint: &Endpoint) -> Resu
             }
             KeyboardInteractiveAuthResponse::Failure { .. } => break,
             KeyboardInteractiveAuthResponse::InfoRequest { prompts, .. } => {
+                // The password goes only to a question asking for it: never to a one-time
+                // code or another secret the server asks next.
                 let answers = prompts
                     .iter()
-                    .map(|p| if p.echo { String::new() } else { endpoint.password.clone() })
+                    .map(|p| if !p.echo && p.prompt.to_lowercase().contains("password") { endpoint.password.clone() } else { String::new() })
                     .collect();
                 reply = handle.authenticate_keyboard_interactive_respond(answers).await?;
             }
