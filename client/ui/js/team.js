@@ -241,7 +241,7 @@ function autoStartAllowed() {
         if (started) continue; // one Pi per round: this one at the next
         if (!autoStartAllowed()) {
           seen.add(key);
-          backend.notify("For your Pis", `${projectLabel(w.project)}: ${what}. Pier started ${AUTO_PER_HOUR} Pis this hour or ${AUTO_PER_DAY} today by themselves: start this one from Setup > Team.`).catch(() => {});
+          backend.notify("For your Pis", `${projectLabel(w.project)}: ${what}. Pier started ${AUTO_PER_HOUR} Pis this hour or ${AUTO_PER_DAY} today by themselves: start this one from Repository > Team.`).catch(() => {});
           continue;
         }
         started = true;
@@ -251,8 +251,8 @@ function autoStartAllowed() {
         continue;
       }
       seen.add(key);
-      backend.notify("For your Pis", `${projectLabel(w.project)}: ${what}. See Setup > Team.`).catch(() => {});
-      flashStatus(`${what}: Setup > Team`);
+      backend.notify("For your Pis", `${projectLabel(w.project)}: ${what}. See Repository > Team.`).catch(() => {});
+      flashStatus(`${what}: Repository > Team`);
     }
     first = false;
   });

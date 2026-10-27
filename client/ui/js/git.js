@@ -82,8 +82,8 @@ function makeGitManager(box, currentProject) {
     if (data.link) {
       const forge = data.forges.find((f) => f.id === data.link.forge);
       repo.append(line(data.link.repo, `${FORGE_LABELS[forge?.kind] || "git host"} · default branch ${data.link.default_branch}`,
-        `${forge?.url || ""}/${data.link.repo}`, action("disconnect", "Pi can no longer push or open pull requests for this project (nothing is deleted)", async () => {
-          if (!(await ask(`Disconnect this project from ${data.link.repo}? Nothing is deleted, on ${FORGE_LABELS[forge?.kind] || "the git host"} or here.`))) return;
+        `${forge?.url || ""}/${data.link.repo}`, action("unlink repository…", "Pi can no longer push or open pull requests for this project (nothing is deleted)", async () => {
+          if (!(await ask(`Unlink this project from ${data.link.repo}? Pi can no longer push nor open pull requests for it. Nothing is deleted, on ${FORGE_LABELS[forge?.kind] || "the git host"} or here.`))) return;
           try { await backend.repoUnlink(currentProject()); load(); } catch (e) { showError(error, String(e)); }
         })));
       if (data.branch) repo.append(line(`here: ${data.branch}`, data.local ? "local branch" : "", "The branch checked out in the project"));

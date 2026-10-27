@@ -3,7 +3,7 @@
 
 ### Git: Pi with a repository, as a developer
 
-A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea / Forgejo**, in **Setup > Git**. Pi then works as a developer of the team: it commits, branches and merges locally as it likes (that is plain git, in its sandbox), pushes its branches and opens pull requests by itself, and asks when something more is needed.
+A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea / Forgejo**, in **Repository > Git**. Pi then works as a developer of the team: it commits, branches and merges locally as it likes (that is plain git, in its sandbox), pushes its branches and opens pull requests by itself, and asks when something more is needed.
 
 #### A. Connecting
 
@@ -29,7 +29,7 @@ Pi gets git tools (from a small extension, `~/.local/state/pier-picker/pi/ext/pi
 | push a branch | not when the repository is set to **Work locally**; otherwise only branches named `pi/…` (the default branch only while the repository is still empty), never forced: a rewritten branch is refused by the forge |
 | fetch | the forge's branches land in `origin/*` in the project; Pi merges or rebases itself |
 | open, list, read pull requests | done at once (opening one: not with **Work locally**) |
-| **merge** a pull request | with **Push, ask to merge**, **never by itself**: the request appears in **Setup > Git > Waiting for you**, with a Windows notification, and is done only when you click **Approve**. It shows the pull request (its title, branches and author) and the commit it is at: if a commit is pushed to it before you answer, nothing is merged, and Pi is told to ask again. So "merge it" said to Pi works, and an instruction hidden in a file cannot merge anything. With **Push and merge**, done at once only for Pi's own pull request (a `pi/…` branch of this repository, not a fork, into the default branch, not a draft) whose checks ran and all passed (GitHub's check runs and commit statuses both), and bound to the commit checked; any other pull request is refused, and one without any check too |
+| **merge** a pull request | with **Push, ask to merge**, **never by itself**: the request appears in **Repository > Git > Waiting for you**, with a Windows notification, and is done only when you click **Approve**. It shows the pull request (its title, branches and author) and the commit it is at: if a commit is pushed to it before you answer, nothing is merged, and Pi is told to ask again. So "merge it" said to Pi works, and an instruction hidden in a file cannot merge anything. With **Push and merge**, done at once only for Pi's own pull request (a `pi/…` branch of this repository, not a fork, into the default branch, not a draft) whose checks ran and all passed (GitHub's check runs and commit statuses both), and bound to the commit checked; any other pull request is refused, and one without any check too |
 | create a repository | always waits for your approval, whatever the setting |
 
 You can also merge yourself from the list of pull requests, at any time.
@@ -39,14 +39,14 @@ You can also merge yourself from the list of pull requests, at any time.
 Two Pis in the same folder would step on each other's files. In a git project, the first Pi works in the folder itself, and every other one in a **worktree** of its own, `.pi-worktrees/<its tmux session>`, on a branch `pi/agent-N-…`: each works on its branch, and they come together by merges or pull requests, as a team does.
 
 - What is given to a Pi (`.pi-images`, `.pi-files`, `.pi-shared`) is reached from its worktree through links, so pasted images and files work as before.
-- When its Pi ends (or is stopped) without having changed or committed anything, the worktree goes, with its branch. Otherwise it stays, listed in **Setup > Git > Pis' worktrees** (its branch, the files changed, the commits ahead), until you **remove** it; its branch stays either way.
+- When its Pi ends (or is stopped) without having changed or committed anything, the worktree goes, with its branch. Otherwise it stays, listed in **Repository > Git > Pis' worktrees** (its branch, the files changed, the commits ahead), until you **remove** it; its branch stays either way.
 - `.pi-worktrees` is left out of git (its own `.gitignore`, and the repository's `info/exclude`) and of the restore points.
 - `worktrees = false` in the picker's config turns this off.
 - Known: the worktree holds its own copy of the project's `AGENTS.md`, so a Pi there reads it twice (the worktree's and the folder's); and Activity shows its files under `.pi-worktrees/…`.
 
 #### D. The team: several people, several Pis
 
-Each colleague has their Pier, their VM and their Pis; **they meet in the repository**, as a team of developers does. **Setup > Team** shows, for the project's repository:
+Each colleague has their Pier, their VM and their Pis; **they meet in the repository**, as a team of developers does. **Repository > Team** shows, for the project's repository:
 
 - **For you:** the pull requests whose review is asked of your account (**let a Pi review it**), and the conversations a colleague gave you (**take it over**).
 - **Tasks:** issues labelled `pi-task`, free or taken by someone's Pi; **let a Pi do it** on a free one, **New task…** to add one (a Pi can also split a large piece of work into tasks).
@@ -59,7 +59,7 @@ Pi gets more git tools for this: `list_tasks`, `get_task`, `create_task`, `claim
 |---|---|
 | take a task | the issue gets the label `pi-doing` and is assigned to your account; a task already taken is refused, so two Pis never do the same one. The work goes on `pi/task-N`, then a pull request saying "Closes #N" |
 | ask a colleague's Pis for a review | the colleague's account is asked as reviewer, with the label `pi-review`; their Pier tells them |
-| post a review | with the repository set to **Push, ask to merge**, it waits for your approval in Setup > Git, like a merge, shown whole and bound to the commit Pi reviewed; with **Push and merge**, posted at once, except an **approval**, which always waits for you: a Pi's approval, under your account, would count as a human's review. At most **3 reviews** by one account on one pull request: then a human decides |
+| post a review | with the repository set to **Push, ask to merge**, it waits for your approval in Repository > Git, like a merge, shown whole and bound to the commit Pi reviewed; with **Push and merge**, posted at once, except an **approval**, which always waits for you: a Pi's approval, under your account, would count as a human's review. At most **3 reviews** by one account on one pull request: then a human decides |
 
 **Giving a conversation:** in Conversations, ⋯ > **Give to a colleague…** sends the whole conversation (and its `pi/…` branch, pushed) on a branch `pi-handoff/<colleague>/…` for them. In their Team page, **take it over** adds it to their conversations and opens it in a Pi, with a word on the branch to switch to; the handoff branch is then deleted. The conversation holds everything said in it, including what was pasted: Pier says so before it leaves. **Everyone who can read the repository can read that branch** (and its commit stays readable after it is deleted): Pier refuses to give a conversation in a public repository (on GitLab, an internal one too). Their note is shown in Pier, marked as not verified (anyone who may push could have written that branch), and never typed into Pi.
 

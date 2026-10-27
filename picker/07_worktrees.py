@@ -6,7 +6,7 @@
 # merges or pull requests, as a team does. The worktree has links to the project's
 # .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
 # removed when its Pi ends without having changed or committed anything; otherwise it
-# stays, listed in Setup > Git, until the user removes it.
+# stays, listed in Repository > Git, until the user removes it.
 
 WORKTREE_DIR = ".pi-worktrees"
 

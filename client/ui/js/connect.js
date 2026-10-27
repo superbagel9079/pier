@@ -65,6 +65,7 @@ function toggleBastion() {
   $("#bastion-fields").disabled = !on;
   form.bastion_host.required = on;
   form.bastion_user.required = on;
+  form.bastion_password.required = on;
 }
 
 $("#setup-form").use_bastion.addEventListener("change", toggleBastion);
@@ -85,10 +86,17 @@ $("#setup-form").addEventListener("submit", async (event) => {
     await backend.saveSettings(next);
     settings = next;
     showError($("#setup-error"), "");
-    toLogin();
   } catch (error) {
     showError($("#setup-error"), String(error));
+    return;
   }
+  // One screen: the address and the password together, then straight on (the
+  // fingerprint is still its own step at a first contact).
+  password = form.password.value;
+  bastionPassword = form.bastion_password.value;
+  form.password.value = form.bastion_password.value = "";
+  toLogin();
+  await connect();
 });
 
 function toLogin(message) {
@@ -386,9 +394,9 @@ async function projectsEnded() {
     if (prefs.clearOnEnd) {
       try { await backend.clearProject(project); notes.push(`deleted what was given to ${label}`); } catch { /* next tick */ }
     }
-    if (notes.length) workspace.find("context")?.onNote?.(`The Pi of ${label} ended: ${notes.join(", ")}.`);
+    if (notes.length) givenToPi()?.onNote?.(`The Pi of ${label} ended: ${notes.join(", ")}.`);
   }
-  workspace.find("context")?.refresh?.();
+  givenToPi()?.refresh?.();
 }
 
 /** After a reconnection: shares that were live come back paused, or resumed if wanted. */
@@ -399,7 +407,7 @@ async function resumeShares() {
     if (!running.has(kept.project) || live.some((s) => s.local === kept.local && s.project === kept.project)) continue;
     try { await backend.shareStart(kept.local, kept.writable, kept.project); } catch { /* shown as paused */ }
   }
-  workspace.find("context")?.refresh?.();
+  givenToPi()?.refresh?.();
 }
 
 // ============================================================================

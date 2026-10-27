@@ -327,7 +327,7 @@ async function openHandOff() {
       el("span", {
         className: "dim small",
         textContent: share.writable
-          ? `becomes a copy Pi can change, in ${share.label}/${share.relative}. To get Pi's changes back later: Context, then "download".`
+          ? `becomes a copy Pi can change, in ${share.label}/${share.relative}. To get Pi's changes back later: Activity > Given to Pi, then "review changes" or "download".`
           : `becomes a read-only copy in ${share.label}/${share.relative}.`,
       }),
     );
@@ -360,7 +360,7 @@ async function handOff() {
   go.textContent = "Hand off";
   if (failed.length) {
     showError($("#handoff-error"), `Not handed off, still live (this computer must stay on for them): ${failed.join("; ")}`);
-    workspace.find("context")?.refresh?.();
+    givenToPi()?.refresh?.();
     return;
   }
   $("#handoff").hidden = true;
@@ -368,7 +368,7 @@ async function handOff() {
     await leave();
     toLogin(`Handed off. Pi keeps working on the VM: you can turn this computer off. Log in again to see what it did.${leftOut}`);
   } else {
-    workspace.find("context")?.refresh?.();
+    givenToPi()?.refresh?.();
     if (leftOut) flashStatus(`Handed off.${leftOut}`);
   }
 }
@@ -383,15 +383,20 @@ document.addEventListener("keydown", (e) => {
   else if (!$("#handoff").hidden) { e.preventDefault(); $("#handoff").hidden = true; }
 });
 
-/** The Context tab, opened on the right if it was closed. */
+/** What was given to Pi: Activity's view (Activity opened if it was closed). */
 function contextTab({ reveal = false } = {}) {
-  const existing = workspace.find("context");
-  if (existing) {
-    if (reveal) workspace.show(existing);
-    return existing;
+  const old = workspace.find("context"); // a layout from before, still holding its own tab
+  if (old) {
+    if (reveal) workspace.show(old);
+    return old;
   }
-  return workspace.add("context", "right", { reveal });
+  const project = workspace.find("project") || workspace.add("project", prefs.panelSide === "left" ? "left" : "right");
+  if (reveal) project.showGiven();
+  return project.given;
 }
+
+/** Given to Pi, if it is open somewhere. */
+const givenToPi = () => workspace.find("context") || workspace.find("project")?.given;
 
 // Ctrl+V anywhere in the window, terminals included. An image goes to Pi; files and
 // folders copied in the file manager go through Context (folders ask first). The

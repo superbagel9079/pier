@@ -7,14 +7,16 @@
 const KINDS = {
   picker: { title: "picker", terminal: true },
   shell: { title: "shell", terminal: true },
-  context: { title: "Context", single: true, make: (tab) => makeContext(tab) },
+  // Given to Pi lives in Activity now; this kind stays for a layout saved before.
+  context: { title: "Given to Pi", single: true, make: (tab) => makeContext(tab) },
   project: { title: "Activity", single: true, make: (tab) => makeProject(tab) },
-  setup: { title: "Setup", single: true, make: (tab) => makeSetup(tab) },
+  setup: { title: "Project", single: true, make: (tab) => makeSetup(tab) },
+  repository: { title: "Repository", single: true, make: (tab) => makeRepository(tab) },
   conversations: { title: "Conversations", single: true, make: (tab) => makeConversations(tab) },
   pi: { title: "pi", terminal: true },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
-  takeback: { title: "take back", make: (tab) => makeTakeBack(tab) },
+  takeback: { title: "Pi's work", make: (tab) => makeTakeBack(tab) },
   logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
   labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },
   lab: { title: "lab", terminal: true },
@@ -23,16 +25,16 @@ const DOCKS = ["left", "center", "right"];
 const DOCK_NAMES = { left: "left", center: "center", right: "right" };
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
 // The terminals in the middle, every panel on one side (Settings > Layout chooses which):
-// Conversations first, then what the Pi in use does, what it was given, its setup. The
-// Logs tab is a diagnostics option.
+// Conversations first, then what the Pi in use does (and what it was given), the
+// project's setup. Repository comes when the project has one; Logs and Labs on demand.
 function defaultLayout(side = prefs.panelSide) {
   const panels = side === "left" ? "left" : "right";
   const other = panels === "left" ? "right" : "left";
   return {
-    [panels]: { tabs: ["conversations", "project", "context", "setup"], active: "conversations", collapsed: false, width: 400 },
+    [panels]: { tabs: ["conversations", "project", "setup"], active: "conversations", collapsed: false, width: 400 },
     [other]: { tabs: [], collapsed: false, width: 320 },
     center: { tabs: ["main"] },
-    layout: 5,
+    layout: 6,
   };
 }
 
@@ -74,6 +76,14 @@ const workspace = (() => {
     for (const tab of dock.tabs) bar.append(tabElement(tab, dock));
     // The active tab entirely in view: in a narrow side, the bar scrolls to it.
     bar.children[dock.tabs.indexOf(dock.active)]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // Tabs never shrink below six letters: those that do not fit are listed by ».
+    let more = $(".more-tabs", dock.el);
+    if (!more) {
+      more = el("button", { className: "icon more-tabs", textContent: "\u00BB", title: "The tabs that do not fit" });
+      more.addEventListener("click", () => showMenu(more, dock.tabs.map((t) => [t.title, () => show(t)])));
+      bar.after(more);
+    }
+    requestAnimationFrame(() => { more.hidden = bar.scrollWidth <= bar.clientWidth + 1; });
     for (const tab of dock.tabs) {
       tab.pane.hidden = dock.collapsed || tab !== dock.active;
       // Panels follow the VM only while shown (vm.js): nothing is computed there for a
@@ -213,7 +223,9 @@ const workspace = (() => {
     const main = find("main");
     if (main && main.dock !== name) items.push([`picker (main) · move here`, () => move(main, name)]);
     // Every panel: the closed ones to open again, the others to bring here.
-    for (const kind of ["conversations", "project", "context", "setup", "logs", "labs"]) {
+    // Labs once they are on (Settings > Labs); Given to Pi is in Activity.
+    const labsOn = vm.latest("labs")?.data?.settings?.enabled || find("labs");
+    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn ? ["labs"] : [])]) {
       const open = find(kind);
       const title = KINDS[kind].title;
       if (!open) items.push([title, () => add(kind, name)]);
@@ -515,7 +527,7 @@ const workspace = (() => {
     // Names given by the user, for the tabs that come back at the next connection.
     saved.knowsSetup = true;
     saved.knowsConversations = true;
-    saved.layout = 5;
+    saved.layout = 6;
     saved.titles = Object.fromEntries(tabs().filter((t) => t.renamed && (t.pinned || KINDS[t.kind].single)).map((t) => [keyOf(t), t.title]));
     return saved;
   }
@@ -533,7 +545,8 @@ const workspace = (() => {
     saved = saved || defaultLayout();
     // An older layout gets the new arrangement once (Reset layout gives it again); the
     // names given to tabs stay.
-    if ((saved.layout || 0) < 5) saved = { ...defaultLayout(), titles: saved.titles };
+    // Before 6, Context had a tab of its own: the default layout again (it is in Activity).
+    if ((saved.layout || 0) < 6) saved = { ...defaultLayout(), titles: saved.titles };
     clear();
     let mainPlaced = false;
     for (const name of DOCKS) {

@@ -1,5 +1,5 @@
 // Pi's requests waiting for the user: a merge, a review, a repository to create, a command
-// on a machine. Setup > Git and the Labs tab show them the same way.
+// on a machine. the top bar, Repository > Git and the Labs tab show them the same way.
 
 // ============================================================================
 // Each request shows exactly what will be done: the command whole, the pull request with

@@ -12,6 +12,20 @@ const STATES = {
   error: { mark: "!", label: "Failed" },
 };
 
+/** git's two-letter status of a file, in words ("?? notes.md": new, not in git). */
+function gitWords(code) {
+  if (!code) return "";
+  const c = code.trim();
+  if (c === "??") return "new, not in git";
+  if (c === "!!") return "ignored by git";
+  const words = { M: "changed", A: "added", D: "deleted", R: "renamed", C: "copied", U: "in conflict", T: "type changed" };
+  const [staged, worktree] = [code[0], code[1]];
+  const said = [];
+  if (staged && staged !== " " && staged !== "?") said.push(`${words[staged] || staged}, staged`);
+  if (worktree && worktree !== " " && worktree !== "?") said.push(`${words[worktree] || worktree}`);
+  return said.join(", then ") || code;
+}
+
 function makeProject(tab) {
   tab.pane.append($("#tpl-project").content.cloneNode(true));
   const error = $(".error", tab.pane);
@@ -170,7 +184,7 @@ function makeProject(tab) {
     );
     if (f) {
       const counts = [f.reads ? `${f.reads} read` : "", f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
-      const git = activity.git[path];
+      const git = gitWords(activity.git[path]);
       li.append(el("span", { className: "count", textContent: [counts, git].filter(Boolean).join(" · ") }));
     }
     li.addEventListener("dblclick", () => mention(path));
@@ -255,6 +269,7 @@ function makeProject(tab) {
       badge.textContent = f ? (STATES[f.state]?.mark ?? "?") : li.classList.contains("dir") && touchedDirs.has(rel) ? "•" : "";
       badge.className = "badge" + (f && STATES[f.state]?.live ? " live-dot" : "");
       git.textContent = activity.git[rel] || "";
+      git.title = gitWords(activity.git[rel]);
     }
   }
 
@@ -422,6 +437,26 @@ function makeProject(tab) {
   });
   $(".refresh-points", restoreView).addEventListener("click", loadPoints);
 
+  // Given to Pi (what was handed to Pi: images, files, folders, shares) is a view of
+  // Activity, built as its own panel was (context.js) inside it.
+  const givenView = $(".view-given", tab.pane);
+  const given = { kind: "context", pane: givenView };
+  makeContext(given);
+  tab.given = given;
+  tab.showGiven = () => { workspace.show(tab); setMode("given"); };
+
+  // Undo last prompt: back to the point saved as the latest prompt arrived.
+  const undo = $(".undo-prompt", tab.pane);
+  undo.addEventListener("click", async () => {
+    if (!base) return;
+    try {
+      const answer = pointsData?.points?.length ? pointsData : await backend.api(["checkpoints", base]);
+      const point = (answer.points || []).find((p) => p.reason === "prompt");
+      if (!point) { note("No prompt to undo yet: a point is saved as each prompt arrives."); return; }
+      await restore(point, []);
+    } catch (e) { note(String(e), true); }
+  });
+
   tab.setMode = (next) => setMode(next); // from the palette
   function setMode(next) {
     mode = next;
@@ -429,7 +464,10 @@ function makeProject(tab) {
     activityView.hidden = mode !== "activity";
     filesView.hidden = mode !== "files";
     restoreView.hidden = mode !== "restore";
-    $(".files-hint", tab.pane).hidden = mode === "restore";
+    givenView.hidden = mode !== "given";
+    given.onVisible?.(mode === "given" && tab.shown !== false);
+    if (mode === "given") given.onShow?.();
+    $(".files-hint", tab.pane).hidden = mode === "restore" || mode === "given";
     if (mode === "files" && !tree.childElementCount) loadTree();
     if (mode === "restore") loadPoints();
     follow();
@@ -457,11 +495,14 @@ function makeProject(tab) {
   for (const b of tab.pane.querySelectorAll(".mode")) b.addEventListener("click", () => setMode(b.dataset.mode));
   $(".refresh", tab.pane).addEventListener("click", loadTree);
   showHidden.addEventListener("change", loadTree);
-  tab.onTargetChange = retarget;
-  tab.onVisible = () => follow();
-  tab.onShow = () => { if (stale && vm.latest("activity")) onActivity(vm.latest("activity")); };
+  tab.onTargetChange = () => { retarget(); given.onTargetChange?.(); };
+  tab.onVisible = (shown) => { follow(); given.onVisible?.(shown !== false && mode === "given"); };
+  tab.onShow = () => {
+    if (stale && vm.latest("activity")) onActivity(vm.latest("activity"));
+    if (mode === "given") given.onShow?.();
+  };
   const unlisten = [vm.on("activity", onActivity), vm.on("checkpoints", onPoints)];
-  tab.onClose = () => { unlisten.forEach((stop) => stop()); vm.follow({ activity: null, checkpoints: null }); };
+  tab.onClose = () => { unlisten.forEach((stop) => stop()); given.onClose?.(); vm.follow({ activity: null, checkpoints: null }); };
   retarget();
 }
 
