@@ -261,8 +261,10 @@ pub fn send_keys_commands(bytes: &[u8]) -> String {
 }
 
 /// Pier's own sequence: only Pier may say which session a tab shows. Written by Pi,
-/// it is defused on the way (also when split across two writes).
+/// it is defused on the way (also when split across two writes), in both the forms
+/// xterm.js reads: ESC ] and the one-character C1 introducer U+009D (UTF-8 C2 9D).
 const OWN_OSC: &[u8] = b"\x1b]7770;";
+const OWN_OSC_C1: &[u8] = b"\xc2\x9d7770;";
 
 /// tmux control mode, as it comes: one line per notification. "%output %PANE DATA" is
 /// what the program wrote, with bytes below space and backslashes written as \ooo
@@ -304,20 +306,23 @@ impl ControlParser {
 
     /// Pi's bytes, with Pier's own sequence defused.
     fn program_output(&mut self, decoded: &mut Vec<u8>, out: &mut Vec<u8>) {
-        // Split across writes: the end of the last output and the start of this one.
-        for k in 1..OWN_OSC.len() {
-            if self.tail.ends_with(&OWN_OSC[..k]) && decoded.starts_with(&OWN_OSC[k..]) {
-                decoded[0] = b'_';
+        for own in [OWN_OSC, OWN_OSC_C1] {
+            // Split across writes: the end of the last output and the start of this one.
+            for k in 1..own.len() {
+                if self.tail.ends_with(&own[..k]) && decoded.starts_with(&own[k..]) {
+                    decoded[0] = b'_';
+                }
+            }
+            let mut i = 0;
+            while let Some(at) = decoded[i..].windows(own.len()).position(|w| w == own) {
+                decoded[i + at + 1] = b'_'; // ESC _ : an ignored sequence, not Pier's (C2 _: not one at all)
+                i += at + 1;
             }
         }
-        let mut i = 0;
-        while let Some(at) = decoded[i..].windows(OWN_OSC.len()).position(|w| w == OWN_OSC) {
-            decoded[i + at + 1] = b'_'; // ESC _ : an ignored sequence, not Pier's
-            i += at + 1;
-        }
+        let keep = OWN_OSC.len().max(OWN_OSC_C1.len());
         self.tail.extend_from_slice(decoded);
-        if self.tail.len() > OWN_OSC.len() {
-            self.tail.drain(..self.tail.len() - OWN_OSC.len());
+        if self.tail.len() > keep {
+            self.tail.drain(..self.tail.len() - keep);
         }
         out.extend_from_slice(decoded);
     }
@@ -436,6 +441,14 @@ mod tests {
         let mut out = parser.feed(b"%output %1 \\033]77\n");
         out.extend(parser.feed(b"%output %1 70;session;x\\007\n"));
         assert!(!out.windows(OWN_OSC.len()).any(|w| w == OWN_OSC), "{out:?}");
+        // the C1 introducer, whole and split
+        let mut parser = ControlParser::default();
+        let out = parser.feed("%output %1 \u{9d}7770;session;pi-other\\007\n".as_bytes());
+        assert!(!out.windows(OWN_OSC_C1.len()).any(|w| w == OWN_OSC_C1), "{out:?}");
+        let mut parser = ControlParser::default();
+        let mut out = parser.feed(b"%output %1 \xc2\x9d77\n");
+        out.extend(parser.feed(b"%output %1 70;session;x\\007\n"));
+        assert!(!out.windows(OWN_OSC_C1.len()).any(|w| w == OWN_OSC_C1), "{out:?}");
         // Pier's own still passes
         let mut parser = ControlParser::default();
         assert_eq!(parser.feed(b"%session-changed $1 pi-a\n"), b"\x1b]7770;session;pi-a\x07");

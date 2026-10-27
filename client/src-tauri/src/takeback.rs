@@ -122,8 +122,16 @@ pub fn compare(local: &Manifest, remote: &Manifest) -> Comparison {
     result
 }
 
+/// Characters that do not show, or turn the text around them ("invoice\u{202E}fdp.exe"
+/// reads "invoiceexe.pdf"): Unicode's format characters (Cf) that a name may hold.
+pub fn invisible(c: char) -> bool {
+    matches!(c, '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
+}
+
 /// The components of a relative path from the VM, or None when it could leave the
-/// folder or mean something else on Windows (C:x, a:b streams, \, device names).
+/// folder, mean something else on Windows (C:x, a:b streams, \, device names) or not
+/// read as what it is (invisible or direction-changing characters).
 pub fn safe_parts(rel: &str) -> Option<Vec<&str>> {
     if rel.is_empty() || rel.len() > 4096 || rel.starts_with('/') {
         return None;
@@ -133,13 +141,24 @@ pub fn safe_parts(rel: &str) -> Option<Vec<&str>> {
         let stem = p.split('.').next().unwrap_or_default().to_ascii_uppercase();
         let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
             || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
-        p.is_empty() || p == "." || p == ".." || p.contains(['\\', ':', '<', '>', '"', '|', '?', '*']) || p.chars().any(char::is_control)
-            || p.ends_with('.') || p.ends_with(' ') || device
+        p.is_empty() || p == "." || p == ".." || p.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
+            || p.chars().any(|c| c.is_control() || invisible(c)) || p.ends_with('.') || p.ends_with(' ') || device
     };
     if parts.iter().any(|p| bad(p)) {
         return None;
     }
     Some(parts)
+}
+
+/// Whether `path`, when it is there, is really named as asked from `real_root` down:
+/// on Windows "MOCKUP~1.TXT" opens "mockup-final.txt" and "readme.md" opens "README.md",
+/// so a file the comparison called new could replace another one, never listed.
+fn named_as_asked(real_root: &Path, path: &Path, rel: &str) -> bool {
+    let Ok(real) = path.canonicalize() else { return true }; // not there: made with that name
+    let Some(parts) = safe_parts(rel) else { return false };
+    let mut expected = real_root.to_path_buf();
+    expected.extend(parts);
+    real == expected
 }
 
 /// root joined with a checked relative path; None when it is not one.
@@ -183,6 +202,10 @@ pub fn apply(root: &Path, backup: &Path, archive: Option<&Path>, take: &HashSet<
     let mut backed_up = false;
     let mut save_old = |path: &Path, rel: &str, applied: &mut Applied| -> Result<()> {
         let Some(saved) = inside(backup, rel) else { bail!("not a file of the folder: {rel}") };
+        if !backed_up {
+            // Made here, and only if it was not there: never another take back's.
+            fs::create_dir(backup).with_context(|| format!("{}: a backup folder of its own", backup.display()))?;
+        }
         if let Some(parent) = saved.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -219,7 +242,7 @@ pub fn apply(root: &Path, backup: &Path, archive: Option<&Path>, take: &HashSet<
             // link on the way), and the file itself not a link.
             let real_parent = parent.canonicalize()?;
             let is_link = fs::symlink_metadata(&target).is_ok_and(|m| m.file_type().is_symlink() || m.is_dir());
-            if !real_parent.starts_with(&real_root) || is_link {
+            if !real_parent.starts_with(&real_root) || is_link || !named_as_asked(&real_root, &target, &rel) {
                 applied.skipped.push(rel);
                 continue;
             }
@@ -236,7 +259,7 @@ pub fn apply(root: &Path, backup: &Path, archive: Option<&Path>, take: &HashSet<
                 save_old(&target, &rel, &mut applied)?;
             }
             fs::rename(&tmp, &target)?;
-            crate::mark_from_elsewhere(&target);
+            crate::mark_from_elsewhere(&target).with_context(|| format!("{rel}: could not mark it as coming from elsewhere"))?;
             applied.taken.push(rel);
         }
     }
@@ -247,7 +270,7 @@ pub fn apply(root: &Path, backup: &Path, archive: Option<&Path>, take: &HashSet<
         };
         let real_parent = target.parent().and_then(|p| p.canonicalize().ok());
         let plain = fs::symlink_metadata(&target).is_ok_and(|m| m.is_file());
-        if !plain || !real_parent.is_some_and(|p| p.starts_with(&real_root)) {
+        if !plain || !real_parent.is_some_and(|p| p.starts_with(&real_root)) || !named_as_asked(&real_root, &target, rel) {
             applied.skipped.push(rel.clone());
             continue;
         }
@@ -275,6 +298,47 @@ mod tests {
             assert!(safe_parts(bad).is_none(), "{bad:?}");
         }
         assert!(safe_parts("COMMON.md").is_some());
+        assert!(safe_parts("invoice\u{202E}fdp.exe").is_none(), "direction-changing");
+        assert!(safe_parts("a\u{200B}b").is_none(), "invisible");
+        assert!(safe_parts("payload.exe:Zone.Identifier").is_none(), "a stream");
+    }
+
+    #[test]
+    fn a_name_that_opens_another_file_is_not_replaced() {
+        let dir = sandbox("names");
+        let root = dir.join("orig");
+        fs::write(root.join("README.md"), "mine").unwrap();
+        let archive = dir.join("files.tar");
+        {
+            let mut builder = tar::Builder::new(fs::File::create(&archive).unwrap());
+            let mut header = tar::Header::new_gnu();
+            header.set_size(3);
+            header.set_mode(0o644);
+            header.set_entry_type(tar::EntryType::Regular);
+            builder.append_data(&mut header, "readme.md", "pi!".as_bytes()).unwrap();
+            builder.finish().unwrap();
+        }
+        let take: HashSet<String> = ["readme.md".to_string()].into_iter().collect();
+        let applied = apply(&root, &dir.join("backup"), Some(&archive), &take, &[]).unwrap();
+        if cfg!(windows) || cfg!(target_os = "macos") {
+            // Case-insensitive: "readme.md" is README.md, never listed as changed.
+            assert_eq!(fs::read_to_string(root.join("README.md")).unwrap(), "mine");
+            assert_eq!(applied.skipped, vec!["readme.md".to_string()]);
+        }
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn two_take_backs_never_share_a_backup() {
+        let dir = sandbox("backups");
+        let root = dir.join("orig");
+        fs::write(root.join("a.txt"), "original").unwrap();
+        let backup = dir.join("backup");
+        fs::create_dir_all(&backup).unwrap(); // another take back's, there already
+        let delete = vec!["a.txt".to_string()];
+        assert!(apply(&root, &backup, None, &HashSet::new(), &delete).is_err());
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "original", "nothing moved");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]

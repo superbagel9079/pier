@@ -12,6 +12,8 @@ use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use russh_sftp::protocol::{Attrs, Data, File, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode, Version};
 
@@ -30,12 +32,29 @@ pub struct ShareFs {
     writable: bool,
     handles: HashMap<String, Open>,
     next: u64,
+    /// Set when the share is stopped (see revoker): every request is refused from then
+    /// on. Unmounting on the VM is lazy, and a process of Pi still inside the folder
+    /// would otherwise go on reading, and writing, through this server.
+    revoked: Arc<AtomicBool>,
 }
 
 impl ShareFs {
     /// `root` must exist; it is canonicalized so confinement checks compare like with like.
     pub fn new(root: &Path, writable: bool) -> std::io::Result<Self> {
-        Ok(Self { root: root.canonicalize()?, writable, handles: HashMap::new(), next: 0 })
+        Ok(Self { root: root.canonicalize()?, writable, handles: HashMap::new(), next: 0, revoked: Arc::default() })
+    }
+
+    /// What stops this share: set it to true, and nothing more is answered.
+    pub fn revoker(&self) -> Arc<AtomicBool> {
+        self.revoked.clone()
+    }
+
+    fn live(&mut self) -> Result<(), StatusCode> {
+        if !self.revoked.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        self.handles.clear(); // the files open close with them
+        Err(StatusCode::PermissionDenied)
     }
 
     /// The SFTP path as seen by the VM, normalized: "/" is the shared folder.
@@ -51,6 +70,12 @@ impl ShareFs {
                 // "C:x", alternate data streams "a:b").
                 p if p.contains('\\') || p.contains(':') => {
                     log_warn!("share.refused", path = path, reason = "backslash or colon in a name");
+                    return Err(StatusCode::PermissionDenied);
+                }
+                // The root is a \\?\ path: Windows takes every name as it is, and the VM
+                // could make "CON", "a." or "b " that Explorer can neither open nor delete.
+                p if cfg!(windows) && crate::takeback::safe_parts(p).is_none() => {
+                    log_warn!("share.refused", path = path, reason = "a name Windows cannot use");
                     return Err(StatusCode::PermissionDenied);
                 }
                 p => parts.push(p.to_string()),
@@ -128,21 +153,25 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
+        self.live()?;
         let parts = Self::virtual_path(&path)?;
         Ok(Name { id, files: vec![File::dummy(format!("/{}", parts.join("/")))] })
     }
 
     async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+        self.live()?;
         Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
     }
 
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+        self.live()?;
         // Links are presented as what they point to: the VM never sees a link it
         // could follow on its own side.
         Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
     }
 
     async fn fstat(&mut self, id: u32, handle: String) -> Result<Attrs, Self::Error> {
+        self.live()?;
         match self.handles.get(&handle) {
             Some(Open::File(file)) => Ok(Attrs { id, attrs: FileAttributes::from(&file.metadata().map_err(status_of)?) }),
             Some(Open::Dir { path, .. }) => Ok(Attrs { id, attrs: attrs(path)? }),
@@ -151,6 +180,7 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
+        self.live()?;
         let dir = self.resolve(&path)?;
         if !dir.is_dir() {
             return Err(StatusCode::NoSuchFile);
@@ -159,6 +189,7 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
+        self.live()?;
         let Some(Open::Dir { path, pending }) = self.handles.get_mut(&handle) else {
             return Err(StatusCode::Failure);
         };
@@ -182,6 +213,7 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn open(&mut self, id: u32, filename: String, pflags: OpenFlags, _attrs: FileAttributes) -> Result<Handle, Self::Error> {
+        self.live()?;
         let writes = pflags.intersects(OpenFlags::WRITE | OpenFlags::APPEND | OpenFlags::CREATE | OpenFlags::TRUNCATE);
         if writes {
             self.must_write()?;
@@ -200,6 +232,7 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn read(&mut self, id: u32, handle: String, offset: u64, len: u32) -> Result<Data, Self::Error> {
+        self.live()?;
         let Some(Open::File(file)) = self.handles.get_mut(&handle) else {
             return Err(StatusCode::Failure);
         };
@@ -214,6 +247,7 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn write(&mut self, id: u32, handle: String, offset: u64, data: Vec<u8>) -> Result<Status, Self::Error> {
+        self.live()?;
         self.must_write()?;
         let Some(Open::File(file)) = self.handles.get_mut(&handle) else {
             return Err(StatusCode::Failure);
@@ -224,34 +258,40 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn close(&mut self, id: u32, handle: String) -> Result<Status, Self::Error> {
+        self.live()?;
         self.handles.remove(&handle);
         Ok(ok(id))
     }
 
     async fn setstat(&mut self, id: u32, _path: String, _attrs: FileAttributes) -> Result<Status, Self::Error> {
+        self.live()?;
         // Permissions and times are not carried over; accepted so "touch" works.
         self.must_write()?;
         Ok(ok(id))
     }
 
     async fn fsetstat(&mut self, id: u32, _handle: String, _attrs: FileAttributes) -> Result<Status, Self::Error> {
+        self.live()?;
         self.must_write()?;
         Ok(ok(id))
     }
 
     async fn remove(&mut self, id: u32, filename: String) -> Result<Status, Self::Error> {
+        self.live()?;
         self.must_write()?;
         fs::remove_file(self.resolve(&filename)?).map_err(status_of)?;
         Ok(ok(id))
     }
 
     async fn mkdir(&mut self, id: u32, path: String, _attrs: FileAttributes) -> Result<Status, Self::Error> {
+        self.live()?;
         self.must_write()?;
         fs::create_dir(self.resolve(&path)?).map_err(status_of)?;
         Ok(ok(id))
     }
 
     async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, Self::Error> {
+        self.live()?;
         self.must_write()?;
         let dir = self.resolve(&path)?;
         if dir == self.root {
@@ -262,6 +302,7 @@ impl russh_sftp::server::Handler for ShareFs {
     }
 
     async fn rename(&mut self, id: u32, oldpath: String, newpath: String) -> Result<Status, Self::Error> {
+        self.live()?;
         self.must_write()?;
         fs::rename(self.resolve(&oldpath)?, self.resolve(&newpath)?).map_err(status_of)?;
         Ok(ok(id))

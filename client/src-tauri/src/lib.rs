@@ -63,6 +63,18 @@ struct Share {
     project: String,
     label: String,
     writable: bool,
+    /// The SFTP server's (share::ShareFs::revoker).
+    #[serde(skip)]
+    revoked: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Share {
+    /// Nothing more is served: called whenever the share leaves the list (stopped, handed
+    /// off, the connection lost), as the VM's lazy unmount leaves a way in to whoever
+    /// is still inside it.
+    fn revoke(&self) {
+        self.revoked.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Largest folder copied into a project; bigger ones are better shared live.
@@ -205,6 +217,7 @@ async fn connected(app: &AppHandle, state: &AppState, settings: &Settings) -> Re
 /// told, to start them again.
 async fn reconnected(app: &AppHandle, state: &AppState) {
     let dropped: Vec<Share> = state.shares.lock().await.drain().map(|(_, s)| s).collect();
+    dropped.iter().for_each(Share::revoke);
     for old in state.extra.lock().await.drain(..) {
         old.close().await;
     }
@@ -948,6 +961,7 @@ async fn share_start(app: AppHandle, state: State<'_, AppState>, path: String, w
         return Err(format!("{path} is not a folder"));
     }
     let fs = share::ShareFs::new(&local, writable).map_err(|e| format!("{path}: {e}"))?;
+    let revoked = fs.revoker();
     let name = local.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "share".into());
     let prepared = api(&app, &state, &["share-prepare", &name, &target], &[]).await?;
     let field = |key: &str| prepared.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
@@ -973,6 +987,7 @@ async fn share_start(app: AppHandle, state: State<'_, AppState>, path: String, w
         }
     }
     if !mounted {
+        revoked.store(true, Ordering::Relaxed);
         log_error!("share.mount-failed", req = request, local = path, mountpoint = mountpoint, waited_ms = started.elapsed().as_millis());
         let _ = api(&app, &state, &["share-stop", &mountpoint], &[]).await;
         return Err("Mounting failed on the VM: check that sshfs is installed and FUSE is available (/dev/fuse).".into());
@@ -985,6 +1000,7 @@ async fn share_start(app: AppHandle, state: State<'_, AppState>, path: String, w
         project: field("project"),
         label: field("label"),
         writable,
+        revoked,
     };
     log_info!("share.start", id = share.id, req = request, local = share.local, mountpoint = share.mountpoint, mode = mode, ms = started.elapsed().as_millis());
     state.shares.lock().await.insert(share.id, share.clone());
@@ -1006,6 +1022,7 @@ async fn share_start(app: AppHandle, state: State<'_, AppState>, path: String, w
 async fn share_stop(app: AppHandle, state: State<'_, AppState>, id: u32, forget: Option<bool>) -> Result<(), String> {
     let share = state.shares.lock().await.remove(&id);
     if let Some(share) = share {
+        share.revoke();
         log_info!("share.stop", id = id, local = share.local, forget = forget.unwrap_or(true));
         if forget.unwrap_or(true) {
             let _ = state.store.forget_share(&share.local, &share.project);
@@ -1275,7 +1292,9 @@ async fn hand_off(app: AppHandle, state: State<'_, AppState>, id: u32) -> Result
     log_info!("handoff.packed", id = id, local = share.local, bytes = packed.0.len(), ms = started.elapsed().as_millis());
     let mode = if share.writable { "rw" } else { "ro" };
     let result = api(&app, &state, &["handoff", &share.mountpoint, mode], &packed.0).await?;
-    state.shares.lock().await.remove(&id);
+    if let Some(gone) = state.shares.lock().await.remove(&id) {
+        gone.revoke();
+    }
     Ok(result)
 }
 
@@ -1388,8 +1407,15 @@ async fn takeback_apply(app: AppHandle, state: State<'_, AppState>, path: String
     }
     let parent = root.parent().ok_or_else(|| format!("{local} has no parent folder"))?.to_path_buf();
     let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
+    // A folder of its own each time, to the second (and numbered): two take backs in
+    // the same minute no longer save into the same folder, the second over the first.
     let when = journal::timestamp(std::time::SystemTime::now()).replace('T', " ").replace(':', "-");
-    let backup = parent.join(format!("{name} (before Pi's changes {})", &when[..16]));
+    let mut backup = parent.join(format!("{name} (before Pi's changes {})", &when[..19]));
+    let mut n = 2;
+    while backup.exists() {
+        backup = parent.join(format!("{name} (before Pi's changes {} {n})", &when[..19]));
+        n += 1;
+    }
     let request = next_request();
     let started = Instant::now();
     let unique = format!("{}-{}", std::process::id(), NEXT_REQUEST.fetch_add(1, Ordering::Relaxed));
@@ -1441,9 +1467,12 @@ const TAKEBACK_MAX: u64 = 600 * 1024 * 1024;
 const TAKEBACK_UNPACKED_MAX: u64 = 2 * 1024 * 1024 * 1024;
 
 /// Unpacks a take-back into `staging` (a folder of its own), then moves its top folder
-/// to `target`. Only folders and plain files: links, devices and the like are skipped
-/// (a link could point anywhere on this computer). Every file is marked as coming from
-/// elsewhere (Mark of the Web), so Windows warns before running or opening it.
+/// to `target`. Only folders and plain files whose names mean the same here as on the VM
+/// (takeback::safe_parts): links, devices and the like are skipped (a link could point
+/// anywhere on this computer), and so are "x.exe:Zone.Identifier" (written as the mark of
+/// x.exe, it would take it off) and "NUL". Every file is marked as coming from elsewhere
+/// (Mark of the Web), so Windows warns before running or opening it; a mark that cannot
+/// be written stops the take back.
 fn unpack_takeback(archive: &std::path::Path, staging: &std::path::Path, target: &std::path::Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(staging)?;
     let mut tar = tar::Archive::new(std::fs::File::open(archive)?);
@@ -1451,7 +1480,9 @@ fn unpack_takeback(archive: &std::path::Path, staging: &std::path::Path, target:
     for entry in tar.entries()? {
         let mut entry = entry?;
         let kind = entry.header().entry_type();
-        if !(kind.is_file() || kind.is_dir()) {
+        let rel = entry.path()?.to_string_lossy().replace('\\', "/");
+        let rel = rel.trim_start_matches("./").trim_end_matches('/');
+        if !(kind.is_file() || kind.is_dir()) || takeback::safe_parts(rel).is_none() {
             skipped += 1;
             continue;
         }
@@ -1462,11 +1493,11 @@ fn unpack_takeback(archive: &std::path::Path, staging: &std::path::Path, target:
         // unpack_in refuses entries escaping the folder.
         if entry.unpack_in(staging)? && kind.is_file() {
             let path = staging.join(entry.path()?);
-            mark_from_elsewhere(&path);
+            mark_from_elsewhere(&path).map_err(|e| anyhow::anyhow!("{}: could not mark it as coming from elsewhere: {e}", path.display()))?;
         }
     }
     if skipped > 0 {
-        log_info!("takeback.skipped", entries = skipped, why = "links and special files are not taken back");
+        log_info!("takeback.skipped", entries = skipped, why = "links, special files and names Windows reads otherwise are not taken back");
     }
     let top = std::fs::read_dir(staging)?
         .flatten()
@@ -1479,13 +1510,31 @@ fn unpack_takeback(archive: &std::path::Path, staging: &std::path::Path, target:
     Ok(())
 }
 
-/// Zone.Identifier, as browsers write it for downloads: zone 3, the Internet.
-fn mark_from_elsewhere(path: &std::path::Path) {
+/// Zone.Identifier, as browsers write it for downloads: zone 3, the Internet. On macOS
+/// the quarantine attribute, as Safari sets it: Gatekeeper asks before opening the file.
+fn mark_from_elsewhere(path: &std::path::Path) -> std::io::Result<()> {
     if cfg!(windows) {
         let mut stream = path.as_os_str().to_owned();
         stream.push(":Zone.Identifier");
-        let _ = std::fs::write(std::path::PathBuf::from(stream), "[ZoneTransfer]\r\nZoneId=3\r\n");
+        return std::fs::write(std::path::PathBuf::from(stream), "[ZoneTransfer]\r\nZoneId=3\r\n");
     }
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        extern "C" {
+            fn setxattr(path: *const std::ffi::c_char, name: *const std::ffi::c_char, value: *const std::ffi::c_void,
+                        size: usize, position: u32, options: i32) -> i32;
+        }
+        let when = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let value = format!("0081;{when:x};Pier;");
+        let file = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(std::io::Error::other)?;
+        // SAFETY: both strings are NUL-terminated and live through the call; value is read for its length only.
+        let done = unsafe { setxattr(file.as_ptr(), c"com.apple.quarantine".as_ptr(), value.as_ptr().cast(), value.len(), 0, 0) };
+        if done != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1510,6 +1559,7 @@ async fn share_list(state: State<'_, AppState>) -> Result<Vec<Share>, String> {
 /// quitting while offline does not hang (the VM cleans dead mounts at the next login).
 async fn stop_all_shares(app: &AppHandle, state: &AppState) {
     let shares: Vec<Share> = state.shares.lock().await.drain().map(|(_, s)| s).collect();
+    shares.iter().for_each(Share::revoke);
     let live = state.connection.lock().await.as_ref().is_some_and(|c| !c.is_closed());
     if shares.is_empty() || !live {
         return;
@@ -2065,5 +2115,39 @@ mod tests {
     fn typed_text_is_not_logged() {
         assert_eq!(args_for_log(&["type", "my secret plan", "~/work"]), "type <14 chars> ~/work");
         assert_eq!(args_for_log(&["ls", "/home/leo"]), "ls /home/leo");
+    }
+
+    #[test]
+    fn a_download_keeps_its_marks() {
+        let dir = std::env::temp_dir().join(format!("pier-download-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let archive = dir.join("copy.tar");
+        {
+            let mut builder = tar::Builder::new(std::fs::File::create(&archive).unwrap());
+            // Written by hand: the tar crate refuses some of these names itself.
+            let entry = |builder: &mut tar::Builder<std::fs::File>, name: &str, kind: tar::EntryType, body: &[u8]| {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(body.len() as u64);
+                header.set_mode(0o755);
+                header.set_entry_type(kind);
+                header.as_old_mut().name[..name.len()].copy_from_slice(name.as_bytes());
+                header.set_cksum();
+                builder.append(&header, body).unwrap();
+            };
+            entry(&mut builder, "top/", tar::EntryType::Directory, b"");
+            entry(&mut builder, "top/payload.exe", tar::EntryType::Regular, b"MZ");
+            entry(&mut builder, "top/payload.exe:Zone.Identifier", tar::EntryType::Regular, b"[ZoneTransfer]\r\nZoneId=0\r\n");
+            entry(&mut builder, "top/NUL", tar::EntryType::Regular, b"x");
+            builder.finish().unwrap();
+        }
+        let target = dir.join("top (from Pi)");
+        unpack_takeback(&archive, &dir.join("staging"), &target).expect("NUL no longer stops it");
+        assert_eq!(std::fs::read(target.join("payload.exe")).unwrap(), b"MZ");
+        if cfg!(windows) {
+            let mark = std::fs::read_to_string(target.join("payload.exe:Zone.Identifier")).unwrap();
+            assert!(mark.contains("ZoneId=3"), "still from the Internet: {mark}");
+        }
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
