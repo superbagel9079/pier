@@ -328,6 +328,8 @@ Pi runs on the VM and does not need the PC, **except for live shares**.
 - a read-only share becomes a read-only copy;
 - a read-and-write share becomes a copy Pi can change.
 
+The copy holds the whole folder, its `.git` included (Pi goes on with its history), except the folders rebuilt from it at its top (`node_modules`, `target`, `__pycache__`, `.venv`, `venv`): Pier says which it left out. A `target` deeper in the folder is kept, as anything else.
+
 Then Pier disconnects, and the PC can be switched off.
 
 #### B. Take back

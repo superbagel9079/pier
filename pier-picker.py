@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.34"
+VERSION = "4.35"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -1628,15 +1628,19 @@ def exec_pi(path, extra):
     watcher = None
     if config["checkpoints"]:
         # Saved before Pi starts, so that whatever it does first can be undone.
-        if not os.path.isdir(checkpoint_store(project)):
+        # A Pi in a worktree of its own changes that folder, not the project (whose points
+        # leave .pi-worktrees out), and writes its conversations as that folder's: its
+        # points are the worktree's, in a store of their own.
+        saved = os.path.realpath(workdir)
+        if not os.path.isdir(checkpoint_store(saved)):
             print("Pier: saving the project's first restore point (only the first one takes a while)...", flush=True)
         try:
-            checkpoint_create(project, "start", "Pi started")
+            checkpoint_create(saved, "start", "Pi started")
         except Exception as exc:  # noqa: BLE001 - Pi starts anyway, without restore points
-            log("warn", "checkpoint.start-failed", project=project, err=str(exc))
+            log("warn", "checkpoint.start-failed", project=saved, err=str(exc))
             print(f"Pier: no restore point for this session ({exc})")
         file = extra[extra.index("--session") + 1] if "--session" in extra[:-1] else None
-        watcher = PromptWatcher(project, file, os.environ.get("PI_PICKER_SLOT"))
+        watcher = PromptWatcher(saved, file, os.environ.get("PI_PICKER_SLOT"))
         watcher.start()
     log("info", "pi.start", project=project, sandbox=sandbox_wanted(config), network="limited" if network else "open",
         args=list(extra), pi=pi_exe)
@@ -2349,7 +2353,10 @@ def checkpoint_git(project, *args, stdin=None, unreadable_ok=False):
     root-owned one): those are skipped, the rest is saved."""
     argv = ["git", "-c", "core.fsmonitor=false", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
             "-c", f"core.hooksPath={os.devnull}", "-c", "gc.auto=0", "-c", "core.quotepath=false",
-            "-c", "core.untrackedCache=false", "-c", "core.longpaths=true", *args]
+            # The untracked cache: the private GIT_DIR is the picker's alone, so nothing else
+            # reads or rewrites it, and a point of an unchanged big tree no longer walks
+            # all of it twice (ls-files, then add).
+            "-c", "core.untrackedCache=true", "-c", "core.longpaths=true", *args]
     try:
         result = subprocess.run(argv, cwd=project, input=stdin if stdin is not None else b"",
                                 capture_output=True, env=checkpoint_env(project), timeout=CHECKPOINT_TIMEOUT)
@@ -2481,10 +2488,15 @@ def checkpoint_list(project):
     return points
 
 
-def checkpoint_commit(project, tree, meta):
+def checkpoint_commit(project, tree, meta, after=None):
+    """A point of tree. after: the latest point's id; the new one comes after it even
+    with the clock set back (the points are ordered, and pruned, by their ids)."""
     message = json.dumps(meta, ensure_ascii=False).encode("utf-8") + b"\n"
     commit = checkpoint_git(project, "commit-tree", tree, stdin=message).decode().strip()
-    ident = f"{time.time_ns():020d}"
+    now = time.time_ns()
+    if after and after.isdigit():
+        now = max(now, int(after) + 1)
+    ident = f"{now:020d}"
     checkpoint_git(project, "update-ref", f"refs/devbox/{ident}", commit)
     return ident
 
@@ -2507,7 +2519,7 @@ def checkpoint_create(project, reason, label="", session=None, keep=None):
                 reason, label = latest["reason"], latest["label"]
         meta = {"reason": reason, "label": (label or CHECKPOINT_LABELS.get(reason, ""))[:200],
                 "prompts": prompts, "session": session, "skipped": len(skipped)}
-        ident = checkpoint_commit(project, tree, meta)
+        ident = checkpoint_commit(project, tree, meta, after=latest and latest["id"])
         doomed = ([replaced] if replaced else []) + points[CHECKPOINT_KEEP - (0 if replaced else 1):]
         doomed = [p for p in doomed if p and p["ref"] != keep]
         if doomed:
@@ -2529,7 +2541,7 @@ def checkpoint_relabel(project, label, session=None):
         latest = points[0]
         meta = {"reason": "prompt", "label": label[:200], "prompts": ([label] + latest["prompts"])[:20],
                 "session": session or latest["session"], "skipped": latest["skipped"]}
-        ident = checkpoint_commit(project, latest["tree"], meta)
+        ident = checkpoint_commit(project, latest["tree"], meta, after=latest["id"])
         checkpoint_git(project, "update-ref", "-d", latest["ref"])
     log("info", "checkpoint.relabel", project=project, id=ident)
     return ident
@@ -3884,8 +3896,15 @@ def api_handoff(home, mount, mode, stream):
 # The copy is Pi's to write: it is walked through file descriptors (os.fwalk), links are
 # listed but never followed, and only plain files are read.
 
-# Left out of the comparison, as Pier leaves them out of the copy (copy.rs).
-COPY_SKIP = {".git", "node_modules", "target", "__pycache__", ".venv", "venv", ".DS_Store", "Thumbs.db"}
+# Left out of the comparison, as Pier leaves them out of a hand off (copy.rs,
+# take_back_skips): the rebuilt folders at the top only, the systems' files everywhere,
+# and git's own files (never brought back).
+COPY_REBUILT = {"node_modules", "target", "__pycache__", ".venv", "venv"}
+COPY_JUNK = {".git", ".DS_Store", "Thumbs.db"}
+
+
+def copy_skips(top, name):
+    return name in COPY_JUNK or (top and name in COPY_REBUILT)
 MANIFEST_MAX_FILES = 20000
 MANIFEST_MAX_BYTES = 2 * 1024 * 1024 * 1024
 COPY_DIFF_MAX = 1024 * 1024
@@ -3922,10 +3941,10 @@ def api_copy_manifest(home, path):
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
     walker = os.fwalk(full, follow_symlinks=False) if hasattr(os, "fwalk") else ((r, d, f, None) for r, d, f in os.walk(full))
     for root, dirs, names, dir_fd in walker:
-        dirs[:] = [d for d in dirs if d not in COPY_SKIP]
         rel_root = os.path.relpath(root, full)
+        dirs[:] = [d for d in dirs if not copy_skips(rel_root == ".", d)]
         for name in sorted(names):
-            if name in COPY_SKIP:
+            if copy_skips(rel_root == ".", name):
                 continue
             rel = name if rel_root == "." else f"{rel_root}/{name}".replace(os.sep, "/")
             try:
@@ -4255,7 +4274,14 @@ def first_prompt(session):
                 if b'"role":"user"' not in raw:
                     continue
                 if len(raw) > 200 * 1024:
-                    return "(an image)"
+                    # A screenshot with it: the line is mostly base64, its text read without
+                    # parsing it all.
+                    found = re.search(rb'"type":"text","text":"((?:[^"\\]|\\.){0,4000})', raw)
+                    try:
+                        text = json.loads(b'"' + found.group(1) + b'"').strip() if found else ""
+                    except ValueError:
+                        text = ""
+                    return text[:200] or "(an image)"
                 content = json.loads(raw).get("message", {}).get("content")
                 if isinstance(content, str):
                     return content.strip()[:200]

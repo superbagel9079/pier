@@ -344,14 +344,19 @@ async function handOff() {
   const go = $("#handoff-go");
   go.disabled = true;
   const failed = [];
+  const left = [];
   for (const share of await backend.shareList()) {
-    go.textContent = `Copying ${share.local.split(/[\\/]/).pop()}…`;
+    const name = share.local.split(/[\\/]/).pop();
+    go.textContent = `Copying ${name}…`;
     try {
-      await backend.handOff(share.id);
+      const done = await backend.handOff(share.id);
+      if (done?.left_out?.length) left.push(`${name}: ${done.left_out.join(", ")}`);
     } catch (e) {
       failed.push(`${share.local}: ${e}`);
     }
   }
+  // Rebuilt folders at a folder's top stay on this computer: said, not silent.
+  const leftOut = left.length ? ` Left out (rebuilt on the VM: npm install, cargo build…): ${left.join("; ")}.` : "";
   go.disabled = false;
   go.textContent = "Hand off";
   if (failed.length) {
@@ -362,9 +367,10 @@ async function handOff() {
   $("#handoff").hidden = true;
   if ($("#handoff-disconnect").checked) {
     await leave();
-    toLogin("Handed off. Pi keeps working on the VM: you can turn this computer off. Log in again to see what it did.");
+    toLogin(`Handed off. Pi keeps working on the VM: you can turn this computer off. Log in again to see what it did.${leftOut}`);
   } else {
     workspace.find("context")?.refresh?.();
+    if (leftOut) flashStatus(`Handed off.${leftOut}`);
   }
 }
 

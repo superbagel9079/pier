@@ -668,7 +668,7 @@ async fn copy_folder(app: AppHandle, state: State<'_, AppState>, path: String, t
     }
     let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
     let started = Instant::now();
-    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, COPY_MAX_BYTES))
+    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, COPY_MAX_BYTES, copy::Pack::Copy))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| {
@@ -1274,7 +1274,7 @@ async fn skill_import(app: AppHandle, state: State<'_, AppState>, scope: String,
         return Err(format!("{path} holds no SKILL.md: it is not a skill folder"));
     }
     let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "skill".into());
-    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, SKILL_MAX_BYTES))
+    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, SKILL_MAX_BYTES, copy::Pack::Copy))
         .await
         .map_err(|e| e.to_string())?
         .map_err(message)?;
@@ -1296,7 +1296,7 @@ async fn hand_off(app: AppHandle, state: State<'_, AppState>, id: u32) -> Result
     let share = state.shares.lock().await.get(&id).cloned().ok_or_else(|| "this share is not live".to_string())?;
     let root = PathBuf::from(&share.local);
     let started = Instant::now();
-    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, HANDOFF_MAX_BYTES))
+    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, HANDOFF_MAX_BYTES, copy::Pack::HandOff))
         .await
         .map_err(|e| e.to_string())?
         .map_err(|e| {
@@ -1306,9 +1306,12 @@ async fn hand_off(app: AppHandle, state: State<'_, AppState>, id: u32) -> Result
         })?;
     log_info!("handoff.packed", id = id, local = share.local, bytes = packed.0.len(), ms = started.elapsed().as_millis());
     let mode = if share.writable { "rw" } else { "ro" };
-    let result = api(&app, &state, &["handoff", &share.mountpoint, mode], &packed.0).await?;
+    let mut result = api(&app, &state, &["handoff", &share.mountpoint, mode], &packed.0).await?;
     if let Some(gone) = state.shares.lock().await.remove(&id) {
         gone.revoke();
+    }
+    if let Some(object) = result.as_object_mut() {
+        object.insert("left_out".into(), json!(packed.2)); // said in Pier: rebuilt on the VM
     }
     Ok(result)
 }
