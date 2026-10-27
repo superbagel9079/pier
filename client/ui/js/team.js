@@ -15,8 +15,6 @@ const AGENT_WAKE_LABELS = {
   auto: ["Start a Pi by itself", "While Pier is connected, a Pi starts on each new review asked of you and each new task a human wrote (not one a Pi wrote), one every five minutes, 3 an hour and 10 a day at most. Merges still follow the Git page's setting."],
 };
 
-const projectLabel = (path) => String(path || "").replace(/^\/home\/[^/]+/, "~");
-
 /** A new Pi on a task or a review: the picker gives it its prompt. */
 function startAgentPi(project, kind, number) {
   openPiTerminal(project, projectLabel(project), ["--agent-task", kind, String(number)]);
@@ -51,7 +49,7 @@ function makeTeamManager(box, currentProject) {
   refresh.addEventListener("click", () => load());
   const bar = el("div", { className: "toolbar resource-bar" }, el("span", { className: "dim small", textContent: "Tasks, reviews and conversations shared with your colleagues' Pis." }), refresh);
   box.replaceChildren(bar, error, notice, body);
-  const say = (text) => { notice.hidden = !text; notice.textContent = text || ""; };
+  const say = noticeSetter(notice);
   let data = null;
 
   async function load() {
@@ -68,14 +66,8 @@ function makeTeamManager(box, currentProject) {
     render();
   }
 
-  const action = (text, title, run) => {
-    const b = el("button", { className: "link", textContent: text, title });
-    b.addEventListener("click", run);
-    return b;
-  };
-  const line = (name, detail, title, ...actions) => el("li", { className: "two-lines", title: title || "" },
-    el("div", { className: "line" }, el("span", { className: "name", textContent: name }), el("span", { className: "dim" }), ...actions),
-    detail ? el("div", { className: "desc dim small", textContent: detail }) : null);
+  const action = linkButton;
+  const line = itemLine;
   const copyLink = (url) => action("copy link", "Its address, to open in a browser", async () => {
     try { await backend.copyText(url || ""); say(`Copied: ${url}`); } catch (e) { showError(error, String(e)); }
   });

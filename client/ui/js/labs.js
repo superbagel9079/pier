@@ -133,11 +133,7 @@ function renderLabHosts(s) {
   const list = $("#labs-hosts");
   list.innerHTML = "";
   const hosts = s.hosts || [];
-  const link = (text, title, run) => {
-    const b = el("button", { className: "link", textContent: text, title });
-    b.addEventListener("click", run);
-    return b;
-  };
+  const link = linkButton;
   for (const h of hosts) {
     const state = h.incus ? (h.kvm ? "ready: containers and virtual machines" : "ready: containers (virtual machines need /dev/kvm there)") : `not ready: ${h.why}`;
     const actions = [
@@ -402,15 +398,9 @@ function makeLabs(tab) {
     description.focus();
   }
 
-  const action = (text, title, run) => {
-    const b = el("button", { className: "link", textContent: text, title });
-    b.addEventListener("click", run);
-    return b;
-  };
+  const action = linkButton;
   // A name, its actions, then its description (if any) and its facts, each on its line.
-  const line = (name, detail, ...actions) => el("li", { className: "two-lines" },
-    el("div", { className: "line" }, el("span", { className: "name", textContent: name }), el("span", { className: "dim" }), ...actions),
-    ...[].concat(detail || []).filter(Boolean).map((text) => el("div", { className: "desc dim small", textContent: text })));
+  const line = (name, detail, ...actions) => itemLine(name, detail, "", ...actions);
 
   function render(message) {
     if (message.error) { showError(error, message.error); return; }

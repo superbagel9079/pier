@@ -20,12 +20,6 @@ function conversationMatches(s, query) {
   return !query || [conversationTitle(s), s.prompt, s.name, s.category].some((t) => t && t.toLowerCase().includes(query));
 }
 
-function linkButton(text, title, action) {
-  const b = el("button", { className: "link", textContent: text, title });
-  b.addEventListener("click", action);
-  return b;
-}
-
 /** The ⋯ menu of a conversation: name and category, pin, archive. */
 function conversationMenu(anchor, project, session, { edit, changed, failed }) {
   const mark = async (what, on) => {

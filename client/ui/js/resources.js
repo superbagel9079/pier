@@ -63,7 +63,7 @@ function makeResourceManager(box, currentProject, onChange) {
     el("p", { className: "hint", textContent: "Unchecked: Pi leaves it out at its next start. Nothing is deleted." }));
 
   let data = null;
-  const say = (text) => { notice.hidden = !text; notice.textContent = text || ""; };
+  const say = noticeSetter(notice);
 
   add.addEventListener("click", () => showMenu(add, [
     ["New skill…", () => newSkill()],
