@@ -117,7 +117,7 @@ function renderLabsPrefs() {
   vlanSetup.hidden = s.settings.network !== "vlan";
   $("#labs-vlan-state").textContent = vlan.ready
     ? `The labs get their address from your firewall, on the Incus network ${vlan.network}.`
-    : `The Incus network ${vlan.network} is not there, or this account may not use it${vlan.networks?.length ? ` (it sees: ${vlan.networks.join(", ")})` : ""}. Once, as described in the README (Labs on a VLAN of their own): the VLAN on the firewall, a second network card of the VM on it in Proxmox, then on the VM:`;
+    : `The Incus network ${vlan.network} is not there, or this account may not use it${vlan.networks?.length ? ` (it sees: ${vlan.networks.join(", ")})` : ""}. Once, as described in docs/labs.md (Labs on a VLAN of their own): the VLAN on the firewall, a second network card of the VM on it in Proxmox, then on the VM:`;
   $("#labs-vlan-commands").hidden = Boolean(vlan.ready);
   $("#labs-vlan-commands").textContent = `ip -br link        # the new card, without an address (often ens19)
 sudo incus network create ${vlan.network} --type=macvlan parent=ens19
