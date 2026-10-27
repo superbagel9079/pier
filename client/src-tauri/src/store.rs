@@ -98,16 +98,24 @@ impl Store {
         write_atomic(&self.settings_path(), &serde_json::to_vec_pretty(settings)?)
     }
 
-    fn known(&self) -> BTreeMap<String, String> {
-        fs::read_to_string(self.known_path())
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+    /// The keys trusted; none when the file is not there yet, an error when it cannot be
+    /// read (taken as empty, a changed key would look like a first contact).
+    fn known(&self) -> Result<BTreeMap<String, String>> {
+        match fs::read_to_string(self.known_path()) {
+            Ok(text) => serde_json::from_str(&text).with_context(|| format!("{} cannot be read: repair or delete it", self.known_path().display())),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
+            Err(err) => Err(err).with_context(|| format!("reading {}", self.known_path().display())),
+        }
+    }
+
+    /// Whether the trusted keys can be read: no connection otherwise.
+    pub fn check_known(&self) -> Result<()> {
+        self.known().map(|_| ())
     }
 
     /// The fingerprint accepted for "host:port", if any.
     pub fn trusted(&self, id: &str) -> Option<String> {
-        self.known().get(id).cloned()
+        self.known().ok()?.get(id).cloned()
     }
 
     fn shares_path(&self) -> PathBuf {
@@ -142,7 +150,7 @@ impl Store {
     }
 
     pub fn trust(&self, id: &str, fingerprint: &str) -> Result<()> {
-        let mut known = self.known();
+        let mut known = self.known()?; // never written over what could not be read
         known.insert(id.to_string(), fingerprint.to_string());
         write_atomic(&self.known_path(), &serde_json::to_vec_pretty(&known)?)
     }
@@ -185,6 +193,11 @@ mod tests {
         assert!(store.trusted("h:1").is_none());
         store.trust("h:1", "SHA256:abc").unwrap();
         assert_eq!(store.trusted("h:1").as_deref(), Some("SHA256:abc"));
+        // Cut: refused, and never written over.
+        fs::write(store.known_path(), "{\"h:1\": ").unwrap();
+        assert!(store.check_known().is_err());
+        assert!(store.trust("h:2", "SHA256:def").is_err());
+        assert_eq!(fs::read_to_string(store.known_path()).unwrap(), "{\"h:1\": ");
         let _ = fs::remove_dir_all(dir);
     }
 }

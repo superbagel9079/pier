@@ -152,6 +152,9 @@ async fn establish(state: &AppState, settings: &Settings, passwords: &Passwords)
 }
 
 async fn establish_now(state: &AppState, settings: &Settings, passwords: &Passwords) -> anyhow::Result<Outcome> {
+    // A known_hosts.json that cannot be read would make the VM's key look new (first
+    // contact) instead of changed: no connection then, the user is told.
+    state.store.check_known()?;
     let target = Endpoint {
         host: settings.host.clone(),
         port: settings.port,
@@ -236,9 +239,21 @@ async fn shares_cleanup(app: AppHandle, state: State<'_, AppState>) -> Result<()
 }
 
 /// Runs a command on the VM through the connection (reopened if it dropped).
+/// The longest a command of the picker may take before Pier stops waiting for it (a
+/// picker stuck on a stalled sshfs would hold the interface's promise, and a channel
+/// counted in MaxSessions, for good). Not for what sends a lot (an upload, a hand off).
+const VM_EXEC_TIMEOUT: Duration = Duration::from_secs(300);
+const VM_EXEC_UNTIMED_FROM: usize = 1024 * 1024;
+
 async fn vm_exec(app: &AppHandle, state: &AppState, command: &str, stdin: &[u8]) -> Result<ssh::Output, String> {
     let channel = vm_channel(app, state).await?;
-    ssh::run(channel, command, stdin).await.map_err(message)
+    if stdin.len() >= VM_EXEC_UNTIMED_FROM {
+        return ssh::run(channel, command, stdin).await.map_err(message);
+    }
+    match tokio::time::timeout(VM_EXEC_TIMEOUT, ssh::run(channel, command, stdin)).await {
+        Ok(done) => done.map_err(message),
+        Err(_) => Err(format!("the VM did not answer within {} s", VM_EXEC_TIMEOUT.as_secs())),
+    }
 }
 
 /// A new channel for a command, a terminal, a share or the watch. Every one of them
