@@ -5,7 +5,7 @@
 // foreground, cursor, selection and the 16 ANSI colors). Missing colors are derived
 // from the others, so a partial theme still looks whole.
 
-const UI_KEYS = ["bg", "panel", "fg", "dim", "line", "field", "hover", "accent", "green", "red"];
+const UI_KEYS = ["bg", "panel", "fg", "dim", "line", "field", "hover", "accent", "green", "red", "edge"];
 const ANSI_KEYS = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
   "brightBlack", "brightRed", "brightGreen", "brightYellow", "brightBlue", "brightMagenta", "brightCyan", "brightWhite"];
 
@@ -123,6 +123,30 @@ function luminance(color) {
   return c ? (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) / 255 : 0;
 }
 
+/** WCAG's contrast ratio of two colors (1 to 21). */
+function contrast(a, b) {
+  const relative = (color) => {
+    const c = parseHex(color);
+    if (!c) return 0;
+    const [r, g, bl] = c.slice(0, 3).map((v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * bl;
+  };
+  const [x, y] = [relative(a), relative(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+/** color moved toward toward until it reaches ratio against every one of backgrounds (or
+ *  is toward itself): a theme's dim text readable on its panels, its fields' edges seen. */
+function readable(color, toward, backgrounds, ratio) {
+  const short = (c) => backgrounds.some((bg) => contrast(c, bg) < ratio);
+  let out = color;
+  for (let step = 0; step < 20 && short(out); step++) out = mix(out, toward, 0.15);
+  // A theme whose own text is barely readable (Solarized): past it, toward white or black.
+  const extreme = luminance(backgrounds[0]) < 0.5 ? "#ffffff" : "#000000";
+  for (let step = 0; step < 20 && short(out); step++) out = mix(out, extreme, 0.15);
+  return out;
+}
+
 /** Fills what a theme leaves out, from its own colors. */
 function completeTheme(theme) {
   const ui = { ...theme.ui };
@@ -135,6 +159,10 @@ function completeTheme(theme) {
   ui.field ||= mix(ui.bg, ui.fg, 0.05);
   ui.hover ||= mix(ui.bg, ui.fg, 0.09);
   ui.accent ||= ui.fg;
+  // WCAG AA: dim text 4.5:1 where it is drawn (the background, panels, a row under the
+  // pointer); the edge of a field 3:1, so it is seen (1.4.11).
+  ui.dim = readable(ui.dim, ui.fg, [ui.bg, ui.panel, ui.hover], 4.5);
+  ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);
   const terminal = { ...theme.terminal };
   ui.green = flatten(ui.green || terminal.green, ui.bg) || "#3fb950";
   ui.red = flatten(ui.red || terminal.red, ui.bg) || "#f85149";

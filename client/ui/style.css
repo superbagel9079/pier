@@ -102,7 +102,7 @@ input, select, textarea {
   font: inherit;
   color: var(--fg);
   background: var(--chip);
-  border: 1px solid transparent;
+  border: 1px solid var(--edge, transparent);
   border-radius: 0;
   padding: 5px var(--s2);
 }
@@ -420,7 +420,9 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 /* "Give this folder to Pi": one large choice per way. */
 .choices-list { display: flex; flex-direction: column; gap: var(--s2); margin-top: 14px; }
 .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: var(--chip); color: var(--fg); padding: 10px var(--s3); }
-.choice:hover, .choice:focus-visible { background: var(--raise); outline: none; }
+.choice:hover { background: var(--raise); }
+.choice:focus-visible { background: var(--raise); outline: 1px solid var(--fg); outline-offset: -1px; }
+.tab:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
 .choice span { color: var(--dim); font-size: var(--t-small); }
 
 /* Settings: the categories in a column on the left, the page on the right. */

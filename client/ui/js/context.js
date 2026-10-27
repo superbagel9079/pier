@@ -377,6 +377,12 @@ async function handOff() {
 $("#btn-handoff").addEventListener("click", openHandOff);
 $("#handoff-go").addEventListener("click", handOff);
 $("#handoff-cancel").addEventListener("click", () => { $("#handoff").hidden = true; });
+// Escape closes these two dialogs too, as it does the others.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("#give-folder").hidden) { e.preventDefault(); $("#give-folder-cancel").click(); }
+  else if (!$("#handoff").hidden) { e.preventDefault(); $("#handoff").hidden = true; }
+});
 
 /** The Context tab, opened on the right if it was closed. */
 function contextTab({ reveal = false } = {}) {

@@ -23,16 +23,16 @@ function openPackageTerminal(action, scope, source, label, onDone) {
 function resourceDialog(title, body, actions, wide = false) {
   const overlay = el("div", { className: "overlay" });
   const box = el("div", { className: wide ? "dialog wide" : "dialog" });
-  box.setAttribute("role", "dialog");
   const cancel = el("button", { className: "secondary", textContent: "Cancel" });
-  const close = () => { overlay.remove(); document.removeEventListener("keydown", onKey, true); };
-  const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } };
+  let release = () => {};
+  const close = () => { overlay.remove(); release(); };
   cancel.addEventListener("click", close);
   box.append(el("h1", { textContent: title }), ...body, el("div", { className: "actions end" }, cancel, ...actions));
   overlay.append(box);
   overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) close(); });
-  document.addEventListener("keydown", onKey, true);
   document.body.append(overlay);
+  release = trapDialog(box, close);
+  (box.querySelector("input, select, textarea") || actions[0] || cancel).focus();
   return { close };
 }
 

@@ -10,7 +10,46 @@ const $ = (selector, root = document) => root.querySelector(selector);
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
   for (const child of children) if (child !== null && child !== undefined && child !== false) node.append(child);
+  // A button that is a glyph (×, ⋯, ‹, ▸): a screen reader says its title, not
+  // "multiplication sign".
+  if (tag === "button" && props.title && !props.ariaLabel && isGlyph(node.textContent)) node.setAttribute("aria-label", props.title);
   return node;
+}
+
+/** Text with no letter nor digit in it, short: a glyph standing for an action. */
+function isGlyph(text) {
+  const value = String(text || "").trim();
+  return value.length > 0 && value.length <= 3 && !/[\p{L}\p{N}]/u.test(value);
+}
+
+/** Pier's dialogs, made modal for the keyboard and for screen readers: named by their
+ *  title, focus kept inside (Tab and Shift+Tab go round), Escape closes, and the focus
+ *  goes back where it was. Returns what undoes it. */
+function trapDialog(box, close) {
+  const before = document.activeElement;
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  const title = box.querySelector("h1");
+  if (title) {
+    title.id ||= `dialog-${Math.random().toString(36).slice(2, 9)}`;
+    box.setAttribute("aria-labelledby", title.id);
+  }
+  const onKey = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key !== "Tab") return;
+    const items = [...box.querySelectorAll("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])")]
+      .filter((n) => !n.disabled && !n.hidden && n.offsetParent !== null);
+    if (!items.length) return;
+    const [first, last] = [items[0], items[items.length - 1]];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    else if (!box.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  };
+  document.addEventListener("keydown", onKey, true);
+  return () => {
+    document.removeEventListener("keydown", onKey, true);
+    if (before && document.contains(before)) before.focus?.();
+  };
 }
 
 /** Text from the VM or a forge as it really is, for what the user decides on: characters
@@ -187,9 +226,13 @@ async function ask(text) {
 
 /** A short message for two seconds, at the bottom of the window ("copied 12 characters"). */
 let flashTimer = null;
+// The toast is there from the start, as a live region: one made with its first message
+// would not have it read out.
+document.body.appendChild(el("div", { id: "toast", className: "toast", role: "status", hidden: true }));
 function flashStatus(text, near) {
-  const toast = $("#toast") || document.body.appendChild(el("div", { id: "toast", className: "toast", role: "status" }));
-  toast.textContent = text;
+  const toast = $("#toast");
+  toast.textContent = "";
+  requestAnimationFrame(() => { toast.textContent = text; }); // shown, then filled: read out
   // In the top right corner of the terminal (or panel) it is about, else of the window.
   const pane = near || document.activeElement?.closest?.(".pane");
   const box = pane && pane.offsetParent !== null ? pane.getBoundingClientRect() : { top: 36, right: innerWidth };
