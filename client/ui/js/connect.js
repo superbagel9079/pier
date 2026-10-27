@@ -363,7 +363,7 @@ async function projectsEnded() {
   if (!ended.length) return;
   const notes = [];
   for (const project of ended) {
-    const label = project.replace(/^\/home\/[^/]+/, "~");
+    const label = projectLabel(project);
     if (prefs.autostop) {
       // A share open for writing must not stay for the next Pi because one call failed
       // (a reconnection meanwhile): the project is tried again at the next answer.

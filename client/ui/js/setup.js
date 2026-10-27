@@ -76,7 +76,7 @@ function makeSetup(tab) {
     const options = [];
     for (const p of [...projects.running, ...projects.recent]) if (!options.some((o) => o.path === p.path)) options.push(p);
     // A project opened from Conversations may be neither running nor recent.
-    if (chosen && !options.some((o) => o.path === chosen)) options.push({ path: chosen, label: chosen.replace(/^\/home\/[^/]+/, "~"), running: false });
+    if (chosen && !options.some((o) => o.path === chosen)) options.push({ path: chosen, label: projectLabel(chosen), running: false });
     // Rebuilt only when the list itself changes: the projects arrive again each time a
     // Pi starts or stops working, and rebuilding closed the list while one chose in it.
     const key = JSON.stringify(options.map((p) => [p.path, p.label, Boolean(p.running)]));

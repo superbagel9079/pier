@@ -30,7 +30,7 @@ function makeGitManager(box, currentProject) {
   refresh.addEventListener("click", () => load());
   const bar = el("div", { className: "toolbar resource-bar" }, el("span", { className: "dim small", textContent: "Pi works with the project's repository as you choose below." }), refresh);
   box.replaceChildren(bar, error, notice, body);
-  const say = (text) => { notice.hidden = !text; notice.textContent = text || ""; };
+  const say = noticeSetter(notice);
   let data = null;
 
   async function load() {
@@ -48,18 +48,9 @@ function makeGitManager(box, currentProject) {
     render();
   }
 
-  const action = (text, title, run) => {
-    const b = el("button", { className: "link", textContent: text, title });
-    b.addEventListener("click", run);
-    return b;
-  };
+  const action = linkButton;
   // Two lines: what it is and what can be done, then the details (a title is read whole).
-  const line = (name, detail, title, ...actions) => el("li", { className: "two-lines", title: title || "" },
-    el("div", { className: "line" },
-      el("span", { className: "name", textContent: name }),
-      el("span", { className: "dim" }),
-      ...actions),
-    detail ? el("div", { className: "desc dim small", textContent: detail }) : null);
+  const line = itemLine;
 
   function render() {
     body.innerHTML = "";
