@@ -166,7 +166,7 @@ function makeProject(tab) {
     }
     li.append(
       el("span", { textContent: spec.mark, className: spec.live ? "live-dot" : "" }),
-      el("span", { className: "path", textContent: path }),
+      el("span", { className: "path", textContent: visibleText(path), title: visibleText(path) }),
     );
     if (f) {
       const counts = [f.reads ? `${f.reads} read` : "", f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");

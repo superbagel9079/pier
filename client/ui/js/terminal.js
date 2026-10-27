@@ -72,6 +72,10 @@ function makeTerminal(tab, kind) {
   // mouse reports), which the program on the VM can ask for at will. One copy per act.
   let actedAt = 0;
   let ignoredLoggedAt = 0;
+  // In a Pi tab the user types all the time, so "just after a key" is nearly always:
+  // Pi's first copy there is asked once (null: not asked yet), then allowed or not.
+  let piMayCopy = kind === "pi" ? null : true;
+  let askingCopy = false;
   let dropped = false;     // the connection went away under this terminal
   let startedAt = 0;
   const latency = latencyMeter(kind);
@@ -158,7 +162,7 @@ function makeTerminal(tab, kind) {
     const count = `${text.length} character${text.length === 1 ? "" : "s"}`;
     if (how === "osc52") {
       // Copied by the program, not by Pier: show what, so a surprise is seen.
-      const start = text.replace(/\s+/g, " ").trim();
+      const start = visibleText(text.replace(/\s+/g, " ").trim());
       const preview = start.length > 48 ? `${start.slice(0, 48)}…` : start;
       flashStatus(`the program copied ${count}: “${preview}”`, tab.pane);
     } else {
@@ -204,13 +208,27 @@ function makeTerminal(tab, kind) {
       return true;
     }
     actedAt = 0;
+    let text = "";
     try {
-      const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
-      const text = decoder.decode(bytes);
-      if (text) copyText(text, "osc52");
+      text = decoder.decode(Uint8Array.from(atob(payload), (c) => c.charCodeAt(0)));
     } catch (error) {
       uiLog("warn", "term-osc52-bad", { msg: String(error) });
     }
+    if (!text || piMayCopy === false) return true;
+    if (piMayCopy === null) {
+      if (askingCopy) return true;
+      askingCopy = true;
+      const start = visibleText(text.replace(/\s+/g, " ").trim());
+      ask(`Pi wants to put ${text.length} characters on this computer's clipboard:\n\n“${start.length > 200 ? `${start.slice(0, 200)}…` : start}”\n\nLet Pi copy in this tab?`)
+        .then((yes) => {
+          piMayCopy = yes;
+          uiLog("info", "term-osc52-asked", { allowed: yes });
+          if (yes) copyText(text, "osc52");
+        })
+        .finally(() => { askingCopy = false; });
+      return true;
+    }
+    copyText(text, "osc52");
     return true;
   });
 
@@ -220,7 +238,9 @@ function makeTerminal(tab, kind) {
   term.parser.registerOscHandler(7770, (data) => {
     // In a Pi tab, Pier's Rust side names the tmux session shown (see term.rs).
     if (kind === "pi" && data.startsWith("session;")) {
-      tab.slot = data.slice("session;".length);
+      const slot = data.slice("session;".length);
+      if (!/^pi-[A-Za-z0-9_-]+$/.test(slot)) return true; // not a session name Pier gives
+      tab.slot = slot;
       renderSessionBadge();
       return true;
     }
