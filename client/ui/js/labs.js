@@ -482,4 +482,6 @@ function makeLabs(tab) {
   const unlisten = vm.on("labs", render);
   const unlistenApprovals = vm.on("approvals", renderWaiting);
   tab.onClose = () => { unlisten(); unlistenApprovals(); vm.follow({ labs: false }); };
+  // Followed while shown only: each look asks every lab host over SSH.
+  tab.onVisible = (shown) => vm.follow({ labs: shown });
 }

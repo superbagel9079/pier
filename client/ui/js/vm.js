@@ -31,6 +31,17 @@ const vm = (() => {
 
   backend.onVmUpdate((message) => {
     if (!message?.kind) return;
+    if (message.patch) {
+      // Only what changed (WATCH_PATCHED in the picker), on top of the last whole one.
+      const before = latest[message.kind];
+      if (!before?.data || canon(before.for) !== canon(message.for)) {
+        backend.watchSet({ poke: true }).catch(() => {}); // nothing to put it on: the whole again
+        return;
+      }
+      const old = new Map((before.data.projects || []).map((p) => [p.project, p]));
+      const projects = message.patch.order.map((key) => message.patch.changed[key] ?? old.get(key)).filter(Boolean);
+      message = { kind: message.kind, for: message.for, data: { ...message.patch.rest, projects } };
+    }
     latest[message.kind] = message;
     for (const handler of listeners[message.kind] || []) {
       try {
@@ -40,6 +51,12 @@ const vm = (() => {
       }
     }
   });
+
+  // A word to the watch at least every 30 s: one that hears nothing for a while knows
+  // its connection is gone (a sleeping PC, Wi-Fi lost) and ends (WATCH_SILENCE).
+  setInterval(() => {
+    if (running) backend.watchSet({ ping: 1 }).catch(() => {});
+  }, 30000);
 
   backend.onWatchEnded((id) => {
     if (watchId !== null && id !== watchId) return; // an older watch, replaced: nothing to do

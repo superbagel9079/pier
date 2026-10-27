@@ -12,7 +12,7 @@
 const AGENT_WAKE_LABELS = {
   off: ["Do nothing", "Tasks, reviews and conversations for you are listed here; nothing else happens."],
   ask: ["Notify me", "A notification for each new one; a Pi starts on your click."],
-  auto: ["Start a Pi by itself", "While Pier is connected, a Pi starts on each new review asked of you and each new task a human wrote (not one a Pi wrote), one every two minutes, 3 an hour and 10 a day at most. Merges still follow the Git page's setting."],
+  auto: ["Start a Pi by itself", "While Pier is connected, a Pi starts on each new review asked of you and each new task a human wrote (not one a Pi wrote), one every five minutes, 3 an hour and 10 a day at most. Merges still follow the Git page's setting."],
 };
 
 const projectLabel = (path) => String(path || "").replace(/^\/home\/[^/]+/, "~");
