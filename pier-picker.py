@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.35"
+VERSION = "4.36"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -3756,11 +3756,15 @@ def save_handoff_marks(shared, marks):
 
 def extract_tar(stream, dest):
     """Extract a tar stream into dest with tarfile's "data" filter and the size caps.
+    Only folders and plain files: no link of either kind, whatever the filter would let
+    through (the filter's own fixes depend on the VM's Python, see TARFILE_FIXED).
     Returns the number of members."""
     import tarfile
     total, count = 0, 0
     with tarfile.open(fileobj=stream, mode="r|") as archive:
         for member in archive:
+            if not (member.isfile() or member.isdir()):
+                continue
             count += 1
             total += max(member.size, 0)
             if count > COPY_MAX_MEMBERS or total > COPY_MAX_BYTES:
@@ -6535,6 +6539,8 @@ LAB_HOST_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}|\[[0-9A-Fa-f:]+\]")
 LAB_USER_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
 LAB_RUN_MAX = 900
 LAB_OUTPUT = 60 * 1024
+LAB_PROCESSES = 2000  # at most, in a container lab
+LAB_SNAPSHOTS = 10   # at most per lab, "clean" counted
 LAB_COPY_MAX = 900  # seconds a lab_push or lab_pull may take
 LAB_PUSH_SKIP = {IMAGE_DIR, FILES_DIR, SHARE_DIR, ".pi-worktrees"}
 LAB_APPROVAL_WAIT = 600
@@ -6622,7 +6628,19 @@ def incus_state(at=None, timeout=20):
     except (ApiError, ValueError) as exc:
         return False, f"Incus does not answer ({str(exc)[:200]}): installed, and the user in the incus group?", False
     drivers = str((info.get("environment") or {}).get("driver") or "")
-    return True, "", "qemu" in drivers and (not local or os.path.exists("/dev/kvm"))
+    kvm = "qemu" in drivers and (not local or os.path.exists("/dev/kvm"))
+    # Labs are safe on a host only through a restricted Incus project (incus-user gives
+    # one to each account of the incus group): there, no lab can be privileged nor
+    # reach the host's files. An unrestricted one (incus-admin, root) is refused.
+    project = str((info.get("environment") or {}).get("project") or info.get("project") or "default")
+    try:
+        config = json.loads(incus("query", f"/1.0/projects/{project}", timeout=timeout, at=at) or b"{}").get("config")
+    except (ApiError, ValueError):
+        config = None  # not readable from this account: not one that runs the whole Incus
+    if isinstance(config, dict) and str(config.get("restricted", "")).lower() != "true":
+        return False, (f"the Incus project {project} is not restricted: use an account in the incus group (not incus-admin "
+                       "nor root), whose own project Incus restricts"), kvm
+    return True, "", kvm
 
 
 def host_record(data, name):
@@ -6634,8 +6652,14 @@ def host_record(data, name):
 
 
 def lab_host(data, lab):
-    """Where a lab lives. Labs made before hosts existed live on Pi's VM."""
-    return host_record(data, lab.get("host") or LOCAL_HOST) or {"kind": "local"}
+    """Where a lab lives. Labs made before hosts existed live on Pi's VM. A lab whose host
+    was removed is reached nowhere (ApiError), never looked for on Pi's VM instead."""
+    if not lab.get("host"):
+        return host_record(data, LOCAL_HOST) or {"kind": "local"}
+    record = host_record(data, lab["host"])
+    if record is None:
+        raise ApiError(f"the lab host {lab['host']} was removed: add it again in Settings > Labs to reach its labs")
+    return record
 
 
 def default_host(data):
@@ -6694,7 +6718,11 @@ def api_lab_journal(home, limit="60"):
     except OSError:
         lines = []
     out = []
-    for line in lines[-max(1, min(int(limit or 60), 300)):]:
+    try:
+        count = max(1, min(int(limit or 60), 300))
+    except ValueError:
+        raise ApiError("how many lines: a number")
+    for line in lines[-count:]:
         try:
             out.append(json.loads(line))
         except ValueError:
@@ -6710,6 +6738,27 @@ def machine_key():
                        check=True, stdin=subprocess.DEVNULL, capture_output=True, timeout=30)
     with open(key + ".pub", encoding="utf-8") as handle:
         return key, handle.read().strip()
+
+
+def authorized_line(public):
+    """The picker's key as a line of authorized_keys that allows commands and terminals
+    only: no forwarding of ports, agent or X11 (restrict), a terminal again (pty)."""
+    return f"restrict,pty {public}" if public else public
+
+
+def host_fingerprint(machine):
+    """The SHA-256 fingerprint of the key a lab host or machine showed at its first
+    contact, as known_hosts holds it, or None: shown in Pier, to compare with the host's
+    own (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub)."""
+    port = int(machine.get("port") or 22)
+    name = machine.get("host") if port == 22 else f"[{machine.get('host')}]:{port}"
+    try:
+        found = subprocess.run(["ssh-keygen", "-l", "-E", "sha256", "-F", name, "-f", os.path.join(labs_dir(), "known_hosts")],
+                               capture_output=True, timeout=10, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(rb"SHA256:[A-Za-z0-9+/=]+", found.stdout)
+    return match.group(0).decode() if match else None
 
 
 def ssh_control_dir():
@@ -6775,6 +6824,7 @@ def api_labs(home):
                 _HOST_RESTING.pop(host_name, None)
         record = data["hosts"][host_name]
         hosts.append({"name": host_name, "kind": "local" if at.get("kind") == "local" else "ssh",
+                      "fingerprint": None if at.get("kind") == "local" else host_fingerprint(record),
                       "where": "Pi's VM" if at.get("kind") == "local" else f"{record.get('user')}@{record.get('host')}:{record.get('port') or 22}",
                       "description": record.get("description") or "", "default": host_name == default_host(data),
                       "incus": usable, "why": why, "kvm": kvm, "networks": lab_networks(home, at, timeout=8) if usable else []})
@@ -6798,7 +6848,7 @@ def api_labs(home):
         labs.append({"name": name, **lab, "host": where, **live.get((where, lab_instance(name)), {"status": "unreachable" if where not in data["hosts"] and where != LOCAL_HOST else "missing"})})
     machines = [{"name": n, **{k: m.get(k) for k in ("host", "port", "user", "policy", "added", "description")}} for n, m in sorted(data["machines"].items())]
     try:
-        public_key = machine_key()[1] if data["machines"] or data["settings"]["enabled"] else None
+        public_key = authorized_line(machine_key()[1]) if data["machines"] or data["settings"]["enabled"] else None
     except (OSError, subprocess.SubprocessError):
         public_key = None
     main = next((h for h in hosts if h["default"]), None)
@@ -6921,6 +6971,8 @@ def lab_build(name, image, vm, settings, networks=None, at=None):
     args = ["init", f"images:{image}", instance, "-c", f"limits.cpu={settings['cpu']}", "-c", f"limits.memory={settings['memory_gib']}GiB"]
     if vm:
         args.append("--vm")
+    else:
+        args += ["-c", f"limits.processes={LAB_PROCESSES}"]  # a fork bomb stays in the lab
     nesting = not vm
     try:
         incus(*args, *(["-c", "security.nesting=true"] if nesting else []), timeout=600, at=at)
@@ -6933,8 +6985,11 @@ def lab_build(name, image, vm, settings, networks=None, at=None):
     try:
         try:
             incus("config", "device", "override", instance, "root", f"size={settings['disk_gib']}GiB", timeout=30, at=at)
-        except ApiError:
-            pass  # a storage pool without quotas: the disk is not limited
+        except ApiError as exc:
+            # A storage pool without quotas ("dir", what incus admin init --minimal makes):
+            # the disk is not limited. Said in the log and the journal, not silent.
+            log("warn", "lab.disk-unlimited", lab=name, err=str(exc)[:200])
+            lab_journal({"lab": name, "what": f"its disk is not limited to {settings['disk_gib']} GiB: the storage pool has no quotas (dir)"})
         if networks is None:
             networks = default_networks(settings)
         if networks is not None and not networks:
@@ -7087,6 +7142,10 @@ def run_tail(argv, timeout, keep):
     return code, bytes(tails[0]), bytes(tails[1]), sizes[0], sizes[1]
 
 
+def platform_python():
+    return ".".join(str(n) for n in sys.version_info[:3])
+
+
 def lab_run(home, project, name, command, timeout=300):
     kind, record = lab_target(home, project, name)
     command = str(command or "")
@@ -7160,9 +7219,20 @@ def lab_push(home, project, name, path="."):
     return {"lab": name, "pushed": path or ".", "kb": total[0] // 1024, "into": target}
 
 
+def tarfile_fixed(version=None):
+    """Whether this Python's tarfile filters hold against a hostile archive: the ways
+    round the "data" filter of June 2025 (CVE-2025-4517, -4330, -4138) are closed from
+    3.12.11 and 3.13.4. A lab is Pi's, as root: what comes back from it is hostile."""
+    version = tuple(version or sys.version_info[:3])
+    return (3, 12, 11) <= version < (3, 13) or version >= (3, 13, 4)
+
+
 def lab_pull(home, project, name, path):
     """A file or folder of the lab into the project's .pi-files/<stamp>-lab-<name>, through
     a private folder and tarfile's data filter, as a folder given to Pi is."""
+    if not tarfile_fixed():
+        raise ApiError(f"the VM's Python {platform_python()} unpacks archives unsafely: lab_pull needs 3.12.11 or 3.13.4 "
+                       "or newer (sudo apt upgrade python3)")
     kind, record = lab_target(home, project, name)
     path = str(path or "").strip()
     if not path or "\n" in path or "\0" in path:
@@ -7225,6 +7295,12 @@ def lab_snapshot(home, project, name, snapshot, restore=False):
     if restore:
         incus("snapshot", "restore", lab_instance(name), snapshot, timeout=300, at=at)
     else:
+        try:
+            info = json.loads(incus("query", f"/1.0/instances/{lab_instance(name)}/snapshots", timeout=30, at=at) or b"[]")
+        except (ApiError, ValueError):
+            info = []
+        if isinstance(info, list) and len(info) >= LAB_SNAPSHOTS:
+            raise ApiError(f"{name} has {len(info)} snapshots, the most allowed: go back to one, or reset the lab")
         incus("snapshot", "create", lab_instance(name), snapshot, timeout=300, at=at)
     lab_journal({"lab": name, "project": project, "what": f"{'back to' if restore else 'snapshot'} {snapshot}"})
     return {"lab": name, "restored" if restore else "snapshot": snapshot}
@@ -7279,7 +7355,7 @@ def api_machine_add(home, name, host, port, user, policy, description=""):
                               "description": lab_description(description)}
     save_labs(home, data)
     log("info", "lab.machine-added", machine=name, host=host, policy=policy)
-    return {"machine": name, "public_key": public,
+    return {"machine": name, "public_key": authorized_line(public),
             "next": f"add this key to ~{user}/.ssh/authorized_keys on {host}, then test it"}
 
 
@@ -7328,6 +7404,9 @@ def api_host_add(home, name, host, port, user, description):
         raise ApiError("a lab host's name: lowercase letters, digits and '-', starting with a letter, not taken")
     if not LAB_HOST_RE.fullmatch(host or "") or not LAB_USER_RE.fullmatch(user or ""):
         raise ApiError("a host name or address, and a user name")
+    if user == "root":
+        raise ApiError("not root: labs are made by an account of its own, in the incus group (not incus-admin), "
+                       "whose Incus project is restricted; root's key would open the whole host to Pi's labs")
     if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536:
         raise ApiError("a port")
     _, public = machine_key()
@@ -7337,7 +7416,7 @@ def api_host_add(home, name, host, port, user, description):
         data["settings"]["default_host"] = name
     save_labs(home, data)
     log("info", "lab.host-added", host=name, address=host)
-    return {"host": name, "public_key": public,
+    return {"host": name, "public_key": authorized_line(public),
             "next": f"on {host}: Incus installed, {user} in its incus group, and this key in ~{user}/.ssh/authorized_keys; then test it"}
 
 
@@ -7401,7 +7480,14 @@ def api_lab_edit(home, name, new_name, description):
         if kind == "labs":
             at = lab_host(data, data["labs"][name])
             incus("stop", "--force", lab_instance(name), timeout=120, at=at)
-            incus("rename", lab_instance(name), lab_instance(new_name), timeout=120, at=at)
+            try:
+                incus("rename", lab_instance(name), lab_instance(new_name), timeout=120, at=at)
+            except ApiError as exc:
+                try:  # not left stopped without a word
+                    incus("start", lab_instance(name), timeout=120, at=at)
+                except ApiError:
+                    raise ApiError(f"{name} could not be renamed ({exc}), and is stopped: start it from its host")
+                raise ApiError(f"{name} could not be renamed ({exc}): it runs under its old name")
             incus("start", lab_instance(new_name), timeout=120, at=at)
         if kind == "hosts":
             for lab in data["labs"].values():
@@ -7439,7 +7525,11 @@ def lab_shell(name):
     if name in data["machines"]:
         argv = ssh_argv(data["machines"][name], tty=True)
     elif name in data["labs"]:
-        at = lab_host(data, data["labs"][name])
+        try:
+            at = lab_host(data, data["labs"][name])
+        except ApiError as exc:
+            print(exc)
+            return 1
         inside = ["exec", lab_instance(name), "--cwd", "/root/project", "--", "sh", "-c", "command -v bash >/dev/null && exec bash -l || exec sh -l"]
         argv = ["incus", *inside] if at.get("kind") == "local" else ssh_argv(at, shlex.join(["incus", *inside]), tty=True)
     else:
@@ -7504,6 +7594,18 @@ def machine_request(name, record, op, request):
     return args
 
 
+def lab_networks_to_approve(home, host, networks):
+    """The networks Pi asks for a lab that the user did not choose for labs: anything but
+    the default ones of Settings > Labs, Incus's own NAT and the networks between labs."""
+    if not networks:
+        return []
+    data = load_labs(home)
+    chosen = set(default_networks(data["settings"]) or [])
+    at = host_record(data, host)
+    kinds = {n["name"]: n.get("kind") for n in lab_networks(home, at)} if at else {}
+    return [n for n in networks if n not in chosen and kinds.get(n) not in ("nat", "internal")]
+
+
 def lab_answer(home, project, request):
     """A lab operation of Pi (from the broker). Anything on a machine set to ask waits for
     the user's approval in Pier (at most ten minutes), and then what is done is what the
@@ -7517,9 +7619,19 @@ def lab_answer(home, project, request):
         networks = request.get("networks")
         if networks is not None and not (isinstance(networks, list) and all(isinstance(n, str) for n in networks)):
             raise ApiError("networks: a list of network names")
-        host = request.get("host")
-        return lab_create(home, project, str(request.get("name") or ""), bool(request.get("vm")), request.get("image"),
-                          str(request.get("description") or ""), networks, host=str(host) if host else None)
+        host = str(request.get("host") or "") or None
+        args = (str(request.get("name") or ""), bool(request.get("vm")), request.get("image"), str(request.get("description") or ""))
+        planned = lab_create(home, project, *args, networks, check_only=True, host=host)
+        asked = lab_networks_to_approve(home, planned["host"], networks)
+        if asked:
+            # A lab on a network other than the labs' own (a VLAN, the LAN by macvlan) is
+            # a machine of Pi's there: the user says yes first.
+            what = f"make the lab {planned['name']} on {', '.join(asked)}"
+            approval = ask_approval(home, project, "lab", {"machine": planned["host"], "op": "lab_create", "what": what,
+                                                           "where": f"networks: {', '.join(networks)}", "networks": networks},
+                                    request.get("reason"))
+            networks = wait_approval(home, approval, what)["args"]["networks"]
+        return lab_create(home, project, planned["name"], *args[1:], networks, host=planned["host"])
     kind, record = lab_target(home, project, name)
     if kind == "machine" and record.get("policy") != "auto":
         args = machine_request(name, record, op, request)

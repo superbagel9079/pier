@@ -534,7 +534,7 @@ The token stays on the VM, in `~/.config/pier-picker/forges.json` (readable by y
 
 ### Part XIV. Labs: machines where Pi may do anything
 
-**An option, off until you turn it on** (Settings > Labs): Pi's sandbox stays exactly as it is, and Pi gets tools to use machines of its own besides, to run tests with services, build with Docker, install system packages, try things out.
+**An option, off until you turn it on** (Settings > Labs): Pi's sandbox stays as it is, and Pi gets tools to use machines of its own besides. **A lab on the internet network gives Pi the internet** (it copies files in, and runs what it likes there): the sandbox's network limit does not hold for what Pi does in a lab. Labs are for running tests with services, building with Docker, installing system packages, trying things out.
 
 **Turning it on sets nothing up.** Labs are made on **lab hosts**, and there is none until you add one:
 
@@ -567,7 +567,9 @@ then put Pier's key in that user's `~/.ssh/authorized_keys` (copied when you add
 sudo incus project set user-$(id -u) restricted.snapshots=allow restricted.containers.nesting=allow
 ```
 
-The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged.
+The `incus` group gives each user a restricted Incus project of their own: labs cannot reach the VM's files nor be privileged. **Pier checks it**: a host whose Incus project is not restricted (an account of `incus-admin`, root) is "not ready", and `root` cannot be added as a lab host's user. Pier's key is given as a line that allows commands and terminals only (`restrict,pty`: no port, agent or X11 forwarding). The first connection takes the host's key; Settings > Labs then shows its fingerprint, to compare with the host's own (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`).
+
+On such a project, a container lab has at most 2000 processes, a lab at most 10 snapshots, and a disk limit the storage pool cannot hold (a `dir` pool, what `incus admin init --minimal` makes) is said in the labs' journal instead of silently ignored. What comes back from a lab (`lab_pull`) holds only files and folders, and needs Python 3.12.11 or 3.13.4 or newer on the VM (older ones' archive filter can be got round).
 
 **Virtual machines too (optional, once):** labs are containers by default (a full Debian with systemd, its own IP, SSH, services, Docker, firewall rules inside; only the kernel is the VM's). For real virtual machines, the VM must see the processor's virtualisation. Check in the VM: `grep -cE 'vmx|svm' /proc/cpuinfo` must give more than 0, and `/dev/kvm` must exist. If not, under Proxmox:
 
@@ -614,9 +616,11 @@ A lab can be plugged into **any network Incus lets your account use**, and into 
 
 | Kind | What it is | What the lab can reach | Seen by your firewall |
 |---|---|---|---|
-| **The internet through the host (NAT)** | Incus's own bridge (`incusbr-1000`), there from the start | the internet, through the lab host; not your LAN's machines from outside | no: only the host is |
+| **The internet through the host (NAT)** | Incus's own bridge (`incusbr-1000`), there from the start | the internet, the lab host itself, and your LAN (Incus's NAT does not stop private addresses); the LAN cannot reach the lab | no: only the host is |
 | **A VLAN of your firewall** | a macvlan network on a card of the lab host, tagged with a VLAN of pfSense | what pfSense allows on that VLAN | yes: the lab is a machine of its own, with its address from pfSense's DHCP and its rules |
 | **Between labs only** | an Incus bridge without NAT | the other labs on it, nothing else | no, and nothing goes out |
+
+**Pi asks before using another network.** Pi makes labs on its own on the networks you chose for labs (Settings > Labs), on Incus's NAT and on the networks between labs. A lab on any other network (a VLAN, the LAN through a macvlan) waits for your approval, like a command on a machine.
 
 **One interface per network.** A lab on two networks gets `eth0` on the first ticked and `eth1` on the second, each with its address (Pier configures DHCP on the extra interfaces). The Labs tab shows each interface with its network and address. With nothing ticked, the lab has no network at all.
 

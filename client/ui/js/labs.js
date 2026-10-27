@@ -155,7 +155,9 @@ function renderLabHosts(s) {
     const li = el("li", { className: "two-lines" },
       el("div", { className: "line" }, el("span", { className: "name", textContent: `${h.name}${h.default ? " · default" : ""}` }), el("span", { className: "dim" }), ...actions),
       h.description ? el("div", { className: "desc dim small", textContent: h.description }) : null,
-      el("div", { className: "desc dim small", textContent: `${h.where} · ${state}` }));
+      el("div", { className: "desc dim small", textContent: `${h.where} · ${state}` }),
+      // The key it showed at the first contact, to compare with the host's own.
+      h.fingerprint ? el("div", { className: "desc dim small", textContent: `its key: ${h.fingerprint} (compare: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub)` }) : null);
     if (!h.incus) {
       li.append(el("p", { className: "hint", textContent: `To make it ready, on ${h.kind === "local" ? "Pi's VM" : h.where.split(":")[0]} (then test it again):` }),
         el("pre", { className: "labs-host-install", textContent: LABS_INSTALL }));

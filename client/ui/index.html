@@ -288,7 +288,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         </div>
       </div>
       <p id="labs-error" class="error" hidden></p>
-      <p class="hint">A lab is an Incus container (or a VM) on your VM: root inside, nothing of your VM or home, only what Pi copies in; it goes after its lifetime, and goes back to its clean state on Reset. Every command Pi runs in a lab or on a machine is written in the Labs tab.</p>
+      <p class="hint">A lab is a throwaway Linux machine on one of your lab hosts. Pi is root there, with nothing of your VM or home, only what Pi copies in. A lab on the internet network gives Pi the internet. It goes after its lifetime, and goes back to its clean state on Reset. Every command Pi runs in a lab or on a machine is written in the Labs tab.</p>
       </section>
 
       <section class="prefs-page" data-page="updates" role="tabpanel" hidden>
