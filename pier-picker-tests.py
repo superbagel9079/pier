@@ -435,8 +435,17 @@ def hardening_test():
     (main_git / "worktrees" / "w" / "HEAD").write_text("ref: refs/heads/w\n")
     (main_git / "worktrees" / "w" / "commondir").write_text("../..\n")
     (project / ".git").write_text(f"gitdir: {main_git / 'worktrees' / 'w'}\n")
+    (main_git / "worktrees" / "w" / "gitdir").write_text(f"{home / 'elsewhere' / '.git'}\n")
+    check("git jail: another folder's worktree adds nothing",
+          picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project)]))
+    (main_git / "worktrees" / "w" / "gitdir").write_text(f"{project / '.git'}\n")
     check("git jail: a worktree gets its main repository's .git",
           picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project), str(main_git)]))
+    (project / ".git").write_text(f"gitdir: {main_git}\n")
+    check("git jail: another repository's own .git adds nothing",
+          picker(f"print(m.git_jail_folders({str(project)!r}))") == str([str(project)]))
+    pushed = picker(f"m.own_repository({str(project)!r})")
+    check("broker: no push or pull for a .git naming another repository", "another repository" in pushed, pushed)
     (project / ".git").unlink()
 
     # A folder copy is unpacked out of Pi's reach, then moved into .pi-files.

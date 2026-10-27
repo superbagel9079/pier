@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.30"
+VERSION = "4.31"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -627,18 +627,28 @@ def git_branch(path):
     return head[:7] or None
 
 
+# Where Incus and LXD keep their sockets, outside /run: a member of the incus group (a
+# VM that is also a lab host) would drive Incus from the sandbox, and make itself
+# machines with the whole internet, out of Pier's sight.
+SOCKET_FOLDERS = ("/var/lib/incus", "/var/lib/lxd", "/var/snap/lxd/common/lxd")
+
+
 def run_hidden():
     """bwrap arguments hiding /run in the sandboxes: a read-only mount does not stop a
     program from connecting to a socket, and /run holds the system's (D-Bus, systemd,
     the user's session bus in /run/user, docker or others depending on the VM). Only
-    what /etc/resolv.conf points to comes back, read-only, so names still resolve."""
-    if not os.path.isdir("/run"):
-        return []
-    args = ["--tmpfs", "/run"]
-    resolv = os.path.realpath("/etc/resolv.conf")
-    if within(resolv, "/run") and os.path.isfile(resolv):
-        folder = os.path.dirname(resolv)
-        args += ["--ro-bind", folder, folder]
+    what /etc/resolv.conf points to comes back, read-only, so names still resolve.
+    The folders of SOCKET_FOLDERS are hidden too."""
+    args = []
+    if os.path.isdir("/run"):
+        args = ["--tmpfs", "/run"]
+        resolv = os.path.realpath("/etc/resolv.conf")
+        if within(resolv, "/run") and os.path.isfile(resolv):
+            folder = os.path.dirname(resolv)
+            args += ["--ro-bind", folder, folder]
+    for folder in SOCKET_FOLDERS:
+        if os.path.isdir(folder) and not os.path.islink(folder):
+            args += ["--tmpfs", folder]
     return args
 
 
@@ -712,35 +722,58 @@ def git_jail(path):
     return args
 
 
+def linked_git_folder(project, real):
+    """True when real, a git folder outside project, is really project's own: a
+    worktree's (<repo>/.git/worktrees/<n>) or a submodule's (<repo>/.git/modules/<n>)
+    whose way back (the worktree's gitdir file, the submodule's core.worktree) leads to
+    project. The .git file pointing there is Pi's to write, those files are not: a .git
+    file naming another repository's own .git, or another project's worktree, is refused."""
+    parts = real.split(os.sep)
+    if len(parts) < 3 or parts[-2] not in ("worktrees", "modules") or ".git" not in parts[:-2]:
+        return False
+    if os.path.islink(real) or not os.path.isfile(os.path.join(real, "HEAD")):
+        return False
+    if parts[-2] == "worktrees":
+        back = read_text(os.path.join(real, "gitdir"), 4096)
+        return bool(back and back.strip()) and os.path.realpath(os.path.dirname(back.strip())) == project
+    config = read_text(os.path.join(real, "config"), 65536) or ""
+    match = re.search(r"^\s*worktree\s*=\s*(.+?)\s*$", config, re.MULTILINE)
+    return bool(match) and os.path.realpath(os.path.join(real, match.group(1).strip('"'))) == project
+
+
 def git_jail_folders(path):
     """What the git jail shows: the project, and nothing else unless its repository
     lives elsewhere (a worktree, a submodule). The .git file saying where is Pi's to
-    write: only a real git folder inside another repository's .git is then added (and,
-    for a worktree, the main repository's .git it shares)."""
+    write: only a git folder that is really this project's (see linked_git_folder) is
+    then added, with the repository's .git it shares for a worktree."""
     project = os.path.realpath(path)
     folders = [project]
     directory = git_dir(path)
     if not directory:
         return folders
     real = os.path.realpath(directory)
-    if within(real, project):
-        return folders
-
-    def a_git_folder(folder):
-        inside_dot_git = (os.sep + ".git" + os.sep) in (folder + os.sep)
-        return inside_dot_git and os.path.isfile(os.path.join(folder, "HEAD")) and not os.path.islink(folder)
-
-    if not a_git_folder(real):
+    if within(real, project) or not linked_git_folder(project, real):
         return folders
     folders.append(real)
     common = read_text(os.path.join(real, "commondir"), 4096)
     if common and common.strip():
         shared = os.path.realpath(os.path.join(real, common.strip()))
-        if shared not in folders and not within(real, shared) and a_git_folder(shared):
-            folders.append(shared)
-        elif within(real, shared) and real != shared and a_git_folder(shared):
+        if within(real, shared) and real != shared and os.path.isfile(os.path.join(shared, "HEAD")) \
+                and not os.path.islink(shared):
             folders[-1] = shared  # the worktree's folder is inside it: the whole .git
     return folders
+
+
+def own_repository(project):
+    """ApiError unless project's git folder is its own: inside it, or a worktree's or a
+    submodule's that leads back to it. The broker reads commits with it and pushes
+    them with the token: a .git file naming another repository would publish that one."""
+    directory = git_dir(project)
+    if directory is None:
+        return
+    real, root = os.path.realpath(directory), os.path.realpath(project)
+    if not within(real, root) and not linked_git_folder(root, real):
+        raise ApiError("this project's .git points to another repository: Pier does not push or pull for it")
 
 
 def git_run(path, *args):
@@ -962,6 +995,30 @@ def top_of(path, home):
     return os.path.join(home, *parts[:depth])
 
 
+def private_folders(home):
+    """What no read-only mount of the sandbox may hold: the picker's state (the labs' key,
+    the approvals, other projects' restore points, the brokers' sockets: connect() works
+    on a read-only mount), its settings (the forges' tokens), the keys."""
+    return [os.path.realpath(p) for p in (os.path.dirname(state_path(home)), os.path.dirname(config_path(home)),
+                                          os.path.join(home, ".ssh"), os.path.join(home, ".gnupg"))]
+
+
+def program_folder(path, home):
+    """The folder to mount read-only for a program under home: the one right under home
+    holding it (top_of), or, when that one also holds a private folder (node from fnm,
+    in ~/.local/state), only the program's own installation (the folder above its bin).
+    None when even that holds one."""
+    private = private_folders(home)
+    holds = lambda folder: any(within(p, folder) for p in private)
+    top = top_of(path, home)
+    if not holds(top):
+        return top
+    folder = os.path.dirname(path)
+    if os.path.basename(folder) == "bin":
+        folder = os.path.dirname(folder)
+    return folder if within(folder, home) and folder != home and not holds(folder) else None
+
+
 # Folders Pi never gets read-write, even when asked to run there: they hold keys, the
 # picker, its state and settings. Their parents (home itself) are refused too.
 SANDBOX_REFUSED = ("~/.ssh", "~/.gnupg", "~/.config", "~/.local", "~/bin", "~/.pi")
@@ -1010,12 +1067,13 @@ def sandbox_refusal(project, home):
     return None
 
 
-def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None, workdir=None):
+def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None, workdir=None, sessions=()):
     """argv wrapped in bubblewrap, or None when bwrap is missing.
 
     Inside, Pi sees the whole system read-only, and of the home directory only:
       - the project, read-write (shared folders are mounted inside it, in .pi-shared);
-      - ~/.pi, read-write: Pi's own sessions, settings and credentials;
+      - ~/.pi, read-write: Pi's settings and credentials; of its conversations only
+        this project's (sessions: from session_folders), the others' are hidden;
       - the directories Pi and node run from, read-only (npm, nvm or bun installs);
       - ~/.gitconfig and ~/.config/git, read-only, so commits carry your name;
       - what the config adds in sandbox_read and sandbox_write.
@@ -1031,12 +1089,14 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
         if not exe:
             continue
         for candidate in (exe, os.path.realpath(exe)):
-            if within(candidate, home) and candidate != home:
-                mounts.setdefault(top_of(candidate, home), "ro")
+            folder = program_folder(candidate, home) if within(candidate, home) and candidate != home else None
+            if folder:
+                mounts.setdefault(folder, "ro")
     for extra in EXTRA_PATH:
         extra = os.path.expanduser(extra)
-        if within(extra, home) and extra != home and os.path.isdir(extra):
-            mounts.setdefault(top_of(extra, home), "ro")
+        folder = program_folder(os.path.join(extra, "x"), home) if within(extra, home) and extra != home else None
+        if folder and os.path.isdir(extra):
+            mounts.setdefault(folder, "ro")
     for name in (".gitconfig", ".config/git"):
         mounts.setdefault(os.path.join(home, name), "ro")
     for path in config["sandbox_read"]:
@@ -1056,6 +1116,29 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
     for path in sorted(mounts, key=lambda m: (m.count(os.sep), m)):
         if os.path.exists(path):
             args += ["--bind" if mounts[path] == "rw" else "--ro-bind", path, path]
+    # The conversations of every project are in ~/.pi/agent/sessions: a Pi would read
+    # what was said in the others, and write in them an order it finds there when the
+    # user goes on with one. Only this project's folders come back, by descriptor (a
+    # link put there by another Pi cannot give a folder elsewhere).
+    pi_home = os.path.realpath(os.path.join(home, ".pi"))
+    every = os.path.realpath(os.path.join(agent_dir(), "sessions"))
+    if within(every, pi_home) and every != pi_home and os.path.isdir(every):
+        args += ["--tmpfs", every]
+        for fd, folder in sessions:
+            args += ["--bind-fd", str(fd), folder] if bwrap_takes("--bind-fd") else ["--bind", folder, folder]
+    # What Pier gives each Pi (see pier_dir) is the picker's, out of reach: its
+    # extensions read-only, and the folder its own state goes to. ~/.pi/pier, where an
+    # older picker kept them, is hidden.
+    legacy = os.path.join(pi_home, "pier")
+    if os.path.isdir(legacy) and not os.path.islink(legacy):
+        args += ["--tmpfs", legacy]
+    extensions = os.path.join(pier_dir(), "ext")
+    if os.path.isdir(extensions):
+        args += ["--ro-bind", extensions, extensions]
+    if env.get("PIER_STATE"):
+        own = os.path.dirname(env["PIER_STATE"])
+        os.makedirs(own, mode=0o700, exist_ok=True)
+        args += ["--bind", own, own]
     if git_socket:
         # The git broker's socket (GitBroker): Pi's git tools ask it, the token stays out here.
         args += ["--dir", NET_DIR, "--bind", git_socket, f"{NET_DIR}/git.sock"]
@@ -1067,6 +1150,49 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
                 *network.local_ports(), "--", *argv]
     args += ["--unshare-pid", "--unshare-ipc", "--die-with-parent", "--chdir", workdir or project, "--", *argv]
     return args
+
+
+_BWRAP_HELP = []
+
+
+def bwrap_takes(option):
+    """Whether this bwrap knows option (--bind-fd since 0.5)."""
+    if not _BWRAP_HELP:
+        try:
+            result = subprocess.run([shutil.which("bwrap") or "bwrap", "--help"], capture_output=True, timeout=10)
+            _BWRAP_HELP.append(result.stdout.decode("utf-8", "replace") + result.stderr.decode("utf-8", "replace"))
+        except (OSError, subprocess.SubprocessError):
+            _BWRAP_HELP.append("")
+    return option in _BWRAP_HELP[0]
+
+
+def session_folders(home, *folders):
+    """[(descriptor, path)] for the sessions folders of folders (the project, the
+    worktree Pi works in), made when missing. Reached from home down without following
+    links: ~/.pi is every Pi's to write, and one may have put a link there."""
+    out = []
+    for folder in dict.fromkeys(session_dir(f) for f in folders):
+        if not SAFE_FD or not within(folder, home) or folder == home:
+            continue
+        try:
+            fd = os.open(home, DIR_FLAGS)
+            try:
+                for part in os.path.relpath(folder, home).split(os.sep):
+                    try:
+                        os.mkdir(part, 0o700, dir_fd=fd)
+                    except FileExistsError:
+                        pass
+                    inner = os.open(part, DIR_FLAGS, dir_fd=fd)
+                    os.close(fd)
+                    fd = inner
+            except BaseException:
+                os.close(fd)
+                raise
+        except OSError as exc:
+            log("warn", "pi.sessions-folder", folder=folder, err=str(exc))
+            continue
+        out.append((fd, folder))
+    return out
 
 
 # --- the network Pi may reach -----------------------------------------------------------
@@ -1450,12 +1576,10 @@ def exec_pi(path, extra):
         if extension:
             tracked = ["--extension", extension]
             env["PIER_STATE"] = pier_state_path(slot)
-            try:
-                os.remove(env["PIER_STATE"])  # what an earlier Pi of that name said
-            except OSError:
-                pass
+            forget_pier_state(env["PIER_STATE"])  # what an earlier Pi of that name said
     network = None  # the proxy of a sandbox whose network is limited (see NetProxy)
     broker = None   # Pi's git tools ask it (see GitBroker)
+    sessions = []   # descriptors of this project's sessions folders, for the sandbox
     # A Pi beside another in the project works in its own worktree (see make_worktree).
     worktree = worktree_of(os.path.realpath(path), os.environ.get("PIER_WORKTREE"))
     workdir = worktree or path
@@ -1493,8 +1617,11 @@ def exec_pi(path, extra):
             env["PIER_GIT_SOCKET"] = f"{NET_DIR}/git.sock"  # where the sandbox sees it
         # Refuse rather than run unconfined: a sandbox that silently goes away
         # protects nothing.
-        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir)
-        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir)
+        sessions = session_folders(home, os.path.realpath(path), os.path.realpath(workdir))
+        argv = sandbox_argv(argv, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir,
+                            sessions=sessions)
+        plain = sandbox_argv(plain, os.path.realpath(path), home, config, env, network, git_socket, workdir=workdir,
+                             sessions=sessions)
         if argv is None:
             print(SANDBOX_MISSING)
             log("error", "pi.sandbox-missing", project=path)
@@ -1524,8 +1651,9 @@ def exec_pi(path, extra):
         fd = seccomp_pipe() if sandboxed else None
         if fd is not None:
             command = [command[0], "--seccomp", str(fd), *command[1:]]
+        kept = [held for held, _ in sessions] + ([] if fd is None else [fd])
         try:
-            child = subprocess.Popen(command, cwd=workdir, env=env, pass_fds=() if fd is None else (fd,))
+            child = subprocess.Popen(command, cwd=workdir, env=env, pass_fds=kept)
         finally:
             if fd is not None:
                 os.close(fd)
@@ -1544,6 +1672,8 @@ def exec_pi(path, extra):
         print(f"cannot run pi: {exc.strerror or exc}")
         log("error", "pi.cannot-run", project=project, err=str(exc))
         status = 1
+    for held, _ in sessions:
+        os.close(held)
     if watcher:
         watcher.stop()
     if network:
@@ -1553,10 +1683,7 @@ def exec_pi(path, extra):
     if worktree:
         end_worktree(os.path.realpath(path), worktree)
     if env.get("PIER_STATE"):
-        try:
-            os.remove(env["PIER_STATE"])
-        except OSError:
-            pass
+        forget_pier_state(env["PIER_STATE"])
     seconds = round(time.monotonic() - started, 1)
     log("warn" if status else "info", "pi.exit", project=project, status=status, seconds=seconds)
     if status and seconds < 3:
@@ -2026,8 +2153,9 @@ def set_pi_file(slot, file):
 # only appears at its first answer: from outside, which conversation a Pi holds can only
 # be guessed. So the Pis started here get a small extension (--extension, nothing is
 # installed in Pi's settings) that writes, at every change, which conversation it holds
-# and whether it works, to ~/.pi/pier/pis/<tmux session>.json. ~/.pi because the sandbox
-# lets Pi write there and nowhere else outside the project.
+# and whether it works, to <the picker's state>/pi/pis/<tmux session>/state.json. That
+# folder is the picker's: the sandbox gives each Pi its own folder there and nothing else
+# of it, so a Pi cannot write what another says, nor change the extensions they load.
 
 PIER_EXTENSION = """// Written by Pier (pier-picker): tells Pier which conversation this Pi holds and
 // whether it is working. Loaded with --extension by the picker only; it writes one small
@@ -2064,25 +2192,42 @@ export default function (pi: any) {
 
 
 def pier_dir():
-    return os.path.join(home_dir(), ".pi", "pier")
+    """What Pier gives the Pis it starts, in the picker's state folder (Pi never writes
+    there): ext/ the extensions, pis/<slot>/ what each Pi says."""
+    return os.path.join(os.path.dirname(state_path(home_dir())), "pi")
 
 
 def pier_state_path(slot):
-    return os.path.join(pier_dir(), "pis", f"{slot}.json")
+    return os.path.join(pier_dir(), "pis", slot, "state.json")
+
+
+def forget_pier_state(path):
+    """Remove what a Pi said, and its folder."""
+    for remove in (os.remove, os.rmdir):
+        try:
+            remove(path)
+        except OSError:
+            pass
+        path = os.path.dirname(path)
+
+
+def pier_extension_file(name, text, event):
+    """An extension's file in pier_dir()/ext, written when missing or different; None
+    when it cannot be."""
+    path = os.path.join(pier_dir(), "ext", name)
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        if read_text(path) == text and not os.path.islink(path):
+            return path
+        atomic_write(path, text, pier_dir(), 0o644)
+        return path
+    except (OSError, ApiError) as exc:
+        log("warn", event, err=str(exc))
+        return None
 
 
 def pier_extension():
-    """The extension's file, written when missing or different; None when it cannot be."""
-    path = os.path.join(pier_dir(), "pier-session.ts")
-    try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        if read_text(path) == PIER_EXTENSION and not os.path.islink(path):
-            return path
-        atomic_write(path, PIER_EXTENSION, os.path.join(home_dir(), ".pi"), 0o644)
-        return path
-    except (OSError, ApiError) as exc:
-        log("warn", "pier.extension-failed", err=str(exc))
-        return None
+    return pier_extension_file("pier-session.ts", PIER_EXTENSION, "pier.extension-failed")
 
 
 def pier_state(slot):
@@ -3855,6 +4000,84 @@ def download_files(home, path):
     return 0
 
 
+def tar_tree(archive, root, start, arcname, keep=None):
+    """Add start (resolved, inside root) and all it holds to archive, as tarfile's add
+    would, but walking down from root by descriptors without following any link: a
+    link goes in as a link, and a folder Pi swaps for a link while it is read is not
+    entered (tarfile's add reads by path: the swap would send what the link names).
+    Nothing of another file system (a share mounted inside), no FIFO nor device.
+    keep(info): tarfile's filter, None leaves the entry (a folder: all it holds) out."""
+    import tarfile
+    if not SAFE_FD:
+        archive.add(start, arcname=arcname, recursive=True, filter=keep)
+        return
+    nofollow = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+
+    def entry(name, st, kind):
+        info = tarfile.TarInfo(name)
+        info.type, info.mode, info.mtime = kind, stat.S_IMODE(st.st_mode), int(st.st_mtime)
+        return info
+
+    def add(dir_fd, name, arc, device):
+        st = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        if stat.S_ISLNK(st.st_mode):
+            info = entry(arc, st, tarfile.SYMTYPE)
+            info.linkname = os.readlink(name, dir_fd=dir_fd)
+            info = keep(info) if keep else info
+            if info is not None:
+                archive.addfile(info)
+        elif stat.S_ISREG(st.st_mode):
+            fd = os.open(name, nofollow, dir_fd=dir_fd)
+            with os.fdopen(fd, "rb") as handle:
+                st = os.fstat(fd)
+                if not stat.S_ISREG(st.st_mode):
+                    return
+                info = entry(arc, st, tarfile.REGTYPE)
+                info.size = st.st_size
+                info = keep(info) if keep else info
+                if info is not None:
+                    archive.addfile(info, handle)
+        elif stat.S_ISDIR(st.st_mode):
+            fd = os.open(name, DIR_FLAGS, dir_fd=dir_fd)
+            try:
+                inside(fd, arc, device)
+            finally:
+                os.close(fd)
+
+    def inside(fd, arc, device):
+        st = os.fstat(fd)
+        if st.st_dev != device:
+            return
+        info = entry(arc, st, tarfile.DIRTYPE)
+        info = keep(info) if keep else info
+        if info is None:
+            return
+        archive.addfile(info)
+        with os.scandir(fd) as entries:
+            names = sorted(e.name for e in entries)
+        for name in names:
+            try:
+                add(fd, name, f"{arc}/{name}", device)
+            except FileNotFoundError:
+                continue  # gone meanwhile
+
+    try:
+        if start == root:
+            fd = os.open(root, DIR_FLAGS)
+            try:
+                inside(fd, arcname, os.fstat(fd).st_dev)
+            finally:
+                os.close(fd)
+        else:
+            parent = open_dir_walk(root, os.path.dirname(start))
+            try:
+                add(parent, os.path.basename(start), arcname, os.fstat(parent).st_dev)
+            finally:
+                os.close(parent)
+    except RecursionError:
+        raise ApiError(f"too many folders inside {os.path.basename(start)}")
+
+
 def download_tar(home, path):
     """--download PATH: a handed-off copy or a folder copy, as a tar stream on stdout."""
     import tarfile
@@ -3864,7 +4087,7 @@ def download_tar(home, path):
         print(f"not a copy that can be downloaded: {path}", file=sys.stderr)
         return 1
     with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
-        archive.add(full, arcname=os.path.basename(full))
+        tar_tree(archive, full, full, os.path.basename(full))
     return 0
 
 
@@ -5307,6 +5530,7 @@ def git_push(home, project, link, branch):
             raise ApiError(f"Pi pushes only its own branches, named pi/…: not {branch}")
         if remote_branches(forge, link["repo"]):
             raise ApiError(f"{default} is the default branch: push a pi/… branch and open a pull request")
+    own_repository(project)
     mirror = ensure_mirror(home, link["forge"], link["repo"])
     jail = git_jail(project)
     if jail is not None:
@@ -5324,6 +5548,7 @@ def git_push(home, project, link, branch):
 def git_pull(home, project, link):
     """The forge's branches, into the project's refs/remotes/origin/*: Pi merges itself."""
     forge = forge_by_id(home, link["forge"])
+    own_repository(project)
     mirror = ensure_mirror(home, link["forge"], link["repo"])
     mirror_git(forge, mirror, "fetch", "--prune", "--no-tags", clone_url(forge, link["repo"]), "+refs/heads/*:refs/remotes/origin/*")
     jailed_git(git_jail_rw(project, extra_ro=[mirror]), "-C", os.path.realpath(project), "fetch", "--no-tags", "--quiet",
@@ -6588,8 +6813,9 @@ def lab_run(home, project, name, command, timeout=300):
 
 def lab_push(home, project, name, path="."):
     """Files of the project into the lab (/root/project, or ~/pier-lab on a machine), as
-    a tar stream: links stay links (nothing outside the project is read), what was given
-    to Pi and its worktrees stay out."""
+    a tar stream: links stay links, read by descriptors (see tar_tree: nothing outside
+    the project is read, even with a folder swapped meanwhile), what was given to Pi
+    and its worktrees stay out."""
     import tarfile
     kind, record = lab_target(home, project, name)
     real = os.path.realpath(project)
@@ -6612,7 +6838,7 @@ def lab_push(home, project, name, path="."):
     try:
         with tarfile.open(fileobj=process.stdin, mode="w|") as archive:
             arcname = os.path.relpath(source, real)
-            archive.add(source, arcname="." if arcname == "." else arcname, recursive=True, filter=keep)
+            tar_tree(archive, real, source, "." if arcname == "." else arcname.replace(os.sep, "/"), keep)
         process.stdin.close()
         err = process.stderr.read(4096)
         code = process.wait(timeout=600)
@@ -7049,17 +7275,7 @@ export default function (pi: any) {
 
 
 def pier_labs_extension():
-    """The lab tools' file, written when missing or different; None when it cannot be."""
-    path = os.path.join(pier_dir(), "pier-labs.ts")
-    try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        if read_text(path) == PIER_LABS_EXTENSION and not os.path.islink(path):
-            return path
-        atomic_write(path, PIER_LABS_EXTENSION, os.path.join(home_dir(), ".pi"), 0o644)
-        return path
-    except (OSError, ApiError) as exc:
-        log("warn", "pier.labs-extension-failed", err=str(exc))
-        return None
+    return pier_extension_file("pier-labs.ts", PIER_LABS_EXTENSION, "pier.labs-extension-failed")
 
 
 def labs_enabled(home):
@@ -7317,17 +7533,7 @@ export default function (pi: any) {
 
 
 def pier_git_extension():
-    """The git tools' file, written when missing or different; None when it cannot be."""
-    path = os.path.join(pier_dir(), "pier-git.ts")
-    try:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        if read_text(path) == PIER_GIT_EXTENSION and not os.path.islink(path):
-            return path
-        atomic_write(path, PIER_GIT_EXTENSION, os.path.join(home_dir(), ".pi"), 0o644)
-        return path
-    except (OSError, ApiError) as exc:
-        log("warn", "pier.git-extension-failed", err=str(exc))
-        return None
+    return pier_extension_file("pier-git.ts", PIER_GIT_EXTENSION, "pier.git-extension-failed")
 
 
 def versions_path(home):
@@ -7780,10 +7986,19 @@ def watch_signature(kind, value, home):
             return st.st_size, st.st_mtime_ns
         except OSError:
             return None
+
+    def said():
+        # What each Pi says, in its own folder of pier_dir()/pis.
+        folder = os.path.join(pier_dir(), "pis")
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            return None
+        return [(name, stat(os.path.join(folder, name, "state.json"))) for name in names]
     if kind == "projects":
         # A Pi started by Pier, ending, working or idle: its extension rewrites its file
-        # in ~/.pi/pier/pis. Recent projects: the state file.
-        return stat(os.path.join(pier_dir(), "pis")), stat(state_path(home))
+        # (see said). Recent projects: the state file.
+        return said(), stat(state_path(home))
     if kind == "activity" and isinstance(value, dict):
         project = value.get("project") or ""
         directory = git_dir(project) if project else None
@@ -7796,9 +8011,8 @@ def watch_signature(kind, value, home):
         except OSError:
             names = []
         texts = [stat(os.path.join(value, n)) for n in ("AGENTS.md", "CLAUDE.md", ".pi", os.path.join(".pi", "devbox-history"))]
-        said = (stat(os.path.join(pier_dir(), "pis")), stat(versions_path(home)))
         # How many conversations, not their sizes: a working Pi does not move Setup.
-        return sum(1 for n in names if n.endswith(".jsonl")), texts, said
+        return sum(1 for n in names if n.endswith(".jsonl")), texts, (said(), stat(versions_path(home)))
     if kind == "conversations":
         root = sessions_root()
         try:
@@ -7806,7 +8020,7 @@ def watch_signature(kind, value, home):
         except OSError:
             folders = []
         pis = sorted((n, p["path"], p.get("file")) for n, p in pi_sessions().items())
-        return ([(n, stat(os.path.join(root, n))) for n in folders], stat(os.path.join(pier_dir(), "pis")),
+        return ([(n, stat(os.path.join(root, n))) for n in folders], said(),
                 stat(labels_path(home)), pis)
     if kind == "checkpoints":
         store = checkpoint_store(value)
