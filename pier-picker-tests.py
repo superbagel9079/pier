@@ -570,7 +570,7 @@ class Forge(BaseHTTPRequestHandler):
         calls.append(("GET", self.path, self.headers.get("Authorization")))
         path = self.path.split("?")[0]
         if path == "/user": return self.reply(200, {"login": "leo"})
-        if path == "/repos/leo/demo": return self.reply(200, {"default_branch": "main"})
+        if path == "/repos/leo/demo": return self.reply(200, {"default_branch": "main", "private": True})
         if path == "/repos/leo/demo/branches":
             names = subprocess.run(["git", "--git-dir", remote, "for-each-ref", "--format=%(refname:short)", "refs/heads"],
                                    capture_output=True, text=True).stdout.split()
@@ -589,7 +589,9 @@ class Forge(BaseHTTPRequestHandler):
         if hit: return self.reply(200, issues[int(hit.group(1))])
         if path == "/repos/leo/demo/issues":
             return self.reply(200, [i for i in issues.values() if any(l["name"] == "pi-task" for l in i["labels"])])
-        if "check-runs" in path: return self.reply(200, {"check_runs": []})
+        # Every commit's checks ran and passed; no outside CI (no commit status).
+        if "check-runs" in path: return self.reply(200, {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]})
+        if _re.fullmatch(r"/repos/leo/demo/commits/[^/]+/status", path): return self.reply(200, {"state": "pending", "total_count": 0, "statuses": []})
         self.reply(404, {"message": "Not Found"})
     def do_POST(self):
         body = self.body()
@@ -613,8 +615,8 @@ class Forge(BaseHTTPRequestHandler):
             if hit.group(2) == "reviews": reviews.setdefault(n, []).append({"user": {"login": "leo"}, "state": body["event"]})
             else: prs[n - 1]["requested_reviewers"] = [{"login": r} for r in body["reviewers"]]
             return self.reply(200, {})
-        pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x"},
-              "base": {"ref": body.get("base")}, "user": {"login": "alex"}}
+        pr = {"number": len(prs) + 1, "title": body.get("title"), "state": "open", "head": {"ref": body.get("head"), "sha": "x", "repo": {"id": 1}},
+              "base": {"ref": body.get("base"), "repo": {"id": 1}}, "user": {"login": "alex"}}
         prs.append(pr); self.reply(201, pr)
     def do_DELETE(self):
         calls.append(("DELETE", self.path, None))
@@ -643,7 +645,7 @@ open(os.path.join(proj, "a.txt"), "w").write("a")
 git("add", "."); git("commit", "-qm", "one"); git("checkout", "-qb", "pi/work")
 open(os.path.join(proj, "b.txt"), "w").write("b")
 git("add", "."); git("commit", "-qm", "two")
-broker = object.__new__(m.GitBroker); broker.project = os.path.realpath(proj); broker.home = home
+broker = object.__new__(m.GitBroker); broker.asked = m.collections.deque(); broker.project = os.path.realpath(proj); broker.home = home
 def tried(request):
     try:
         return broker.answer(request)
@@ -691,7 +693,7 @@ out["mode_default"] = (m.repo_link(home, broker.project) or {}).get("mode")
 # A repository asked for: the account it would be made on is in the request.
 other = os.path.join(home, "other")
 os.makedirs(other, exist_ok=True)
-elsewhere = object.__new__(m.GitBroker); elsewhere.project = os.path.realpath(other); elsewhere.home = home
+elsewhere = object.__new__(m.GitBroker); elsewhere.asked = m.collections.deque(); elsewhere.project = os.path.realpath(other); elsewhere.home = home
 made = elsewhere.answer({"op": "create_repo", "name": "fresh", "description": "for the tests"})
 held = next((a["args"] for a in m.load_approvals(home) if a["id"] == made["asked"]), {})
 out["repo_account_shown"] = held.get("account") == "leo" and held.get("forge_kind") == "github" and held.get("description") == "for the tests"
@@ -700,6 +702,13 @@ m.api_repo_settings(home, proj, "auto", "squash")
 second = tried({"op": "open_pr", "branch": "pi/work", "title": "Again"}).get("number")
 merged = tried({"op": "request_merge", "number": second})
 out["auto_merged"] = merged.get("merged") == second and [c[2] for c in calls if c[0] == "PUT"][-1] == {"merge_method": "squash", "sha": "x"}
+# A fork's pull request, or one into another branch: never merged by Pi.
+prs[second - 1]["head"]["repo"] = {"id": 2}
+out["auto_fork_refused"] = "not Pi's" in tried({"op": "request_merge", "number": second}).get("error", "")
+prs[second - 1]["head"]["repo"] = {"id": 1}
+prs[second - 1]["base"]["ref"] = "release"
+out["auto_base_refused"] = "only the user merges" in tried({"op": "request_merge", "number": second}).get("error", "")
+prs[second - 1]["base"]["ref"] = "main"
 m.api_repo_settings(home, proj, "local", "merge")
 out["local_push"] = "error" in tried({"op": "push", "branch": "pi/work"})
 out["local_pr"] = "error" in tried({"op": "open_pr", "branch": "pi/work", "title": "No"})
@@ -840,6 +849,8 @@ def git_broker_test():
     check("git: a repository asked for says which account it goes to", out["repo_account_shown"], out)
     check("git: a repository asks to merge by default", out["mode_default"] == "ask", out)
     check("git: set to merge itself, Pi merges with the chosen method", out["auto_merged"], out)
+    check("git: in auto mode, a fork's pull request is not merged", out["auto_fork_refused"], out)
+    check("git: in auto mode, a pull request into another branch is not merged", out["auto_base_refused"], out)
     check("git: set to local work, nothing is pushed", out["local_push"] and out["local_pr"], out)
     check("git: an unknown setting refused", out["bad_setting"], out)
     check("git: pull fills origin/*", "origin/pi/work" in out["origin"], out)

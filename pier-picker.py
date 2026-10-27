@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.36"
+VERSION = "4.37"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -886,7 +886,11 @@ class Background:
                 stale = generation != self._generation or epoch != self._epoch or path in self._results
             if stale:
                 continue
-            value = self._probe(path)
+            try:
+                value = self._probe(path)
+            except Exception as exc:  # noqa: BLE001 - one folder failing never ends the preview for the session
+                log("warn", "preview.failed", path=path, err=f"{type(exc).__name__}: {exc}")
+                value = None
             with self._lock:
                 if epoch != self._epoch:
                     continue
