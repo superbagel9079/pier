@@ -989,8 +989,11 @@ The log is in `%LOCALAPPDATA%\app.devbox.client\logs\` (`pier.log`, then `pier.1
 
 | Path | Purpose |
 |---|---|
-| `pier-picker.py` | the picker and its API |
-| `pier-picker-tests.py` | the test suite, to run on the VM, in a real tmux terminal |
+| `pier-picker.py` | the picker and its API, the one file the VM runs: **made from `picker/`**, not edited by hand |
+| `picker/NN_*.py` | the picker in parts, one per subject (config, sandbox, network, restore points, forges, team, labs, broker, watch, the screen…), one module cut in pieces: edit them, then `python3 tools/bundle.py` writes `pier-picker.py` (the CI checks they match) |
+| `tools/bundle.py` | joins the parts (`--check`: whether `pier-picker.py` is them joined; `--split`: cuts it into them again) |
+| `pier-picker-tests.py` | the test suite, to run on the VM, in a real tmux terminal (the CI runs it too) |
+| `pier-picker-unit.py` | the picker's unit tests, without a VM (`python3 -B pier-picker-unit.py`) |
 | `config.example.toml` | the picker's configuration template |
 | `client/ui/` | Pier's interface: `index.html`, `style.css`, `themes.js`, xterm.js in `vendor/` |
 | `client/ui/js/` | its code, one file per part: `core.js` (preferences, log, helpers), `vm.js` (the VM's state, received through `watch`), `connect.js`, `workspace.js` (the three zones and their tabs), `prefs.js`, `terminal.js`, `context.js`, `project.js` (Activity), `diff.js`, `conversations.js`, `setup.js`, `logs.js`, `palette.js`, `backend.js` (the Rust side), `mock.js` (a fake VM to try the interface in a browser), `main.js` |

@@ -14,14 +14,6 @@ function relTime(secs) {
   return d < 90 ? "just now" : d < 3600 ? `${Math.round(d / 60)} min ago` : d < 86400 ? `${Math.round(d / 3600)} h ago` : `${Math.round(d / 86400)} d ago`;
 }
 
-/** "today", "this week", "older": from local midnight, as people count days. */
-function dateGroup(secs) {
-  const midnight = new Date();
-  midnight.setHours(0, 0, 0, 0);
-  const start = midnight.getTime() / 1000;
-  return secs >= start ? "today" : secs >= start - 6 * 86400 ? "this week" : "older";
-}
-
 /** Whether a conversation matches a search (lowercase text): title, question, Pi's
  *  name, category. */
 function conversationMatches(s, query) {

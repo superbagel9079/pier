@@ -469,11 +469,6 @@ def open_plain(path, root=None, follow=True):
     return os.fdopen(fd, "rb")
 
 
-def sessions_root():
-    """Pi's sessions folder: the session files read outside the sandbox stay in it."""
-    return os.path.realpath(os.path.join(agent_dir(), "sessions"))
-
-
 def open_folder(root, folder):
     """A descriptor on folder, really inside root, opened from root down without
     following links (see open_dir_walk). ApiError when it leads elsewhere."""
@@ -4518,23 +4513,6 @@ def save_labels(home, labels, file):
 _SESSION_INFO = {}  # path -> ((size, mtime), info): a session file is read again only when it changed
 
 
-def project_sessions(project, limit=200):
-    folder = session_dir(project)
-    files = []
-    try:
-        with os.scandir(folder) as entries:
-            for entry in entries:
-                if entry.name.endswith(".jsonl"):
-                    try:
-                        files.append((entry.path, entry.stat()))
-                    except OSError:
-                        pass
-    except OSError:
-        return []
-    files.sort(key=lambda f: f[1].st_mtime, reverse=True)
-    return [session_info(path, st) for path, st in files[:limit]]
-
-
 def session_info(path, st):
     """A conversation for the lists: name, first question, and its token use (files up
     to 8 MB), read again only when the file changed."""
@@ -4691,6 +4669,8 @@ CONVERSATIONS_MAX = 2000
 
 
 def sessions_root():
+    """Pi's sessions folder: the session files read outside the sandbox stay in it
+    (open_regular resolves it when it checks)."""
     return os.path.join(agent_dir(), "sessions")
 
 
@@ -5368,11 +5348,11 @@ def forge_api_base(kind, url):
     return f"{url}/api/v4" if kind == "gitlab" else f"{url}/api/v1"
 
 
-def forge_request(forge, method, path, body=None, raw_url=None):
+def forge_request(forge, method, path, body=None):
     """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
     import urllib.error
     import urllib.request
-    url = raw_url or forge_api_base(forge["kind"], forge["url"]) + path
+    url = forge_api_base(forge["kind"], forge["url"]) + path
     headers = {"Accept": "application/json", "User-Agent": f"pier-picker/{VERSION}"}
     if forge["kind"] == "github":
         headers.update({"Authorization": f"Bearer {forge['token']}", "Accept": "application/vnd.github+json",
