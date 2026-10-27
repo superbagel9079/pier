@@ -17,7 +17,7 @@ const FORGE_HINTS = {
 const REPO_MODES = {
   local: ["Work locally", "Pi commits and branches in the project; nothing is pushed."],
   ask: ["Push, ask to merge", "Pi pushes its pi/… branches and opens pull requests; a merge waits for your approval here."],
-  auto: ["Push and merge", "Pi pushes, opens pull requests and merges them itself once their checks have passed."],
+  auto: ["Push and merge", "Pi pushes, opens pull requests and merges its own (pi/… branches of this repository) itself once their checks ran and passed. Its approvals of a review still wait for you."],
 };
 const MERGE_LABELS = { merge: "Merge commit", squash: "Squash", rebase: "Rebase" };
 const CHECK_MARKS = { success: ["✓", "checks passed"], failure: ["✗", "checks failed"], pending: ["…", "checks running"], none: ["", "no checks"] };
