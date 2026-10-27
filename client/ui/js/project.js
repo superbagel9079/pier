@@ -422,6 +422,7 @@ function makeProject(tab) {
   });
   $(".refresh-points", restoreView).addEventListener("click", loadPoints);
 
+  tab.setMode = (next) => setMode(next); // from the palette
   function setMode(next) {
     mode = next;
     for (const b of tab.pane.querySelectorAll(".mode")) b.classList.toggle("active", b.dataset.mode === mode);

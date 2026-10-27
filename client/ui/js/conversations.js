@@ -267,7 +267,14 @@ function makeConversations(tab) {
       if (tools.children.length) list.append(tools);
     }
     if (query && !shown) list.append(el("li", { className: "dim small", textContent: "No conversation matches." }));
-    if (!data.projects.length) list.append(el("li", { className: "dim small", textContent: "No conversation yet: start a Pi from the picker." }));
+    if (!data.projects.length) {
+      const start = el("button", { className: "secondary", textContent: "Open a folder…", title: "Choose a folder of the VM and start Pi in it" });
+      start.addEventListener("click", () => openFolderPicker());
+      const ready = el("button", { className: "link", textContent: "Is the VM ready?", title: "What Pier needs on the VM, and what is missing" });
+      ready.addEventListener("click", () => openVmReady());
+      list.append(el("li", { className: "dim small", textContent: "No conversation yet. Choose a folder and Pi starts there (in the picker: the arrows, then p)." }),
+        el("li", { className: "toolbar" }, start, ready));
+    }
     const count = all.length;
     $$(".count").textContent = `${count} conversation${count === 1 ? "" : "s"} in ${data.projects.length} project${data.projects.length === 1 ? "" : "s"}${data.truncated ? " (the latest 2000)" : ""}`;
   }

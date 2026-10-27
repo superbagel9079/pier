@@ -213,6 +213,10 @@ A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and Java
 ### Part I. Connecting
 
 - **First start:** address, port, user, and an optional **bastion** (with its own port and user).
+- **Is the VM ready?** Once connected, when something Pier needs is missing on the VM (tmux, bubblewrap, git, sshfs, Python 3.12, Node 24, Pi, enough `MaxSessions`), a page lists what is there and what is not, each missing thing with the command that puts it right (**copy**, then paste it in a shell tab). It shows once for each new set of missing things, and at any time from the palette (Ctrl+Shift+K, "ready").
+- **Open a folder…:** with no conversation yet, Conversations offers to choose a folder of the VM, walking down from home, and starts Pi in it (also in the palette).
+- **Waiting for you:** whatever Pi asks you (a merge, a review, a repository, a command on a machine, a lab on another network) is counted in the top bar ("2 waiting"), and one click lists them all, each shown whole, with **Refuse** and **Approve**. They are still in Setup > Git and the Labs tab too.
+- **The palette** also reaches every page of Settings ("Settings: Labs"), of Setup ("Setup: Git") and of Activity ("Activity: Restore points"), the Labs tab, Hand off, and the above. **Settings** open on the Picker page, then Behavior and Updates.
 - **Password:** asked once, kept **in memory only** and never written to disk. It is used to reconnect by itself when the PC went to sleep. It is forgotten as soon as the address or the user changes.
 - **Server fingerprint:** checked as `ssh` does. On first contact, Pier shows it for you to confirm, and only that key can be trusted. If it changes later, **the connection is refused before the password is sent**.
 - **The connection settings** are changed from the login screen ("change connection"), not from the Settings.

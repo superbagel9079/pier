@@ -17,7 +17,7 @@ const palette = (() => {
     const out = [];
     const side = prefs.panelSide === "left" ? "left" : "right";
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
-    for (const kind of ["conversations", "project", "context", "setup", "logs"]) {
+    for (const kind of ["conversations", "project", "context", "setup", "logs", "labs"]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind, side)]);
     }
     const projects = new Map();
@@ -38,6 +38,21 @@ const palette = (() => {
       }
     }
     out.push(["action", "Settings", "", () => openPrefs()]);
+    for (const button of document.querySelectorAll("#prefs .prefs-tabs button")) {
+      out.push(["setting", `Settings: ${button.textContent}`, "", () => { openPrefs(); showPrefsPage(button.dataset.page); }]);
+    }
+    const panel = (kind) => workspace.find(kind) || workspace.add(kind, side);
+    for (const button of document.querySelectorAll("#tpl-setup")[0]?.content.querySelectorAll(".setup-pages .mode") || []) {
+      out.push(["page", `Setup: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
+    }
+    for (const [mode, label, detail] of [["activity", "Activity", "what Pi read and changed"], ["files", "Files", "the project's files"],
+      ["restore", "Restore points", "undo what Pi did: go back to before a prompt"]]) {
+      out.push(["page", `Activity: ${label}`, detail, () => { const t = panel("project"); workspace.show(t); t?.setMode?.(mode); }]);
+    }
+    out.push(["action", "Waiting for you", "Pi's requests: approve or refuse", () => waiting.show()]);
+    out.push(["action", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()]);
+    out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
+    out.push(["action", "Hand off", "let Pi keep working with this computer off", () => openHandOff()]);
     out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
     out.push(["action", `Panels on the ${side === "left" ? "right" : "left"}`, "layout", () => {
       prefs.panelSide = side === "left" ? "right" : "left";

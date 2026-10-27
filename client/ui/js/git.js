@@ -325,7 +325,7 @@ function makeGitManager(box, currentProject) {
       if (first) continue; // those from before this window opened: shown in Setup, not announced
       // A short line only: the request is read whole where it is answered.
       const what = approvalSummary(a);
-      const where = a.kind === "lab" ? "the Labs tab or Setup > Git" : "Setup > Git";
+      const where = "the top bar's \u201cwaiting\u201d";
       backend.notify("Pi asks for your approval", `${projectLabel(a.project)}: ${what}. Answer in ${where}.`).catch(() => {});
       flashStatus(`Pi asks to ${what}: ${where}`);
     }

@@ -67,7 +67,7 @@ function closePrefs() {
 }
 
 /** One page of the settings at a time; the one last shown comes back next time. */
-let prefsPage = "layout";
+let prefsPage = "picker"; // the essential first: the picker, the VM, updates
 function showPrefsPage(page) {
   prefsPage = page;
   for (const tab of document.querySelectorAll("#prefs .prefs-tabs button")) tab.setAttribute("aria-selected", String(tab.dataset.page === page));
