@@ -1,0 +1,9 @@
+# cargo audit (the CI's audit job): advisories looked at and not acted on, each with why.
+[advisories]
+ignore = [
+    # rsa, the Marvin attack: timing leaks while decrypting or signing with an RSA
+    # private key. No fixed version exists. Pier has no RSA private key: it logs in with
+    # a password, and only verifies the server's public key (russh, ssh-key). To look at
+    # again when russh moves to a fixed rsa, or if Pier ever signs with an RSA key.
+    "RUSTSEC-2023-0071",
+]
