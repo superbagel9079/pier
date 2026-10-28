@@ -29,12 +29,14 @@ function makeDiff(tab) {
   tab.pane.append(head, error, body);
 
   const LINES_MAX = 5000; // a lockfile or a minified file would freeze the page
+  const LINE_MAX = 4000;   // characters of one line: a minified line of 2 MB would be one block
   function lines(text, kindOf) {
     const pre = el("div", { className: "diff" });
     const all = text.split("\n");
     for (const line of all.slice(0, LINES_MAX)) {
       if (line === "" && pre.lastChild?.textContent === "") continue;
-      pre.append(el("div", { className: kindOf(line), textContent: line }));
+      const shown = line.length > LINE_MAX ? `${line.slice(0, LINE_MAX)} … (${(line.length - LINE_MAX).toLocaleString()} more characters)` : line;
+      pre.append(el("div", { className: kindOf(line), textContent: shown }));
     }
     if (all.length > LINES_MAX) {
       pre.append(el("div", { className: "dim", textContent: `… ${(all.length - LINES_MAX).toLocaleString()} more lines not shown` }));

@@ -124,7 +124,17 @@ function makeProject(tab) {
     }
   }
 
+  let drawnActivity = "";
   function renderActivity() {
+    // Activity comes every 1.5 s while a Pi works: drawn again only when what it shows
+    // changed, and without losing the focus or the scroll.
+    const shape = JSON.stringify([activity, base]);
+    if (shape === drawnActivity && activityView.childElementCount) return;
+    drawnActivity = shape;
+    keepPlace(activityView, drawActivity);
+  }
+
+  function drawActivity() {
     activityView.innerHTML = "";
     if (!activity) return;
     const files = Object.entries(activity.files);
@@ -172,6 +182,7 @@ function makeProject(tab) {
 
   function fileRow(path, spec, f) {
     const li = el("li");
+    li.dataset.key = path;
     const changed = !f || f.edits > 0 || f.state === "modifying" || f.state === "modified" || f.state === "error";
     li.title = changed ? "Click to see the changes, double-click to mention it in Pi" : "Double-click to mention it in Pi";
     if (changed) {
@@ -180,7 +191,7 @@ function makeProject(tab) {
     }
     li.append(
       el("span", { textContent: spec.mark, className: spec.live ? "live-dot" : "" }),
-      el("span", { className: "path", textContent: visibleText(path), title: visibleText(path) }),
+      splitPath(path),
     );
     if (f) {
       const counts = [f.reads ? `${f.reads} read` : "", f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
@@ -188,7 +199,7 @@ function makeProject(tab) {
       li.append(el("span", { className: "count", textContent: [counts, git].filter(Boolean).join(" · ") }));
     }
     li.addEventListener("dblclick", () => mention(path));
-    return li;
+    return pressable(li);
   }
 
   // --- files view ---
@@ -228,7 +239,7 @@ function makeProject(tab) {
     const name = el("span", { textContent: label(false) });
     row.append(el("span", { className: "badge" }), el("span", { className: "git" }), name);
     if (entry.kind === "file") row.append(el("span", { className: "size", textContent: humanSize(entry.size) }));
-    li.append(row);
+    li.append(pressable(row));
     row.addEventListener("click", async () => {
       selected?.classList.remove("selected");
       selected = row;
@@ -351,7 +362,11 @@ function makeProject(tab) {
       head.addEventListener("click", () => {
         openPoint = openPoint === point.id ? null : point.id;
         renderPoints();
+        // Back on the same point, by keyboard as by mouse.
+        [...points.querySelectorAll(".point-head")].find((h) => h.dataset.key === point.id)?.focus({ preventScroll: true });
       });
+      head.dataset.key = point.id;
+      pressable(head);
       li.append(head);
       if (openPoint === point.id) li.append(pointBody(point));
       points.append(li);

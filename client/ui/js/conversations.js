@@ -160,7 +160,7 @@ function makeConversations(tab) {
 
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   function piRow(p, pi, s) {
-    return el("li", { className: "running" },
+    return keyed(`pi:${pi.slot}`, el("li", { className: "running" },
       el("span", { className: pi.working ? "live-dot" : "dim", textContent: pi.working ? "●" : "○" }),
       el("div", { className: "meta" },
         el("span", { className: s ? "title" : "title fresh", textContent: s ? conversationTitle(s) : "New conversation", title: s?.prompt || "Pi writes it at its first answer" }),
@@ -168,18 +168,18 @@ function makeConversations(tab) {
       el("span", { className: "row-actions" },
         linkButton("open", "Open its terminal", () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n)),
         linkButton("stop", "Stop this Pi; its conversation stays saved", () => stop(p, pi)),
-        s ? more(p, s) : null));
+        s ? more(p, s) : null)));
   }
 
   function row(p, s) {
-    return el("li", { className: s.archived ? "archived" : "" },
+    return keyed(s.path, el("li", { className: s.archived ? "archived" : "" },
       el("span", { className: "dim", textContent: s.pinned ? "★" : " " }),
       el("div", { className: "meta" },
         el("span", { className: "title", textContent: conversationTitle(s), title: s.prompt || "" }),
         el("span", { className: "dim small facts", textContent: factLine(facts(s)) })),
       el("span", { className: "row-actions" },
         linkButton("continue", "Start a Pi on this conversation", () => openPiTerminal(p.project, p.label, ["--session", s.path])),
-        more(p, s)));
+        more(p, s))));
   }
 
   function head(p, folded, inUse) {
@@ -205,8 +205,16 @@ function makeConversations(tab) {
     return li;
   }
 
+  let drawn = "";  // what the list shows, as text: drawn again only when it changes
   function render() {
     if (!data || editing) return;
+    const shape = JSON.stringify([data, query, archived, view, target?.path || null]);
+    if (shape === drawn) return; // the same as on screen: nothing to redraw (every 5 s while a Pi works)
+    drawn = shape;
+    keepPlace(list, draw);
+  }
+
+  function draw() {
     const all = data.projects.flatMap((x) => x.sessions);
     categories = [...new Set(all.map((x) => x.category).filter(Boolean))].sort();
     list.innerHTML = "";

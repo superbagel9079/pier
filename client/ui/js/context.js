@@ -12,6 +12,13 @@
 
 const previews = new Map(); // saved path on the VM -> blob URL, for this session's pastes
 
+/** A pasted image's preview let go: its blob URL freed, not kept until Pier quits. */
+function forgetPreview(path) {
+  const url = previews.get(path);
+  if (url) URL.revokeObjectURL(url);
+  previews.delete(path);
+}
+
 function makeContext(tab) {
   tab.pane.append($("#tpl-context").content.cloneNode(true));
   const drop = $(".drop", tab.pane);
@@ -121,7 +128,7 @@ function makeContext(tab) {
       link("mention", "Type its reference into Pi", () => backend.api(["type", `${kind === "copy" ? "" : "@"}${relative}${kind === "copy" ? "/" : ""} `, context.project])),
       iconLink("×", `Delete it from the VM${kind === "copy" ? " (the original folder on this computer is not touched)" : ""}`, async () => {
         await backend.removeUpload(info.path);
-        previews.delete(info.path);
+        forgetPreview(info.path);
         notify("Deleted from the VM. If Pi's prompt still shows its reference, erase it there.");
       }),
     );

@@ -61,7 +61,7 @@ function makeTerminal(tab, kind) {
   const fit = new window.FitAddon.FitAddon();
   term.loadAddon(fit);
   term.open(tab.pane);
-  useGpu(term);
+  let gpu = useGpu(term);
   let id = null;
   let ended = false;
   let closed = false;
@@ -386,6 +386,12 @@ function makeTerminal(tab, kind) {
   });
   observer.observe(tab.pane);
   tab.onShow = () => { tab.refit(); term.focus(); };
+  // A hidden terminal lets its WebGL context go (Chromium keeps about 16 for a window: a
+  // seventeenth would take one from another terminal), and gets one again when shown.
+  tab.onVisible = (shown) => {
+    if (!shown && gpu) { gpu.dispose(); gpu = null; }
+    else if (shown && !gpu) gpu = useGpu(term);
+  };
   tab.focus = () => term.focus();
   tab.term = term; // for the Logs and the checks: the xterm.js instance
   tab.onClose = () => {
@@ -451,8 +457,9 @@ backend.onTermExit((payload) => {
 /** The WebGL renderer: the terminal is drawn by the graphics card, so scrolling a long
  *  history stays smooth. Without WebGL, or when the graphics card loses its context
  *  (driver reset, sleep), the terminal falls back to xterm.js's own DOM renderer. */
+/** The WebGL renderer for term, or null (off, unavailable): what tab.onVisible lets go. */
 function useGpu(term) {
-  if (!prefs.gpuTerminal || !window.WebglAddon) return;
+  if (!prefs.gpuTerminal || !window.WebglAddon) return null;
   try {
     const gl = new window.WebglAddon.WebglAddon();
     gl.onContextLoss(() => {
@@ -460,7 +467,9 @@ function useGpu(term) {
       gl.dispose();
     });
     term.loadAddon(gl);
+    return gl;
   } catch (error) {
     uiLog("warn", "gpu-unavailable", { msg: String(error) });
+    return null;
   }
 }

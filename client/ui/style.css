@@ -88,6 +88,12 @@ code, kbd, pre, .code, .editor, .path, .rel, .file-name, .log-lines, .diff, .tre
 .toolbar .root, .setup-project, .which-pi, #target, .tab-rename {
   font-family: var(--code);
 }
+/* A path with its name always whole, its folder cut short first (splitPath). */
+.split-path { display: inline-flex; min-width: 0; max-width: 100%; }
+.split-path .dir { flex: 0 1 auto; min-width: 1.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+.split-path .base { flex: 0 0 auto; white-space: nowrap; }
+/* A row of Given to Pi wraps rather than cutting its × off in a narrow side. */
+.items li { flex-wrap: wrap; }
 /* A name from the VM cannot turn the text around it (a direction mark inside it). */
 .name, .path, .rel, .file-name { unicode-bidi: isolate; }
 code, kbd { background: var(--chip); padding: 0 var(--s1); font-size: var(--t-small); }

@@ -35,6 +35,8 @@ function trapDialog(box, close) {
     box.setAttribute("aria-labelledby", title.id);
   }
   const onKey = (e) => {
+    // Gone from the page some other way: the trap lets go, and keys go on as before.
+    if (!document.contains(box)) { document.removeEventListener("keydown", onKey, true); return; }
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key !== "Tab") return;
     const items = [...box.querySelectorAll("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])")]
