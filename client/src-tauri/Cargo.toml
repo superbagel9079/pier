@@ -1,6 +1,6 @@
 [package]
 name = "pier"
-version = "0.7.1"
+version = "0.7.2"
 description = "Desktop companion for a development VM: images into Pi, over SSH"
 license = "MIT"
 edition = "2021"
