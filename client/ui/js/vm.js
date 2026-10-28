@@ -41,7 +41,16 @@ const vm = (() => {
         return;
       }
       const old = new Map((before.data.projects || []).map((p) => [p.project, p]));
-      const projects = message.patch.order.map((key) => message.patch.changed[key] ?? old.get(key)).filter(Boolean);
+      const edit = (key) => {
+        // A project known before: its fields, and its conversations from the old ones
+        // but those that changed.
+        const was = old.get(key);
+        const change = message.patch.edited?.[key];
+        if (!change || !was) return was;
+        const sessions = new Map((was.sessions || []).map((s) => [s.path, s]));
+        return { ...change.fields, sessions: change.order.map((path) => change.changed[path] ?? sessions.get(path)).filter(Boolean) };
+      };
+      const projects = message.patch.order.map((key) => message.patch.changed[key] ?? edit(key)).filter(Boolean);
       message = { kind: message.kind, for: message.for, data: { ...message.patch.rest, projects } };
     }
     latest[message.kind] = message;

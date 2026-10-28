@@ -87,9 +87,17 @@ def read_git_changes(project):
     return changes
 
 
+_RELATIVE = {}  # (project, path) -> project_relative: the same paths, at every rebuild
+
+
 def project_relative(project, path):
+    known = _RELATIVE.get((project, path))
+    if known is not None:
+        return known
     full = os.path.normpath(path if os.path.isabs(path) else os.path.join(project, path))
-    return os.path.relpath(full, project) if within(full, project) else full
+    rel = os.path.relpath(full, project) if within(full, project) else full
+    remember(_RELATIVE, (project, path), rel, 20000)
+    return rel
 
 
 _SESSIONS = {}  # path -> (identity, offset, tail, (calls, finished, usage, last)): see read_session
@@ -137,7 +145,21 @@ def read_session(path):
                 last = "user"
                 usage["turns"] += 1
                 continue
-            if b'"role":"assistant"' not in raw and b'"role":"toolResult"' not in raw:
+            if b'"role":"assistant"' not in raw:
+                if b'"role":"toolResult"' not in raw:
+                    continue
+                # A tool's result carries what it read (whole files, base64 images): two
+                # fields are read from the raw line, as in session_edits, never all of it.
+                last = "toolResult"
+                found = re.search(rb'"toolCallId":"([^"]+)"', raw)
+                if found:
+                    finished[found.group(1).decode("utf-8", "replace")] = b'"isError":true' in raw
+                if b'"usage":{' in raw:  # tools that run a model themselves: rare, parsed
+                    try:
+                        said = json.loads(raw).get("message") or {}
+                        add_usage(usage, said.get("usage") if isinstance(said, dict) else None)
+                    except (ValueError, AttributeError):
+                        pass
                 continue
             try:
                 entry = json.loads(raw)
@@ -156,10 +178,6 @@ def read_session(path):
                         args = block.get("arguments") if isinstance(block.get("arguments"), dict) else {}
                         calls[block.get("id")] = {"tool": block.get("name"), "args": compact_args(args),
                                                   "at": entry.get("timestamp")}
-            elif message.get("role") == "toolResult":
-                last = "toolResult"
-                finished[message.get("toolCallId")] = bool(message.get("isError"))
-                add_usage(usage, message.get("usage"))  # tools that run a model themselves
     remember(_SESSIONS, path, (identity, offset, session_tail(path, offset), (dict(calls), dict(finished), dict(usage), last)), 48)
     return calls, finished, usage, last
 
@@ -174,12 +192,26 @@ def compact_args(args):
     return out
 
 
+_EDITS = {}  # path -> (identity, offset, tail, calls, finished): see session_edits
+
+
 def session_edits(session):
     """The writes and edits of a session file with their whole arguments, and which
-    tool calls finished (with an error or not): for api_diff, read once per diff."""
-    calls, finished = {}, {}
+    tool calls finished (with an error or not): for api_diff. As read_session, only
+    what was added since the last diff is read (each click read 200 MB again)."""
+    st = os.stat(session)
+    identity = (st.st_dev, st.st_ino)
+    cached = _EDITS.get(session)
+    if cached and cached[0] == identity and cached[1] <= st.st_size and session_tail(session, cached[1]) == cached[2]:
+        offset, calls, finished = cached[1], dict(cached[3]), dict(cached[4])
+    else:
+        offset, calls, finished = 0, {}, {}
     with open_plain(session, sessions_root()) as handle:
+        handle.seek(offset)
         for raw in handle:
+            if not raw.endswith(b"\n"):
+                break  # a line still being written: read with the next one
+            offset += len(raw)
             if b'"role":"toolResult"' in raw:
                 found = re.search(rb'"toolCallId":"([^"]+)"', raw)
                 if found:
@@ -196,6 +228,7 @@ def session_edits(session):
                 if isinstance(block, dict) and block.get("type") == "toolCall" and block.get("name") in ("edit", "write"):
                     args = block.get("arguments") if isinstance(block.get("arguments"), dict) else {}
                     calls[block.get("id")] = {"tool": block.get("name"), "args": args, "at": entry.get("timestamp")}
+    remember(_EDITS, session, (identity, offset, session_tail(session, offset), dict(calls), dict(finished)), 4)
     return calls, finished
 
 

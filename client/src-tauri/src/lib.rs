@@ -7,6 +7,7 @@
 
 #[macro_use]
 mod journal;
+mod lines;
 mod clip;
 mod copy;
 mod picker;

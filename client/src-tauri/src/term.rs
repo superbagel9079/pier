@@ -314,9 +314,8 @@ const OWN_OSC_C1: &[u8] = b"\xc2\x9d7770;";
 /// what the program wrote, with bytes below space and backslashes written as \ooo
 /// (octal). Answers to commands come between "%begin" and "%end" (or "%error"); "%exit"
 /// says the client is detached (the session ended, or someone detached it).
-#[derive(Default)]
 pub struct ControlParser {
-    pending: Vec<u8>,
+    lines: crate::lines::Lines,
     in_block: bool,
     block: Vec<String>,
     pub exited: Option<String>,
@@ -324,26 +323,25 @@ pub struct ControlParser {
     tail: Vec<u8>,
 }
 
+impl Default for ControlParser {
+    fn default() -> Self {
+        ControlParser { lines: crate::lines::Lines::new(LINE_MAX), in_block: false, block: Vec::new(), exited: None, tail: Vec::new() }
+    }
+}
+
 impl ControlParser {
-    /// The program's output found in `data`; an incomplete last line waits for the rest.
-    /// Lines are walked in place and the consumed part dropped once (linear in the data).
+    /// The program's output found in `data`; an incomplete last line waits for the rest
+    /// (linear in the data, however it is cut: see lines.rs).
     pub fn feed(&mut self, data: &[u8]) -> Vec<u8> {
-        self.pending.extend_from_slice(data);
         let mut out = Vec::new();
-        let pending = std::mem::take(&mut self.pending);
-        let mut start = 0;
-        while let Some(at) = pending[start..].iter().position(|&b| b == b'\n') {
-            let mut line = &pending[start..start + at];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
+        let mut lines = std::mem::replace(&mut self.lines, crate::lines::Lines::new(0));
+        let too_long = lines.feed(data, |line| {
+            let line = line.strip_suffix(b"\r").unwrap_or(line);
             self.line(line, &mut out);
-            start += at + 1;
-        }
-        self.pending = pending[start..].to_vec();
-        if self.pending.len() > LINE_MAX {
-            log_warn!("term.line-too-long", bytes = self.pending.len());
-            self.pending.clear();
+        });
+        self.lines = lines;
+        if too_long {
+            log_warn!("term.line-too-long", bytes = LINE_MAX);
         }
         out
     }
@@ -503,7 +501,9 @@ mod tests {
         let mut parser = ControlParser::default();
         let big = vec![b'x'; LINE_MAX + 10];
         assert!(parser.feed(&big).is_empty());
-        assert!(parser.pending.is_empty());
+        assert_eq!(parser.lines.waiting(), 0);
+        // The rest of that line is not read as a line of its own.
+        assert!(parser.feed(b"%output %1 not this\n").is_empty());
         assert_eq!(parser.feed(b"%output %1 ok\n"), b"ok");
     }
 

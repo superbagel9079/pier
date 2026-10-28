@@ -264,12 +264,25 @@ WATCH_PATCHED = {"conversations"}
 
 
 def watch_patch(before, now):
-    """{"order", "changed", "rest"}: the projects in order, those that changed (whole),
-    and the rest of the data. A project not in changed is as it was."""
-    old = {p.get("project"): clean_json(p) for p in before.get("projects") or []}
+    """{"order", "changed", "edited", "rest"}: the projects in order, the new ones
+    (whole), and the rest of the data. A project known before that changed is in
+    "edited": its fields but its conversations, their order, and only the conversations
+    that changed (a working Pi changes one of 300). A project in neither is as it was."""
+    old = {p.get("project"): p for p in before.get("projects") or []}
     projects = now.get("projects") or []
-    return {"order": [p.get("project") for p in projects],
-            "changed": {p.get("project"): p for p in projects if old.get(p.get("project")) != clean_json(p)},
+    changed, edited = {}, {}
+    for project in projects:
+        key = project.get("project")
+        was = old.get(key)
+        if was is None:
+            changed[key] = project
+        elif clean_json(was) != clean_json(project):
+            seen = {s.get("path"): clean_json(s) for s in was.get("sessions") or []}
+            sessions = project.get("sessions") or []
+            edited[key] = {"fields": {k: v for k, v in project.items() if k != "sessions"},
+                           "order": [s.get("path") for s in sessions],
+                           "changed": {s.get("path"): s for s in sessions if seen.get(s.get("path")) != clean_json(s)}}
+    return {"order": [p.get("project") for p in projects], "changed": changed, "edited": edited,
             "rest": {k: v for k, v in now.items() if k != "projects"}}
 
 

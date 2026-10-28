@@ -56,6 +56,18 @@ def node_major(env):
         return None
 
 
+def keepalive(sock):
+    """A TCP connection whose other end vanished (a host gone, a Wi-Fi cut) is found
+    out within about two minutes, and its relay threads end, rather than waiting forever."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, value in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 15), ("TCP_KEEPCNT", 4)):
+            if hasattr(socket, name):
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), value)
+    except OSError:
+        pass
+
+
 def relay(a, b):
     """Copies a to b until a closes, then closes b's sending side."""
     try:
@@ -153,6 +165,7 @@ class NetProxy:
                 client.close()
                 return
             upstream.settimeout(None)
+            keepalive(upstream)
             client.settimeout(None)
             client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
             rest = head.split(b"\r\n\r\n", 1)[1]
@@ -198,6 +211,7 @@ def net_bridge(args):
                     client, _ = server.accept()
                 except OSError:
                     return
+                keepalive(client)
                 threading.Thread(target=forward, args=(client, port), daemon=True).start()
 
         threading.Thread(target=accept, daemon=True).start()

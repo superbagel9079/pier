@@ -70,7 +70,7 @@ def gitea_label_ids(forge, repo, names):
 
 def issue_path(forge, link, number=None):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         return f"{api}/issues" + (f"/{int(number)}" if number is not None else "")
     return f"/repos/{link['repo']}/issues" + (f"/{int(number)}" if number is not None else "")
 
@@ -95,7 +95,7 @@ def get_task(forge, link, number):
 
 def add_labels(forge, link, number, names, merge_request=False):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         kind = "merge_requests" if merge_request else "issues"
         forge_request(forge, "PUT", f"{api}/{kind}/{int(number)}", {"add_labels": ",".join(names)})
     elif forge["kind"] == "gitea":
@@ -108,7 +108,7 @@ def add_labels(forge, link, number, names, merge_request=False):
 def remove_label(forge, link, number, name, merge_request=False):
     try:
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             kind = "merge_requests" if merge_request else "issues"
             forge_request(forge, "PUT", f"{api}/{kind}/{int(number)}", {"remove_labels": name})
         elif forge["kind"] == "gitea":
@@ -123,7 +123,7 @@ def remove_label(forge, link, number, name, merge_request=False):
 
 def comment(forge, link, number, body, merge_request=False):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         kind = "merge_requests" if merge_request else "issues"
         forge_request(forge, "POST", f"{api}/{kind}/{int(number)}/notes", {"body": body})
     else:
@@ -172,7 +172,7 @@ def claim_task(home, link, number):
     add_labels(forge, link, number, [DOING_LABEL])
     try:  # assigned when the account may be; the label alone says it is taken
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             forge_request(forge, "PUT", f"{api}/issues/{int(number)}", {"assignee_ids": [gitlab_user_id(forge, login)]})
         else:
             forge_request(forge, "POST" if forge["kind"] == "github" else "PATCH",
@@ -201,7 +201,7 @@ def unassign(forge, link, number, login):
             return
         others = [a for a in get_task(forge, link, number).get("assignees") or [] if a != login]
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             forge_request(forge, "PUT", f"{api}/issues/{int(number)}", {"assignee_ids": [gitlab_user_id(forge, a) for a in others] or [0]})
         else:
             forge_request(forge, "PATCH", f"/repos/{link['repo']}/issues/{int(number)}", {"assignees": others})
@@ -253,7 +253,7 @@ def pr_diff(home, link, number):
     elif forge["kind"] == "gitea":
         text = forge_text(forge, f"/repos/{link['repo']}/pulls/{int(number)}.diff", "text/plain")
     else:
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         items = forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}/diffs?per_page=100")
         text = "".join(f"--- a/{d.get('old_path')}\n+++ b/{d.get('new_path')}\n{d.get('diff') or ''}"
                        for d in items if isinstance(d, dict)) if isinstance(items, list) else ""
@@ -266,7 +266,7 @@ def pr_diff(home, link, number):
 def my_reviews(forge, link, number, login):
     """How many reviews this account posted on the pull request."""
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         notes = forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}/notes?per_page=100")
         return sum(1 for n in notes if isinstance(n, dict) and (n.get("author") or {}).get("username") == login
                    and "review by" in (n.get("body") or "") and "Pi (Pier)" in (n.get("body") or "")) if isinstance(notes, list) else 0
@@ -296,7 +296,7 @@ def post_review(home, link, number, verdict, body):
     if forge["kind"] == "gitlab":
         comment(forge, link, number, text, merge_request=True)
         if verdict == "approve":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             forge_request(forge, "POST", f"{api}/merge_requests/{int(number)}/approve", {})
     else:
         event = REVIEW_VERDICTS[verdict][0 if forge["kind"] == "github" else 1]
@@ -319,7 +319,7 @@ def request_review(home, link, number, reviewer):
     if done >= REVIEW_ROUNDS:
         raise ApiError(f"{reviewer}'s Pis already reviewed #{number} {done} times: ask the humans now")
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}", {"reviewer_ids": [gitlab_user_id(forge, reviewer)]})
     else:
         forge_request(forge, "POST", f"/repos/{link['repo']}/pulls/{int(number)}/requested_reviewers", {"reviewers": [reviewer]})
@@ -403,7 +403,7 @@ def api_collaborators(home, path):
     forge, login = account_of(home, link)
     try:
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             items = forge_request(forge, "GET", f"{api}/members/all?per_page=100")
             names = [m.get("username") for m in items if isinstance(m, dict)] if isinstance(items, list) else []
         else:
