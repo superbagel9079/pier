@@ -4,19 +4,22 @@
 // Preferences dialog
 // ============================================================================
 
+// Given to Pi is a view of Activity (no tab of its own); Labs is listed once on.
 const PLACEABLE = [
   ["main", "picker (main terminal)", false],
-  ["context", "Context", true],
-  ["project", "Activity (what Pi does)", true],
-  ["setup", "Setup", true],
   ["conversations", "Conversations", true],
+  ["project", "Activity (what Pi does, what it was given)", true],
+  ["setup", "Project (instructions, skills, packages)", true],
+  ["repository", "Repository (Git, Team)", true],
   ["logs", "Logs", true],
+  ["labs", "Labs", true, () => labsOn()],
 ];
 
 function openPrefs() {
   const grid = $("#prefs-layout");
   grid.innerHTML = "";
-  for (const [key, label, hideable] of PLACEABLE) {
+  for (const [key, label, hideable, shown] of PLACEABLE) {
+    if (shown && !shown() && !workspace.find(key)) continue;
     const select = el("select");
     select.id = `prefs-place-${key}`;
     for (const name of DOCKS) select.add(new Option(name, name));
