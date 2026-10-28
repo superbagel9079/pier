@@ -410,7 +410,8 @@ class PromptWatcher(threading.Thread):
             names = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")]
         except OSError:
             names = []
-        fresh = [f for f in names if f != self.file and f not in others and os.path.getmtime(f) >= self.started]
+        fresh = [f for f in names if f != self.file and f not in others and os.path.getmtime(f) >= self.started
+                 and session_ran_in(f, self.project)]
         newest = max(fresh, key=os.path.getmtime, default=None)
         mine = os.path.getmtime(self.file) if self.file and os.path.exists(self.file) else 0
         if newest and os.path.getmtime(newest) > mine:

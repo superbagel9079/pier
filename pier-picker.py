@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.39"
+VERSION = "4.40"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2248,8 +2248,9 @@ def pier_state(slot):
 
 def said_file_ok(file):
     """A path Pi wrote in its state file: a .jsonl in Pi's sessions folder, no control
-    characters (it goes to tmux and to the lists), a regular file when it exists."""
-    if len(file) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in file) or not file.endswith(".jsonl"):
+    characters nor "#" (it goes to tmux, which reads #{...} and #(...) in some places, and
+    to the lists), a regular file when it exists."""
+    if len(file) > 1024 or any(ord(c) < 32 or ord(c) == 127 or c == "#" for c in file) or not file.endswith(".jsonl"):
         return False
     real = os.path.realpath(file)
     if not within(real, os.path.realpath(os.path.join(agent_dir(), "sessions"))):
@@ -2669,7 +2670,8 @@ class PromptWatcher(threading.Thread):
             names = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")]
         except OSError:
             names = []
-        fresh = [f for f in names if f != self.file and f not in others and os.path.getmtime(f) >= self.started]
+        fresh = [f for f in names if f != self.file and f not in others and os.path.getmtime(f) >= self.started
+                 and session_ran_in(f, self.project)]
         newest = max(fresh, key=os.path.getmtime, default=None)
         mine = os.path.getmtime(self.file) if self.file and os.path.exists(self.file) else 0
         if newest and os.path.getmtime(newest) > mine:
@@ -3287,13 +3289,34 @@ def session_dir(project):
     return os.path.join(os.path.expanduser(agent), "sessions", safe)
 
 
+_SESSION_CWD = {}  # session file -> the folder its header says it ran in (it never changes)
+
+
+def session_ran_in(path, project):
+    """Whether the session file ran in project, by its header ({"type": "session", "cwd"}).
+    Pi names a project's sessions folder by its path with "/" made "-": ~/a-b and ~/a/b
+    share one. A file without a readable header counts (older ones, or being written)."""
+    if path not in _SESSION_CWD:
+        first = (read_text(path, 64 * 1024, root=sessions_root()) or "").split("\n", 1)[0]
+        try:
+            header = json.loads(first) if first else {}
+        except ValueError:
+            header = {}
+        cwd = header.get("cwd") if isinstance(header, dict) and header.get("type") == "session" else None
+        if cwd is None and not first:
+            return True  # not written yet: asked again next time
+        remember(_SESSION_CWD, path, cwd if isinstance(cwd, str) else None, 4000)
+    cwd = _SESSION_CWD[path]
+    return cwd is None or os.path.realpath(cwd) == os.path.realpath(project)
+
+
 def latest_session_file(project):
     folder = session_dir(project)
     try:
         names = [n for n in os.listdir(folder) if n.endswith(".jsonl")]
     except OSError:
         return None
-    paths = [os.path.join(folder, n) for n in names]
+    paths = [p for p in (os.path.join(folder, n) for n in names) if session_ran_in(p, project)]
     return max(paths, key=lambda f: os.stat(f).st_mtime, default=None)
 
 
@@ -5348,6 +5371,25 @@ def forge_api_base(kind, url):
     return f"{url}/api/v4" if kind == "gitlab" else f"{url}/api/v1"
 
 
+def forge_open(request, timeout):
+    """urlopen for a forge, whose requests carry the token: a redirection to another
+    host, or from https to http, goes without it (urllib would send it on)."""
+    import urllib.parse
+    import urllib.request
+
+    class KeepToken(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            new = super().redirect_request(req, fp, code, msg, headers, newurl)
+            if new is not None:
+                before, after = urllib.parse.urlsplit(req.full_url), urllib.parse.urlsplit(new.full_url)
+                if (before.scheme, before.netloc.lower()) != (after.scheme, after.netloc.lower()):
+                    for name in ("Authorization", "Private-token"):
+                        new.headers.pop(name, None)
+                        new.unredirected_hdrs.pop(name, None)
+            return new
+    return urllib.request.build_opener(KeepToken).open(request, timeout=timeout)
+
+
 def forge_request(forge, method, path, body=None):
     """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
     import urllib.error
@@ -5366,7 +5408,7 @@ def forge_request(forge, method, path, body=None):
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=FORGE_TIMEOUT) as answer:
+        with forge_open(request, FORGE_TIMEOUT) as answer:
             text = answer.read(8 * 1024 * 1024)
     except urllib.error.HTTPError as exc:
         detail = ""
@@ -6213,7 +6255,7 @@ def forge_text(forge, path, accept):
     else:
         headers["Authorization"] = f"token {forge['token']}"
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=FORGE_TIMEOUT) as answer:
+        with forge_open(urllib.request.Request(url, headers=headers), FORGE_TIMEOUT) as answer:
             return answer.read(400 * 1024).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         raise ApiError(f"{forge['kind']} refused ({exc.code})")

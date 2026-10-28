@@ -16,13 +16,34 @@ def session_dir(project):
     return os.path.join(os.path.expanduser(agent), "sessions", safe)
 
 
+_SESSION_CWD = {}  # session file -> the folder its header says it ran in (it never changes)
+
+
+def session_ran_in(path, project):
+    """Whether the session file ran in project, by its header ({"type": "session", "cwd"}).
+    Pi names a project's sessions folder by its path with "/" made "-": ~/a-b and ~/a/b
+    share one. A file without a readable header counts (older ones, or being written)."""
+    if path not in _SESSION_CWD:
+        first = (read_text(path, 64 * 1024, root=sessions_root()) or "").split("\n", 1)[0]
+        try:
+            header = json.loads(first) if first else {}
+        except ValueError:
+            header = {}
+        cwd = header.get("cwd") if isinstance(header, dict) and header.get("type") == "session" else None
+        if cwd is None and not first:
+            return True  # not written yet: asked again next time
+        remember(_SESSION_CWD, path, cwd if isinstance(cwd, str) else None, 4000)
+    cwd = _SESSION_CWD[path]
+    return cwd is None or os.path.realpath(cwd) == os.path.realpath(project)
+
+
 def latest_session_file(project):
     folder = session_dir(project)
     try:
         names = [n for n in os.listdir(folder) if n.endswith(".jsonl")]
     except OSError:
         return None
-    paths = [os.path.join(folder, n) for n in names]
+    paths = [p for p in (os.path.join(folder, n) for n in names) if session_ran_in(p, project)]
     return max(paths, key=lambda f: os.stat(f).st_mtime, default=None)
 
 

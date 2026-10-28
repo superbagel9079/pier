@@ -239,7 +239,14 @@ function forgetPasswords() {
 
 $("#btn-trust").addEventListener("click", async () => {
   if (!pendingTrust) return;
-  await backend.trustHost(pendingTrust.host, pendingTrust.fingerprint);
+  try {
+    await backend.trustHost(pendingTrust.host, pendingTrust.fingerprint);
+  } catch (error) {
+    // Not trusted (known_hosts.json unreadable, a disk full): said, and no connection.
+    uiLog("warn", "trust-failed", { msg: String(error) });
+    toLogin(`Could not trust that key: ${error}`);
+    return;
+  }
   pendingTrust = null;
   await connect();
 });
@@ -260,7 +267,11 @@ async function leave() {
   workspace.save();
   workspace.clear();
   wasRunning = null;
-  await backend.disconnect();
+  try {
+    await backend.disconnect();
+  } catch (error) {
+    uiLog("warn", "disconnect-failed", { msg: String(error) }); // the connection is let go anyway
+  }
   setStatus("not connected");
 }
 

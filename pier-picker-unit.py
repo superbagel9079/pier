@@ -615,5 +615,51 @@ class Labs(Home):
             m.lab_networks = real
 
 
+class Leftovers(Home):
+    def test_the_token_stays_on_its_host(self):
+        import http.server
+        import urllib.request
+        seen = {}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                seen[self.server.server_port] = self.headers.get("Authorization")
+                if self.path == "/go":
+                    self.send_response(302)
+                    self.send_header("Location", f"http://127.0.0.1:{other.server_port}/x")
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"{}")
+        first = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        other = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        for server in (first, other):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            request = urllib.request.Request(f"http://127.0.0.1:{first.server_port}/go", headers={"Authorization": "Bearer t"})
+            m.forge_open(request, 5).read()
+        finally:
+            first.shutdown()
+            other.shutdown()
+        self.assertEqual(seen[first.server_port], "Bearer t")
+        self.assertIsNone(seen[other.server_port], "not sent on to another host")
+
+    def test_a_conversation_of_another_project_sharing_the_folder(self):
+        folder = m.sessions_root()
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "s.jsonl")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"type": "session", "cwd": self.path("a", "b")}) + "\n")
+        self.assertFalse(m.session_ran_in(path, self.path("a-b")))
+        self.assertTrue(m.session_ran_in(path, self.path("a", "b")))
+
+    def test_no_hash_in_a_file_name_for_tmux(self):
+        self.assertFalse(m.said_file_ok(os.path.join(m.sessions_root(), "x#(id).jsonl")))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

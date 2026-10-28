@@ -25,8 +25,10 @@ const vm = (() => {
   // they bring the "Pi finished" notifications. The panels' parts come back when the
   // window does, rebuilt fresh; nothing is computed on the VM for a window nobody sees.
   const quiet = () => (document.hidden ? { ...Object.fromEntries(Object.keys(want).map((k) => [k, null])), projects: want.projects, approvals: want.approvals, team: want.team } : want);
+  // A message to the watch that fails is said in the log, not dropped in silence.
+  const sent = (what) => (error) => uiLog("warn", "watch-set-failed", { what, msg: String(error) });
   document.addEventListener("visibilitychange", () => {
-    if (running) backend.watchSet(quiet()).catch(() => {});
+    if (running) backend.watchSet(quiet()).catch(sent("visibility"));
   });
 
   backend.onVmUpdate((message) => {
@@ -76,7 +78,7 @@ const vm = (() => {
       watchId = await backend.watchStart(quiet());
       running = true;
       // Followed meanwhile (a tab switched project while the watch was starting): sent now.
-      if (canon(quiet()) !== sent) backend.watchSet(quiet()).catch(() => {});
+      if (canon(quiet()) !== sent) backend.watchSet(quiet()).catch((error) => uiLog("warn", "watch-set-failed", { what: "start", msg: String(error) }));
     } catch (error) {
       uiLog("warn", "watch-failed", { msg: String(error) });
       if (active) retry = setTimeout(start, 5000);
@@ -100,7 +102,7 @@ const vm = (() => {
       sent[kind] = value;
       delete latest[kind];
     }
-    if (running && Object.keys(sent).length && !document.hidden) backend.watchSet(sent).catch(() => {});
+    if (running && Object.keys(sent).length && !document.hidden) backend.watchSet(sent).catch((error) => uiLog("warn", "watch-set-failed", { what: "follow", msg: String(error) }));
   }
 
   /** Calls handler with every message of a kind, starting with the last one if any. */
@@ -112,7 +114,7 @@ const vm = (() => {
 
   /** Everything again, now: after an action whose result should show at once. */
   function poke() {
-    if (running) backend.watchSet({ poke: true }).catch(() => {});
+    if (running) backend.watchSet({ poke: true }).catch(sent("poke"));
   }
 
   /** Whether a message answers what is followed now (one for the previous may come late). */
