@@ -10,6 +10,15 @@
 
 let labsStatus = null; // the last answer of the picker: settings, labs, machines
 
+/** Whether labs are on, as last heard (Settings > Labs, the Labs tab, the watch), and
+ *  remembered on this computer for the next start: the + menu and the palette offer the
+ *  Labs tab then. The watch's labs part flows only while that tab is shown. */
+function labsOn() {
+  const said = labsStatus?.settings?.enabled ?? vm.latest("labs")?.data?.settings?.enabled;
+  if (typeof said === "boolean" && said !== prefs.labsOn) { prefs.labsOn = said; savePrefs(); }
+  return Boolean(said ?? prefs.labsOn);
+}
+
 const LABS_INSTALL = `sudo apt install incus
 sudo incus admin init --minimal
 sudo adduser $USER incus
@@ -49,6 +58,7 @@ async function fillLabsPrefs() {
   state.textContent = "Asking the VM…";
   try {
     labsStatus = await backend.api(["labs"]);
+    labsOn();
   } catch (e) {
     state.textContent = "";
     showError($("#labs-error"), String(e));
@@ -215,6 +225,13 @@ async function saveLabsSettings(changes) {
     labsStatus = await backend.labsSettings(JSON.stringify(changes));
     renderLabsPrefs();
     vm.poke();
+    // Turned on: the Labs tab, beside the other panels (and in the + menu from now on).
+    if (changes.enabled === true && labsOn() && !workspace.find("labs")) {
+      workspace.add("labs", prefs.panelSide === "left" ? "left" : "right");
+      flashStatus("Labs on: the Labs tab is open (and in the + menu)");
+    } else {
+      labsOn();
+    }
   } catch (e) {
     showError($("#labs-error"), String(e));
     fillLabsPrefs();
