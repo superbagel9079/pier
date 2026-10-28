@@ -31,7 +31,7 @@ function defaultLayout(side = prefs.panelSide) {
   const panels = side === "left" ? "left" : "right";
   const other = panels === "left" ? "right" : "left";
   return {
-    [panels]: { tabs: ["conversations", "project", "setup"], active: "conversations", collapsed: false, width: 400 },
+    [panels]: { tabs: ["conversations", "project", "setup", "repository"], active: "conversations", collapsed: false, width: 400 },
     [other]: { tabs: [], collapsed: false, width: 320 },
     center: { tabs: ["main"] },
     layout: 6,
@@ -224,8 +224,7 @@ const workspace = (() => {
     if (main && main.dock !== name) items.push([`picker (main) · move here`, () => move(main, name)]);
     // Every panel: the closed ones to open again, the others to bring here.
     // Labs once they are on (Settings > Labs); Given to Pi is in Activity.
-    const labsOn = vm.latest("labs")?.data?.settings?.enabled || find("labs");
-    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn ? ["labs"] : [])]) {
+    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() || find("labs") ? ["labs"] : [])]) {
       const open = find(kind);
       const title = KINDS[kind].title;
       if (!open) items.push([title, () => add(kind, name)]);

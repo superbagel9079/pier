@@ -17,8 +17,7 @@ const palette = (() => {
     const out = [];
     const side = prefs.panelSide === "left" ? "left" : "right";
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
-    const labsOn = vm.latest("labs")?.data?.settings?.enabled;
-    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn ? ["labs"] : [])]) {
+    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() ? ["labs"] : [])]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind, side)]);
     }
     const projects = new Map();

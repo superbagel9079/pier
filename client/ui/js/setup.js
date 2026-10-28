@@ -52,7 +52,10 @@ function makeSetup(tab) {
   // The four pages; the one chosen is remembered.
   function showPage(page, initial = false) {
     // Git and Team: the Repository panel now (repository.js).
-    if (page === "git" || page === "team") { repositoryTab(page); page = "instructions"; }
+    if (page === "git" || page === "team") {
+      if (!initial) { repositoryTab(page); return; } // the page shown here stays as it was
+      page = "instructions";
+    }
     if (!["instructions", "skills", "packages", "advanced"].includes(page)) page = "instructions";
     for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.classList.toggle("active", b.dataset.page === page);
     for (const section of tab.pane.querySelectorAll(".setup-page")) section.hidden = section.dataset.page !== page;
