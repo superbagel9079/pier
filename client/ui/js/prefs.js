@@ -4,7 +4,9 @@
 // Preferences dialog
 // ============================================================================
 
-// Given to Pi is a view of Activity (no tab of its own); Labs is listed once on.
+// Given to Pi is a view of Activity (no tab of its own). Labs is always listed, hidden
+// and not to be placed while labs are off: turning them on puts the tab on the panels'
+// side, turning them off hides it (labs.js).
 const PLACEABLE = [
   ["main", "picker (main terminal)", false],
   ["conversations", "Conversations", true],
@@ -15,16 +17,21 @@ const PLACEABLE = [
   ["labs", "Labs", true, () => labsOn()],
 ];
 
-function openPrefs() {
+/** Where each panel is, in Appearance: drawn again whenever a panel comes or goes
+ *  from elsewhere (labs turned on or off). */
+function fillLayout() {
   const grid = $("#prefs-layout");
   grid.innerHTML = "";
-  for (const [key, label, hideable, shown] of PLACEABLE) {
-    if (shown && !shown() && !workspace.find(key)) continue;
+  for (const [key, label, hideable, usable] of PLACEABLE) {
     const select = el("select");
     select.id = `prefs-place-${key}`;
     for (const name of DOCKS) select.add(new Option(name, name));
     if (hideable) select.add(new Option("hidden", "hidden"));
     select.value = workspace.find(key)?.dock || "hidden";
+    if (usable && !usable() && !workspace.find(key)) {
+      select.disabled = true;
+      select.title = "Turn labs on first (Settings > Labs)";
+    }
     select.addEventListener("change", () => {
       const tab = workspace.find(key);
       if (select.value === "hidden") { if (tab) workspace.close(tab); }
@@ -33,6 +40,10 @@ function openPrefs() {
     });
     grid.append(el("label", { htmlFor: select.id, textContent: label }), select);
   }
+}
+
+function openPrefs() {
+  fillLayout();
   fillThemes();
   $("#prefs-font").value = prefs.fontSize;
   $("#prefs-padding").value = prefs.termPadding;
@@ -51,7 +62,6 @@ function openPrefs() {
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
   $("#prefs-updatecheck").checked = prefs.updateCheck;
   $("#prefs-debug").checked = prefs.debugLogs;
-  $("#prefs-logtab").checked = Boolean(workspace.find("logs"));
   $("#prefs-side").value = prefs.panelSide === "left" ? "left" : "right";
   $("#prefs-picker-note").hidden = true;
   $("#prefs-diag-note").hidden = true;
@@ -104,11 +114,6 @@ $("#prefs-side").addEventListener("change", (e) => {
   savePrefs();
   placePanels();
   openPrefs();
-});
-$("#prefs-logtab").addEventListener("change", (e) => {
-  const logs = workspace.find("logs");
-  if (e.target.checked && !logs) workspace.add("logs", prefs.panelSide === "left" ? "left" : "right");
-  if (!e.target.checked && logs) workspace.close(logs);
 });
 $("#prefs-theme").addEventListener("change", (e) => {
   closeThemeEditor();

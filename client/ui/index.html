@@ -233,7 +233,6 @@
       </section>
 
       <section class="prefs-page" data-page="diagnostics" role="tabpanel" hidden>
-      <label class="check"><input id="prefs-logtab" type="checkbox"> <span>Logs tab: Pier's log and the VM's, live, with a filter</span></label>
       <label class="check"><input id="prefs-debug" type="checkbox"> <span>Detailed logs: every call, here and on the VM. For tracking a problem down; the log grows faster.</span></label>
       <p class="hint">Pier's log: <code id="prefs-logpath">?</code><br>The picker's, on the VM: <code>~/.local/state/pier-picker/picker.log</code></p>
       <div class="actions wrap">
@@ -405,7 +404,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <p class="error" hidden></p>
       <p class="setup-summary small"></p>
       <span class="switch setup-pages" role="group">
-        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="git" title="GitHub, GitLab, Gitea: the accounts, the repository, pull requests, the team (the Repository panel)">Git →</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
+        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
       </span>
 
       <section class="setup-page" data-page="instructions">

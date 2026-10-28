@@ -39,7 +39,7 @@ Three zones, **left, centre and right**. By default, to keep it simple, **the te
 - **Context**: what it was given;
 - **Setup**: the project's configuration.
 
-The **Logs** tab is a diagnostics option (Settings > Diagnostics > **Logs tab**). An older layout takes this one once; **Reset layout** brings it back.
+The **Logs** tab is shown or hidden like any panel (Settings > Appearance). An older layout takes this one once; **Reset layout** brings it back.
 
 ### A. Going anywhere, arranging freely
 
@@ -198,7 +198,7 @@ Pier and the picker each write a log, **one line per event**, in the same format
 
 ### B. The Logs tab
 
-**The Logs tab** (shown with Settings > Diagnostics > **Logs tab**) shows both logs live, **newest at the top**, with a filter by level and by text. **Copy a report** puts a full report on the clipboard: versions, connection (never a password), settings, and the end of both logs. That is what to send when something goes wrong.
+**The Logs tab** (shown from Settings > Appearance, or the + menu) shows both logs live, **newest at the top**, with a filter by level and by text. **Copy a report** puts a full report on the clipboard: versions, connection (never a password), settings, and the end of both logs. That is what to send when something goes wrong.
 
 ## The Conversations tab: the one place for conversations
 
