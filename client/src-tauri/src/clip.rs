@@ -7,8 +7,19 @@ pub fn clipboard_png() -> Result<Vec<u8>> {
     let image = clipboard
         .get_image()
         .map_err(|_| anyhow!("The clipboard holds no image."))?;
+    let pixels = image.width.saturating_mul(image.height);
+    if pixels > PIXELS_MAX {
+        return Err(anyhow!("The image in the clipboard is too big ({} x {} pixels): save it as a file and send that.", image.width, image.height));
+    }
+    if image.bytes.len() != pixels.saturating_mul(4) {
+        return Err(anyhow!("The image in the clipboard could not be read."));
+    }
     encode_png(image.width as u32, image.height as u32, &image.bytes)
 }
+
+/// Most pixels of a pasted image: 50 million (an 8K screen is 33), so a pasted
+/// panorama or a damaged clipboard cannot make Pier encode and send gigabytes.
+const PIXELS_MAX: usize = 50_000_000;
 
 /// Files and folders copied in the file manager (Explorer's Ctrl+C), as paths.
 /// Empty when the clipboard holds none.

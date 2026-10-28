@@ -9,22 +9,20 @@ pub(crate) async fn hand_off(app: AppHandle, state: State<'_, AppState>, id: u32
     let share = state.shares.lock().await.get(&id).cloned().ok_or_else(|| "this share is not live".to_string())?;
     let root = PathBuf::from(&share.local);
     let started = Instant::now();
-    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, HANDOFF_MAX_BYTES, copy::Pack::HandOff))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| {
-            let text = format!("{}: {}", share.local, message(e));
-            log_warn!("handoff.refused", id = id, err = text);
-            text
-        })?;
-    log_info!("handoff.packed", id = id, local = share.local, bytes = packed.0.len(), ms = started.elapsed().as_millis());
+    // Up to 500 MB: packed into a temporary file and streamed from it, never held in memory.
+    let packed = copy::TempArchive::pack(root, HANDOFF_MAX_BYTES, copy::Pack::HandOff).await.map_err(|e| {
+        let text = format!("{}: {}", share.local, message(e));
+        log_warn!("handoff.refused", id = id, err = text);
+        text
+    })?;
+    log_info!("handoff.packed", id = id, local = share.local, bytes = packed.bytes, ms = started.elapsed().as_millis());
     let mode = if share.writable { "rw" } else { "ro" };
-    let mut result = api(&app, &state, &["handoff", &share.mountpoint, mode], &packed.0).await?;
+    let mut result = api_from(&app, &state, &["handoff", &share.mountpoint, mode], packed.open().await?, packed.bytes).await?;
     if let Some(gone) = state.shares.lock().await.remove(&id) {
         gone.revoke();
     }
     if let Some(object) = result.as_object_mut() {
-        object.insert("left_out".into(), json!(packed.2)); // said in Pier: rebuilt on the VM
+        object.insert("left_out".into(), json!(packed.left)); // said in Pier: rebuilt on the VM
     }
     Ok(result)
 }
@@ -51,7 +49,7 @@ pub(crate) async fn download_copy(app: AppHandle, state: State<'_, AppState>, pa
     let channel = vm_channel(&app, &state).await?;
     let ran = {
         let mut file = std::fs::File::create(&archive).map_err(|e| e.to_string())?;
-        ssh::run_into(channel, &command, &[], &mut file, TAKEBACK_MAX).await
+        ssh::run_into(channel, &command, &b""[..], &mut file, TAKEBACK_MAX).await
     };
     let (status, stderr) = match ran {
         Ok(done) => done,

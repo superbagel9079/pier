@@ -52,12 +52,24 @@ function realBackend() {
     },
     setShortcut: (enabled) => invoke("set_paste_shortcut", { enabled }),
     async termOpen(kind, cols, rows, onBytes, params) {
+      // What the terminal has written is told back every 256 KB: Pier holds the VM back
+      // when the tab falls far behind (term.rs), rather than piling up its output here.
+      let id = null;
+      let written = 0;
+      const tell = () => {
+        if (id == null || written < 256 * 1024) return;
+        invoke("term_read", { id, bytes: written }).catch(() => {});
+        written = 0;
+      };
       const output = new Channel();
       output.onmessage = (message) => {
-        onBytes(message instanceof ArrayBuffer ? new Uint8Array(message) : Uint8Array.from(message));
+        const bytes = message instanceof ArrayBuffer ? new Uint8Array(message) : Uint8Array.from(message);
+        onBytes(bytes, () => { written += bytes.length; tell(); });
       };
       // An "update" tab can run pi install / pi remove instead (params.termKind "package").
-      return invoke("term_open", { kind: params?.termKind ?? kind, cols, rows, output, project: params?.project ?? null, args: params?.args ?? null });
+      id = await invoke("term_open", { kind: params?.termKind ?? kind, cols, rows, output, project: params?.project ?? null, args: params?.args ?? null });
+      tell();
+      return id;
     },
     writeText: (project, which, text) => invoke("write_text", { project, which, text }),
     resourceToggle: (scope, project, kind, source, rel, on) => invoke("resource_toggle", { scope, project, kind, source, rel, on }),

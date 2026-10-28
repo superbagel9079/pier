@@ -44,8 +44,13 @@ pub fn take_back_skips(top: bool, name: &str) -> bool {
 /// The archive, how many files it holds, and the names left out at the folder's top.
 /// Fails past `max_bytes` of file content.
 pub fn tar_folder(root: &Path, max_bytes: u64, pack: Pack) -> Result<(Vec<u8>, usize, Vec<String>)> {
+    tar_folder_into(root, max_bytes, pack, Vec::new())
+}
+
+/// The same, written to `out` (a file, for big folders).
+pub fn tar_folder_into<W: std::io::Write>(root: &Path, max_bytes: u64, pack: Pack, out: W) -> Result<(W, usize, Vec<String>)> {
     let name = root.file_name().context("a folder without a name")?;
-    let mut builder = tar::Builder::new(Vec::new());
+    let mut builder = tar::Builder::new(out);
     builder.follow_symlinks(false);
     let (mut total, mut count, mut left) = (0u64, 0usize, Vec::new());
     let mut pending = vec![(root.to_path_buf(), PathBuf::from(name))];
@@ -83,6 +88,44 @@ pub fn tar_folder(root: &Path, max_bytes: u64, pack: Pack) -> Result<(Vec<u8>, u
     Ok((builder.into_inner()?, count, left))
 }
 
+/// A folder packed into a temporary file, deleted when dropped: what goes to the VM is
+/// read from it as it is sent, so 500 MB never sit in memory.
+pub struct TempArchive {
+    path: PathBuf,
+    pub bytes: u64,
+    pub left: Vec<String>,
+}
+
+impl TempArchive {
+    pub async fn pack(root: PathBuf, max_bytes: u64, pack: Pack) -> Result<Self> {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!("pier-pack-{}-{n}.tar", std::process::id()));
+        tokio::task::spawn_blocking(move || {
+            let file = fs::File::create(&path).with_context(|| format!("{}", path.display()))?;
+            // From here the file is the archive's: dropped on an error, it is deleted.
+            let mut archive = TempArchive { path, bytes: 0, left: Vec::new() };
+            let (file, _, left) = tar_folder_into(&root, max_bytes, pack, std::io::BufWriter::new(file))?;
+            let file = file.into_inner().map_err(|e| e.into_error())?;
+            file.sync_all()?;
+            archive.bytes = file.metadata()?.len();
+            archive.left = left;
+            Ok(archive)
+        })
+        .await?
+    }
+
+    pub async fn open(&self) -> Result<tokio::fs::File, String> {
+        tokio::fs::File::open(&self.path).await.map_err(|e| format!("{}: {e}", self.path.display()))
+    }
+}
+
+impl Drop for TempArchive {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +152,27 @@ mod tests {
         assert!(names.iter().any(|n| n == "mockups/sub/b.txt"), "{names:?}");
         assert!(!names.iter().any(|n| n.contains("node_modules")), "{names:?}");
         assert!(tar_folder(&root, 3, Pack::Copy).is_err(), "the size cap applies");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[tokio::test]
+    async fn a_temporary_archive_streams_and_goes_away() {
+        let dir = std::env::temp_dir().join(format!("pier-temp-archive-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let root = dir.join("big");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("a.txt"), b"hello").unwrap();
+        let archive = TempArchive::pack(root.clone(), 1024, Pack::HandOff).await.unwrap();
+        let path = archive.path.clone();
+        assert_eq!(fs::metadata(&path).unwrap().len(), archive.bytes);
+        let mut names = Vec::new();
+        for entry in tar::Archive::new(fs::File::open(&path).unwrap()).entries().unwrap() {
+            names.push(entry.unwrap().path().unwrap().to_string_lossy().replace('\\', "/"));
+        }
+        assert!(names.iter().any(|n| n == "big/a.txt"), "{names:?}");
+        drop(archive);
+        assert!(!path.exists(), "deleted once sent");
+        assert!(TempArchive::pack(root, 3, Pack::HandOff).await.is_err(), "the size cap applies");
         let _ = fs::remove_dir_all(dir);
     }
 
