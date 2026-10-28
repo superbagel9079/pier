@@ -4,9 +4,7 @@ use anyhow::{anyhow, Result};
 
 pub fn clipboard_png() -> Result<Vec<u8>> {
     let mut clipboard = arboard::Clipboard::new().map_err(|e| anyhow!("clipboard unavailable: {e}"))?;
-    let image = clipboard
-        .get_image()
-        .map_err(|_| anyhow!("The clipboard holds no image."))?;
+    let image = clipboard.get_image().map_err(|_| anyhow!("The clipboard holds no image."))?;
     let pixels = image.width.saturating_mul(image.height);
     if pixels > PIXELS_MAX {
         return Err(anyhow!("The image in the clipboard is too big ({} x {} pixels): save it as a file and send that.", image.width, image.height));

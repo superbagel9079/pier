@@ -31,15 +31,32 @@ pub(crate) async fn repo_unlink(app: AppHandle, state: State<'_, AppState>, proj
 
 /// A new repository on the forge, connected to the project (the user's own action).
 #[tauri::command]
-pub(crate) async fn repo_create(app: AppHandle, state: State<'_, AppState>, project: String, forge: String, name: String, private: bool, description: String) -> Result<Value, String> {
+pub(crate) async fn repo_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project: String,
+    forge: String,
+    name: String,
+    private: bool,
+    description: String,
+) -> Result<Value, String> {
     api(&app, &state, &["repo-create", &project, &forge, &name, if private { "1" } else { "0" }, &description], &[]).await
 }
 
 /// What Pi may do alone with the project's repository (local, ask, auto), and how it merges.
 #[tauri::command]
-pub(crate) async fn repo_settings(app: AppHandle, state: State<'_, AppState>, project: String, mode: String, method: String, agents: String) -> Result<Value, String> {
-    if !["local", "ask", "auto"].contains(&mode.as_str()) || !["merge", "squash", "rebase"].contains(&method.as_str())
-        || !["", "off", "ask", "auto"].contains(&agents.as_str()) {
+pub(crate) async fn repo_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project: String,
+    mode: String,
+    method: String,
+    agents: String,
+) -> Result<Value, String> {
+    if !["local", "ask", "auto"].contains(&mode.as_str())
+        || !["merge", "squash", "rebase"].contains(&method.as_str())
+        || !["", "off", "ask", "auto"].contains(&agents.as_str())
+    {
         return Err(format!("unknown repository setting: {mode}, {method}, {agents}"));
     }
     // Pi merging by itself, or Pis starting by themselves: confirmed when newly asked.
@@ -47,14 +64,10 @@ pub(crate) async fn repo_settings(app: AppHandle, state: State<'_, AppState>, pr
         let now = api(&app, &state, &["repo", &project], &[]).await.unwrap_or(Value::Null);
         let link = now.get("link").cloned().unwrap_or(Value::Null);
         let was = |key: &str| link.get(key).and_then(Value::as_str).unwrap_or("").to_string();
-        if mode == "auto" && was("mode") != "auto"
-            && !confirmed(&app, "Let Pi merge its own pull requests by itself, once their checks pass?").await
-        {
+        if mode == "auto" && was("mode") != "auto" && !confirmed(&app, "Let Pi merge its own pull requests by itself, once their checks pass?").await {
             return Err("not changed: merges still wait for you".into());
         }
-        if agents == "auto" && was("agents") != "auto"
-            && !confirmed(&app, "Let Pier start a Pi by itself on each new task or review asked of you?").await
-        {
+        if agents == "auto" && was("agents") != "auto" && !confirmed(&app, "Let Pier start a Pi by itself on each new task or review asked of you?").await {
             return Err("not changed".into());
         }
     }

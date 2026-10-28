@@ -62,8 +62,11 @@ gh api -X PUT repos/superbagel9079/pier/vulnerability-alerts
 3. The CI builds Windows, macOS and Linux, signs the installers for the updater (each
    signature carries the version it was made for: Pier refuses one that does not, so an
    older release cannot be passed off as a newer one), and, once you approve the
-   `release` environment, makes a **draft** release with the files, their SHA-256 and
-   `latest.json`.
+   `release` environment, makes a **draft** release with the files, their SHA-256, a
+   build provenance attestation for each (`gh attestation verify FILE --repo superbagel9079/pier`)
+   and `latest.json`. `latest.json` lists Windows only: the macOS and Linux files are
+   published, but Pier does not update itself to them until they have been tried by hand
+   (see the list in `build.yml`).
 4. On GitHub, open the draft, write what changed (the notes are generated from the pull
    requests, edit them freely), and **Publish**.
 

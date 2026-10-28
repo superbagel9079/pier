@@ -45,7 +45,9 @@ impl Watch {
                     ChannelMsg::Data { data } => {
                         let too_long = lines.feed(&data, |line| match serde_json::from_slice::<Value>(line) {
                             Ok(value) => on_message(value),
-                            Err(err) => log_warn!("watch.bad-line", id = id, err = err, line = String::from_utf8_lossy(line).chars().take(200).collect::<String>()),
+                            Err(err) => {
+                                log_warn!("watch.bad-line", id = id, err = err, line = String::from_utf8_lossy(line).chars().take(200).collect::<String>())
+                            }
                         });
                         if too_long {
                             why = "a line too long";

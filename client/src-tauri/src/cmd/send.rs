@@ -114,9 +114,15 @@ pub(crate) fn clipboard_paths(state: State<'_, AppState>) -> Vec<String> {
 async fn picked(builder: tauri_plugin_dialog::FileDialogBuilder<tauri::Wry>, kind: &str) -> Vec<std::path::PathBuf> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     match kind {
-        "folder" => builder.pick_folder(move |p| { let _ = tx.send(p.into_iter().collect::<Vec<_>>()); }),
-        "files" => builder.pick_files(move |p| { let _ = tx.send(p.unwrap_or_default()); }),
-        _ => builder.save_file(move |p| { let _ = tx.send(p.into_iter().collect::<Vec<_>>()); }),
+        "folder" => builder.pick_folder(move |p| {
+            let _ = tx.send(p.into_iter().collect::<Vec<_>>());
+        }),
+        "files" => builder.pick_files(move |p| {
+            let _ = tx.send(p.unwrap_or_default());
+        }),
+        _ => builder.save_file(move |p| {
+            let _ = tx.send(p.into_iter().collect::<Vec<_>>());
+        }),
     }
     rx.await.unwrap_or_default().into_iter().filter_map(|p| p.into_path().ok()).collect()
 }

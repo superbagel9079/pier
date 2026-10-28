@@ -171,9 +171,7 @@ impl russh_sftp::server::Handler for ShareFs {
 
     async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
         self.live()?;
-        blocking(|| {
-            Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
-        })
+        blocking(|| Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? }))
     }
 
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
@@ -187,12 +185,10 @@ impl russh_sftp::server::Handler for ShareFs {
 
     async fn fstat(&mut self, id: u32, handle: String) -> Result<Attrs, Self::Error> {
         self.live()?;
-        blocking(|| {
-            match self.handles.get(&handle) {
-                Some(Open::File(file)) => Ok(Attrs { id, attrs: FileAttributes::from(&file.metadata().map_err(status_of)?) }),
-                Some(Open::Dir { path, .. }) => Ok(Attrs { id, attrs: attrs(path)? }),
-                None => Err(StatusCode::Failure),
-            }
+        blocking(|| match self.handles.get(&handle) {
+            Some(Open::File(file)) => Ok(Attrs { id, attrs: FileAttributes::from(&file.metadata().map_err(status_of)?) }),
+            Some(Open::Dir { path, .. }) => Ok(Attrs { id, attrs: attrs(path)? }),
+            None => Err(StatusCode::Failure),
         })
     }
 

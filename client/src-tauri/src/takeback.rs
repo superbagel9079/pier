@@ -141,8 +141,14 @@ pub fn safe_parts(rel: &str) -> Option<Vec<&str>> {
         let stem = p.split('.').next().unwrap_or_default().to_ascii_uppercase();
         let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
             || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
-        p.is_empty() || p == "." || p == ".." || p.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
-            || p.chars().any(|c| c.is_control() || invisible(c)) || p.ends_with('.') || p.ends_with(' ') || device
+        p.is_empty()
+            || p == "."
+            || p == ".."
+            || p.contains(['\\', ':', '<', '>', '"', '|', '?', '*'])
+            || p.chars().any(|c| c.is_control() || invisible(c))
+            || p.ends_with('.')
+            || p.ends_with(' ')
+            || device
     };
     if parts.iter().any(|p| bad(p)) {
         return None;

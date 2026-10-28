@@ -44,7 +44,7 @@ Host pi
 
 ### Pier
 
-**The simplest:** download the installer from the [latest release](https://github.com/superbagel9079/pier/releases/latest) (Windows `Pier_…_x64-setup.exe`, macOS `.dmg`, Linux `.AppImage` or `.deb`) and install it. Pier then updates itself (Settings > Updates): no clone, no build. Without a code-signing certificate, Windows SmartScreen warns once, at that first installation ("More info", then "Run anyway").
+**The simplest:** download the installer from the [latest release](https://github.com/superbagel9079/pier/releases/latest) (Windows `Pier_…_x64-setup.exe`, macOS `.dmg`, Linux `.AppImage` or `.deb`) and install it. On Windows, Pier then updates itself (Settings > Updates): no clone, no build. The macOS and Linux builds have not been tried by hand yet: they do not update themselves, download the next release again. Without a code-signing certificate, Windows SmartScreen warns once, at that first installation ("More info", then "Run anyway").
 
 **Or build it:**
 

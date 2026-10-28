@@ -128,29 +128,19 @@ impl Store {
     }
 
     pub fn remembered_shares(&self) -> Vec<RememberedShare> {
-        fs::read_to_string(self.shares_path())
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        fs::read_to_string(self.shares_path()).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default()
     }
 
     /// Adds or updates the share of `local` in `project`.
     pub fn remember_share(&self, share: RememberedShare) -> Result<()> {
-        let mut shares: Vec<RememberedShare> = self
-            .remembered_shares()
-            .into_iter()
-            .filter(|s| !(s.local == share.local && s.project == share.project))
-            .collect();
+        let mut shares: Vec<RememberedShare> =
+            self.remembered_shares().into_iter().filter(|s| !(s.local == share.local && s.project == share.project)).collect();
         shares.push(share);
         write_atomic(&self.shares_path(), &serde_json::to_vec_pretty(&shares)?)
     }
 
     pub fn forget_share(&self, local: &str, project: &str) -> Result<()> {
-        let shares: Vec<RememberedShare> = self
-            .remembered_shares()
-            .into_iter()
-            .filter(|s| !(s.local == local && s.project == project))
-            .collect();
+        let shares: Vec<RememberedShare> = self.remembered_shares().into_iter().filter(|s| !(s.local == local && s.project == project)).collect();
         write_atomic(&self.shares_path(), &serde_json::to_vec_pretty(&shares)?)
     }
 

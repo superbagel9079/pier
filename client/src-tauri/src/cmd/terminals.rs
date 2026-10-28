@@ -18,7 +18,9 @@ pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, S
         [flag, name] if flag == "--slot" => slot_name(name),
         // A new Pi asked to take a task or review a pull request: the picker writes the
         // prompt itself, from fixed words and this number (see AGENT_PROMPTS there).
-        [flag, kind, n] if flag == "--agent-task" => (kind == "task" || kind == "review") && !n.is_empty() && n.len() < 8 && n.chars().all(|c| c.is_ascii_digit()),
+        [flag, kind, n] if flag == "--agent-task" => {
+            (kind == "task" || kind == "review") && !n.is_empty() && n.len() < 8 && n.chars().all(|c| c.is_ascii_digit())
+        }
         _ => false,
     };
     if !allowed || project.is_empty() {
@@ -75,9 +77,7 @@ pub(crate) fn lab_command(args: &[String]) -> Result<String, String> {
 
 pub(crate) fn lab_name(name: &str) -> bool {
     let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && name.len() <= 40
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    chars.next().is_some_and(|c| c.is_ascii_lowercase()) && name.len() <= 40 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
 /// kind "picker" runs the picker, "shell" the login shell, "pi" Pi itself in `project`
@@ -126,14 +126,20 @@ pub(crate) async fn term_open(
         ("pi", Some(command)) => state.terminals.open_control(channel, command, cols, rows, output, on_exit).await,
         _ => state.terminals.open(channel, command.as_deref().map(str::trim_end), cols, rows, output, on_exit).await,
     };
-    let id = opening
-        .map_err(|e| {
-            let text = message(e);
-            log_warn!("term.open-failed", kind = kind, err = text);
-            text
-        })?;
-    log_info!("term.open", id = id, kind = kind, req = request, size = format!("{cols}x{rows}"),
-        project = project.unwrap_or_default(), args = args.unwrap_or_default().join(" "));
+    let id = opening.map_err(|e| {
+        let text = message(e);
+        log_warn!("term.open-failed", kind = kind, err = text);
+        text
+    })?;
+    log_info!(
+        "term.open",
+        id = id,
+        kind = kind,
+        req = request,
+        size = format!("{cols}x{rows}"),
+        project = project.unwrap_or_default(),
+        args = args.unwrap_or_default().join(" ")
+    );
     Ok(id)
 }
 
@@ -146,7 +152,14 @@ pub(crate) async fn stop_pi(app: AppHandle, state: State<'_, AppState>, project:
 /// Names a conversation and files it under a category, in Pier (Pi's file is not
 /// touched). Empty both: the label goes.
 #[tauri::command]
-pub(crate) async fn session_label(app: AppHandle, state: State<'_, AppState>, project: String, file: String, title: String, category: String) -> Result<Value, String> {
+pub(crate) async fn session_label(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project: String,
+    file: String,
+    title: String,
+    category: String,
+) -> Result<Value, String> {
     api(&app, &state, &["label", &project, &file, &title, &category], &[]).await
 }
 

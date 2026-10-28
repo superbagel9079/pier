@@ -11,8 +11,7 @@ pub(crate) async fn labs_settings(app: AppHandle, state: State<'_, AppState>, se
 /// A lab made (for a project, or none), reset to its clean state, or destroyed.
 #[tauri::command]
 pub(crate) async fn lab_action(app: AppHandle, state: State<'_, AppState>, action: String, name: String, extra: String) -> Result<Value, String> {
-    if !["create", "reset", "destroy"].contains(&action.as_str()) || !["", "vm"].contains(&extra.as_str())
-        || (action != "create" && !lab_name(&name)) {
+    if !["create", "reset", "destroy"].contains(&action.as_str()) || !["", "vm"].contains(&extra.as_str()) || (action != "create" && !lab_name(&name)) {
         return Err("unsupported lab action".into());
     }
     api(&app, &state, &["lab-action", &action, &name, &extra], &[]).await
@@ -20,7 +19,16 @@ pub(crate) async fn lab_action(app: AppHandle, state: State<'_, AppState>, actio
 
 /// A machine Pi may use over SSH (the picker makes the key), removed, or tried.
 #[tauri::command]
-pub(crate) async fn machine_add(app: AppHandle, state: State<'_, AppState>, name: String, host: String, port: u16, user: String, policy: String, description: String) -> Result<Value, String> {
+pub(crate) async fn machine_add(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+    host: String,
+    port: u16,
+    user: String,
+    policy: String,
+    description: String,
+) -> Result<Value, String> {
     if !lab_name(&name) || !["ask", "auto"].contains(&policy.as_str()) {
         return Err("a machine's name, and ask or auto".into());
     }
@@ -32,7 +40,15 @@ pub(crate) async fn machine_add(app: AppHandle, state: State<'_, AppState>, name
 
 /// A lab of the user's own, named (or "lab-N") and described.
 #[tauri::command]
-pub(crate) async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: String, vm: bool, description: String, networks: Option<Vec<String>>, host: Option<String>) -> Result<Value, String> {
+pub(crate) async fn lab_new(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+    vm: bool,
+    description: String,
+    networks: Option<Vec<String>>,
+    host: Option<String>,
+) -> Result<Value, String> {
     if !name.is_empty() && !lab_name(&name) {
         return Err("a lab's name: lowercase letters, digits and '-', starting with a letter".into());
     }
@@ -44,7 +60,15 @@ pub(crate) async fn lab_new(app: AppHandle, state: State<'_, AppState>, name: St
 
 /// Another VM where labs are made (Incus there, the picker's key authorized).
 #[tauri::command]
-pub(crate) async fn host_add(app: AppHandle, state: State<'_, AppState>, name: String, host: String, port: u16, user: String, description: String) -> Result<Value, String> {
+pub(crate) async fn host_add(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+    host: String,
+    port: u16,
+    user: String,
+    description: String,
+) -> Result<Value, String> {
     if !lab_name(&name) {
         return Err("a lab host's name: lowercase letters, digits and '-', starting with a letter".into());
     }

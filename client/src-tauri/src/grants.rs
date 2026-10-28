@@ -48,12 +48,9 @@ impl Grants {
     /// `path` itself, resolved, when it is or is inside a path given (or one of
     /// `also`, the folders already shared); an error naming it otherwise.
     pub fn check(&self, path: &str, also: &[String]) -> Result<PathBuf, String> {
-        let wanted = Path::new(path)
-            .canonicalize()
-            .map_err(|e| format!("{path}: {e}"))?;
+        let wanted = Path::new(path).canonicalize().map_err(|e| format!("{path}: {e}"))?;
         let given = self.paths.lock().unwrap();
-        let inside = given.iter().any(|g| wanted.starts_with(g))
-            || also.iter().any(|a| wanted.starts_with(real(Path::new(a))));
+        let inside = given.iter().any(|g| wanted.starts_with(g)) || also.iter().any(|a| wanted.starts_with(real(Path::new(a))));
         if inside {
             Ok(wanted)
         } else {
