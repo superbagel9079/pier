@@ -114,6 +114,8 @@ def incus_state(at=None, timeout=20):
     try:
         info = json.loads(incus("query", "/1.0", timeout=timeout, at=at) or b"{}")
     except (ApiError, ValueError) as exc:
+        if "Host key verification failed" in str(exc):
+            return False, "its SSH key is not trusted yet: test it in Settings > Labs, Pier shows the key to confirm", False
         return False, f"Incus does not answer ({str(exc)[:200]}): installed, and the user in the incus group?", False
     drivers = str((info.get("environment") or {}).get("driver") or "")
     kvm = "qemu" in drivers and (not local or os.path.exists("/dev/kvm"))
@@ -249,6 +251,72 @@ def host_fingerprint(machine):
     return match.group(0).decode() if match else None
 
 
+def ssh_endpoint(home, name):
+    """The SSH host or machine of that name: its record (host, port, user)."""
+    data = load_labs(home)
+    record = data["machines"].get(name) or data["hosts"].get(name)
+    if not isinstance(record, dict) or record.get("kind") == "local" or not record.get("host"):
+        raise ApiError(f"no SSH lab host or machine named {name}")
+    return record
+
+
+def scanned_keys(machine):
+    """[(fingerprint, known_hosts line)]: the keys the host shows now (ssh-keyscan),
+    nothing trusted yet."""
+    port = int(machine.get("port") or 22)
+    try:
+        scan = subprocess.run(["ssh-keyscan", "-T", "10", "-p", str(port), "-t", "ed25519,ecdsa,rsa", machine["host"]],
+                              capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ApiError(f"{machine['host']} did not show its key ({exc})")
+    out = []
+    for line in scan.stdout.decode("utf-8", "replace").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        try:
+            said = subprocess.run(["ssh-keygen", "-l", "-E", "sha256", "-f", "-"], input=line.encode(),
+                                  capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        match = re.search(rb"SHA256:[A-Za-z0-9+/=]+", said.stdout)
+        if match:
+            out.append((match.group(0).decode(), line))
+    if not out:
+        raise ApiError(f"{machine['host']}:{port} did not show an SSH key: is it reachable, and is sshd running?")
+    # The strongest first: what Pier shows, and what the user compares.
+    order = {"ssh-ed25519": 0, "ecdsa": 1}
+    out.sort(key=lambda found: next((v for k, v in order.items() if k in found[1]), 2))
+    return out
+
+
+def api_host_key(home, name):
+    """The key a lab host or machine shows, for the user to confirm in Pier before the
+    first connection: {"known": fingerprint} once trusted, else {"fingerprint": …}."""
+    machine = ssh_endpoint(home, name)
+    known = host_fingerprint(machine)
+    if known:
+        return {"name": name, "known": known}
+    return {"name": name, "host": machine["host"], "port": int(machine.get("port") or 22),
+            "fingerprint": scanned_keys(machine)[0][0]}
+
+
+def api_host_trust(home, name, fingerprint):
+    """The user confirmed this fingerprint in Pier: the host's keys go into known_hosts,
+    if it still shows that one (else nothing is trusted)."""
+    machine = ssh_endpoint(home, name)
+    keys = scanned_keys(machine)
+    if fingerprint not in [found for found, _ in keys]:
+        raise ApiError("the host now shows another key than the one confirmed: nothing trusted")
+    port = int(machine.get("port") or 22)
+    with file_lock(os.path.join(labs_dir(), "known_hosts.lock")):
+        with open(os.path.join(labs_dir(), "known_hosts"), "a", encoding="utf-8") as handle:
+            for found, line in keys:
+                if found == fingerprint:
+                    handle.write(line.rstrip("\n") + "\n")
+    log("info", "lab.host-trusted", name=name, host=machine["host"], port=port, fingerprint=fingerprint)
+    return {"name": name, "known": fingerprint}
+
+
 def ssh_control_dir():
     """Where the SSH connections to lab hosts and machines stay open a little (only this
     account may enter)."""
@@ -263,7 +331,8 @@ def ssh_argv(machine, command=None, tty=False):
     # each time over a new connection (and a line in its auth log) otherwise.
     argv = ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
             "-o", "ControlMaster=auto", "-o", f"ControlPath={os.path.join(ssh_control_dir(), '%C')}", "-o", "ControlPersist=120",
-            "-o", f"UserKnownHostsFile={os.path.join(labs_dir(), 'known_hosts')}", "-o", "StrictHostKeyChecking=accept-new",
+            # Only keys the user confirmed in Pier (host-trust): a first contact is never taken on trust.
+            "-o", f"UserKnownHostsFile={os.path.join(labs_dir(), 'known_hosts')}", "-o", "StrictHostKeyChecking=yes",
             "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-p", str(int(machine.get("port") or 22))]
     if tty:
         argv.append("-t")

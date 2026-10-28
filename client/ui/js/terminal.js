@@ -151,7 +151,40 @@ function makeTerminal(tab, kind) {
   // Copying (prefs.copyMode): "key" (default) copies with Ctrl+Shift+C only; "select"
   // copies as soon as text is selected. Pi runs in its regular mode and tmux leaves the
   // mouse alone (see tmux_conf in the picker): selecting is always this terminal's.
+  // When the program filled the clipboard: a note that stays, with what was there
+  // before, to put it back (a "curl … | sh" slipped in while you typed is seen and undone).
+  let copyNote = null;
+  function dropCopyNote() {
+    copyNote?.remove();
+    copyNote = null;
+  }
+
+  function showCopyNote(text, before) {
+    dropCopyNote();
+    const start = visibleText(text.replace(/\s+/g, " ").trim());
+    const note = el("div", { className: "copy-note", role: "status" });
+    note.append(el("span", { textContent: `Pi put ${text.length} character${text.length === 1 ? "" : "s"} on the clipboard: “${start.length > 80 ? `${start.slice(0, 80)}…` : start}”` }));
+    if (before != null) {
+      note.append(linkButton("put back what was there", "The clipboard as it was before Pi's copy", async () => {
+        try {
+          await backend.copyText(before);
+          flashStatus("clipboard put back", tab.pane);
+          uiLog("info", "term-osc52-undone", {});
+        } catch (error) {
+          flashStatus(`could not put it back: ${error}`, tab.pane);
+        }
+        dropCopyNote();
+      }));
+    }
+    note.append(linkButton("×", "Keep Pi's copy", dropCopyNote));
+    tab.pane.append(note);
+    copyNote = note;
+  }
+
   async function copyText(text, how) {
+    dropCopyNote(); // a copy of yours: the note about Pi's is over
+    // What the clipboard held, before a program replaces it (text only; else nothing to undo).
+    const before = how === "osc52" ? await backend.clipboardText().catch(() => null) : null;
     try {
       await backend.copyText(text);
     } catch (error) {
@@ -161,10 +194,8 @@ function makeTerminal(tab, kind) {
     uiLog("debug", "term-copy", { chars: text.length, how });
     const count = `${text.length} character${text.length === 1 ? "" : "s"}`;
     if (how === "osc52") {
-      // Copied by the program, not by Pier: show what, so a surprise is seen.
-      const start = visibleText(text.replace(/\s+/g, " ").trim());
-      const preview = start.length > 48 ? `${start.slice(0, 48)}…` : start;
-      flashStatus(`the program copied ${count}: “${preview}”`, tab.pane);
+      // Copied by the program, not by Pier: shown until dismissed, so a surprise is seen.
+      showCopyNote(text, typeof before === "string" && before !== text ? before : null);
     } else {
       flashStatus(`copied ${count}`, tab.pane);
     }

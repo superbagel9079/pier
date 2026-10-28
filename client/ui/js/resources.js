@@ -90,7 +90,7 @@ function makeResourceManager(box, currentProject, onChange) {
   }
 
   function render() {
-    list.innerHTML = "";
+    list.replaceChildren();
     const needle = filter.value.trim().toLowerCase();
     const shown = (item) => !needle || [item.name, item.description, item.source].some((t) => t && t.toLowerCase().includes(needle));
     for (const kind of ["skills", "extensions", "prompts"]) {

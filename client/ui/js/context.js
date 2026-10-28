@@ -55,7 +55,7 @@ function makeContext(tab) {
       if (!contexts.some((c) => c.project === k.project)) contexts.push({ project: k.project, label: k.label, running: running.has(k.project), images: [], files: [], copies: [], shares: [] });
     }
     contexts.sort((a, b) => (b.project === target?.path) - (a.project === target?.path) || b.running - a.running);
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const context of contexts) list.append(section(context, live, kept));
     if (!contexts.length) list.append(el("p", { className: "dim", textContent: "Nothing given to a Pi yet." }));
     if (!sshfs) showError(notice, "sshfs is not installed on the VM: folders can be copied, but not shared live. To share live: sudo apt install sshfs");
@@ -326,7 +326,7 @@ function askFolderNow(path) {
 async function openHandOff() {
   const live = await backend.shareList();
   const list = $("#handoff-shares");
-  list.innerHTML = "";
+  list.replaceChildren();
   for (const share of live) {
     const li = el("li");
     li.append(

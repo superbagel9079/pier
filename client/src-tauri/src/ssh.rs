@@ -22,7 +22,7 @@ pub struct Endpoint {
     pub host: String,
     pub port: u16,
     pub user: String,
-    pub password: String,
+    pub password: zeroize::Zeroizing<String>,
 }
 
 impl Endpoint {
@@ -227,7 +227,7 @@ fn friendly(err: &russh::Error) -> String {
 
 /// Password, then keyboard-interactive answering the hidden prompts with the password.
 async fn authenticate(handle: &mut Handle<Checker>, endpoint: &Endpoint) -> Result<()> {
-    if handle.authenticate_password(endpoint.user.clone(), endpoint.password.clone()).await?.success() {
+    if handle.authenticate_password(endpoint.user.clone(), endpoint.password.as_str()).await?.success() {
         log_debug!("ssh.auth", host = endpoint.id(), user = endpoint.user, method = "password");
         return Ok(());
     }
@@ -247,7 +247,7 @@ async fn authenticate(handle: &mut Handle<Checker>, endpoint: &Endpoint) -> Resu
                 // code or another secret the server asks next.
                 let answers = prompts
                     .iter()
-                    .map(|p| if !p.echo && p.prompt.to_lowercase().contains("password") { endpoint.password.clone() } else { String::new() })
+                    .map(|p| if !p.echo && p.prompt.to_lowercase().contains("password") { endpoint.password.to_string() } else { String::new() })
                     .collect();
                 reply = handle.authenticate_keyboard_interactive_respond(answers).await?;
             }

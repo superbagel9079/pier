@@ -34,6 +34,8 @@ tauri-plugin-updater = { version = "=2.13.0", default-features = false, features
 tar = "0.4"
 # SHA-256 of files, to compare a handed-off copy with its original (ring already comes with russh).
 ring = "0.17"
+# The passwords kept for reconnecting are wiped from memory when let go.
+zeroize = "1"
 
 [profile.release]
 codegen-units = 16

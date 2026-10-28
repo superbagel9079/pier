@@ -217,7 +217,7 @@ function makeConversations(tab) {
   function draw() {
     const all = data.projects.flatMap((x) => x.sessions);
     categories = [...new Set(all.map((x) => x.category).filter(Boolean))].sort();
-    list.innerHTML = "";
+    list.replaceChildren();
     let shown = 0;
     // The project of the Pi in use first.
     const inUse = target?.path;

@@ -55,7 +55,7 @@ function makeDiff(tab) {
       showError(error, String(e));
       return;
     }
-    body.innerHTML = "";
+    body.replaceChildren();
     if (result.diff) {
       body.append(el("p", { className: "edit-title", textContent: `changes since ${point.when} (${result.label || result.reason}), - then, + now` }));
       body.append(lines(result.diff.trimEnd(), gitKind));
@@ -87,7 +87,7 @@ function makeDiff(tab) {
       showError(error, String(e));
       return;
     }
-    body.innerHTML = "";
+    body.replaceChildren();
     if (result.diff) {
       body.append(el("p", { className: "edit-title", textContent: result.untracked ? "new file, not yet in git" : "git diff against the last commit" }));
       body.append(lines(result.diff.trimEnd(), gitKind));

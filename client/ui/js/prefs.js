@@ -21,7 +21,7 @@ const PLACEABLE = [
  *  from elsewhere (labs turned on or off). */
 function fillLayout() {
   const grid = $("#prefs-layout");
-  grid.innerHTML = "";
+  grid.replaceChildren();
   for (const [key, label, hideable, usable] of PLACEABLE) {
     const select = el("select");
     select.id = `prefs-place-${key}`;
@@ -126,7 +126,7 @@ $("#prefs-theme").addEventListener("change", (e) => {
 /** The theme list (built in, then yours), and swatches of the chosen one. */
 function fillThemes() {
   const select = $("#prefs-theme");
-  select.innerHTML = "";
+  select.replaceChildren();
   const builtIn = el("optgroup", { label: "Built in" });
   builtIn.append(new Option("follow the system (Pier dark / light)", "system"));
   for (const t of BUILTIN_THEMES) builtIn.append(new Option(t.name, t.id));
@@ -140,7 +140,7 @@ function fillThemes() {
   $("#theme-delete").hidden = !prefs.customThemes.some((t) => t.id === prefs.theme);
   const theme = currentTheme();
   const box = $("#theme-swatches");
-  box.innerHTML = "";
+  box.replaceChildren();
   const colors = [theme.ui.bg, theme.ui.panel, theme.ui.fg, theme.ui.dim, theme.ui.accent,
     ...ANSI_KEYS.slice(1, 7).map((k) => theme.terminal[k]).filter(Boolean)];
   for (const color of colors) box.append(el("span", { style: `background:${color}` }));
@@ -212,10 +212,10 @@ function openThemeEditor() {
   for (const key of Object.keys(TERMINAL_LABELS)) previewTheme.terminal[key] ||= terminal[key];
   $("#theme-name").value = previewTheme.name;
   const ui = $("#theme-colors");
-  ui.innerHTML = "";
+  ui.replaceChildren();
   for (const [key, label] of Object.entries(UI_LABELS)) ui.append(colorInput("ui", key, label, previewTheme.ui[key]));
   const term = $("#theme-terminal");
-  term.innerHTML = "";
+  term.replaceChildren();
   for (const [key, label] of Object.entries(TERMINAL_LABELS)) term.append(colorInput("terminal", key, label, previewTheme.terminal[key]));
   $("#theme-editor").hidden = false;
   $("#theme-customize").hidden = true;
@@ -280,7 +280,7 @@ function fillTermFonts() {
   installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
   const select = $("#prefs-termfont");
   const chosen = prefs.termFont || "";
-  select.innerHTML = "";
+  select.replaceChildren();
   select.add(new Option("Cascadia Mono (default)", ""));
   for (const name of installedFonts) if (name !== "Cascadia Mono") select.add(new Option(name, name));
   if (chosen && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
@@ -319,7 +319,7 @@ function fillUiFonts() {
   installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
   const select = $("#prefs-uifont");
   const chosen = prefs.uiFont || "";
-  select.innerHTML = "";
+  select.replaceChildren();
   select.add(new Option("Same as the terminals (default)", ""));
   for (const name of installedFonts) select.add(new Option(name, name));
   if (chosen && chosen !== UI_SANS && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
