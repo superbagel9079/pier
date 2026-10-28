@@ -42,6 +42,22 @@ pub(crate) async fn repo_settings(app: AppHandle, state: State<'_, AppState>, pr
         || !["", "off", "ask", "auto"].contains(&agents.as_str()) {
         return Err(format!("unknown repository setting: {mode}, {method}, {agents}"));
     }
+    // Pi merging by itself, or Pis starting by themselves: confirmed when newly asked.
+    if mode == "auto" || agents == "auto" {
+        let now = api(&app, &state, &["repo", &project], &[]).await.unwrap_or(Value::Null);
+        let link = now.get("link").cloned().unwrap_or(Value::Null);
+        let was = |key: &str| link.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+        if mode == "auto" && was("mode") != "auto"
+            && !confirmed(&app, "Let Pi merge its own pull requests by itself, once their checks pass?").await
+        {
+            return Err("not changed: merges still wait for you".into());
+        }
+        if agents == "auto" && was("agents") != "auto"
+            && !confirmed(&app, "Let Pier start a Pi by itself on each new task or review asked of you?").await
+        {
+            return Err("not changed".into());
+        }
+    }
     api(&app, &state, &["repo-settings", &project, &mode, &method, &agents], &[]).await
 }
 

@@ -17,6 +17,7 @@ mod takeback;
 mod term;
 mod watch;
 mod cmd;
+mod grants;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -118,6 +119,34 @@ struct AppState {
     picker: std::sync::Mutex<Option<Value>>,
     ui_budget: std::sync::Mutex<(Instant, u32, u32)>,
     watch: watch::Watch,
+    /// The local paths the user handed over (grants.rs).
+    grants: grants::Grants,
+}
+
+/// Yes or no, asked by Rust in a window of the system: what lets Pi do more than it
+/// could is confirmed there, where a script in the page could neither answer nor skip
+/// it (S13 of the audit of 2026-10-26).
+pub(crate) async fn confirmed(app: &AppHandle, text: &str) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .message(text)
+        .title("Pier")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom("Yes".into(), "Cancel".into()))
+        .show(move |yes| {
+            let _ = tx.send(yes);
+        });
+    let yes = rx.await.unwrap_or(false);
+    log_info!("confirm", asked = text.chars().take(120).collect::<String>(), answer = if yes { "yes" } else { "no" });
+    yes
+}
+
+/// A local path from the page, accepted only when the user gave it (grants.rs): picked,
+/// dropped, pasted, or a folder already shared.
+fn given_path(state: &AppState, path: &str) -> Result<PathBuf, String> {
+    let shared: Vec<String> = state.store.remembered_shares().into_iter().map(|s| s.local).collect();
+    state.grants.check(path, &shared)
 }
 
 fn message(err: anyhow::Error) -> String {
@@ -387,7 +416,15 @@ fn load_settings(state: State<'_, AppState>) -> Option<Settings> {
 }
 
 #[tauri::command]
-fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
+async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
+    // The picker command runs on the VM at every call: a change is confirmed.
+    if let Some(old) = state.store.settings() {
+        if old.remote_command != settings.remote_command
+            && !confirmed(&app, &format!("Run \"{}\" on the VM as Pier's picker, instead of \"{}\"?", settings.remote_command, old.remote_command)).await
+        {
+            return Err("the picker command was not changed".into());
+        }
+    }
     let endpoint = |s: &Settings| (s.host.clone(), s.port, s.user.clone(), s.bastion.as_ref().map(|b| (b.host.clone(), b.port, b.user.clone())));
     if state.store.settings().map(|old| endpoint(&old)) != Some(endpoint(&settings)) {
         // The password kept for reconnecting belongs to the old VM: never sent elsewhere.
@@ -714,7 +751,10 @@ fn clipboard_text() -> Result<String, String> {
 
 /// Writes text where the user chose to save it (the report).
 #[tauri::command]
-fn save_text(path: String, text: String) -> Result<(), String> {
+fn save_text(state: State<'_, AppState>, path: String, text: String) -> Result<(), String> {
+    if !state.grants.take_save(&path) {
+        return Err("choose where to save it first".into());
+    }
     let lower = path.to_ascii_lowercase();
     if !(lower.ends_with(".txt") || lower.ends_with(".log")) {
         return Err("the report is saved as a .txt or .log file".into());
@@ -814,6 +854,20 @@ pub fn run() {
             show_window(app);
         }))
         .plugin(tauri_plugin_dialog::init())
+        // The window shows Pier's own pages and nothing else: a link or a script that
+        // would take it elsewhere is refused (links are copied, never opened).
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("navigation-guard")
+                .on_navigation(|_, url| {
+                    let own = matches!(url.scheme(), "tauri" | "asset")
+                        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"));
+                    if !own {
+                        log_warn!("window.navigation-refused", url = url.as_str().chars().take(200).collect::<String>());
+                    }
+                    own
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
@@ -848,6 +902,7 @@ pub fn run() {
                 picker: std::sync::Mutex::new(None),
                 ui_budget: std::sync::Mutex::new((Instant::now(), 0, 0)),
                 watch: watch::Watch::default(),
+                grants: grants::Grants::default(),
             });
             // Another program may own the shortcut: Pier still works from its window.
             if let Err(err) = app.global_shortcut().register(paste) {
@@ -893,6 +948,13 @@ pub fn run() {
                 let _ = window.hide();
                 log_debug!("window.hidden");
             }
+            // What is dropped on the window is given to Pier (grants.rs).
+            if let WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                let state = window.state::<AppState>();
+                for path in paths {
+                    state.grants.grant(path);
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             load_settings,
@@ -915,6 +977,9 @@ pub fn run() {
             remove_upload,
             set_paste_shortcut,
             clipboard_paths,
+            pick_folder,
+            pick_files,
+            pick_save_path,
             copy_folder,
             clear_project,
             remembered_shares,

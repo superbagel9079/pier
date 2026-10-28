@@ -66,7 +66,7 @@ pub(crate) const SKILL_MAX_BYTES: u64 = 20 * 1024 * 1024;
 #[tauri::command]
 pub(crate) async fn skill_import(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, path: String) -> Result<Value, String> {
     resource_scope(&scope)?;
-    let root = PathBuf::from(&path);
+    let root = given_path(&state, &path)?;
     if !root.join("SKILL.md").is_file() {
         return Err(format!("{path} holds no SKILL.md: it is not a skill folder"));
     }

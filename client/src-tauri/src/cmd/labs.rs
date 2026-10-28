@@ -24,6 +24,9 @@ pub(crate) async fn machine_add(app: AppHandle, state: State<'_, AppState>, name
     if !lab_name(&name) || !["ask", "auto"].contains(&policy.as_str()) {
         return Err("a machine's name, and ask or auto".into());
     }
+    if policy == "auto" && !confirmed(&app, &format!("Let Pi run any command on {user}@{host} without asking you?")).await {
+        return Err("not added: keep it set to ask".into());
+    }
     api(&app, &state, &["machine-add", &name, &host, &port.to_string(), &user, &policy], description.as_bytes()).await
 }
 

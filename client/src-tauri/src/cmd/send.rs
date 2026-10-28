@@ -18,6 +18,10 @@ pub(crate) async fn paste_image(app: AppHandle, state: State<'_, AppState>, requ
 pub(crate) async fn paste_files(app: AppHandle, state: State<'_, AppState>, paths: Vec<String>, target: String) -> Result<Vec<Value>, String> {
     let mut results = Vec::new();
     for path in paths {
+        if let Err(error) = given_path(&state, &path) {
+            results.push(json!({ "error": error }));
+            continue;
+        }
         let result = send_path(&app, &state, &path, &target).await;
         results.push(result.unwrap_or_else(|error| json!({ "error": error })));
     }
@@ -97,15 +101,57 @@ pub(crate) async fn send_clipboard(app: AppHandle) {
 
 /// The paths of files and folders copied in the file manager, for a Ctrl+V in the window.
 #[tauri::command]
-pub(crate) fn clipboard_paths() -> Vec<String> {
-    clip::clipboard_paths()
+pub(crate) fn clipboard_paths(state: State<'_, AppState>) -> Vec<String> {
+    let paths = clip::clipboard_paths();
+    for path in &paths {
+        state.grants.grant(std::path::Path::new(path)); // copied by the user, read here
+    }
+    paths
+}
+
+/// A dialog opened by Pier itself, so that what it gives is known to be the user's
+/// choice (grants.rs): one folder, or files, or where to save.
+async fn picked(builder: tauri_plugin_dialog::FileDialogBuilder<tauri::Wry>, kind: &str) -> Vec<std::path::PathBuf> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    match kind {
+        "folder" => builder.pick_folder(move |p| { let _ = tx.send(p.into_iter().collect::<Vec<_>>()); }),
+        "files" => builder.pick_files(move |p| { let _ = tx.send(p.unwrap_or_default()); }),
+        _ => builder.save_file(move |p| { let _ = tx.send(p.into_iter().collect::<Vec<_>>()); }),
+    }
+    rx.await.unwrap_or_default().into_iter().filter_map(|p| p.into_path().ok()).collect()
+}
+
+#[tauri::command]
+pub(crate) async fn pick_folder(app: AppHandle, state: State<'_, AppState>, title: Option<String>) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let builder = app.dialog().file().set_title(title.unwrap_or_else(|| "Folder to share with the VM".into()));
+    let chosen = picked(builder, "folder").await;
+    chosen.iter().for_each(|p| state.grants.grant(p));
+    Ok(chosen.first().map(|p| p.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub(crate) async fn pick_files(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let chosen = picked(app.dialog().file().set_title("Files to send to Pi"), "files").await;
+    chosen.iter().for_each(|p| state.grants.grant(p));
+    Ok(chosen.iter().map(|p| p.to_string_lossy().into_owned()).collect())
+}
+
+#[tauri::command]
+pub(crate) async fn pick_save_path(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let builder = app.dialog().file().set_title("Save the report").set_file_name(&name).add_filter("Text", &["txt"]);
+    let chosen = picked(builder, "save").await;
+    chosen.iter().for_each(|p| state.grants.grant_save(p));
+    Ok(chosen.first().map(|p| p.to_string_lossy().into_owned()))
 }
 
 /// Copies a folder of this computer into the project (.pi-files), as a snapshot Pi can
 /// change freely: the original is not touched.
 #[tauri::command]
 pub(crate) async fn copy_folder(app: AppHandle, state: State<'_, AppState>, path: String, target: String) -> Result<Value, String> {
-    let root = PathBuf::from(&path);
+    let root = given_path(&state, &path)?;
     if !root.is_dir() {
         return Err(format!("{path} is not a folder"));
     }
