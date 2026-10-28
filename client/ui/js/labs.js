@@ -226,12 +226,15 @@ async function saveLabsSettings(changes) {
     renderLabsPrefs();
     vm.poke();
     // Turned on: the Labs tab, beside the other panels (and in the + menu from now on).
-    if (changes.enabled === true && labsOn() && !workspace.find("labs")) {
+    // Turned off: it goes. Appearance's list of panels follows at once.
+    const on = labsOn();
+    if (changes.enabled === true && on && !workspace.find("labs")) {
       workspace.add("labs", prefs.panelSide === "left" ? "left" : "right");
       flashStatus("Labs on: the Labs tab is open (and in the + menu)");
-    } else {
-      labsOn();
+    } else if (changes.enabled === false && workspace.find("labs")) {
+      workspace.close(workspace.find("labs"));
     }
+    fillLayout();
   } catch (e) {
     showError($("#labs-error"), String(e));
     fillLabsPrefs();
