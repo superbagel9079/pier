@@ -143,11 +143,7 @@ mod tests {
         let (bytes, count, _) = tar_folder(&root, 1024, Pack::Copy).unwrap();
         assert_eq!(count, 2);
         let mut archive = tar::Archive::new(bytes.as_slice());
-        let names: Vec<String> = archive
-            .entries()
-            .unwrap()
-            .map(|e| e.unwrap().path().unwrap().to_string_lossy().replace('\\', "/"))
-            .collect();
+        let names: Vec<String> = archive.entries().unwrap().map(|e| e.unwrap().path().unwrap().to_string_lossy().replace('\\', "/")).collect();
         assert!(names.iter().any(|n| n == "mockups/a.txt"), "{names:?}");
         assert!(names.iter().any(|n| n == "mockups/sub/b.txt"), "{names:?}");
         assert!(!names.iter().any(|n| n.contains("node_modules")), "{names:?}");

@@ -347,7 +347,7 @@ impl ControlParser {
     }
 
     /// Pi's bytes, with Pier's own sequence defused.
-    fn program_output(&mut self, decoded: &mut Vec<u8>, out: &mut Vec<u8>) {
+    fn program_output(&mut self, decoded: &mut [u8], out: &mut Vec<u8>) {
         for own in [OWN_OSC, OWN_OSC_C1] {
             // Split across writes: the end of the last output and the start of this one.
             for k in 1..own.len() {

@@ -43,3 +43,7 @@ lto = "thin"
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# A Tauri command takes what the page sends as its arguments, one by one.
+[lints.clippy]
+too_many_arguments = "allow"

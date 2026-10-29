@@ -30,7 +30,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.6.0", os: "browser", picker: "4.37" });
+  mockLog("info", "app.start", { version: "0.7.2", os: "browser", picker: "4.42" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -120,16 +120,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.37") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.37", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.37" };
+      if (pickerVersion !== "4.42") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.42", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.42" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.37", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.37";
-      return { status: "connected", bundled: "4.37", version: { version: "4.37", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.42", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.42";
+      return { status: "connected", bundled: "4.42", version: { version: "4.42", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.37" ? 22 : 21 }, bundled: "4.37", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.42" ? 22 : 21 }, bundled: "4.42", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -206,7 +206,7 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.37", checks: [
+        return { version: "4.42", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },

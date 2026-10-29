@@ -96,8 +96,16 @@ pub(crate) async fn takeback_compare(app: AppHandle, state: State<'_, AppState>,
         .map_err(|e| e.to_string())?
         .map_err(|e| format!("{local}: {}", message(e)))?;
     let result = takeback::compare(&mine, &takeback::remote_manifest(&remote));
-    log_info!("takeback.compare", path = path, local = local, changed = result.changed.len(), added = result.added.len(),
-        deleted = result.deleted.len(), same = result.same, ms = started.elapsed().as_millis());
+    log_info!(
+        "takeback.compare",
+        path = path,
+        local = local,
+        changed = result.changed.len(),
+        added = result.added.len(),
+        deleted = result.deleted.len(),
+        same = result.same,
+        ms = started.elapsed().as_millis()
+    );
     Ok(json!({
         "changed": result.changed, "added": result.added, "deleted": result.deleted, "same": result.same,
         "links": remote.get("links").cloned().unwrap_or(Value::Null),
@@ -111,10 +119,7 @@ pub(crate) async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, pa
     let root = given_path(&state, &local)?;
     let mine = {
         let rel = rel.clone();
-        tokio::task::spawn_blocking(move || takeback::read_local(&root, &rel, 1024 * 1024))
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(message)?
+        tokio::task::spawn_blocking(move || takeback::read_local(&root, &rel, 1024 * 1024)).await.map_err(|e| e.to_string())?.map_err(message)?
     };
     if mine.len() > 1024 * 1024 {
         return Ok(json!({ "rel": rel, "too_big": true }));
@@ -126,7 +131,14 @@ pub(crate) async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, pa
 /// the ones chosen among those Pi deleted. What is replaced or deleted is moved first to
 /// "NAME (before Pi's changes DATE)", next to the original.
 #[tauri::command]
-pub(crate) async fn takeback_apply(app: AppHandle, state: State<'_, AppState>, path: String, local: String, take: Vec<String>, delete: Vec<String>) -> Result<Value, String> {
+pub(crate) async fn takeback_apply(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    local: String,
+    take: Vec<String>,
+    delete: Vec<String>,
+) -> Result<Value, String> {
     let root = given_path(&state, &local)?;
     if !root.is_dir() {
         return Err(format!("{local} is not a folder"));
@@ -186,8 +198,17 @@ pub(crate) async fn takeback_apply(app: AppHandle, state: State<'_, AppState>, p
         log_warn!("takeback.apply-failed", req = request, local = local, err = text);
         text
     })?;
-    log_info!("takeback.applied", req = request, path = path, local = local, taken = applied.taken.len(), deleted = applied.deleted.len(),
-        skipped = applied.skipped.len(), backup = applied.backup.clone().unwrap_or_default(), ms = started.elapsed().as_millis());
+    log_info!(
+        "takeback.applied",
+        req = request,
+        path = path,
+        local = local,
+        taken = applied.taken.len(),
+        deleted = applied.deleted.len(),
+        skipped = applied.skipped.len(),
+        backup = applied.backup.clone().unwrap_or_default(),
+        ms = started.elapsed().as_millis()
+    );
     serde_json::to_value(applied).map_err(|e| e.to_string())
 }
 
@@ -228,10 +249,7 @@ pub(crate) fn unpack_takeback(archive: &std::path::Path, staging: &std::path::Pa
     if skipped > 0 {
         log_info!("takeback.skipped", entries = skipped, why = "links, special files and names Windows reads otherwise are not taken back");
     }
-    let top = std::fs::read_dir(staging)?
-        .flatten()
-        .find(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .map(|e| e.path());
+    let top = std::fs::read_dir(staging)?.flatten().find(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path());
     match top {
         Some(top) => std::fs::rename(top, target)?,
         None => std::fs::create_dir_all(target)?,
@@ -251,8 +269,14 @@ pub(crate) fn mark_from_elsewhere(path: &std::path::Path) -> std::io::Result<()>
     {
         use std::os::unix::ffi::OsStrExt;
         extern "C" {
-            fn setxattr(path: *const std::ffi::c_char, name: *const std::ffi::c_char, value: *const std::ffi::c_void,
-                        size: usize, position: u32, options: i32) -> i32;
+            fn setxattr(
+                path: *const std::ffi::c_char,
+                name: *const std::ffi::c_char,
+                value: *const std::ffi::c_void,
+                size: usize,
+                position: u32,
+                options: i32,
+            ) -> i32;
         }
         let when = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let value = format!("0081;{when:x};Pier;");

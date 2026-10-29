@@ -258,10 +258,15 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
   white-space: nowrap;
   user-select: none;
   touch-action: none;
-  /* Tabs share the bar: they shrink (their name cut) before the bar scrolls. */
+  /* Tabs share the bar: they shrink (their name cut) before the bar scrolls, never
+     below their name's 7 characters and padding, and what does not fit is cut inside
+     the tab: a name never runs over the next tab. */
   flex: 0 1 auto;
-  min-width: 0;
+  min-width: calc(7ch + 2 * var(--s3));
+  overflow: hidden;
 }
+/* Under the pointer, a squeezed tab takes the room its ⋯ and × need. */
+.tab:hover { min-width: min-content; }
 .tab:hover { color: var(--fg); }
 .tab.active { color: var(--fg); background: var(--surface); box-shadow: inset 0 -2px 0 var(--fg); flex-shrink: 0; }
 #dock-center .tab.active { background: var(--bg); }

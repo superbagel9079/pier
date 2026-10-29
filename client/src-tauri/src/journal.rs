@@ -208,7 +208,11 @@ pub fn format_line(now: SystemTime, level: Level, event: &str, fields: &[(&str, 
 /// A value as one token: bare when simple, else a JSON string.
 pub fn quote(value: &str) -> String {
     let simple = !value.is_empty() && value.chars().all(|c| !c.is_whitespace() && !c.is_control() && !matches!(c, '"' | '=' | '\\'));
-    if simple { value.to_string() } else { serde_json::to_string(value).unwrap_or_else(|_| "\"?\"".into()) }
+    if simple {
+        value.to_string()
+    } else {
+        serde_json::to_string(value).unwrap_or_else(|_| "\"?\"".into())
+    }
 }
 
 /// "2026-10-12T14:32:01.123Z", in UTC.
@@ -217,13 +221,7 @@ pub fn timestamp(now: SystemTime) -> String {
     let secs = since.as_secs();
     let (days, rest) = ((secs / 86400) as i64, secs % 86400);
     let (year, month, day) = civil_from_days(days);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
-        rest / 3600,
-        rest / 60 % 60,
-        rest % 60,
-        since.subsec_millis()
-    )
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z", rest / 3600, rest / 60 % 60, rest % 60, since.subsec_millis())
 }
 
 /// Days since 1970-01-01 to a date (Howard Hinnant's algorithm).

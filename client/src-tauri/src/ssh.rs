@@ -36,9 +36,18 @@ impl Endpoint {
 pub enum Outcome {
     Connected(Connection),
     /// First contact: the user must confirm the fingerprint.
-    Unknown { which: &'static str, host: String, fingerprint: String },
+    Unknown {
+        which: &'static str,
+        host: String,
+        fingerprint: String,
+    },
     /// The server presents another key than the one trusted: refused.
-    Changed { which: &'static str, host: String, fingerprint: String, known: String },
+    Changed {
+        which: &'static str,
+        host: String,
+        fingerprint: String,
+        known: String,
+    },
 }
 
 pub struct Connection {
@@ -153,12 +162,7 @@ pub async fn open(target: &Endpoint, bastion: Option<&Endpoint>, trusted: impl F
 }
 
 /// TCP (or a direct-tcpip channel of the bastion) then SSH handshake, with the key check.
-async fn connect_checked(
-    which: &'static str,
-    endpoint: &Endpoint,
-    trusted: Option<String>,
-    via: Option<&Handle<Checker>>,
-) -> Result<Handshake> {
+async fn connect_checked(which: &'static str, endpoint: &Endpoint, trusted: Option<String>, via: Option<&Handle<Checker>>) -> Result<Handshake> {
     let seen = Arc::new(Mutex::new(None));
     let checker = Checker { trusted: trusted.clone(), seen: seen.clone() };
     let started = Instant::now();
@@ -166,21 +170,16 @@ async fn connect_checked(
     let attempt = match via {
         None => {
             let addr = (endpoint.host.as_str(), endpoint.port);
-            tokio::time::timeout(Duration::from_secs(15), client::connect(config(), addr, checker))
-                .await
-                .map_err(|_| {
-                    log_warn!("ssh.timeout", to = label(which), host = endpoint.id(), secs = 15);
-                    anyhow!("{}: no answer from {} (15 s)", label(which), endpoint.id())
-                })?
+            tokio::time::timeout(Duration::from_secs(15), client::connect(config(), addr, checker)).await.map_err(|_| {
+                log_warn!("ssh.timeout", to = label(which), host = endpoint.id(), secs = 15);
+                anyhow!("{}: no answer from {} (15 s)", label(which), endpoint.id())
+            })?
         }
         Some(jump) => {
-            let channel = jump
-                .channel_open_direct_tcpip(endpoint.host.clone(), u32::from(endpoint.port), "127.0.0.1", 0)
-                .await
-                .map_err(|e| {
-                    log_warn!("ssh.tunnel-failed", host = endpoint.id(), err = e);
-                    anyhow!("the bastion could not reach {}: {e}", endpoint.id())
-                })?;
+            let channel = jump.channel_open_direct_tcpip(endpoint.host.clone(), u32::from(endpoint.port), "127.0.0.1", 0).await.map_err(|e| {
+                log_warn!("ssh.tunnel-failed", host = endpoint.id(), err = e);
+                anyhow!("the bastion could not reach {}: {e}", endpoint.id())
+            })?;
             client::connect_stream(config(), channel.into_stream(), checker).await
         }
     };
@@ -211,7 +210,11 @@ async fn connect_checked(
 }
 
 fn label(which: &str) -> &'static str {
-    if which == "bastion" { "bastion" } else { "VM" }
+    if which == "bastion" {
+        "bastion"
+    } else {
+        "VM"
+    }
 }
 
 fn friendly(err: &russh::Error) -> String {
@@ -232,9 +235,7 @@ async fn authenticate(handle: &mut Handle<Checker>, endpoint: &Endpoint) -> Resu
         return Ok(());
     }
     log_debug!("ssh.auth-fallback", host = endpoint.id(), method = "keyboard-interactive");
-    let mut reply = handle
-        .authenticate_keyboard_interactive_start(endpoint.user.clone(), None::<String>)
-        .await?;
+    let mut reply = handle.authenticate_keyboard_interactive_start(endpoint.user.clone(), None::<String>).await?;
     for _ in 0..4 {
         match reply {
             KeyboardInteractiveAuthResponse::Success => {

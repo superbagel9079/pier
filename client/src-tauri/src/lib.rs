@@ -7,9 +7,11 @@
 
 #[macro_use]
 mod journal;
-mod lines;
 mod clip;
+mod cmd;
 mod copy;
+mod grants;
+mod lines;
 mod picker;
 mod share;
 mod ssh;
@@ -17,8 +19,6 @@ mod store;
 mod takeback;
 mod term;
 mod watch;
-mod cmd;
-mod grants;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -36,16 +36,16 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex as AsyncMutex;
 
+use cmd::forge::*;
+use cmd::labs::*;
+use cmd::send::*;
+use cmd::setup::*;
+use cmd::shares::*;
+use cmd::take_back::*;
+use cmd::terminals::*;
 use journal::Level;
 use ssh::{posix_line, sh_quote, Connection, Endpoint, Outcome};
 use store::{Settings, Store};
-use cmd::send::*;
-use cmd::terminals::*;
-use cmd::shares::*;
-use cmd::setup::*;
-use cmd::forge::*;
-use cmd::labs::*;
-use cmd::take_back::*;
 
 /// The picker's API version this client speaks.
 const API_VERSION: u64 = 22;
@@ -54,7 +54,26 @@ const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 /// API commands the interface may call directly: they only read, or type into Pi.
 /// Everything that changes on its own (projects, activity, setup, contexts, restore
 /// points, the VM's log) comes through the watch instead (watch.rs).
-const PASSTHROUGH: &[&str] = &["projects", "ls", "type", "diff", "log", "checkpoints", "checkpoint-diff", "resources", "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"];
+const PASSTHROUGH: &[&str] = &[
+    "projects",
+    "ls",
+    "type",
+    "diff",
+    "log",
+    "checkpoints",
+    "checkpoint-diff",
+    "resources",
+    "skill-read",
+    "gallery",
+    "forges",
+    "repo",
+    "approvals",
+    "worktrees",
+    "team",
+    "collaborators",
+    "labs",
+    "lab-journal",
+];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
 const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
@@ -194,12 +213,7 @@ async fn establish_now(state: &AppState, settings: &Settings, passwords: &Passwo
     // A known_hosts.json that cannot be read would make the VM's key look new (first
     // contact) instead of changed: no connection then, the user is told.
     state.store.check_known()?;
-    let target = Endpoint {
-        host: settings.host.clone(),
-        port: settings.port,
-        user: settings.user.clone(),
-        password: passwords.target.clone(),
-    };
+    let target = Endpoint { host: settings.host.clone(), port: settings.port, user: settings.user.clone(), password: passwords.target.clone() };
     let jump = settings.bastion.as_ref().map(|b| Endpoint {
         host: b.host.clone(),
         port: b.port,
@@ -289,13 +303,7 @@ async fn vm_exec(app: &AppHandle, state: &AppState, command: &str, stdin: &[u8])
 }
 
 /// The same, with `len` bytes read from `stdin` as they are sent.
-async fn vm_exec_from(
-    app: &AppHandle,
-    state: &AppState,
-    command: &str,
-    stdin: impl tokio::io::AsyncRead + Unpin,
-    len: u64,
-) -> Result<ssh::Output, String> {
+async fn vm_exec_from(app: &AppHandle, state: &AppState, command: &str, stdin: impl tokio::io::AsyncRead + Unpin, len: u64) -> Result<ssh::Output, String> {
     let channel = vm_channel(app, state).await?;
     if len >= VM_EXEC_UNTIMED_FROM as u64 {
         return ssh::run(channel, command, stdin).await.map_err(message);
@@ -364,13 +372,7 @@ async fn api(app: &AppHandle, state: &AppState, args: &[&str], stdin: &[u8]) -> 
 }
 
 /// The same, with `len` bytes of input read from `stdin` as they are sent (a file).
-async fn api_from(
-    app: &AppHandle,
-    state: &AppState,
-    args: &[&str],
-    stdin: impl tokio::io::AsyncRead + Unpin,
-    len: u64,
-) -> Result<Value, String> {
+async fn api_from(app: &AppHandle, state: &AppState, args: &[&str], stdin: impl tokio::io::AsyncRead + Unpin, len: u64) -> Result<Value, String> {
     let settings = settings(state)?;
     let request = next_request();
     let quoted: Vec<String> = args.iter().map(|a| sh_quote(a)).collect();
@@ -392,7 +394,15 @@ async fn api_from(
             log_at!(level, format!("vm.{name}"), req = request, ms = ms, args = args_for_log(args), sent = sent);
         }
         Err(error) => {
-            log_warn!(format!("vm.{name}"), req = request, ms = ms, args = args_for_log(args), status = status.map_or("none".into(), |s| s.to_string()), err = error, stderr = stderr);
+            log_warn!(
+                format!("vm.{name}"),
+                req = request,
+                ms = ms,
+                args = args_for_log(args),
+                status = status.map_or("none".into(), |s| s.to_string()),
+                err = error,
+                stderr = stderr
+            );
         }
     }
     result
@@ -424,12 +434,7 @@ fn lost(app: &AppHandle, text: &str) -> String {
 }
 
 fn header(request: &tauri::ipc::Request<'_>, name: &str) -> String {
-    request
-        .headers()
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .map(percent_decode)
-        .unwrap_or_default()
+    request.headers().get(name).and_then(|v| v.to_str().ok()).map(percent_decode).unwrap_or_default()
 }
 
 // --- connection ------------------------------------------------------------------
@@ -456,9 +461,13 @@ async fn save_settings(app: AppHandle, state: State<'_, AppState>, settings: Set
     }
     let result = state.store.save_settings(&settings).map_err(message);
     match &result {
-        Ok(()) => log_info!("settings.saved", host = format!("{}:{}", settings.host, settings.port), user = settings.user,
+        Ok(()) => log_info!(
+            "settings.saved",
+            host = format!("{}:{}", settings.host, settings.port),
+            user = settings.user,
             bastion = settings.bastion.as_ref().map_or("none".into(), |b| format!("{}@{}:{}", b.user, b.host, b.port)),
-            picker = settings.remote_command),
+            picker = settings.remote_command
+        ),
         Err(err) => log_warn!("settings.refused", err = err),
     }
     result
@@ -478,17 +487,16 @@ fn trust_host(state: State<'_, AppState>, host: String, fingerprint: String) -> 
 }
 
 #[tauri::command]
-async fn connect(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    password: String,
-    bastion_password: Option<String>,
-) -> Result<Value, String> {
+async fn connect(app: AppHandle, state: State<'_, AppState>, password: String, bastion_password: Option<String>) -> Result<Value, String> {
     let settings = settings(&state)?;
     let passwords = Passwords { target: Zeroizing::new(password), bastion: bastion_password.map(Zeroizing::new) };
     let started = Instant::now();
-    log_info!("ssh.login", host = format!("{}:{}", settings.host, settings.port), user = settings.user,
-        bastion = settings.bastion.as_ref().map_or("none".into(), |b| format!("{}:{}", b.host, b.port)));
+    log_info!(
+        "ssh.login",
+        host = format!("{}:{}", settings.host, settings.port),
+        user = settings.user,
+        bastion = settings.bastion.as_ref().map_or("none".into(), |b| format!("{}:{}", b.host, b.port))
+    );
     let outcome = establish(&state, &settings, &passwords).await.map_err(|err| {
         let text = message(err);
         log_warn!("ssh.login-failed", ms = started.elapsed().as_millis(), err = text);
@@ -550,8 +558,15 @@ async fn finish_connect(app: &AppHandle, state: &AppState) -> Result<Value, Stri
     let remote_version = version.get("version").and_then(Value::as_str).unwrap_or("?").to_string();
     let remote_api = version.get("api").and_then(Value::as_u64).unwrap_or(0);
     let newer = picker::compare_versions(&remote_version, bundled);
-    log_info!("picker.version", req = request, remote = remote_version, api = remote_api, bundled = bundled,
-        tmux = version.get("tmux").map_or("?".into(), Value::to_string), pi = version.get("pi").map_or("?".into(), Value::to_string));
+    log_info!(
+        "picker.version",
+        req = request,
+        remote = remote_version,
+        api = remote_api,
+        bundled = bundled,
+        tmux = version.get("tmux").map_or("?".into(), Value::to_string),
+        pi = version.get("pi").map_or("?".into(), Value::to_string)
+    );
     if remote_api == API_VERSION && newer != std::cmp::Ordering::Less {
         cleanup_stale_shares(app, state).await;
         return Ok(json!({ "status": "connected", "version": version, "bundled": bundled }));
@@ -698,7 +713,13 @@ fn log_info() -> Value {
 #[tauri::command]
 fn open_log_folder() -> Result<(), String> {
     let dir = journal::path().and_then(|p| p.parent().map(PathBuf::from)).ok_or("no log folder")?;
-    let opener = if cfg!(windows) { "explorer" } else if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let opener = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     std::process::Command::new(opener).arg(&dir).spawn().map_err(|e| format!("{opener}: {e}"))?;
     Ok(())
 }
@@ -852,15 +873,20 @@ async fn update_check(app: AppHandle) -> Result<Value, String> {
 /// The download's progress goes to the window as "update-progress" ({done, total}).
 #[tauri::command]
 async fn update_install(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?
-        .ok_or("Pier is already up to date")?;
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?.ok_or("Pier is already up to date")?;
     log_info!("update.install", version = update.version);
     let progress = app.clone();
     let mut done = 0usize;
-    let bytes = update.download(move |chunk, total| {
-        done += chunk;
-        let _ = progress.emit("update-progress", json!({ "done": done, "total": total }));
-    }, || {}).await.map_err(|e| format!("the download failed: {e}"))?;
+    let bytes = update
+        .download(
+            move |chunk, total| {
+                done += chunk;
+                let _ = progress.emit("update-progress", json!({ "done": done, "total": total }));
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| format!("the download failed: {e}"))?;
     // As on Quit: the shares are unmounted first, so the VM keeps no dead mount.
     stop_all_shares(&app, &state).await;
     update.install(bytes).map_err(|e| format!("the installation failed: {e}"))?;
@@ -883,8 +909,8 @@ pub fn run() {
         .plugin(
             tauri::plugin::Builder::<tauri::Wry>::new("navigation-guard")
                 .on_navigation(|_, url| {
-                    let own = matches!(url.scheme(), "tauri" | "asset")
-                        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"));
+                    let own =
+                        matches!(url.scheme(), "tauri" | "asset") || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"));
                     if !own {
                         log_warn!("window.navigation-refused", url = url.as_str().chars().take(200).collect::<String>());
                     }
@@ -906,8 +932,15 @@ pub fn run() {
         .setup(move |app| {
             let logs = app.path().app_log_dir().unwrap_or_else(|_| std::env::temp_dir().join("pier-logs"));
             let log_file = journal::init(&logs);
-            log_info!("app.start", version = env!("CARGO_PKG_VERSION"), os = std::env::consts::OS, arch = std::env::consts::ARCH,
-                pid = std::process::id(), picker = picker::bundled_version(), log = log_file.display());
+            log_info!(
+                "app.start",
+                version = env!("CARGO_PKG_VERSION"),
+                os = std::env::consts::OS,
+                arch = std::env::consts::ARCH,
+                pid = std::process::id(),
+                picker = picker::bundled_version(),
+                log = log_file.display()
+            );
             let handle = app.handle().clone();
             journal::set_listener(move |line| {
                 let _ = handle.emit("log-line", line);
@@ -1151,14 +1184,32 @@ mod tests {
         assert_eq!(update_command(&[]).unwrap(), "--pi-update");
         assert_eq!(update_command(&["--all".into()]).unwrap(), "--pi-update '--all'");
         assert_eq!(update_command(&["npm:@scope/pi-x".into()]).unwrap(), "--pi-update 'npm:@scope/pi-x'");
-        for bad in [vec!["; rm -rf ~".to_string()], vec!["npm:a b".into()], vec!["--force".into()], vec!["--all".into(), "--all".into()], vec!["npm:x'y".into()]] {
+        for bad in
+            [vec!["; rm -rf ~".to_string()], vec!["npm:a b".into()], vec!["--force".into()], vec!["--all".into(), "--all".into()], vec!["npm:x'y".into()]]
+        {
             assert!(update_command(&bad).is_err(), "{bad:?}");
         }
     }
 
     #[test]
     fn passthrough_is_read_only() {
-        for command in ["paste-image", "paste-file", "share-prepare", "share-stop", "remove", "write-text", "handoff", "clear", "upload-dir", "checkpoint", "restore", "stop", "watch", "label", "mark"] {
+        for command in [
+            "paste-image",
+            "paste-file",
+            "share-prepare",
+            "share-stop",
+            "remove",
+            "write-text",
+            "handoff",
+            "clear",
+            "upload-dir",
+            "checkpoint",
+            "restore",
+            "stop",
+            "watch",
+            "label",
+            "mark",
+        ] {
             assert!(!PASSTHROUGH.contains(&command), "{command} must go through its own command");
         }
         for polled in POLLED {

@@ -26,6 +26,57 @@ sudo adduser $USER incus
 # optional, once you reconnected (instant reset; Docker in containers):
 sudo incus project set user-$(id -u) restricted.snapshots=allow restricted.containers.nesting=allow`;
 
+/** The one script that makes a lab host ready, with its real names: Incus, the user in
+ *  its incus group (not incus-admin: its labs stay in its own restricted project), and
+ *  Pier's key (restricted to commands and terminals) for that user. Run by an admin. */
+function labHostScript(h, key) {
+  if (h.kind === "local") return LABS_INSTALL;
+  const user = h.where.split("@")[0];
+  return `# On ${h.where.split("@")[1].split(":")[0]}, as an account with sudo. Then press Test in Pier.
+sudo apt install -y incus
+sudo incus admin init --minimal
+sudo adduser ${user} incus
+sudo install -d -m 700 -o ${user} -g ${user} ~${user}/.ssh
+echo '${key}' | sudo tee -a ~${user}/.ssh/authorized_keys >/dev/null
+sudo chown ${user}: ~${user}/.ssh/authorized_keys && sudo chmod 600 ~${user}/.ssh/authorized_keys
+
+# optional (instant reset of a lab; Docker in containers), as ${user} once the rest is done:
+#   incus project set user-$(id -u) restricted.snapshots=allow restricted.containers.nesting=allow`;
+}
+
+/** Prepare a host…: its script, to copy, and Test, which says what is still missing. */
+function labHostPrepare(h) {
+  const key = labsStatus?.public_key || "";
+  const script = labHostScript(h, key || "(Pier's key: see Machines > copy Pier's key)");
+  const said = el("p", { className: "hint", role: "status" });
+  const problem = dialogError();
+  const copy = el("button", { className: "secondary", textContent: "Copy the script" });
+  const test = el("button", { textContent: "Test" });
+  copy.addEventListener("click", async () => {
+    try { await backend.copyText(script); said.textContent = "Copied: run it there, then Test."; } catch (e) { showError(problem, String(e)); }
+  });
+  test.addEventListener("click", async () => {
+    test.disabled = true;
+    showError(problem, "");
+    said.textContent = "Testing…";
+    try {
+      if (h.kind === "ssh" && !(await keyTrusted(h.name))) { said.textContent = "Its key was not trusted: nothing was sent."; return; }
+      const r = await backend.hostTest(h.name);
+      said.textContent = `Ready. ${r.answer}.`;
+      fillLabsPrefs();
+    } catch (e) {
+      said.textContent = "";
+      showError(problem, `Not ready yet: ${e}`);
+    } finally { test.disabled = false; }
+  });
+  resourceDialog(`Prepare ${h.name}`, [
+    el("p", { className: "hint", textContent: h.kind === "local"
+      ? "On Pi's VM, once. Then reconnect Pier (the picker's next login is then in the incus group) and test."
+      : `This makes ${h.where} a lab host: Incus, ${h.where.split("@")[0]} in its incus group, and Pier's key for it. Read it, run it there, then Test.` }),
+    el("pre", { className: "labs-host-install", textContent: script }),
+    said, problem], [copy, test], true);
+}
+
 function labsAge(seconds) {
   const left = seconds - Date.now() / 1000;
   if (left <= 0) return "going now";
@@ -178,8 +229,7 @@ function renderLabHosts(s) {
       // The key it showed at the first contact, to compare with the host's own.
       h.fingerprint ? el("div", { className: "desc dim small", textContent: `its key: ${h.fingerprint} (compare: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub)` }) : null);
     if (!h.incus) {
-      li.append(el("p", { className: "hint", textContent: `To make it ready, on ${h.kind === "local" ? "Pi's VM" : h.where.split(":")[0]} (then test it again):` }),
-        el("pre", { className: "labs-host-install", textContent: LABS_INSTALL }));
+      li.append(el("div", { className: "desc small" }, linkButton("prepare it…", "The script that makes it ready, then Test", () => labHostPrepare(h))));
     }
     list.append(li);
   }
@@ -272,16 +322,17 @@ $("#labs-host-add").addEventListener("click", () => {
       el("label", { textContent: "Name" }), name, el("label", { textContent: "Address" }), host,
       el("label", { textContent: "Port" }), port, el("label", { textContent: "User" }), user,
       el("label", { textContent: "Description" }), description),
-    el("p", { className: "hint", textContent: "A VM where labs are made. On it: Incus installed, the user in its incus group, and Pier's key (copied when you add it) in that user's ~/.ssh/authorized_keys. Then test it here." }),
+    el("p", { className: "hint", textContent: "A VM where labs are made, reached over SSH with Pier's key. Once added, Pier gives the script that prepares it (Incus, the user in its incus group, the key), then tests it." }),
     problem], [go]);
   go.addEventListener("click", async () => {
     go.disabled = true;
     try {
       const added = await backend.hostAdd(name.value.trim(), host.value.trim(), Number(port.value) || 22, user.value.trim(), description.value.trim());
       dialog.close();
-      try { await backend.copyText(added.public_key); } catch { /* shown anyway */ }
-      flashStatus(`${added.host} added: Pier's key copied, put it in ~/.ssh/authorized_keys there`);
-      fillLabsPrefs();
+      await fillLabsPrefs();
+      const made = labsStatus?.hosts?.find((x) => x.name === added.host);
+      if (made && !made.incus) labHostPrepare(made); // what to run there, then Test
+      else flashStatus(`${added.host} added`);
     } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; }
   });
   name.focus();

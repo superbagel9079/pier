@@ -37,12 +37,7 @@ impl server::Handler for FakeServer {
         Ok(if password == PASSWORD { Auth::Accept } else { Auth::reject() })
     }
 
-    async fn channel_open_session(
-        &mut self,
-        _channel: Channel<Msg>,
-        reply: server::ChannelOpenHandle,
-        _session: &mut Session,
-    ) -> Result<(), Self::Error> {
+    async fn channel_open_session(&mut self, _channel: Channel<Msg>, reply: server::ChannelOpenHandle, _session: &mut Session) -> Result<(), Self::Error> {
         reply.accept().await;
         Ok(())
     }
@@ -235,12 +230,7 @@ impl server::Handler for SshfsLikeVm {
         Ok(if password == PASSWORD { Auth::Accept } else { Auth::reject() })
     }
 
-    async fn channel_open_session(
-        &mut self,
-        channel: Channel<Msg>,
-        reply: server::ChannelOpenHandle,
-        _session: &mut Session,
-    ) -> Result<(), Self::Error> {
+    async fn channel_open_session(&mut self, channel: Channel<Msg>, reply: server::ChannelOpenHandle, _session: &mut Session) -> Result<(), Self::Error> {
         self.channels.lock().unwrap().insert(channel.id(), channel);
         reply.accept().await;
         Ok(())
@@ -297,10 +287,7 @@ async fn sharing_a_folder_over_the_connection() {
     russh_sftp::server::run(channel.into_stream(), fs).await;
 
     let seen = tokio::time::timeout(std::time::Duration::from_secs(10), reports.recv()).await.unwrap().unwrap();
-    assert_eq!(
-        seen,
-        "~/bin/pi-pick --share-serve '/home/leo/work/.pi-shared/shared' ro|[\"a.txt\", \"sub\"]|hello from the laptop|escaped=false|wrote=false"
-    );
+    assert_eq!(seen, "~/bin/pi-pick --share-serve '/home/leo/work/.pi-shared/shared' ro|[\"a.txt\", \"sub\"]|hello from the laptop|escaped=false|wrote=false");
     assert!(!dir.join("shared/new.txt").exists());
     connection.close().await;
     let _ = std::fs::remove_dir_all(dir);
@@ -358,7 +345,16 @@ async fn the_watch_reassembles_lines_and_talks_both_ways() {
     let (ended_tx, ended_rx) = tokio::sync::oneshot::channel();
     let channel = connection.channel().await.unwrap();
     let id = watch
-        .start(channel, "pi-pick --api watch", move |message| { let _ = tx.send(message); }, move |id, _| { let _ = ended_tx.send(id); })
+        .start(
+            channel,
+            "pi-pick --api watch",
+            move |message| {
+                let _ = tx.send(message);
+            },
+            move |id, _| {
+                let _ = ended_tx.send(id);
+            },
+        )
         .await
         .unwrap();
     let first = rx.recv().await.unwrap();
@@ -488,7 +484,9 @@ async fn terminal_output_comes_in_order_and_in_few_messages() {
     let (done_tx, done_rx) = tokio::sync::oneshot::channel();
     let terminals = crate::term::Terminals::default();
     terminals
-        .open(connection.channel().await.unwrap(), Some("burst"), 80, 24, output, move |_, status| { let _ = done_tx.send(status); })
+        .open(connection.channel().await.unwrap(), Some("burst"), 80, 24, output, move |_, status| {
+            let _ = done_tx.send(status);
+        })
         .await
         .unwrap();
     let status = tokio::time::timeout(std::time::Duration::from_secs(5), done_rx).await.unwrap().unwrap();
@@ -563,7 +561,9 @@ async fn pi_terminals_speak_tmux_control_mode() {
     let (done_tx, done_rx) = tokio::sync::oneshot::channel();
     let terminals = crate::term::Terminals::default();
     let id = terminals
-        .open_control(connection.channel().await.unwrap(), "pi-pick --attach-control /x", 100, 30, output, move |_, _| { let _ = done_tx.send(()); })
+        .open_control(connection.channel().await.unwrap(), "pi-pick --attach-control /x", 100, 30, output, move |_, _| {
+            let _ = done_tx.send(());
+        })
         .await
         .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;

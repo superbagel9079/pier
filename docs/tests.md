@@ -12,19 +12,23 @@ The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 27
 
 When `/tmp` is mounted `noexec` (a hardened VM), the suite works in `~/.cache/pier-picker-tests` instead: its fake Pi must be able to run.
 
+The scripts go in `~/.cache/pier-tests` on the VM: a hidden folder, which the picker does not list among the projects.
+
 ```powershell
-scp <repository>\pier-picker.py <repository>\pier-picker-tests.py pi-sh:pi-tui/
+ssh pi-sh "mkdir -p ~/.cache/pier-tests"
 ```
 
 ```powershell
-ssh -t pi-sh "python3 -B ~/pi-tui/pier-picker-tests.py"
+scp <repository>\pier-picker.py <repository>\pier-picker-tests.py pi-sh:.cache/pier-tests/
 ```
 
-If `~/pi-tui` does not exist on the VM yet, create it first: `ssh pi-sh "mkdir -p ~/pi-tui"`.
+```powershell
+ssh -t pi-sh "python3 -B ~/.cache/pier-tests/pier-picker-tests.py"
+```
 
 ## Pier
 
-53 Rust tests (`cargo test`, one of them ignored by default), including:
+60 Rust tests (`cargo test`, one of them ignored by default), including:
 
 - Pi tabs in tmux control mode against a local SSH server (decoding `%output`, keys as raw bytes, sizes, end, Pi unable to fake Pier's messages, caps);
 - `watch` against a local SSH server (lines cut across two packets, round trip, end);

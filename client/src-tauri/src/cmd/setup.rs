@@ -25,12 +25,25 @@ pub(crate) async fn checkpoint_restore(app: AppHandle, state: State<'_, AppState
 // --- skills, extensions, prompts (Setup) -----------------------------------------------
 
 pub(crate) fn resource_scope(scope: &str) -> Result<(), String> {
-    if scope == "user" || scope == "project" { Ok(()) } else { Err(format!("unknown scope: {scope}")) }
+    if scope == "user" || scope == "project" {
+        Ok(())
+    } else {
+        Err(format!("unknown scope: {scope}"))
+    }
 }
 
 /// Turns a skill, an extension or a prompt on or off, as `pi config` does.
 #[tauri::command]
-pub(crate) async fn resource_toggle(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, kind: String, source: String, rel: String, on: bool) -> Result<Value, String> {
+pub(crate) async fn resource_toggle(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    scope: String,
+    project: String,
+    kind: String,
+    source: String,
+    rel: String,
+    on: bool,
+) -> Result<Value, String> {
     resource_scope(&scope)?;
     if !["skills", "extensions", "prompts"].contains(&kind.as_str()) {
         return Err(format!("unknown kind: {kind}"));
@@ -40,14 +53,28 @@ pub(crate) async fn resource_toggle(app: AppHandle, state: State<'_, AppState>, 
 
 /// A new local skill, from a template.
 #[tauri::command]
-pub(crate) async fn skill_create(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String, description: String) -> Result<Value, String> {
+pub(crate) async fn skill_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    scope: String,
+    project: String,
+    name: String,
+    description: String,
+) -> Result<Value, String> {
     resource_scope(&scope)?;
     api(&app, &state, &["skill-new", &scope, &project, &name, &description], &[]).await
 }
 
 /// A local skill's SKILL.md, saved.
 #[tauri::command]
-pub(crate) async fn skill_save(app: AppHandle, state: State<'_, AppState>, scope: String, project: String, name: String, text: String) -> Result<Value, String> {
+pub(crate) async fn skill_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    scope: String,
+    project: String,
+    name: String,
+    text: String,
+) -> Result<Value, String> {
     resource_scope(&scope)?;
     api(&app, &state, &["skill-write", &scope, &project, &name], text.as_bytes()).await
 }
@@ -71,10 +98,8 @@ pub(crate) async fn skill_import(app: AppHandle, state: State<'_, AppState>, sco
         return Err(format!("{path} holds no SKILL.md: it is not a skill folder"));
     }
     let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "skill".into());
-    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, SKILL_MAX_BYTES, copy::Pack::Copy))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(message)?;
+    let packed =
+        tokio::task::spawn_blocking(move || copy::tar_folder(&root, SKILL_MAX_BYTES, copy::Pack::Copy)).await.map_err(|e| e.to_string())?.map_err(message)?;
     api(&app, &state, &["skill-import", &scope, &project, &name], &packed.0).await
 }
 
