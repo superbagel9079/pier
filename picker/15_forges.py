@@ -127,8 +127,16 @@ def forge_open(request, timeout):
     return urllib.request.build_opener(KeepToken).open(request, timeout=timeout)
 
 
+# Answers to GET, with their ETag: asked again, the forge says "304 not modified",
+# which GitHub does not count against the token's 5,000 requests an hour. Kept for the
+# watch's life (the team part asks the same pages every five minutes).
+_FORGE_ETAGS = {}
+FORGE_ETAGS_KEPT = 300
+
+
 def forge_request(forge, method, path, body=None):
     """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
+    import hashlib
     import urllib.error
     import urllib.request
     url = forge_api_base(forge["kind"], forge["url"]) + path
@@ -143,11 +151,26 @@ def forge_request(forge, method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
     if data is not None:
         headers["Content-Type"] = "application/json"
+    # The token is part of the key: another account may see another answer.
+    key = (url, hashlib.sha256(forge["token"].encode()).hexdigest()) if method == "GET" else None
+    known = _FORGE_ETAGS.get(key) if key else None
+    if known:
+        headers["If-None-Match"] = known[0]
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with forge_open(request, FORGE_TIMEOUT) as answer:
             text = answer.read(8 * 1024 * 1024)
+            etag = answer.headers.get("ETag")
+        if key:
+            _FORGE_ETAGS.pop(key, None)
+            if etag and len(text) < 1024 * 1024:
+                _FORGE_ETAGS[key] = (etag, text)
+                while len(_FORGE_ETAGS) > FORGE_ETAGS_KEPT:
+                    _FORGE_ETAGS.pop(next(iter(_FORGE_ETAGS)))
     except urllib.error.HTTPError as exc:
+        if exc.code == 304 and known:
+            text = known[1]
+            return json.loads(text) if text.strip() else {}
         detail = ""
         try:
             payload = json.loads(exc.read(64 * 1024) or b"{}")
@@ -245,13 +268,18 @@ def repo_link(home, project):
     return link
 
 
-def forge_repo(forge, repo):
-    """(path in the API, the repository's details) on the forge."""
+def repo_api_path(forge, repo):
+    """The repository's path in the forge's API: GitLab names it by its encoded path,
+    the others by owner/name. No request: knowing the path needs none."""
     if forge["kind"] == "gitlab":
         import urllib.parse
-        path = f"/projects/{urllib.parse.quote(repo, safe='')}"
-    else:
-        path = f"/repos/{repo}"
+        return f"/projects/{urllib.parse.quote(repo, safe='')}"
+    return f"/repos/{repo}"
+
+
+def forge_repo(forge, repo):
+    """(path in the API, the repository's details) on the forge."""
+    path = repo_api_path(forge, repo)
     return path, forge_request(forge, "GET", path)
 
 
@@ -415,7 +443,7 @@ def mirror_git(forge, mirror, *args):
 
 def remote_branches(forge, repo):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, repo)
+        api = repo_api_path(forge, repo)
         items = forge_request(forge, "GET", f"{api}/repository/branches?per_page=100")
     else:
         items = forge_request(forge, "GET", f"/repos/{repo}/branches?per_page=100")
@@ -553,7 +581,7 @@ def auto_merge_refusal(link, pr, number):
 def list_prs(home, link, state="open"):
     forge = forge_by_id(home, link["forge"])
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         items = forge_request(forge, "GET", f"{api}/merge_requests?state={'opened' if state == 'open' else 'all'}&per_page=50")
     else:
         items = forge_request(forge, "GET", f"/repos/{link['repo']}/pulls?state={state}&per_page=50")
@@ -563,7 +591,7 @@ def list_prs(home, link, state="open"):
 def get_pr(home, link, number):
     forge = forge_by_id(home, link["forge"])
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         pr = pr_from(forge, forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}"))
     else:
         pr = pr_from(forge, forge_request(forge, "GET", f"/repos/{link['repo']}/pulls/{int(number)}"))
@@ -579,7 +607,7 @@ def open_pr(home, project, link, branch, title, body, base, draft):
     title = " ".join((title or "").split())[:250] or branch
     body = (body or "")[:60000]
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         item = forge_request(forge, "POST", f"{api}/merge_requests",
                              {"source_branch": branch, "target_branch": base, "title": ("Draft: " if draft else "") + title, "description": body})
     else:
@@ -599,7 +627,7 @@ def merge_pr(home, project, link, number, method=None, sha=None):
     forge = forge_by_id(home, link["forge"])
     method = method if method in MERGE_METHODS else link.get("merge_method") or "merge"
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash", **({"sha": sha} if sha else {})})
     elif forge["kind"] == "github":
         forge_request(forge, "PUT", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"merge_method": method, **({"sha": sha} if sha else {})})

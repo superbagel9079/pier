@@ -37,20 +37,17 @@ impl Watch {
             let _ = previous.eof().await; // the old picker exits, its channel closes
         }
         tokio::spawn(async move {
-            let mut pending: Vec<u8> = Vec::new();
+            // A part of several MB arrives in many SSH packets: read linearly (lines.rs).
+            let mut lines = crate::lines::Lines::new(LINE_MAX);
             let mut why = "closed";
             while let Some(message) = reader.wait().await {
                 match message {
                     ChannelMsg::Data { data } => {
-                        pending.extend_from_slice(&data);
-                        while let Some(end) = pending.iter().position(|&b| b == b'\n') {
-                            let line: Vec<u8> = pending.drain(..=end).collect();
-                            match serde_json::from_slice::<Value>(&line) {
-                                Ok(value) => on_message(value),
-                                Err(err) => log_warn!("watch.bad-line", id = id, err = err, line = String::from_utf8_lossy(&line).chars().take(200).collect::<String>()),
-                            }
-                        }
-                        if pending.len() > LINE_MAX {
+                        let too_long = lines.feed(&data, |line| match serde_json::from_slice::<Value>(line) {
+                            Ok(value) => on_message(value),
+                            Err(err) => log_warn!("watch.bad-line", id = id, err = err, line = String::from_utf8_lossy(line).chars().take(200).collect::<String>()),
+                        });
+                        if too_long {
                             why = "a line too long";
                             break;
                         }

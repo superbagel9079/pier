@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.40"
+VERSION = "4.41"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -1249,6 +1249,18 @@ def node_major(env):
         return None
 
 
+def keepalive(sock):
+    """A TCP connection whose other end vanished (a host gone, a Wi-Fi cut) is found
+    out within about two minutes, and its relay threads end, rather than waiting forever."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for name, value in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 15), ("TCP_KEEPCNT", 4)):
+            if hasattr(socket, name):
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, name), value)
+    except OSError:
+        pass
+
+
 def relay(a, b):
     """Copies a to b until a closes, then closes b's sending side."""
     try:
@@ -1346,6 +1358,7 @@ class NetProxy:
                 client.close()
                 return
             upstream.settimeout(None)
+            keepalive(upstream)
             client.settimeout(None)
             client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
             rest = head.split(b"\r\n\r\n", 1)[1]
@@ -1391,6 +1404,7 @@ def net_bridge(args):
                     client, _ = server.accept()
                 except OSError:
                     return
+                keepalive(client)
                 threading.Thread(target=forward, args=(client, port), daemon=True).start()
 
         threading.Thread(target=accept, daemon=True).start()
@@ -3360,9 +3374,17 @@ def read_git_changes(project):
     return changes
 
 
+_RELATIVE = {}  # (project, path) -> project_relative: the same paths, at every rebuild
+
+
 def project_relative(project, path):
+    known = _RELATIVE.get((project, path))
+    if known is not None:
+        return known
     full = os.path.normpath(path if os.path.isabs(path) else os.path.join(project, path))
-    return os.path.relpath(full, project) if within(full, project) else full
+    rel = os.path.relpath(full, project) if within(full, project) else full
+    remember(_RELATIVE, (project, path), rel, 20000)
+    return rel
 
 
 _SESSIONS = {}  # path -> (identity, offset, tail, (calls, finished, usage, last)): see read_session
@@ -3410,7 +3432,21 @@ def read_session(path):
                 last = "user"
                 usage["turns"] += 1
                 continue
-            if b'"role":"assistant"' not in raw and b'"role":"toolResult"' not in raw:
+            if b'"role":"assistant"' not in raw:
+                if b'"role":"toolResult"' not in raw:
+                    continue
+                # A tool's result carries what it read (whole files, base64 images): two
+                # fields are read from the raw line, as in session_edits, never all of it.
+                last = "toolResult"
+                found = re.search(rb'"toolCallId":"([^"]+)"', raw)
+                if found:
+                    finished[found.group(1).decode("utf-8", "replace")] = b'"isError":true' in raw
+                if b'"usage":{' in raw:  # tools that run a model themselves: rare, parsed
+                    try:
+                        said = json.loads(raw).get("message") or {}
+                        add_usage(usage, said.get("usage") if isinstance(said, dict) else None)
+                    except (ValueError, AttributeError):
+                        pass
                 continue
             try:
                 entry = json.loads(raw)
@@ -3429,10 +3465,6 @@ def read_session(path):
                         args = block.get("arguments") if isinstance(block.get("arguments"), dict) else {}
                         calls[block.get("id")] = {"tool": block.get("name"), "args": compact_args(args),
                                                   "at": entry.get("timestamp")}
-            elif message.get("role") == "toolResult":
-                last = "toolResult"
-                finished[message.get("toolCallId")] = bool(message.get("isError"))
-                add_usage(usage, message.get("usage"))  # tools that run a model themselves
     remember(_SESSIONS, path, (identity, offset, session_tail(path, offset), (dict(calls), dict(finished), dict(usage), last)), 48)
     return calls, finished, usage, last
 
@@ -3447,12 +3479,26 @@ def compact_args(args):
     return out
 
 
+_EDITS = {}  # path -> (identity, offset, tail, calls, finished): see session_edits
+
+
 def session_edits(session):
     """The writes and edits of a session file with their whole arguments, and which
-    tool calls finished (with an error or not): for api_diff, read once per diff."""
-    calls, finished = {}, {}
+    tool calls finished (with an error or not): for api_diff. As read_session, only
+    what was added since the last diff is read (each click read 200 MB again)."""
+    st = os.stat(session)
+    identity = (st.st_dev, st.st_ino)
+    cached = _EDITS.get(session)
+    if cached and cached[0] == identity and cached[1] <= st.st_size and session_tail(session, cached[1]) == cached[2]:
+        offset, calls, finished = cached[1], dict(cached[3]), dict(cached[4])
+    else:
+        offset, calls, finished = 0, {}, {}
     with open_plain(session, sessions_root()) as handle:
+        handle.seek(offset)
         for raw in handle:
+            if not raw.endswith(b"\n"):
+                break  # a line still being written: read with the next one
+            offset += len(raw)
             if b'"role":"toolResult"' in raw:
                 found = re.search(rb'"toolCallId":"([^"]+)"', raw)
                 if found:
@@ -3469,6 +3515,7 @@ def session_edits(session):
                 if isinstance(block, dict) and block.get("type") == "toolCall" and block.get("name") in ("edit", "write"):
                     args = block.get("arguments") if isinstance(block.get("arguments"), dict) else {}
                     calls[block.get("id")] = {"tool": block.get("name"), "args": args, "at": entry.get("timestamp")}
+    remember(_EDITS, session, (identity, offset, session_tail(session, offset), dict(calls), dict(finished)), 4)
     return calls, finished
 
 
@@ -5390,8 +5437,16 @@ def forge_open(request, timeout):
     return urllib.request.build_opener(KeepToken).open(request, timeout=timeout)
 
 
+# Answers to GET, with their ETag: asked again, the forge says "304 not modified",
+# which GitHub does not count against the token's 5,000 requests an hour. Kept for the
+# watch's life (the team part asks the same pages every five minutes).
+_FORGE_ETAGS = {}
+FORGE_ETAGS_KEPT = 300
+
+
 def forge_request(forge, method, path, body=None):
     """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
+    import hashlib
     import urllib.error
     import urllib.request
     url = forge_api_base(forge["kind"], forge["url"]) + path
@@ -5406,11 +5461,26 @@ def forge_request(forge, method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
     if data is not None:
         headers["Content-Type"] = "application/json"
+    # The token is part of the key: another account may see another answer.
+    key = (url, hashlib.sha256(forge["token"].encode()).hexdigest()) if method == "GET" else None
+    known = _FORGE_ETAGS.get(key) if key else None
+    if known:
+        headers["If-None-Match"] = known[0]
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
         with forge_open(request, FORGE_TIMEOUT) as answer:
             text = answer.read(8 * 1024 * 1024)
+            etag = answer.headers.get("ETag")
+        if key:
+            _FORGE_ETAGS.pop(key, None)
+            if etag and len(text) < 1024 * 1024:
+                _FORGE_ETAGS[key] = (etag, text)
+                while len(_FORGE_ETAGS) > FORGE_ETAGS_KEPT:
+                    _FORGE_ETAGS.pop(next(iter(_FORGE_ETAGS)))
     except urllib.error.HTTPError as exc:
+        if exc.code == 304 and known:
+            text = known[1]
+            return json.loads(text) if text.strip() else {}
         detail = ""
         try:
             payload = json.loads(exc.read(64 * 1024) or b"{}")
@@ -5508,13 +5578,18 @@ def repo_link(home, project):
     return link
 
 
-def forge_repo(forge, repo):
-    """(path in the API, the repository's details) on the forge."""
+def repo_api_path(forge, repo):
+    """The repository's path in the forge's API: GitLab names it by its encoded path,
+    the others by owner/name. No request: knowing the path needs none."""
     if forge["kind"] == "gitlab":
         import urllib.parse
-        path = f"/projects/{urllib.parse.quote(repo, safe='')}"
-    else:
-        path = f"/repos/{repo}"
+        return f"/projects/{urllib.parse.quote(repo, safe='')}"
+    return f"/repos/{repo}"
+
+
+def forge_repo(forge, repo):
+    """(path in the API, the repository's details) on the forge."""
+    path = repo_api_path(forge, repo)
     return path, forge_request(forge, "GET", path)
 
 
@@ -5678,7 +5753,7 @@ def mirror_git(forge, mirror, *args):
 
 def remote_branches(forge, repo):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, repo)
+        api = repo_api_path(forge, repo)
         items = forge_request(forge, "GET", f"{api}/repository/branches?per_page=100")
     else:
         items = forge_request(forge, "GET", f"/repos/{repo}/branches?per_page=100")
@@ -5816,7 +5891,7 @@ def auto_merge_refusal(link, pr, number):
 def list_prs(home, link, state="open"):
     forge = forge_by_id(home, link["forge"])
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         items = forge_request(forge, "GET", f"{api}/merge_requests?state={'opened' if state == 'open' else 'all'}&per_page=50")
     else:
         items = forge_request(forge, "GET", f"/repos/{link['repo']}/pulls?state={state}&per_page=50")
@@ -5826,7 +5901,7 @@ def list_prs(home, link, state="open"):
 def get_pr(home, link, number):
     forge = forge_by_id(home, link["forge"])
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         pr = pr_from(forge, forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}"))
     else:
         pr = pr_from(forge, forge_request(forge, "GET", f"/repos/{link['repo']}/pulls/{int(number)}"))
@@ -5842,7 +5917,7 @@ def open_pr(home, project, link, branch, title, body, base, draft):
     title = " ".join((title or "").split())[:250] or branch
     body = (body or "")[:60000]
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         item = forge_request(forge, "POST", f"{api}/merge_requests",
                              {"source_branch": branch, "target_branch": base, "title": ("Draft: " if draft else "") + title, "description": body})
     else:
@@ -5862,7 +5937,7 @@ def merge_pr(home, project, link, number, method=None, sha=None):
     forge = forge_by_id(home, link["forge"])
     method = method if method in MERGE_METHODS else link.get("merge_method") or "merge"
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}/merge", {"squash": method == "squash", **({"sha": sha} if sha else {})})
     elif forge["kind"] == "github":
         forge_request(forge, "PUT", f"/repos/{link['repo']}/pulls/{int(number)}/merge", {"merge_method": method, **({"sha": sha} if sha else {})})
@@ -6087,7 +6162,7 @@ def gitea_label_ids(forge, repo, names):
 
 def issue_path(forge, link, number=None):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         return f"{api}/issues" + (f"/{int(number)}" if number is not None else "")
     return f"/repos/{link['repo']}/issues" + (f"/{int(number)}" if number is not None else "")
 
@@ -6112,7 +6187,7 @@ def get_task(forge, link, number):
 
 def add_labels(forge, link, number, names, merge_request=False):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         kind = "merge_requests" if merge_request else "issues"
         forge_request(forge, "PUT", f"{api}/{kind}/{int(number)}", {"add_labels": ",".join(names)})
     elif forge["kind"] == "gitea":
@@ -6125,7 +6200,7 @@ def add_labels(forge, link, number, names, merge_request=False):
 def remove_label(forge, link, number, name, merge_request=False):
     try:
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             kind = "merge_requests" if merge_request else "issues"
             forge_request(forge, "PUT", f"{api}/{kind}/{int(number)}", {"remove_labels": name})
         elif forge["kind"] == "gitea":
@@ -6140,7 +6215,7 @@ def remove_label(forge, link, number, name, merge_request=False):
 
 def comment(forge, link, number, body, merge_request=False):
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         kind = "merge_requests" if merge_request else "issues"
         forge_request(forge, "POST", f"{api}/{kind}/{int(number)}/notes", {"body": body})
     else:
@@ -6189,7 +6264,7 @@ def claim_task(home, link, number):
     add_labels(forge, link, number, [DOING_LABEL])
     try:  # assigned when the account may be; the label alone says it is taken
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             forge_request(forge, "PUT", f"{api}/issues/{int(number)}", {"assignee_ids": [gitlab_user_id(forge, login)]})
         else:
             forge_request(forge, "POST" if forge["kind"] == "github" else "PATCH",
@@ -6218,7 +6293,7 @@ def unassign(forge, link, number, login):
             return
         others = [a for a in get_task(forge, link, number).get("assignees") or [] if a != login]
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             forge_request(forge, "PUT", f"{api}/issues/{int(number)}", {"assignee_ids": [gitlab_user_id(forge, a) for a in others] or [0]})
         else:
             forge_request(forge, "PATCH", f"/repos/{link['repo']}/issues/{int(number)}", {"assignees": others})
@@ -6270,7 +6345,7 @@ def pr_diff(home, link, number):
     elif forge["kind"] == "gitea":
         text = forge_text(forge, f"/repos/{link['repo']}/pulls/{int(number)}.diff", "text/plain")
     else:
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         items = forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}/diffs?per_page=100")
         text = "".join(f"--- a/{d.get('old_path')}\n+++ b/{d.get('new_path')}\n{d.get('diff') or ''}"
                        for d in items if isinstance(d, dict)) if isinstance(items, list) else ""
@@ -6283,7 +6358,7 @@ def pr_diff(home, link, number):
 def my_reviews(forge, link, number, login):
     """How many reviews this account posted on the pull request."""
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         notes = forge_request(forge, "GET", f"{api}/merge_requests/{int(number)}/notes?per_page=100")
         return sum(1 for n in notes if isinstance(n, dict) and (n.get("author") or {}).get("username") == login
                    and "review by" in (n.get("body") or "") and "Pi (Pier)" in (n.get("body") or "")) if isinstance(notes, list) else 0
@@ -6313,7 +6388,7 @@ def post_review(home, link, number, verdict, body):
     if forge["kind"] == "gitlab":
         comment(forge, link, number, text, merge_request=True)
         if verdict == "approve":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             forge_request(forge, "POST", f"{api}/merge_requests/{int(number)}/approve", {})
     else:
         event = REVIEW_VERDICTS[verdict][0 if forge["kind"] == "github" else 1]
@@ -6336,7 +6411,7 @@ def request_review(home, link, number, reviewer):
     if done >= REVIEW_ROUNDS:
         raise ApiError(f"{reviewer}'s Pis already reviewed #{number} {done} times: ask the humans now")
     if forge["kind"] == "gitlab":
-        api, _ = forge_repo(forge, link["repo"])
+        api = repo_api_path(forge, link["repo"])
         forge_request(forge, "PUT", f"{api}/merge_requests/{int(number)}", {"reviewer_ids": [gitlab_user_id(forge, reviewer)]})
     else:
         forge_request(forge, "POST", f"/repos/{link['repo']}/pulls/{int(number)}/requested_reviewers", {"reviewers": [reviewer]})
@@ -6420,7 +6495,7 @@ def api_collaborators(home, path):
     forge, login = account_of(home, link)
     try:
         if forge["kind"] == "gitlab":
-            api, _ = forge_repo(forge, link["repo"])
+            api = repo_api_path(forge, link["repo"])
             items = forge_request(forge, "GET", f"{api}/members/all?per_page=100")
             names = [m.get("username") for m in items if isinstance(m, dict)] if isinstance(items, list) else []
         else:
@@ -8746,12 +8821,25 @@ WATCH_PATCHED = {"conversations"}
 
 
 def watch_patch(before, now):
-    """{"order", "changed", "rest"}: the projects in order, those that changed (whole),
-    and the rest of the data. A project not in changed is as it was."""
-    old = {p.get("project"): clean_json(p) for p in before.get("projects") or []}
+    """{"order", "changed", "edited", "rest"}: the projects in order, the new ones
+    (whole), and the rest of the data. A project known before that changed is in
+    "edited": its fields but its conversations, their order, and only the conversations
+    that changed (a working Pi changes one of 300). A project in neither is as it was."""
+    old = {p.get("project"): p for p in before.get("projects") or []}
     projects = now.get("projects") or []
-    return {"order": [p.get("project") for p in projects],
-            "changed": {p.get("project"): p for p in projects if old.get(p.get("project")) != clean_json(p)},
+    changed, edited = {}, {}
+    for project in projects:
+        key = project.get("project")
+        was = old.get(key)
+        if was is None:
+            changed[key] = project
+        elif clean_json(was) != clean_json(project):
+            seen = {s.get("path"): clean_json(s) for s in was.get("sessions") or []}
+            sessions = project.get("sessions") or []
+            edited[key] = {"fields": {k: v for k, v in project.items() if k != "sessions"},
+                           "order": [s.get("path") for s in sessions],
+                           "changed": {s.get("path"): s for s in sessions if seen.get(s.get("path")) != clean_json(s)}}
+    return {"order": [p.get("project") for p in projects], "changed": changed, "edited": edited,
             "rest": {k: v for k, v in now.items() if k != "projects"}}
 
 

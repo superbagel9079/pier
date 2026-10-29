@@ -203,6 +203,43 @@ class Forges(unittest.TestCase):
         self.assertTrue(m.repo_is_public(GITLAB, {"visibility": "internal"}))
         self.assertFalse(m.repo_is_public(GITLAB, {"visibility": "private"}))
 
+    def test_an_unchanged_answer_costs_nothing(self):
+        import io
+        import urllib.error
+        seen = []
+
+        class Answer(io.BytesIO):
+            headers = {"ETag": 'W/"1"'}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake(request, timeout):
+            seen.append(request.get_header("If-none-match"))
+            if seen[-1]:
+                raise urllib.error.HTTPError(request.full_url, 304, "Not Modified", {}, io.BytesIO(b""))
+            return Answer(b'{"n": 1}')
+
+        saved = m.forge_open
+        m.forge_open = fake
+        try:
+            forge = dict(GITHUB, url="https://github.com", token="t")
+            self.assertEqual(m.forge_request(forge, "GET", "/repos/a/b/issues"), {"n": 1})
+            self.assertEqual(m.forge_request(forge, "GET", "/repos/a/b/issues"), {"n": 1}, "a 304: the answer kept")
+            self.assertEqual(seen, [None, 'W/"1"'])
+            m.forge_request(dict(forge, token="other"), "GET", "/repos/a/b/issues")
+            self.assertIsNone(seen[-1], "another token, another answer")
+        finally:
+            m.forge_open = saved
+            m._FORGE_ETAGS.clear()
+
+    def test_gitlab_paths_without_a_request(self):
+        self.assertEqual(m.repo_api_path(GITLAB, "group/sub/repo"), "/projects/group%2Fsub%2Frepo")
+        self.assertEqual(m.repo_api_path(GITHUB, "a/b"), "/repos/a/b")
+
     def test_pi_branches(self):
         for good in ("pi/x", "pi/task-7", "pi/a/b.c"):
             self.assertTrue(m.PI_BRANCH_RE.fullmatch(good), good)
@@ -295,6 +332,25 @@ class Sessions(Home):
         path = self.session(self.assistant(3))
         self.assertEqual(m.read_session(path)[2]["input"], 3)
 
+    def test_a_tool_result_is_not_parsed_whole(self):
+        big = {"type": "message", "message": {"role": "toolResult", "toolCallId": "c1", "isError": True,
+                                              "content": [{"type": "text", "text": '"role":"x" ' * 20000}]}}
+        path = self.session(self.assistant(10, call="c1"), big)
+        _, finished, usage, last = m.read_session(path)
+        self.assertEqual((finished, usage["input"], last), ({"c1": True}, 10, "toolResult"))
+        priced = {"type": "message", "message": {"role": "toolResult", "toolCallId": "c2", "usage": {"input": 7}}}
+        self.session(priced)
+        self.assertEqual(m.read_session(path)[2]["input"], 17, "a tool that ran a model: its usage counts")
+
+    def test_edits_read_as_they_grow(self):
+        path = self.session(self.assistant(1, call="c1"))
+        calls, finished = m.session_edits(path)
+        self.assertEqual((list(calls), finished), (["c1"], {}))
+        self.session({"type": "message", "message": {"role": "toolResult", "toolCallId": "c1", "isError": False}})
+        self.assertEqual(m.session_edits(path)[1], {"c1": False})
+        self.session(self.assistant(1, call="c2"))
+        self.assertEqual(list(m.session_edits(path)[0]), ["c1", "c2"], "the new part only, on top of the old")
+
     def test_first_prompt_beside_a_screenshot(self):
         path = self.session({"type": "message", "message": {"role": "user", "content": [
             {"type": "text", "text": 'fix the "login" bug'}, {"type": "image", "data": "A" * 300000}]}})
@@ -374,7 +430,8 @@ class Watch(Home):
         sent = [l for l in self.lines() if l["kind"] == "conversations"]
         self.assertIn("data", sent[0])
         self.assertTrue(len(sent) > 1 and all("patch" in s for s in sent[1:]))
-        self.assertEqual(list(sent[1]["patch"]["changed"]), ["b"], "only the project that changed")
+        self.assertEqual(list(sent[1]["patch"]["edited"]), ["b"], "only the project that changed")
+        self.assertEqual(sent[1]["patch"]["changed"], {}, "known before: not sent whole")
         self.assertEqual(sent[1]["patch"]["order"], ["a", "b"])
 
     def test_a_failing_part_says_so(self):
@@ -410,8 +467,18 @@ class Watch(Home):
         now = {"projects": [{"project": "b", "x": 2}, {"project": "c", "x": 1}], "truncated": True}
         patch = m.watch_patch(before, now)
         self.assertEqual(patch["order"], ["b", "c"])
-        self.assertEqual(sorted(patch["changed"]), ["b", "c"])
+        self.assertEqual(sorted(patch["changed"]), ["c"])
+        self.assertEqual(patch["edited"]["b"], {"fields": {"project": "b", "x": 2}, "order": [], "changed": {}})
         self.assertEqual(patch["rest"], {"truncated": True})
+
+    def test_a_working_pi_sends_its_conversation_only(self):
+        quiet = {"path": "q", "usage": {"turns": 3}}
+        before = {"projects": [{"project": "a", "running": 1, "sessions": [{"path": "w", "usage": {"turns": 1}}, quiet]}]}
+        now = {"projects": [{"project": "a", "running": 1, "sessions": [{"path": "w", "usage": {"turns": 2}}, quiet]}]}
+        edited = m.watch_patch(before, now)["edited"]["a"]
+        self.assertEqual(edited["order"], ["w", "q"])
+        self.assertEqual(list(edited["changed"]), ["w"])
+        self.assertEqual(edited["fields"], {"project": "a", "running": 1})
 
 
 # --- stores --------------------------------------------------------------------------------
