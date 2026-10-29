@@ -7,7 +7,10 @@ use crate::*;
 /// Lends a local folder to the VM, mounted live in the project's .pi-shared.
 #[tauri::command]
 pub(crate) async fn share_start(app: AppHandle, state: State<'_, AppState>, path: String, writable: bool, target: String) -> Result<Share, String> {
-    let local = PathBuf::from(&path);
+    let local = given_path(&state, &path)?;
+    if writable && !confirmed(&app, &format!("Lend {path} to the VM for writing? Pi will be able to change and delete the files in it, on this computer.")).await {
+        return Err("not shared".into());
+    }
     if !local.is_dir() {
         return Err(format!("{path} is not a folder"));
     }

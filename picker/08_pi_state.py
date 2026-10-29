@@ -99,8 +99,9 @@ def pier_state(slot):
 
 def said_file_ok(file):
     """A path Pi wrote in its state file: a .jsonl in Pi's sessions folder, no control
-    characters (it goes to tmux and to the lists), a regular file when it exists."""
-    if len(file) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in file) or not file.endswith(".jsonl"):
+    characters nor "#" (it goes to tmux, which reads #{...} and #(...) in some places, and
+    to the lists), a regular file when it exists."""
+    if len(file) > 1024 or any(ord(c) < 32 or ord(c) == 127 or c == "#" for c in file) or not file.endswith(".jsonl"):
         return False
     real = os.path.realpath(file)
     if not within(real, os.path.realpath(os.path.join(agent_dir(), "sessions"))):

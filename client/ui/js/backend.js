@@ -22,7 +22,8 @@ function realBackend() {
     copyText: (text) => invoke("copy_text", { text }),
     clipboardText: () => invoke("clipboard_text"),
     saveText: (path, text) => invoke("save_text", { path, text }),
-    pickSavePath: (name) => tauri.dialog.save({ title: "Save the report", defaultPath: name, filters: [{ name: "Text", extensions: ["txt"] }] }),
+    // The dialogs are opened by Rust, which keeps what they give (only those paths are accepted after).
+    pickSavePath: (name) => invoke("pick_save_path", { name }),
     onLogLine: (handler) => listen("log-line", (event) => handler(event.payload)),
     checkpointCreate: (project, label) => invoke("checkpoint_create", { project, label }),
     stopPi: (project, slot) => invoke("stop_pi", { project, slot }),
@@ -104,13 +105,8 @@ function realBackend() {
     takebackDiff: (path, local, rel) => invoke("takeback_diff", { path, local, rel }),
     takebackApply: (path, local, take, remove) => invoke("takeback_apply", { path, local, take, delete: remove }),
     shareList: () => invoke("share_list"),
-    async pickFolder() {
-      return (await tauri.dialog.open({ directory: true, multiple: false, title: "Folder to share with the VM" })) || null;
-    },
-    async pickFiles() {
-      const picked = await tauri.dialog.open({ directory: false, multiple: true, title: "Files to send to Pi" });
-      return picked ? [].concat(picked) : [];
-    },
+    pickFolder: (title) => invoke("pick_folder", { title: title || null }),
+    pickFiles: () => invoke("pick_files"),
     onDragDrop(handler) {
       tauri.webview.getCurrentWebview().onDragDropEvent((event) => {
         const p = event.payload;

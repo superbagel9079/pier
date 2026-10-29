@@ -238,7 +238,7 @@ def forge_text(forge, path, accept):
     else:
         headers["Authorization"] = f"token {forge['token']}"
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=FORGE_TIMEOUT) as answer:
+        with forge_open(urllib.request.Request(url, headers=headers), FORGE_TIMEOUT) as answer:
             return answer.read(400 * 1024).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
         raise ApiError(f"{forge['kind']} refused ({exc.code})")

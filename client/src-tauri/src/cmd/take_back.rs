@@ -33,7 +33,7 @@ pub(crate) async fn hand_off(app: AppHandle, state: State<'_, AppState>, id: u32
 /// new folder next to the original. Nothing on this computer is overwritten.
 #[tauri::command]
 pub(crate) async fn download_copy(app: AppHandle, state: State<'_, AppState>, path: String, local: String) -> Result<String, String> {
-    let original = PathBuf::from(&local);
+    let original = given_path(&state, &local)?; // the share's own folder, never another
     let parent = original.parent().ok_or_else(|| format!("{local} has no parent folder"))?.to_path_buf();
     let name = original.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "copy".into());
     let mut dest = parent.join(format!("{name} (from Pi)"));
@@ -91,7 +91,7 @@ pub(crate) async fn download_copy(app: AppHandle, state: State<'_, AppState>, pa
 #[tauri::command]
 pub(crate) async fn takeback_compare(app: AppHandle, state: State<'_, AppState>, path: String, local: String) -> Result<Value, String> {
     let remote = api(&app, &state, &["copy-manifest", &path], &[]).await?;
-    let root = PathBuf::from(&local);
+    let root = given_path(&state, &local)?;
     let started = Instant::now();
     let (mine, truncated) = tokio::task::spawn_blocking(move || takeback::local_manifest(&root))
         .await
@@ -110,7 +110,7 @@ pub(crate) async fn takeback_compare(app: AppHandle, state: State<'_, AppState>,
 /// One file's difference: this computer's version against the copy's (a unified diff).
 #[tauri::command]
 pub(crate) async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, path: String, local: String, rel: String) -> Result<Value, String> {
-    let root = PathBuf::from(&local);
+    let root = given_path(&state, &local)?;
     let mine = {
         let rel = rel.clone();
         tokio::task::spawn_blocking(move || takeback::read_local(&root, &rel, 1024 * 1024))
@@ -129,7 +129,7 @@ pub(crate) async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, pa
 /// "NAME (before Pi's changes DATE)", next to the original.
 #[tauri::command]
 pub(crate) async fn takeback_apply(app: AppHandle, state: State<'_, AppState>, path: String, local: String, take: Vec<String>, delete: Vec<String>) -> Result<Value, String> {
-    let root = PathBuf::from(&local);
+    let root = given_path(&state, &local)?;
     if !root.is_dir() {
         return Err(format!("{local} is not a folder"));
     }

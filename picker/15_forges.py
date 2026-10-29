@@ -108,6 +108,25 @@ def forge_api_base(kind, url):
     return f"{url}/api/v4" if kind == "gitlab" else f"{url}/api/v1"
 
 
+def forge_open(request, timeout):
+    """urlopen for a forge, whose requests carry the token: a redirection to another
+    host, or from https to http, goes without it (urllib would send it on)."""
+    import urllib.parse
+    import urllib.request
+
+    class KeepToken(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            new = super().redirect_request(req, fp, code, msg, headers, newurl)
+            if new is not None:
+                before, after = urllib.parse.urlsplit(req.full_url), urllib.parse.urlsplit(new.full_url)
+                if (before.scheme, before.netloc.lower()) != (after.scheme, after.netloc.lower()):
+                    for name in ("Authorization", "Private-token"):
+                        new.headers.pop(name, None)
+                        new.unredirected_hdrs.pop(name, None)
+            return new
+    return urllib.request.build_opener(KeepToken).open(request, timeout=timeout)
+
+
 def forge_request(forge, method, path, body=None):
     """A forge's REST API, as JSON. ApiError with the forge's message when it refuses."""
     import urllib.error
@@ -126,7 +145,7 @@ def forge_request(forge, method, path, body=None):
         headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(request, timeout=FORGE_TIMEOUT) as answer:
+        with forge_open(request, FORGE_TIMEOUT) as answer:
             text = answer.read(8 * 1024 * 1024)
     except urllib.error.HTTPError as exc:
         detail = ""
