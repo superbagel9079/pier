@@ -60,7 +60,7 @@ function makeTakeBack(tab) {
       const li = el("li");
       const check = el("input", { type: "checkbox", checked });
       boxes.set(change.rel, { box: check, kind });
-      const label = el("button", { className: "link rel", textContent: visibleText(change.rel), title: `${visibleText(change.rel)}\n${kind === "deleted" ? "Deleted by Pi" : "Show the difference"}` });
+      const label = el("button", { className: "link rel", title: `${visibleText(change.rel)}\n${kind === "deleted" ? "Deleted by Pi" : "Show the difference"}` }, splitPath(change.rel, "rel-path"));
       const sizes = el("span", {
         className: "dim small",
         textContent: kind === "changed" ? `${size(change.size_pc)} → ${size(change.size_vm)}` : size(change.size_pc ?? change.size_vm),

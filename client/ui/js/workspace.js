@@ -118,6 +118,13 @@ const workspace = (() => {
       const tabs = dock.tabs || [];
       const at = tabs.indexOf(tab);
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); show(tab); return; }
+      // The tab's menu by keyboard: the menu key, or Shift+F10.
+      if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+        e.preventDefault();
+        const box = node.getBoundingClientRect();
+        contextMenu(tab, box.left, box.bottom);
+        return;
+      }
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const next = tabs[(at + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
       if (!next) return;
@@ -640,24 +647,50 @@ function focusFollows(tab) {
   });
 }
 
+let menuOpener = null; // what had the focus when the menu opened: it gets it back
+
 function showMenu(anchor, items, at = null) {
   const menu = $("#menu");
   menu.innerHTML = "";
+  menu.setAttribute("role", "menu");
   for (const item of items) {
     if (!item) { menu.append(el("hr")); continue; }
     const [label, action, disabled] = item;
     const b = el("button");
     b.textContent = label;
     b.disabled = Boolean(disabled);
-    b.addEventListener("click", () => { menu.hidden = true; action(); });
+    b.setAttribute("role", "menuitem");
+    b.addEventListener("click", () => { closeMenu(false); action(); });
     menu.append(b);
   }
   const box = at ? { left: at.x, bottom: at.y } : anchor.getBoundingClientRect();
+  menuOpener = document.activeElement;
   menu.hidden = false;
   menu.style.top = `${Math.max(8, Math.min(box.bottom + 2, window.innerHeight - menu.offsetHeight - 8))}px`;
   menu.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.querySelector("button:not(:disabled)")?.focus(); // by keyboard: the arrows go on from here
 }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("#menu").hidden = true; });
+
+function closeMenu(giveBack = true) {
+  const menu = $("#menu");
+  if (menu.hidden) return;
+  menu.hidden = true;
+  if (giveBack && menuOpener && document.contains(menuOpener)) menuOpener.focus?.();
+  menuOpener = null;
+}
+
+// The menu by keyboard: up and down (round), Home and End, Escape closes it.
+$("#menu").addEventListener("keydown", (e) => {
+  const items = [...$("#menu").querySelectorAll("button:not(:disabled)")];
+  const at = items.indexOf(document.activeElement);
+  const go = (i) => { e.preventDefault(); items[(i + items.length) % items.length]?.focus(); };
+  if (e.key === "ArrowDown") go(at + 1);
+  else if (e.key === "ArrowUp") go(at - 1);
+  else if (e.key === "Home") go(0);
+  else if (e.key === "End") go(items.length - 1);
+  else if (e.key === "Tab") { e.preventDefault(); closeMenu(); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 document.addEventListener("pointerdown", (event) => {
-  if (!event.target.closest("#menu, .add, .tab-actions")) $("#menu").hidden = true;
+  if (!event.target.closest("#menu, .add, .tab-actions")) closeMenu(false);
 });
