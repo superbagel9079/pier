@@ -341,6 +341,13 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 .menu button:disabled { color: var(--dim); }
 .menu hr { border: none; border-top: 1px solid var(--strong); margin: var(--s1) 0; }
 
+/* Pi filled the clipboard (OSC 52): stays over the terminal's top right until dismissed. */
+.copy-note {
+  position: absolute; top: 8px; right: 14px; z-index: 5; max-width: min(560px, calc(100% - 28px));
+  display: flex; flex-wrap: wrap; gap: 4px var(--s2); align-items: baseline;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); padding: var(--s1) var(--s2);
+}
+.copy-note > span { overflow-wrap: anywhere; }
 .toast { position: fixed; top: 36px; right: 14px; z-index: 40; max-width: 50vw; background: var(--fg); color: var(--bg); padding: var(--s1) var(--s3); pointer-events: none; }
 
 /* ---------------------------------------------------------------- lists and sections */

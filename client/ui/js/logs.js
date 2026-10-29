@@ -91,7 +91,7 @@ function makeLogs(tab) {
 
   function render() {
     const list = entries[source].filter(shown).slice(-2000).reverse(); // newest first
-    view.innerHTML = "";
+    view.replaceChildren();
     const fragment = document.createDocumentFragment();
     for (const entry of list) fragment.append(row(entry));
     view.append(fragment);

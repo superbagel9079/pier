@@ -72,7 +72,7 @@ const workspace = (() => {
         : dock.collapsed ? "Expand" : "Collapse";
     }
     const bar = $(".tabs", dock.el);
-    bar.innerHTML = "";
+    bar.replaceChildren();
     for (const tab of dock.tabs) bar.append(tabElement(tab, dock));
     // The active tab entirely in view: in a narrow side, the bar scrolls to it.
     bar.children[dock.tabs.indexOf(dock.active)]?.scrollIntoView({ block: "nearest", inline: "nearest" });
@@ -651,7 +651,7 @@ let menuOpener = null; // what had the focus when the menu opened: it gets it ba
 
 function showMenu(anchor, items, at = null) {
   const menu = $("#menu");
-  menu.innerHTML = "";
+  menu.replaceChildren();
   menu.setAttribute("role", "menu");
   for (const item of items) {
     if (!item) { menu.append(el("hr")); continue; }

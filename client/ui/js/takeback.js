@@ -87,11 +87,11 @@ function makeTakeBack(tab) {
     try {
       answer = await backend.takebackDiff(path, local, rel);
     } catch (e) {
-      detail.innerHTML = "";
+      detail.replaceChildren();
       detail.append(el("p", { className: "error", textContent: String(e) }));
       return;
     }
-    detail.innerHTML = "";
+    detail.replaceChildren();
     if (answer.too_big) detail.append(el("p", { className: "dim small", textContent: "Too big to show (over 1 MB)." }));
     else if (answer.binary) detail.append(el("p", { className: "dim small", textContent: "Not text: no difference to show." }));
     else detail.append(diffLines(answer.diff || "", 3000));
@@ -112,7 +112,7 @@ function makeTakeBack(tab) {
   }
 
   function render() {
-    body.innerHTML = "";
+    body.replaceChildren();
     boxes.clear();
     if (!result) return;
     const { changed, added, deleted, same } = result;
@@ -130,12 +130,12 @@ function makeTakeBack(tab) {
 
   async function reload() {
     showError(error, "");
-    body.innerHTML = "";
+    body.replaceChildren();
     body.append(el("p", { className: "dim", textContent: "Comparing (each file's fingerprint, on both sides)…" }));
     try {
       result = await backend.takebackCompare(path, local);
     } catch (e) {
-      body.innerHTML = "";
+      body.replaceChildren();
       showError(error, String(e));
       return;
     }

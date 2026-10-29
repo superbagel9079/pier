@@ -52,6 +52,14 @@ const LAB_LIMITS = [
   ["image", "Default image", "text"],
 ];
 
+/** Before the first connection to a lab host or machine: Pier shows its key in a dialog
+ *  of its own, and it is reached only once the user trusted it. false when they did not. */
+async function keyTrusted(name) {
+  const answer = await backend.hostTrust(name);
+  if (answer.refused) flashStatus(`${name}: key not trusted, nothing sent`);
+  return !answer.refused;
+}
+
 async function fillLabsPrefs() {
   const state = $("#labs-state");
   showError($("#labs-error"), "");
@@ -82,7 +90,7 @@ function renderLabsPrefs() {
   for (const section of document.querySelectorAll(".labs-on")) section.hidden = !s.settings.enabled;
 
   const grid = $("#labs-limits");
-  grid.innerHTML = "";
+  grid.replaceChildren();
   for (const [key, label, type, min, max] of LAB_LIMITS) {
     let input;
     if (type === "select") {
@@ -101,12 +109,13 @@ function renderLabsPrefs() {
   }
 
   const list = $("#labs-machines");
-  list.innerHTML = "";
+  list.replaceChildren();
   for (const m of s.machines) {
     const test = el("button", { className: "link", textContent: "test", title: "Connect and ask its system's name" });
     test.addEventListener("click", async () => {
       test.disabled = true;
       try {
+        if (!(await keyTrusted(m.name))) return;
         const answer = await backend.machineTest(m.name);
         flashStatus(`${m.name}: ${answer.answer}`);
       } catch (e) { showError($("#labs-error"), `${m.name}: ${e}`); } finally { test.disabled = false; }
@@ -141,14 +150,18 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
 /** Settings > Labs > Lab hosts: where labs are made, whether Incus answers there. */
 function renderLabHosts(s) {
   const list = $("#labs-hosts");
-  list.innerHTML = "";
+  list.replaceChildren();
   const hosts = s.hosts || [];
   const link = linkButton;
   for (const h of hosts) {
     const state = h.incus ? (h.kvm ? "ready: containers and virtual machines" : "ready: containers (virtual machines need /dev/kvm there)") : `not ready: ${h.why}`;
     const actions = [
       link("test", "Ask its Incus", async () => {
-        try { const r = await backend.hostTest(h.name); flashStatus(`${h.name}: ${r.answer}`); } catch (e) { showError($("#labs-error"), `${h.name}: ${e}`); }
+        try {
+          if (h.kind === "ssh" && !(await keyTrusted(h.name))) return;
+          const r = await backend.hostTest(h.name);
+          flashStatus(`${h.name}: ${r.answer}`);
+        } catch (e) { showError($("#labs-error"), `${h.name}: ${e}`); }
         fillLabsPrefs();
       }),
       h.default ? null : link("make default", "New labs go there when none is named", () => saveLabsSettings({ default_host: h.name })),
@@ -193,7 +206,7 @@ function labHostEdit(h) {
 /** Settings > Labs > Networks: those a lab may be plugged into on each host, what each is for. */
 function renderLabNetworks(s) {
   const list = $("#labs-networks");
-  list.innerHTML = "";
+  list.replaceChildren();
   const all = (s.hosts || []).flatMap((h) => h.networks.map((n) => ({ ...n, host: h.name })));
   const several = (s.hosts || []).length > 1;
   for (const n of all) {
@@ -325,7 +338,7 @@ function makeLabs(tab) {
   tab.pane.append(el("div", { className: "pane-labs" }, bar, error, waiting, body));
   function renderWaiting(message) {
     const asks = (message?.data?.approvals || []).filter((a) => a.kind === "lab");
-    waiting.innerHTML = "";
+    waiting.replaceChildren();
     if (!asks.length) return;
     waiting.append(el("h2", { textContent: "Waiting for you" }));
     const list = el("ul", { className: "resource-items" });
@@ -355,7 +368,7 @@ function makeLabs(tab) {
     // the default ones ticked.
     const showHost = () => {
       const h = readyHosts.find((x) => x.name === hostPick.value);
-      kind.innerHTML = "";
+      kind.replaceChildren();
       kind.add(new Option("container (seconds to make)", ""));
       if (h?.kvm) kind.add(new Option("virtual machine (a minute or two)", "vm"));
       boxes = networkBoxes(h?.networks || []);
@@ -427,7 +440,7 @@ function makeLabs(tab) {
     showError(error, "");
     const s = message.data;
     labsStatus = s;
-    body.innerHTML = "";
+    body.replaceChildren();
     bar.hidden = !s.settings.enabled || !(s.hosts || []).some((h) => h.incus);
     if (!s.settings.enabled) {
       body.append(el("p", { className: "dim small", textContent: "Labs are off. They let Pi make disposable machines where it may do anything (install packages, run services, Docker) and use your machines over SSH, without changing its own sandbox." }));

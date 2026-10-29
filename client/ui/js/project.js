@@ -93,7 +93,7 @@ function makeProject(tab) {
     const pis = activity?.pis || [];
     whichPi.hidden = pis.length < 2;
     if (pis.length < 2) return;
-    whichPi.innerHTML = "";
+    whichPi.replaceChildren();
     whichPi.add(new Option("the Pi used last", ""));
     for (const pi of pis) whichPi.add(new Option(`Pi #${pi.n}${pi.working ? " · working" : ""}`, pi.file || ""));
     whichPi.value = chosenFile && pis.some((pi) => pi.file === chosenFile) ? chosenFile : "";
@@ -107,7 +107,7 @@ function makeProject(tab) {
 
   function renderAgent() {
     const agent = $(".agent", tab.pane);
-    agent.innerHTML = "";
+    agent.replaceChildren();
     if (!activity?.session) { agent.textContent = "no session yet"; return; }
     const dot = el("span", { textContent: activity.working ? "●" : "○" });
     if (activity.working) dot.className = "live-dot";
@@ -135,7 +135,7 @@ function makeProject(tab) {
   }
 
   function drawActivity() {
-    activityView.innerHTML = "";
+    activityView.replaceChildren();
     if (!activity) return;
     const files = Object.entries(activity.files);
     for (const [state, spec] of Object.entries(STATES)) {
@@ -205,7 +205,7 @@ function makeProject(tab) {
   // --- files view ---
 
   async function loadTree() {
-    tree.innerHTML = "";
+    tree.replaceChildren();
     if (base) await fill(tree, base);
   }
 
@@ -219,7 +219,7 @@ function makeProject(tab) {
       return;
     }
     if (asked !== base) return; // another project is shown now
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const entry of listing.entries) {
       if (entry.hidden && !showHidden.checked) continue;
       list.append(node(entry));
@@ -315,7 +315,7 @@ function makeProject(tab) {
   /** The refresh link: asked now, not waiting for the watch. */
   async function loadPoints() {
     if (!base) {
-      points.innerHTML = "";
+      points.replaceChildren();
       return;
     }
     const asked = base;
@@ -344,7 +344,7 @@ function makeProject(tab) {
   }
 
   function renderPoints() {
-    points.innerHTML = "";
+    points.replaceChildren();
     const list = pointsData?.points || [];
     if (!list.length) {
       points.append(el("li", { className: "dim", textContent: "No restore point yet: one is saved when Pi starts here." }));
@@ -377,7 +377,7 @@ function makeProject(tab) {
     const body = el("div", { className: "point-body" });
     body.append(el("span", { className: "dim small", textContent: "looking at what changed since…" }));
     backend.api(["checkpoint-diff", base, point.id]).then((diff) => {
-      body.innerHTML = "";
+      body.replaceChildren();
       if (!diff.changes.length) {
         body.append(el("span", { className: "dim small", textContent: "Nothing changed since: the project is as it was then." }));
         return;
@@ -408,7 +408,7 @@ function makeProject(tab) {
       all.addEventListener("click", () => restore(point, []));
       body.append(el("span", { className: "dim small", textContent: `${diff.total} file${diff.total > 1 ? "s" : ""} differ from then${total}:` }), list, all);
     }).catch((e) => {
-      body.innerHTML = "";
+      body.replaceChildren();
       body.append(el("span", { className: "error", textContent: String(e) }));
       uiLog("warn", "shown-error", { where: "project.restore", msg: String(e) });
     });
@@ -494,11 +494,11 @@ function makeProject(tab) {
     chosenFile = null;
     $(".root", tab.pane).textContent = target ? target.label : "no Pi running: start one from the picker";
     activity = null;
-    activityView.innerHTML = "";
-    tree.innerHTML = "";
+    activityView.replaceChildren();
+    tree.replaceChildren();
     pointsData = null;
     openPoint = null;
-    points.innerHTML = "";
+    points.replaceChildren();
     restoreNote.hidden = true;
     renderAgent();
     renderPis();

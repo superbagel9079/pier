@@ -34,12 +34,35 @@ async function takeHandoff(project, branch) {
   return taken;
 }
 
+/** Who pushed a handoff, as the forge says (its commit's author), beside the name the
+ *  branch gives itself. */
+function pushedByText(h) {
+  const by = h.pushed_by?.login;
+  if (!by) return "the forge does not say who pushed it";
+  const same = h.from && by.toLowerCase() === h.from.toLowerCase();
+  return `pushed by ${visibleText(by)} according to the forge${h.pushed_by.signed ? ", signed" : ", not signed"}${h.from && !same ? ` (it says it is from ${visibleText(h.from)})` : ""}`;
+}
+
 /** What a colleague's handoff says about itself, as Pier shows it: their name and note
  *  come from the branch, which anyone who may push to the repository can write. */
 const handoffSaid = (taken) => [
-  `${visibleText(taken.from || "Their")} conversation is yours now${taken.branch ? `, with the branch ${taken.branch}` : ""}.`,
+  `${visibleText(taken.from || "Their")} conversation is yours now${taken.branch ? `, with the branch ${taken.branch}` : ""}; ${pushedByText(taken)}.`,
   taken.note ? `Their note (from the branch, not verified): ${visibleText(taken.note)}` : "",
 ].filter(Boolean).join(" ");
+
+/** Before taking a handoff: what it holds, and from whom, asked to the user. */
+async function handoffAsk(project, branch) {
+  const h = await backend.handoffPeek(project, branch);
+  if (h.too_big) throw new Error("that conversation is over 30 MB: it cannot be taken");
+  const lines = [
+    `A conversation from ${visibleText(h.from || "a colleague")}: ${pushedByText(h)}.`,
+    `${h.turns} message${h.turns === 1 ? "" : "s"} of theirs${h.prompt ? `, starting with “${visibleText(h.prompt)}”` : ""}.`,
+    h.branch ? `Their work is on the branch ${h.branch}.` : "",
+    h.note ? `Their note (not verified): ${visibleText(h.note)}` : "",
+    "Taken, it becomes one of your conversations here, and Pi reads all of it as said to it.",
+  ].filter(Boolean);
+  return ask(`${lines.join("\n\n")}\n\nTake it over?`);
+}
 
 function makeTeamManager(box, currentProject) {
   const error = el("p", { className: "error", hidden: true });
@@ -73,7 +96,7 @@ function makeTeamManager(box, currentProject) {
   });
 
   function render() {
-    body.innerHTML = "";
+    body.replaceChildren();
     bar.hidden = !data?.link;
     if (!data) return;
     if (!data.link) {
@@ -93,6 +116,7 @@ function makeTeamManager(box, currentProject) {
           ul.append(line(`A conversation from ${w.from || "a colleague"}`, w.branch, "",
             action("take it over", "It joins your conversations here and opens in a Pi", async () => {
               try {
+                if (!(await handoffAsk(project, w.branch))) return;
                 const taken = await takeHandoff(project, w.branch);
                 say(handoffSaid(taken));
                 load();

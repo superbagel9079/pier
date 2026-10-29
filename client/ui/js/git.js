@@ -53,7 +53,7 @@ function makeGitManager(box, currentProject) {
   const line = itemLine;
 
   function render() {
-    body.innerHTML = "";
+    body.replaceChildren();
     if (!data) return;
     bar.hidden = !data.link;
     // What Pi asks, first: it waits for an answer.

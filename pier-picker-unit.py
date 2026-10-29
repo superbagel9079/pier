@@ -664,6 +664,21 @@ class Labs(Home):
     def test_the_key_allows_a_session_only(self):
         self.assertEqual(m.authorized_line("ssh-ed25519 AAAA pier-labs"), "restrict,pty ssh-ed25519 AAAA pier-labs")
 
+    def test_only_the_confirmed_key_is_trusted(self):
+        m.save_labs(self.home, {"machines": {"box": {"host": "10.0.0.9", "port": 22, "user": "u", "policy": "ask"}}})
+        real = m.scanned_keys
+        m.scanned_keys = lambda machine: [("SHA256:good", "10.0.0.9 ssh-ed25519 AAAA"), ("SHA256:rsa", "10.0.0.9 ssh-rsa BBBB")]
+        try:
+            with self.assertRaises(m.ApiError):
+                m.api_host_trust(self.home, "box", "SHA256:other")
+            self.assertFalse(os.path.exists(os.path.join(m.labs_dir(), "known_hosts")), "nothing trusted")
+            m.api_host_trust(self.home, "box", "SHA256:good")
+            with open(os.path.join(m.labs_dir(), "known_hosts"), encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "10.0.0.9 ssh-ed25519 AAAA\n", "that key only")
+        finally:
+            m.scanned_keys = real
+        self.assertIn("StrictHostKeyChecking=yes", m.ssh_argv({"host": "h", "user": "u"}))
+
     def test_root_is_refused(self):
         with self.assertRaises(m.ApiError) as said:
             m.api_host_add(self.home, "box", "10.0.0.2", "22", "root", "")

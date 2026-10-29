@@ -67,6 +67,28 @@ pub(crate) async fn host_test(app: AppHandle, state: State<'_, AppState>, name: 
     api(&app, &state, &["host-test", &name], &[]).await
 }
 
+/// Before the first connection to a lab host or machine: the key it shows, confirmed by
+/// the user in a dialog of Pier's own (the page cannot answer it), then trusted. Already
+/// trusted: nothing asked. {"known": fingerprint} or {"refused": true}.
+#[tauri::command]
+pub(crate) async fn host_trust(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Value, String> {
+    let key = api(&app, &state, &["host-key", &name], &[]).await?;
+    if key.get("known").is_some() {
+        return Ok(key);
+    }
+    let fingerprint = key.get("fingerprint").and_then(Value::as_str).ok_or("the host showed no key")?.to_string();
+    let host = key.get("host").and_then(Value::as_str).unwrap_or(&name);
+    let port = key.get("port").and_then(Value::as_u64).unwrap_or(22);
+    let text = format!(
+        "First connection to {host}:{port} ({name}). Its key's fingerprint is:\n\n{fingerprint}\n\n\
+         Compare it with the host's own (on it: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Trust this key?"
+    );
+    if !confirmed(&app, &text).await {
+        return Ok(json!({ "refused": true }));
+    }
+    api(&app, &state, &["host-trust", &name, &fingerprint], &[]).await
+}
+
 /// What a network is for, in the user's words: Pi reads it in lab_list.
 #[tauri::command]
 pub(crate) async fn lab_network_describe(app: AppHandle, state: State<'_, AppState>, name: String, description: String) -> Result<Value, String> {

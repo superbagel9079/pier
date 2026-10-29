@@ -495,10 +495,9 @@ def api_handoff_give(home, path, file, to, note):
     return {"given": name, "to": to, "branch": pushed}
 
 
-def api_handoff_take(home, path, name):
-    """A colleague's conversation taken: the session copied among this project's
-    conversations (it starts where theirs stopped), their branch fetched, the handoff
-    branch deleted."""
+def handoff_fetched(home, path, name):
+    """A handoff branch fetched into the mirror: (project, link, forge, mirror, url, card,
+    size of its session)."""
     project = resolve_inside(home, path)
     link = repo_link(home, project)
     if not link:
@@ -513,12 +512,69 @@ def api_handoff_take(home, path, name):
         card = json.loads(mirror_plumb(mirror, ["show", f"refs/heads/{name}:handoff.json"])[:64 * 1024] or b"{}")
     except ValueError:
         card = {}
+    if not isinstance(card, dict):
+        card = {}
     try:
         size = int(mirror_plumb(mirror, ["cat-file", "-s", f"refs/heads/{name}:session.jsonl"]).strip() or 0)
     except ValueError:
         size = HANDOFF_MAX + 1
+    return project, link, forge, mirror, url, card, size
+
+
+def handoff_author(forge, link, mirror, name):
+    """Who pushed the handoff, as the forge sees its commit (not what handoff.json says,
+    which anyone who may push writes): {"login", "signed"}. Nothing when it cannot say."""
+    try:
+        sha = mirror_plumb(mirror, ["rev-parse", f"refs/heads/{name}"]).decode().strip()
+        if forge["kind"] == "gitlab":
+            commit = forge_request(forge, "GET", f"{repo_api_path(forge, link['repo'])}/repository/commits/{sha}")
+            return {"login": commit.get("author_name") or commit.get("author_email"), "signed": False}
+        path = f"/repos/{link['repo']}/commits/{sha}" if forge["kind"] == "github" else f"/repos/{link['repo']}/git/commits/{sha}"
+        commit = forge_request(forge, "GET", path)
+        author = commit.get("author") if isinstance(commit.get("author"), dict) else {}
+        verification = (commit.get("commit") or {}).get("verification") or {}
+        return {"login": author.get("login"), "signed": bool(verification.get("verified"))}
+    except (ApiError, AttributeError, UnicodeDecodeError) as exc:
+        log("debug", "team.handoff-author-unknown", err=str(exc))
+        return {"login": None, "signed": False}
+
+
+def handoff_said(card):
+    """from and note, as whoever pushed the branch wrote them: Pier shows them as such."""
+    return {"from": card.get("from") if isinstance(card.get("from"), str) else None,
+            "note": str(card.get("note") or "")[:2000]}
+
+
+def api_handoff_peek(home, path, name):
+    """What a handoff holds, before taking it: who it says it is from, who the forge says
+    pushed it, its note, how long the conversation is and what it started with. Nothing
+    is copied or deleted."""
+    _, link, forge, mirror, _, card, size = handoff_fetched(home, path, name)
+    turns, prompt = 0, ""
+    if size <= HANDOFF_MAX:
+        for raw in mirror_plumb(mirror, ["show", f"refs/heads/{name}:session.jsonl"]).split(b"\n"):
+            if b'"role":"user"' not in raw:
+                continue
+            turns += 1
+            if not prompt:
+                found = re.search(rb'"text":"((?:[^"\\]|\\.){0,2000})', raw) or re.search(rb'"content":"((?:[^"\\]|\\.){0,2000})', raw)
+                try:
+                    prompt = json.loads(b'"' + found.group(1) + b'"').strip()[:300] if found else ""
+                except ValueError:
+                    prompt = ""
+    branch = card.get("branch") if isinstance(card.get("branch"), str) and PI_BRANCH_RE.fullmatch(card.get("branch") or "") else None
+    return {**handoff_said(card), "branch": branch, "bytes": size, "too_big": size > HANDOFF_MAX,
+            "turns": turns, "prompt": prompt, "pushed_by": handoff_author(forge, link, mirror, name)}
+
+
+def api_handoff_take(home, path, name):
+    """A colleague's conversation taken: the session copied among this project's
+    conversations (it starts where theirs stopped), their branch fetched, the handoff
+    branch deleted."""
+    project, link, forge, mirror, url, card, size = handoff_fetched(home, path, name)
     if size > HANDOFF_MAX:
         raise ApiError("that conversation is over 30 MB: not taken")
+    pushed_by = handoff_author(forge, link, mirror, name)
     data = mirror_plumb(mirror, ["show", f"refs/heads/{name}:session.jsonl"])
     lines = data.split(b"\n", 1)
     try:  # the conversation now runs here: its header says so
@@ -541,10 +597,8 @@ def api_handoff_take(home, path, name):
         mirror_plumb(mirror, ["update-ref", "-d", f"refs/heads/{name}"])
     except ApiError as exc:
         log("warn", "team.handoff-delete-failed", err=str(exc))
-    log("info", "team.handoff-taken", repo=link["repo"], sender=card.get("from"), branch=branch)
-    # from and note are what whoever pushed the branch wrote: Pier shows them as such.
-    return {"session": target, "from": card.get("from"), "branch": branch, "note": str(card.get("note") or "")[:2000],
-            "verified": False}
+    log("info", "team.handoff-taken", repo=link["repo"], sender=card.get("from"), pushed_by=pushed_by.get("login"), branch=branch)
+    return {"session": target, **handoff_said(card), "branch": branch, "pushed_by": pushed_by, "verified": False}
 
 
 # What Pier asks a Pi it starts for the team: written here, from fixed words and a number,

@@ -25,6 +25,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
+use zeroize::Zeroizing;
 
 use serde_json::{json, Value};
 use tauri::ipc::{Channel as Output, InvokeResponseBody};
@@ -60,8 +61,8 @@ const POLLED: &[&str] = &["projects", "ls", "shares", "log", "checkpoints"];
 
 #[derive(Clone)]
 struct Passwords {
-    target: String,
-    bastion: Option<String>,
+    target: Zeroizing<String>,
+    bastion: Option<Zeroizing<String>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -484,7 +485,7 @@ async fn connect(
     bastion_password: Option<String>,
 ) -> Result<Value, String> {
     let settings = settings(&state)?;
-    let passwords = Passwords { target: password, bastion: bastion_password };
+    let passwords = Passwords { target: Zeroizing::new(password), bastion: bastion_password.map(Zeroizing::new) };
     let started = Instant::now();
     log_info!("ssh.login", host = format!("{}:{}", settings.host, settings.port), user = settings.user,
         bastion = settings.bastion.as_ref().map_or("none".into(), |b| format!("{}:{}", b.host, b.port)));
@@ -1036,10 +1037,12 @@ pub fn run() {
             host_local,
             host_remove,
             host_test,
+            host_trust,
             machine_remove,
             machine_test,
             handoff_give,
             handoff_take,
+            handoff_peek,
             pr_merge,
             update_check,
             update_install,

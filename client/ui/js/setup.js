@@ -83,7 +83,7 @@ function makeSetup(tab) {
     const key = JSON.stringify(options.map((p) => [p.path, p.label, Boolean(p.running)]));
     if (key !== shownProjects) {
       shownProjects = key;
-      select.innerHTML = "";
+      select.replaceChildren();
       for (const p of options) select.add(new Option(`${p.running ? "[pi] " : ""}${p.label}`, p.path));
     }
     if (project() && select.value !== project()) select.value = project();
@@ -213,7 +213,7 @@ function makeSetup(tab) {
         saved = info.text;
         owner = data.project;
         update();
-        historyList.innerHTML = "";
+        historyList.replaceChildren();
         for (const version of info.history) {
           const li = el("li");
           li.append(
@@ -275,8 +275,8 @@ function makeSetup(tab) {
   function renderResources() {
     const list = $$(".resources");
     const advanced = $$(".advanced-list");
-    list.innerHTML = "";
-    advanced.innerHTML = "";
+    list.replaceChildren();
+    advanced.replaceChildren();
     const r = data.resources;
     if (!r) return;
     const row = (kind, scope, name, detail, title, action) => el("li", { title: title || "" },
@@ -331,7 +331,7 @@ function makeSetup(tab) {
 
   function renderStartup() {
     const list = $$(".startup");
-    list.innerHTML = "";
+    list.replaceChildren();
     for (const file of data.startup) {
       const li = el("li");
       li.append(

@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.41"
+VERSION = "4.42"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -6587,10 +6587,9 @@ def api_handoff_give(home, path, file, to, note):
     return {"given": name, "to": to, "branch": pushed}
 
 
-def api_handoff_take(home, path, name):
-    """A colleague's conversation taken: the session copied among this project's
-    conversations (it starts where theirs stopped), their branch fetched, the handoff
-    branch deleted."""
+def handoff_fetched(home, path, name):
+    """A handoff branch fetched into the mirror: (project, link, forge, mirror, url, card,
+    size of its session)."""
     project = resolve_inside(home, path)
     link = repo_link(home, project)
     if not link:
@@ -6605,12 +6604,69 @@ def api_handoff_take(home, path, name):
         card = json.loads(mirror_plumb(mirror, ["show", f"refs/heads/{name}:handoff.json"])[:64 * 1024] or b"{}")
     except ValueError:
         card = {}
+    if not isinstance(card, dict):
+        card = {}
     try:
         size = int(mirror_plumb(mirror, ["cat-file", "-s", f"refs/heads/{name}:session.jsonl"]).strip() or 0)
     except ValueError:
         size = HANDOFF_MAX + 1
+    return project, link, forge, mirror, url, card, size
+
+
+def handoff_author(forge, link, mirror, name):
+    """Who pushed the handoff, as the forge sees its commit (not what handoff.json says,
+    which anyone who may push writes): {"login", "signed"}. Nothing when it cannot say."""
+    try:
+        sha = mirror_plumb(mirror, ["rev-parse", f"refs/heads/{name}"]).decode().strip()
+        if forge["kind"] == "gitlab":
+            commit = forge_request(forge, "GET", f"{repo_api_path(forge, link['repo'])}/repository/commits/{sha}")
+            return {"login": commit.get("author_name") or commit.get("author_email"), "signed": False}
+        path = f"/repos/{link['repo']}/commits/{sha}" if forge["kind"] == "github" else f"/repos/{link['repo']}/git/commits/{sha}"
+        commit = forge_request(forge, "GET", path)
+        author = commit.get("author") if isinstance(commit.get("author"), dict) else {}
+        verification = (commit.get("commit") or {}).get("verification") or {}
+        return {"login": author.get("login"), "signed": bool(verification.get("verified"))}
+    except (ApiError, AttributeError, UnicodeDecodeError) as exc:
+        log("debug", "team.handoff-author-unknown", err=str(exc))
+        return {"login": None, "signed": False}
+
+
+def handoff_said(card):
+    """from and note, as whoever pushed the branch wrote them: Pier shows them as such."""
+    return {"from": card.get("from") if isinstance(card.get("from"), str) else None,
+            "note": str(card.get("note") or "")[:2000]}
+
+
+def api_handoff_peek(home, path, name):
+    """What a handoff holds, before taking it: who it says it is from, who the forge says
+    pushed it, its note, how long the conversation is and what it started with. Nothing
+    is copied or deleted."""
+    _, link, forge, mirror, _, card, size = handoff_fetched(home, path, name)
+    turns, prompt = 0, ""
+    if size <= HANDOFF_MAX:
+        for raw in mirror_plumb(mirror, ["show", f"refs/heads/{name}:session.jsonl"]).split(b"\n"):
+            if b'"role":"user"' not in raw:
+                continue
+            turns += 1
+            if not prompt:
+                found = re.search(rb'"text":"((?:[^"\\]|\\.){0,2000})', raw) or re.search(rb'"content":"((?:[^"\\]|\\.){0,2000})', raw)
+                try:
+                    prompt = json.loads(b'"' + found.group(1) + b'"').strip()[:300] if found else ""
+                except ValueError:
+                    prompt = ""
+    branch = card.get("branch") if isinstance(card.get("branch"), str) and PI_BRANCH_RE.fullmatch(card.get("branch") or "") else None
+    return {**handoff_said(card), "branch": branch, "bytes": size, "too_big": size > HANDOFF_MAX,
+            "turns": turns, "prompt": prompt, "pushed_by": handoff_author(forge, link, mirror, name)}
+
+
+def api_handoff_take(home, path, name):
+    """A colleague's conversation taken: the session copied among this project's
+    conversations (it starts where theirs stopped), their branch fetched, the handoff
+    branch deleted."""
+    project, link, forge, mirror, url, card, size = handoff_fetched(home, path, name)
     if size > HANDOFF_MAX:
         raise ApiError("that conversation is over 30 MB: not taken")
+    pushed_by = handoff_author(forge, link, mirror, name)
     data = mirror_plumb(mirror, ["show", f"refs/heads/{name}:session.jsonl"])
     lines = data.split(b"\n", 1)
     try:  # the conversation now runs here: its header says so
@@ -6633,10 +6689,8 @@ def api_handoff_take(home, path, name):
         mirror_plumb(mirror, ["update-ref", "-d", f"refs/heads/{name}"])
     except ApiError as exc:
         log("warn", "team.handoff-delete-failed", err=str(exc))
-    log("info", "team.handoff-taken", repo=link["repo"], sender=card.get("from"), branch=branch)
-    # from and note are what whoever pushed the branch wrote: Pier shows them as such.
-    return {"session": target, "from": card.get("from"), "branch": branch, "note": str(card.get("note") or "")[:2000],
-            "verified": False}
+    log("info", "team.handoff-taken", repo=link["repo"], sender=card.get("from"), pushed_by=pushed_by.get("login"), branch=branch)
+    return {"session": target, **handoff_said(card), "branch": branch, "pushed_by": pushed_by, "verified": False}
 
 
 # What Pier asks a Pi it starts for the team: written here, from fixed words and a number,
@@ -6780,6 +6834,8 @@ def incus_state(at=None, timeout=20):
     try:
         info = json.loads(incus("query", "/1.0", timeout=timeout, at=at) or b"{}")
     except (ApiError, ValueError) as exc:
+        if "Host key verification failed" in str(exc):
+            return False, "its SSH key is not trusted yet: test it in Settings > Labs, Pier shows the key to confirm", False
         return False, f"Incus does not answer ({str(exc)[:200]}): installed, and the user in the incus group?", False
     drivers = str((info.get("environment") or {}).get("driver") or "")
     kvm = "qemu" in drivers and (not local or os.path.exists("/dev/kvm"))
@@ -6915,6 +6971,72 @@ def host_fingerprint(machine):
     return match.group(0).decode() if match else None
 
 
+def ssh_endpoint(home, name):
+    """The SSH host or machine of that name: its record (host, port, user)."""
+    data = load_labs(home)
+    record = data["machines"].get(name) or data["hosts"].get(name)
+    if not isinstance(record, dict) or record.get("kind") == "local" or not record.get("host"):
+        raise ApiError(f"no SSH lab host or machine named {name}")
+    return record
+
+
+def scanned_keys(machine):
+    """[(fingerprint, known_hosts line)]: the keys the host shows now (ssh-keyscan),
+    nothing trusted yet."""
+    port = int(machine.get("port") or 22)
+    try:
+        scan = subprocess.run(["ssh-keyscan", "-T", "10", "-p", str(port), "-t", "ed25519,ecdsa,rsa", machine["host"]],
+                              capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ApiError(f"{machine['host']} did not show its key ({exc})")
+    out = []
+    for line in scan.stdout.decode("utf-8", "replace").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        try:
+            said = subprocess.run(["ssh-keygen", "-l", "-E", "sha256", "-f", "-"], input=line.encode(),
+                                  capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        match = re.search(rb"SHA256:[A-Za-z0-9+/=]+", said.stdout)
+        if match:
+            out.append((match.group(0).decode(), line))
+    if not out:
+        raise ApiError(f"{machine['host']}:{port} did not show an SSH key: is it reachable, and is sshd running?")
+    # The strongest first: what Pier shows, and what the user compares.
+    order = {"ssh-ed25519": 0, "ecdsa": 1}
+    out.sort(key=lambda found: next((v for k, v in order.items() if k in found[1]), 2))
+    return out
+
+
+def api_host_key(home, name):
+    """The key a lab host or machine shows, for the user to confirm in Pier before the
+    first connection: {"known": fingerprint} once trusted, else {"fingerprint": …}."""
+    machine = ssh_endpoint(home, name)
+    known = host_fingerprint(machine)
+    if known:
+        return {"name": name, "known": known}
+    return {"name": name, "host": machine["host"], "port": int(machine.get("port") or 22),
+            "fingerprint": scanned_keys(machine)[0][0]}
+
+
+def api_host_trust(home, name, fingerprint):
+    """The user confirmed this fingerprint in Pier: the host's keys go into known_hosts,
+    if it still shows that one (else nothing is trusted)."""
+    machine = ssh_endpoint(home, name)
+    keys = scanned_keys(machine)
+    if fingerprint not in [found for found, _ in keys]:
+        raise ApiError("the host now shows another key than the one confirmed: nothing trusted")
+    port = int(machine.get("port") or 22)
+    with file_lock(os.path.join(labs_dir(), "known_hosts.lock")):
+        with open(os.path.join(labs_dir(), "known_hosts"), "a", encoding="utf-8") as handle:
+            for found, line in keys:
+                if found == fingerprint:
+                    handle.write(line.rstrip("\n") + "\n")
+    log("info", "lab.host-trusted", name=name, host=machine["host"], port=port, fingerprint=fingerprint)
+    return {"name": name, "known": fingerprint}
+
+
 def ssh_control_dir():
     """Where the SSH connections to lab hosts and machines stay open a little (only this
     account may enter)."""
@@ -6929,7 +7051,8 @@ def ssh_argv(machine, command=None, tty=False):
     # each time over a new connection (and a line in its auth log) otherwise.
     argv = ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
             "-o", "ControlMaster=auto", "-o", f"ControlPath={os.path.join(ssh_control_dir(), '%C')}", "-o", "ControlPersist=120",
-            "-o", f"UserKnownHostsFile={os.path.join(labs_dir(), 'known_hosts')}", "-o", "StrictHostKeyChecking=accept-new",
+            # Only keys the user confirmed in Pier (host-trust): a first contact is never taken on trust.
+            "-o", f"UserKnownHostsFile={os.path.join(labs_dir(), 'known_hosts')}", "-o", "StrictHostKeyChecking=yes",
             "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-p", str(int(machine.get("port") or 22))]
     if tty:
         argv.append("-t")
@@ -8498,12 +8621,15 @@ API_COMMANDS = {
     "host-local": lambda home, config, a: api_host_local(home, a[0], read_stdin_text()),
     "host-remove": lambda home, config, a: api_host_remove(home, a[0]),
     "host-test": lambda home, config, a: api_host_test(home, a[0]),
+    "host-key": lambda home, config, a: api_host_key(home, a[0]),
+    "host-trust": lambda home, config, a: api_host_trust(home, a[0], a[1]),
     "machine-remove": lambda home, config, a: api_machine_remove(home, a[0]),
     "machine-test": lambda home, config, a: api_machine_test(home, a[0]),
     "collaborators": lambda home, config, a: api_collaborators(home, a[0]),
     "task-create": lambda home, config, a: api_task_create(home, a[0], a[1], read_stdin_text()),
     "handoff-give": lambda home, config, a: api_handoff_give(home, a[0], a[1], a[2], read_stdin_text()),
     "handoff-take": lambda home, config, a: api_handoff_take(home, a[0], a[1]),
+    "handoff-peek": lambda home, config, a: api_handoff_peek(home, a[0], a[1]),
     "approvals": lambda home, config, a: api_approvals(home),
     "approval-answer": lambda home, config, a: api_approval_answer(home, a[0], a[1]),
     "worktrees": lambda home, config, a: api_worktrees(home, a[0]),

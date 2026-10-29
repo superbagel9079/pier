@@ -376,6 +376,7 @@ function mockBackend() {
     hostLocal: async (on) => { if (on) labsState.hosts.push({ name: "pi-vm", kind: "local", where: "Pi's VM", description: "", default: false, incus: true, why: "", kvm: false, networks: [] }); else labsState.hosts = labsState.hosts.filter((h) => h.kind !== "local"); return { local: on }; },
     hostRemove: async (name) => { labsState.hosts = labsState.hosts.filter((h) => h.name !== name); return {}; },
     hostTest: async (name) => ({ host: name, answer: "Incus answers: containers" }),
+    hostTrust: async (name) => ({ name, known: "SHA256:demo" }),
     labEdit: async (name, newName, description) => {
       const item = labsState.labs.find((l) => l.name === name) || labsState.machines.find((m) => m.name === name);
       Object.assign(item, { name: newName, description });
@@ -391,6 +392,7 @@ function mockBackend() {
     },
     handoffGive: async (project, file, to) => ({ given: `pi-handoff/${to}/leo-20261026120000`, to, branch: "pi/fix-login" }),
     handoffTake: async () => { throw "the demo has no conversation to take"; },
+    handoffPeek: async () => { throw "the demo has no conversation to take"; },
     repoUnlink: async () => { mockLink = null; return {}; },
     repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
     prMerge: async (project, number) => ({ merged: number }),
