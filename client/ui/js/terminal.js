@@ -112,7 +112,7 @@ function makeTerminal(tab, kind) {
     tab.refit();
     try {
       const opened = [term.cols, term.rows];
-      const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes) => { latency.answer(); term.write(bytes); }, tab.params);
+      const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes, written) => { latency.answer(); term.write(bytes, written); }, tab.params);
       if (closed || mine !== starts) {
         backend.termClose(fresh); // the tab closed or restarted meanwhile: nothing left running
         return;

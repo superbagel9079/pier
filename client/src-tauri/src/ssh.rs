@@ -299,24 +299,23 @@ pub const RUN_MAX: usize = 64 * 1024 * 1024;
 
 /// Runs `command` on an open channel, feeding it `stdin`, until it exits. An answer
 /// past RUN_MAX is an error.
-pub async fn run(channel: russh::Channel<client::Msg>, command: &str, stdin: &[u8]) -> Result<Output> {
+pub async fn run(channel: russh::Channel<client::Msg>, command: &str, stdin: impl tokio::io::AsyncRead + Unpin) -> Result<Output> {
     let mut stdout = Vec::new();
     let (status, stderr) = run_into(channel, command, stdin, &mut stdout, RUN_MAX as u64).await?;
     Ok(Output { status, stdout, stderr })
 }
 
 /// The same, writing the output to `sink` (a file for a take-back), at most `max` bytes.
+/// `stdin` is read as it goes: a Hand off archive streams from its file.
 pub async fn run_into(
     mut channel: russh::Channel<client::Msg>,
     command: &str,
-    stdin: &[u8],
+    stdin: impl tokio::io::AsyncRead + Unpin,
     sink: &mut impl std::io::Write,
     max: u64,
 ) -> Result<(Option<u32>, Vec<u8>)> {
     channel.exec(true, command).await?;
-    if !stdin.is_empty() {
-        channel.data(stdin).await?;
-    }
+    channel.data(stdin).await?;
     channel.eof().await?;
     let (mut status, mut stderr, mut written) = (None, Vec::new(), 0u64);
     while let Some(message) = channel.wait().await {

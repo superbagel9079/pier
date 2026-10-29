@@ -215,6 +215,13 @@ pub(crate) async fn term_write(state: State<'_, AppState>, id: u32, data: String
     state.terminals.write(id, data.as_bytes()).await.map_err(message)
 }
 
+/// The tab has written `bytes` more of its output (flow control, see term.rs).
+#[tauri::command]
+pub(crate) async fn term_read(state: State<'_, AppState>, id: u32, bytes: u64) -> Result<(), String> {
+    state.terminals.read(id, bytes).await;
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) async fn term_resize(state: State<'_, AppState>, id: u32, cols: u32, rows: u32) -> Result<(), String> {
     log_debug!("term.resize", id = id, size = format!("{cols}x{rows}"));

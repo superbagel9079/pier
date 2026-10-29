@@ -157,16 +157,13 @@ pub(crate) async fn copy_folder(app: AppHandle, state: State<'_, AppState>, path
     }
     let name = root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "folder".into());
     let started = Instant::now();
-    let packed = tokio::task::spawn_blocking(move || copy::tar_folder(&root, COPY_MAX_BYTES, copy::Pack::Copy))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| {
-            let text = message(e);
-            log_warn!("copy.refused", path = path, err = text);
-            text
-        })?;
-    log_info!("copy.packed", path = path, bytes = packed.0.len(), ms = started.elapsed().as_millis());
-    api(&app, &state, &["upload-dir", &name, &target], &packed.0).await
+    let packed = copy::TempArchive::pack(root, COPY_MAX_BYTES, copy::Pack::Copy).await.map_err(|e| {
+        let text = message(e);
+        log_warn!("copy.refused", path = path, err = text);
+        text
+    })?;
+    log_info!("copy.packed", path = path, bytes = packed.bytes, ms = started.elapsed().as_millis());
+    api_from(&app, &state, &["upload-dir", &name, &target], packed.open().await?, packed.bytes).await
 }
 
 /// Deletes every image, file and folder copy given to a project.

@@ -283,8 +283,19 @@ const VM_EXEC_TIMEOUT: Duration = Duration::from_secs(300);
 const VM_EXEC_UNTIMED_FROM: usize = 1024 * 1024;
 
 async fn vm_exec(app: &AppHandle, state: &AppState, command: &str, stdin: &[u8]) -> Result<ssh::Output, String> {
+    vm_exec_from(app, state, command, stdin, stdin.len() as u64).await
+}
+
+/// The same, with `len` bytes read from `stdin` as they are sent.
+async fn vm_exec_from(
+    app: &AppHandle,
+    state: &AppState,
+    command: &str,
+    stdin: impl tokio::io::AsyncRead + Unpin,
+    len: u64,
+) -> Result<ssh::Output, String> {
     let channel = vm_channel(app, state).await?;
-    if stdin.len() >= VM_EXEC_UNTIMED_FROM {
+    if len >= VM_EXEC_UNTIMED_FROM as u64 {
         return ssh::run(channel, command, stdin).await.map_err(message);
     }
     match tokio::time::timeout(VM_EXEC_TIMEOUT, ssh::run(channel, command, stdin)).await {
@@ -347,13 +358,24 @@ async fn vm_channel(app: &AppHandle, state: &AppState) -> Result<russh::Channel<
 
 /// Runs "<picker> --api ARGS" on the VM and returns its JSON reply.
 async fn api(app: &AppHandle, state: &AppState, args: &[&str], stdin: &[u8]) -> Result<Value, String> {
+    api_from(app, state, args, stdin, stdin.len() as u64).await
+}
+
+/// The same, with `len` bytes of input read from `stdin` as they are sent (a file).
+async fn api_from(
+    app: &AppHandle,
+    state: &AppState,
+    args: &[&str],
+    stdin: impl tokio::io::AsyncRead + Unpin,
+    len: u64,
+) -> Result<Value, String> {
     let settings = settings(state)?;
     let request = next_request();
     let quoted: Vec<String> = args.iter().map(|a| sh_quote(a)).collect();
     let command = remote(&settings, &request, &format!("--api {}", quoted.join(" ")));
     let started = Instant::now();
     let name = args.first().copied().unwrap_or("?");
-    let output = vm_exec(app, state, &command, stdin).await.map_err(|text| {
+    let output = vm_exec_from(app, state, &command, stdin, len).await.map_err(|text| {
         log_warn!(format!("vm.{name}"), req = request, ms = started.elapsed().as_millis(), args = args_for_log(args), err = text);
         text
     })?;
@@ -364,7 +386,7 @@ async fn api(app: &AppHandle, state: &AppState, args: &[&str], stdin: &[u8]) -> 
     match &result {
         Ok(_) => {
             let level = if POLLED.contains(&name) { Level::Debug } else { Level::Info };
-            let sent = if stdin.is_empty() { String::new() } else { stdin.len().to_string() };
+            let sent = if len == 0 { String::new() } else { len.to_string() };
             log_at!(level, format!("vm.{name}"), req = request, ms = ms, args = args_for_log(args), sent = sent);
         }
         Err(error) => {
@@ -969,6 +991,7 @@ pub fn run() {
             paste_files,
             term_open,
             term_write,
+            term_read,
             term_resize,
             term_close,
             share_start,

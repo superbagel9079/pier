@@ -141,6 +141,17 @@ fn attrs(path: &Path) -> Result<FileAttributes, StatusCode> {
     fs::metadata(path).map(|m| FileAttributes::from(&m)).map_err(status_of)
 }
 
+/// The work of one request, off the async runtime when it can be: a file of OneDrive
+/// "online only", or a slow disk, then blocks one thread for a moment, never the tasks
+/// that terminals and the watch run on.
+fn blocking<T>(work: impl FnOnce() -> T) -> T {
+    use tokio::runtime::{Handle, RuntimeFlavor};
+    match Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => tokio::task::block_in_place(work),
+        _ => work(),
+    }
+}
+
 impl russh_sftp::server::Handler for ShareFs {
     type Error = StatusCode;
 
@@ -160,101 +171,117 @@ impl russh_sftp::server::Handler for ShareFs {
 
     async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
         self.live()?;
-        Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
+        blocking(|| {
+            Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
+        })
     }
 
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
         self.live()?;
-        // Links are presented as what they point to: the VM never sees a link it
-        // could follow on its own side.
-        Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
+        blocking(|| {
+            // Links are presented as what they point to: the VM never sees a link it
+            // could follow on its own side.
+            Ok(Attrs { id, attrs: attrs(&self.resolve(&path)?)? })
+        })
     }
 
     async fn fstat(&mut self, id: u32, handle: String) -> Result<Attrs, Self::Error> {
         self.live()?;
-        match self.handles.get(&handle) {
-            Some(Open::File(file)) => Ok(Attrs { id, attrs: FileAttributes::from(&file.metadata().map_err(status_of)?) }),
-            Some(Open::Dir { path, .. }) => Ok(Attrs { id, attrs: attrs(path)? }),
-            None => Err(StatusCode::Failure),
-        }
+        blocking(|| {
+            match self.handles.get(&handle) {
+                Some(Open::File(file)) => Ok(Attrs { id, attrs: FileAttributes::from(&file.metadata().map_err(status_of)?) }),
+                Some(Open::Dir { path, .. }) => Ok(Attrs { id, attrs: attrs(path)? }),
+                None => Err(StatusCode::Failure),
+            }
+        })
     }
 
     async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
         self.live()?;
-        let dir = self.resolve(&path)?;
-        if !dir.is_dir() {
-            return Err(StatusCode::NoSuchFile);
-        }
-        Ok(Handle { id, handle: self.new_handle(Open::Dir { path: dir, pending: None }) })
+        blocking(|| {
+            let dir = self.resolve(&path)?;
+            if !dir.is_dir() {
+                return Err(StatusCode::NoSuchFile);
+            }
+            Ok(Handle { id, handle: self.new_handle(Open::Dir { path: dir, pending: None }) })
+        })
     }
 
     async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
         self.live()?;
-        let Some(Open::Dir { path, pending }) = self.handles.get_mut(&handle) else {
-            return Err(StatusCode::Failure);
-        };
-        if pending.is_none() {
-            let mut files = Vec::new();
-            for entry in fs::read_dir(&*path).map_err(status_of)?.flatten() {
-                // Names that are not valid Unicode cannot be named back over SFTP.
-                let Some(name) = entry.file_name().to_str().map(str::to_owned) else { continue };
-                if let Ok(meta) = fs::metadata(entry.path()) {
-                    files.push(File::new(name, FileAttributes::from(&meta)));
+        blocking(|| {
+            let Some(Open::Dir { path, pending }) = self.handles.get_mut(&handle) else {
+                return Err(StatusCode::Failure);
+            };
+            if pending.is_none() {
+                let mut files = Vec::new();
+                for entry in fs::read_dir(&*path).map_err(status_of)?.flatten() {
+                    // Names that are not valid Unicode cannot be named back over SFTP.
+                    let Some(name) = entry.file_name().to_str().map(str::to_owned) else { continue };
+                    if let Ok(meta) = fs::metadata(entry.path()) {
+                        files.push(File::new(name, FileAttributes::from(&meta)));
+                    }
                 }
+                *pending = Some(files);
             }
-            *pending = Some(files);
-        }
-        let remaining = pending.as_mut().expect("filled above");
-        if remaining.is_empty() {
-            return Err(StatusCode::Eof);
-        }
-        let take = remaining.len().min(DIR_CHUNK);
-        Ok(Name { id, files: remaining.drain(..take).collect() })
+            let remaining = pending.as_mut().expect("filled above");
+            if remaining.is_empty() {
+                return Err(StatusCode::Eof);
+            }
+            let take = remaining.len().min(DIR_CHUNK);
+            Ok(Name { id, files: remaining.drain(..take).collect() })
+        })
     }
 
     async fn open(&mut self, id: u32, filename: String, pflags: OpenFlags, _attrs: FileAttributes) -> Result<Handle, Self::Error> {
         self.live()?;
-        let writes = pflags.intersects(OpenFlags::WRITE | OpenFlags::APPEND | OpenFlags::CREATE | OpenFlags::TRUNCATE);
-        if writes {
-            self.must_write()?;
-        }
-        let path = self.resolve(&filename)?;
-        let file = OpenOptions::new()
-            .read(pflags.contains(OpenFlags::READ) || !writes)
-            .write(pflags.contains(OpenFlags::WRITE))
-            .append(pflags.contains(OpenFlags::APPEND))
-            .create(pflags.contains(OpenFlags::CREATE) && !pflags.contains(OpenFlags::EXCLUDE))
-            .create_new(pflags.contains(OpenFlags::CREATE) && pflags.contains(OpenFlags::EXCLUDE))
-            .truncate(pflags.contains(OpenFlags::TRUNCATE))
-            .open(&path)
-            .map_err(status_of)?;
-        Ok(Handle { id, handle: self.new_handle(Open::File(file)) })
+        blocking(|| {
+            let writes = pflags.intersects(OpenFlags::WRITE | OpenFlags::APPEND | OpenFlags::CREATE | OpenFlags::TRUNCATE);
+            if writes {
+                self.must_write()?;
+            }
+            let path = self.resolve(&filename)?;
+            let file = OpenOptions::new()
+                .read(pflags.contains(OpenFlags::READ) || !writes)
+                .write(pflags.contains(OpenFlags::WRITE))
+                .append(pflags.contains(OpenFlags::APPEND))
+                .create(pflags.contains(OpenFlags::CREATE) && !pflags.contains(OpenFlags::EXCLUDE))
+                .create_new(pflags.contains(OpenFlags::CREATE) && pflags.contains(OpenFlags::EXCLUDE))
+                .truncate(pflags.contains(OpenFlags::TRUNCATE))
+                .open(&path)
+                .map_err(status_of)?;
+            Ok(Handle { id, handle: self.new_handle(Open::File(file)) })
+        })
     }
 
     async fn read(&mut self, id: u32, handle: String, offset: u64, len: u32) -> Result<Data, Self::Error> {
         self.live()?;
-        let Some(Open::File(file)) = self.handles.get_mut(&handle) else {
-            return Err(StatusCode::Failure);
-        };
-        file.seek(SeekFrom::Start(offset)).map_err(status_of)?;
-        let mut data = vec![0; len.min(READ_MAX) as usize];
-        let n = file.read(&mut data).map_err(status_of)?;
-        if n == 0 {
-            return Err(StatusCode::Eof);
-        }
-        data.truncate(n);
-        Ok(Data { id, data })
+        blocking(|| {
+            let Some(Open::File(file)) = self.handles.get_mut(&handle) else {
+                return Err(StatusCode::Failure);
+            };
+            file.seek(SeekFrom::Start(offset)).map_err(status_of)?;
+            let mut data = vec![0; len.min(READ_MAX) as usize];
+            let n = file.read(&mut data).map_err(status_of)?;
+            if n == 0 {
+                return Err(StatusCode::Eof);
+            }
+            data.truncate(n);
+            Ok(Data { id, data })
+        })
     }
 
     async fn write(&mut self, id: u32, handle: String, offset: u64, data: Vec<u8>) -> Result<Status, Self::Error> {
         self.live()?;
-        self.must_write()?;
-        let Some(Open::File(file)) = self.handles.get_mut(&handle) else {
-            return Err(StatusCode::Failure);
-        };
-        file.seek(SeekFrom::Start(offset)).map_err(status_of)?;
-        file.write_all(&data).map_err(status_of)?;
-        Ok(ok(id))
+        blocking(|| {
+            self.must_write()?;
+            let Some(Open::File(file)) = self.handles.get_mut(&handle) else {
+                return Err(StatusCode::Failure);
+            };
+            file.seek(SeekFrom::Start(offset)).map_err(status_of)?;
+            file.write_all(&data).map_err(status_of)?;
+            Ok(ok(id))
+        })
     }
 
     async fn close(&mut self, id: u32, handle: String) -> Result<Status, Self::Error> {
@@ -278,34 +305,42 @@ impl russh_sftp::server::Handler for ShareFs {
 
     async fn remove(&mut self, id: u32, filename: String) -> Result<Status, Self::Error> {
         self.live()?;
-        self.must_write()?;
-        fs::remove_file(self.resolve(&filename)?).map_err(status_of)?;
-        Ok(ok(id))
+        blocking(|| {
+            self.must_write()?;
+            fs::remove_file(self.resolve(&filename)?).map_err(status_of)?;
+            Ok(ok(id))
+        })
     }
 
     async fn mkdir(&mut self, id: u32, path: String, _attrs: FileAttributes) -> Result<Status, Self::Error> {
         self.live()?;
-        self.must_write()?;
-        fs::create_dir(self.resolve(&path)?).map_err(status_of)?;
-        Ok(ok(id))
+        blocking(|| {
+            self.must_write()?;
+            fs::create_dir(self.resolve(&path)?).map_err(status_of)?;
+            Ok(ok(id))
+        })
     }
 
     async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, Self::Error> {
         self.live()?;
-        self.must_write()?;
-        let dir = self.resolve(&path)?;
-        if dir == self.root {
-            return Err(StatusCode::PermissionDenied);
-        }
-        fs::remove_dir(dir).map_err(status_of)?;
-        Ok(ok(id))
+        blocking(|| {
+            self.must_write()?;
+            let dir = self.resolve(&path)?;
+            if dir == self.root {
+                return Err(StatusCode::PermissionDenied);
+            }
+            fs::remove_dir(dir).map_err(status_of)?;
+            Ok(ok(id))
+        })
     }
 
     async fn rename(&mut self, id: u32, oldpath: String, newpath: String) -> Result<Status, Self::Error> {
         self.live()?;
-        self.must_write()?;
-        fs::rename(self.resolve(&oldpath)?, self.resolve(&newpath)?).map_err(status_of)?;
-        Ok(ok(id))
+        blocking(|| {
+            self.must_write()?;
+            fs::rename(self.resolve(&oldpath)?, self.resolve(&newpath)?).map_err(status_of)?;
+            Ok(ok(id))
+        })
     }
 }
 

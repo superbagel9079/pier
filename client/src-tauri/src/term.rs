@@ -11,7 +11,7 @@
 //! history would never reach here.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,10 +19,17 @@ use anyhow::{anyhow, Result};
 use russh::client::Msg;
 use russh::{Channel, ChannelMsg, ChannelReadHalf, ChannelWriteHalf};
 use tauri::ipc::{Channel as Output, InvokeResponseBody};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
 
 /// Most bytes put in one message to the page.
 const BATCH_MAX: usize = 256 * 1024;
+/// Most bytes sent to a tab and not yet written by its terminal: past this, reading
+/// from the VM waits, and the SSH window then holds back the VM itself. A "cat" of a
+/// big file no longer piles up hundreds of MB in the page.
+const UNREAD_MAX: u64 = 16 * 1024 * 1024;
+/// How long a tab may say nothing of what it wrote before it is no longer waited for
+/// (a page that does not count, or that hangs: the terminal must not freeze for good).
+const UNREAD_WAIT: Duration = Duration::from_secs(60);
 /// Bytes per tmux send-keys command.
 const KEYS_PER_COMMAND: usize = 2048;
 /// Most bytes of a tmux line kept while waiting for its end: a Pi that writes without
@@ -37,6 +44,14 @@ struct Open {
     writer: Writer,
     /// tmux control mode: input and size go as tmux commands.
     control: bool,
+    flow: Arc<Flow>,
+}
+
+/// How far the tab has written what it was sent (see `read`).
+#[derive(Default)]
+struct Flow {
+    read: AtomicU64,
+    moved: Notify,
 }
 
 #[derive(Default)]
@@ -65,8 +80,9 @@ impl Terminals {
             None => writer.request_shell(true).await?,
         }
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.open.lock().await.insert(id, Open { writer: Arc::new(Mutex::new(writer)), control: false });
-        tokio::spawn(pump(id, reader, output, None, on_exit));
+        let flow = Arc::new(Flow::default());
+        self.open.lock().await.insert(id, Open { writer: Arc::new(Mutex::new(writer)), control: false, flow: flow.clone() });
+        tokio::spawn(pump(id, reader, output, flow, None, on_exit));
         Ok(id)
     }
 
@@ -91,8 +107,9 @@ impl Terminals {
         writer.data(resize_command(cols, rows - 1).as_bytes()).await?;
         writer.data(resize_command(cols, rows).as_bytes()).await?;
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.open.lock().await.insert(id, Open { writer: Arc::new(Mutex::new(writer)), control: true });
-        tokio::spawn(pump(id, reader, output, Some(ControlParser::default()), on_exit));
+        let flow = Arc::new(Flow::default());
+        self.open.lock().await.insert(id, Open { writer: Arc::new(Mutex::new(writer)), control: true, flow: flow.clone() });
+        tokio::spawn(pump(id, reader, output, flow, Some(ControlParser::default()), on_exit));
         Ok(id)
     }
 
@@ -113,6 +130,14 @@ impl Terminals {
             writer.data(bytes).await?;
         }
         Ok(())
+    }
+
+    /// The tab has written `bytes` more of what it was sent: reading may go on.
+    pub async fn read(&self, id: u32, bytes: u64) {
+        if let Some(terminal) = self.open.lock().await.get(&id) {
+            terminal.flow.read.fetch_add(bytes, Ordering::Relaxed);
+            terminal.flow.moved.notify_one();
+        }
     }
 
     pub async fn resize(&self, id: u32, cols: u32, rows: u32) -> Result<()> {
@@ -166,11 +191,13 @@ async fn pump(
     id: u32,
     mut reader: ChannelReadHalf,
     output: Output<InvokeResponseBody>,
+    flow: Arc<Flow>,
     mut control: Option<ControlParser>,
     on_exit: impl FnOnce(u32, Option<u32>),
 ) {
     let mut status = None;
     let mut stats = (0u64, 0u64, 0u64); // SSH packets, messages to the page, bytes
+    let mut counted = true; // the tab says what it wrote (until it stays silent too long)
     let mut next = reader.wait().await;
     'reading: while let Some(message) = next.take() {
         match message {
@@ -206,6 +233,10 @@ async fn pump(
                     if output.send(InvokeResponseBody::Raw(batch)).is_err() {
                         break; // the tab is gone
                     }
+                    if counted && !wait_for_the_tab(&flow, stats.2).await {
+                        log_warn!("term.unread", id = id, bytes = stats.2 - flow.read.load(Ordering::Relaxed));
+                        counted = false;
+                    }
                 }
                 if ended || control.as_ref().is_some_and(|p| p.exited.is_some()) {
                     break 'reading;
@@ -236,6 +267,19 @@ async fn pump(
         status = Some(0);
     }
     on_exit(id, status);
+}
+
+/// Waits while the tab is more than UNREAD_MAX behind `sent`; false if it said
+/// nothing for UNREAD_WAIT.
+async fn wait_for_the_tab(flow: &Flow, sent: u64) -> bool {
+    loop {
+        if sent.saturating_sub(flow.read.load(Ordering::Relaxed)) <= UNREAD_MAX {
+            return true;
+        }
+        if tokio::time::timeout(UNREAD_WAIT, flow.moved.notified()).await.is_err() {
+            return false;
+        }
+    }
 }
 
 fn resize_command(cols: u32, rows: u32) -> String {
@@ -486,6 +530,21 @@ mod tests {
     fn extended_output_too() {
         let mut parser = ControlParser::default();
         assert_eq!(parser.feed(b"%extended-output %1 120 : x\\012\n"), b"x\n");
+    }
+
+    #[tokio::test]
+    async fn reading_waits_for_the_tab() {
+        let flow = Arc::new(Flow::default());
+        assert!(wait_for_the_tab(&flow, UNREAD_MAX).await, "within the limit: no wait");
+        let waiting = tokio::spawn({
+            let flow = flow.clone();
+            async move { wait_for_the_tab(&flow, UNREAD_MAX + 10).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished());
+        flow.read.fetch_add(10, Ordering::Relaxed);
+        flow.moved.notify_one();
+        assert!(waiting.await.unwrap());
     }
 
     #[test]
