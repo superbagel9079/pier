@@ -30,7 +30,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-single-instance = "2"
 # Pier updates itself from the project's GitHub releases, signed with the project's key.
-tauri-plugin-updater = { version = "=2.13.0", default-features = false, features = ["native-tls", "system-proxy"] }
+tauri-plugin-updater = { version = "=2.14.0", default-features = false, features = ["native-tls", "system-proxy"] }
 tar = "0.4"
 # SHA-256 of files, to compare a handed-off copy with its original (ring already comes with russh).
 ring = "0.17"
