@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.42"
+VERSION = "4.43"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -152,8 +152,6 @@ LOGO = [
     " ||",
     ".||",
 ]
-LOGO_BASELINE = 3
-
 HELP = [
     ("up/down  pgup/pgdn  home/end", "move"),
     ("right  enter", "open the directory"),
