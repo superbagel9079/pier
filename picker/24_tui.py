@@ -532,11 +532,7 @@ class Picker:
             show_cursor(False)
             scr.refresh()
             return
-        if h >= BANNER_MIN_ROWS:
-            top = self.draw_banner(w)
-        else:
-            top = 1
-            put(scr, 0, 2, "pier picker", curses.A_BOLD, w - 4)
+        top = self.draw_banner(w) if h >= BANNER_MIN_ROWS else 1
 
         width = w - 4
         title = f"find in {self.pretty(self.home)}" if self.search is not None else clean(self.cwd)
@@ -571,11 +567,8 @@ class Picker:
         x = max(2, (w - logo_w) // 2)
         for i, line in enumerate(LOGO):
             put(self.scr, 1 + i, x, line, curses.A_BOLD, w - 2 - x)
-        # The version sits on the baseline, the row where the letters end.
-        put(self.scr, 1 + LOGO_BASELINE, x + logo_w + 1, f"v{VERSION}", curses.A_BOLD, w - 3 - x - logo_w)
-        subtitle = "pier picker"
-        put(self.scr, 1 + len(LOGO), max(2, (w - len(subtitle)) // 2), subtitle, self.grey)
-        return len(LOGO) + 3
+        # The logo alone: the version is in Pier (Settings > Picker) and in --version.
+        return len(LOGO) + 2
 
     def git_text(self, entry):
         if not entry.branch:
