@@ -31,3 +31,12 @@ A second full review (security, CPU, memory, smoothness). Fixed in pier-picker 4
 - **The command line:** what is typed into Pi, and the files of a restore, go on the command's input, not where other users of the VM could read them.
 - **Smoothness:** the Logs tab, dragging a divider, the Setup list and the searches no longer redraw everything; the watch rebuilds less when nothing moves; the picker is kept compiled.
 - **Found by the suite on the VM:** the link protections were silently off under Linux (a Python detail), and tmux never recorded which conversation each Pi held when two ran in one project. Both fixed.
+
+### Review of 11 November 2026: the network allowlist
+
+An outside review of the picker's network proxy. Fixed in pier-picker 4.44:
+
+- **A host name with a NUL byte passed the allowlist** (`evil.example<NUL>.github.com` matched `.github.com`, while the connection, cut at the NUL by the name lookup, went to `evil.example`): with `network_limit` on, Pi could reach any host. The target of a CONNECT is now checked once, as a plain DNS name, an IP address and a port from 1 to 65535, and that same target is both judged and reached; anything else is refused (400).
+- **A request head that never ends** no longer connects anywhere (431). A port only looking like a number (`²`, `99999`) no longer crashes the proxy or the reading of `network_allow`, whose bad entries are now said in the log (`net.bad-allow`).
+- **Limits:** 128 connections at once per Pi (503 past that), the record of refused hosts capped, both sockets always closed. A rule `localhost:PORT` also matches `CONNECT localhost:PORT`.
+- **Still as before:** a host allowed by name is reached at whatever address it resolves to, a private one included (a name you allow on your LAN must keep working).
