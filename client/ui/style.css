@@ -138,7 +138,9 @@ select option { background: var(--bg); color: var(--fg); }
 input:focus, select:focus, textarea:focus, .drop:focus { outline: 1px solid var(--fg); outline-offset: -1px; }
 :focus-visible { outline-color: var(--fg); }
 
-/* Checkboxes: a square box, an × when checked. */
+/* Checkboxes: a square box, an X when checked. The X is drawn (two diagonals), not a
+   character: a glyph's size and place change with the font, and it ends up small and
+   off centre. */
 input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
@@ -153,13 +155,18 @@ input[type="checkbox"] {
   display: inline-grid;
   place-content: center;
   cursor: pointer;
+  /* Centred, the box sits a pixel low against the text beside it: lowercase words
+     ("hidden", "archived") have their middle above the font's own. */
+  position: relative;
+  top: -1px;
 }
 input[type="checkbox"]::before {
-  content: "×";
-  font-size: 15px;
-  line-height: 1;
-  color: var(--fg);
-  transform: translateY(-1px);
+  content: "";
+  width: 9px;
+  height: 9px;
+  background:
+    linear-gradient(45deg, transparent calc(50% - .8px), var(--fg) calc(50% - .8px), var(--fg) calc(50% + .8px), transparent calc(50% + .8px)),
+    linear-gradient(-45deg, transparent calc(50% - .8px), var(--fg) calc(50% - .8px), var(--fg) calc(50% + .8px), transparent calc(50% + .8px));
   visibility: hidden;
 }
 input[type="checkbox"]:checked::before { visibility: visible; }
@@ -220,9 +227,28 @@ details label { margin-top: var(--s2); }
   background: var(--bg);
 }
 .logo { font-weight: 700; }
+/* Windows: the top bar is the title bar (main.js). The buttons fill its height, against
+   the window's edge, as the system's do; drawn in the text's colour, close in red when
+   pointed at, as everywhere on Windows. */
+body.own-titlebar #topbar { padding-right: 0; user-select: none; }
+/* Above the overlays (settings, palette: z-index 20), as the system's buttons would be. */
+#window-buttons { display: flex; align-self: stretch; margin: -6px 0 -6px calc(var(--s4) * -1 + var(--s2)); position: relative; z-index: 21; }
+#window-buttons[hidden] { display: none; }
+#window-buttons button { width: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); display: grid; place-content: center; cursor: default; }
+#window-buttons button:hover { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+#window-buttons button:active { background: color-mix(in srgb, var(--fg) 20%, transparent); }
+#window-buttons #win-close:hover { background: #c42b1c; color: #fff; }
+#window-buttons #win-close:active { background: #b22a1d; color: #fff; }
+#window-buttons button:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
 #status, #target { min-width: 0; flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #target.live { color: var(--fg); }
-nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
+/* Narrow, the bar gives way by the longest link (cut with an ellipsis), never by the
+   window's buttons. */
+nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 1; min-width: 0; }
+nav > button { flex-shrink: 0; white-space: nowrap; }
+nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
+#topbar { overflow: hidden; }
+#window-buttons { flex-shrink: 0; }
 #btn-palette kbd { font-size: 10px; padding: 0 3px; margin-left: 2px; }
 @media (max-width: 900px) { #status { display: none; } }
 
@@ -300,10 +326,12 @@ nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 0; }
 /* Side panels never scroll sideways: their content wraps or is cut with an ellipsis. */
 .pane:has(> .pane-setup), .pane:has(> .pane-conversations), .pane:has(> .pane-context), .pane:has(> .pane-project) { overflow-x: hidden; }
 /* The terminal's padding is its own (Settings > Appearance): xterm.js's fit takes it off
-   the size it gives the program, and the scrollbar stays against the edge. */
+   the size it gives the program. None on the right: there the scrollbar's own width is
+   the margin, and the scrollbar stays inside the area xterm.js watches. Moved into the
+   padding, it was out of it: reached without passing over the text, it stayed hidden
+   and a click went through it, so it could not be dragged. */
 .pane.terminal { padding: 0; overflow: hidden; }
-.pane.terminal .xterm { height: 100%; padding: var(--term-pad, 8px); }
-.pane.terminal .xterm-scrollable-element > .scrollbar.vertical { transform: translateX(var(--term-pad, 8px)); }
+.pane.terminal .xterm { height: 100%; padding: var(--term-pad, 8px); padding-right: 0; }
 /* The usual arrow over terminals, not a text cursor; selecting text still works. */
 .pane.terminal .xterm, .pane.terminal .xterm-screen, .pane.terminal .xterm-viewport, .pane.terminal .xterm-rows { cursor: default; }
 
