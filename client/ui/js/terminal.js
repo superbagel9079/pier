@@ -84,15 +84,32 @@ function makeTerminal(tab, kind) {
   let pendingKeys = "";    // a Ctrl-b that turned out to be for Pi, sent with the next key
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
-  // While a side is unfolded for a look (a peek), the center is narrower, but the
-  // terminal keeps its size: its right edge is clipped (the pane hides it) behind the
-  // panel you are reading, and Pi is not resized, so it does not reprint its conversation
-  // and the view does not jump. The real fit waits until the look ends (back to full
-  // width) or the side is pinned (workspace.peeking, set in workspace.js).
+  // The width changes when a side opens or folds. An alternate-screen program (the
+  // picker, an editor) redraws itself to the new size, with nothing to keep. A plain
+  // conversation (Pi's regular mode) is reprinted whole and xterm lands at the bottom:
+  // the distance from the bottom is noted, and once the reprint has settled there, the
+  // view is pulled back up by as much, so the place being read is not lost.
   tab.refit = () => {
-    if (visible() && !document.body.classList.contains("peeking")) {
-      try { fit.fit(); } catch { /* not laid out yet */ }
-    }
+    if (!visible()) return;
+    const buffer = term.buffer.active;
+    const keep = buffer.type === "normal" ? Math.max(0, buffer.baseY - buffer.viewportY) : 0;
+    try { fit.fit(); } catch { return; /* not laid out yet */ }
+    if (keep === 0) return; // at the bottom, or an alternate screen: nothing to hold
+    let done = false;
+    let settle = 0;
+    let scroll;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(settle);
+      scroll.dispose();
+      const now = term.buffer.active;
+      if (now.viewportY === now.baseY && now.baseY > 0) term.scrollToLine(Math.max(0, now.baseY - keep));
+    };
+    // The reprint arrives as a burst of output that scrolls to the bottom; restore once
+    // it has been quiet for a moment, and give up after a while if it never comes.
+    scroll = term.onScroll(() => { clearTimeout(settle); settle = setTimeout(finish, 150); });
+    setTimeout(finish, 3000);
   };
   // The padding around the text, and the leftover below the last row, take the
   // terminal's own background, as in kitty or foot: no band of another colour.

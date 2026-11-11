@@ -55,15 +55,8 @@ const workspace = (() => {
 
   // --- rendering ---
 
-  // A side unfolded for a look (peek, not collapsed): the terminals keep their size while
-  // it is up (terminal.js reads this), so Pi does not reprint and nothing scrolls.
-  function updatePeeking() {
-    document.body.classList.toggle("peeking", DOCKS.some((n) => docks[n].peek && !docks[n].collapsed));
-  }
-
   function render(name) {
     const dock = docks[name];
-    updatePeeking();
     if (dock.side) {
       const empty = !dock.tabs.length;
       dock.el.hidden = empty && !dragging;
@@ -349,9 +342,6 @@ const workspace = (() => {
   function keepOpen(name) {
     docks[name].peek = false;
     render(name);
-    // Pinned, the side stays, so the terminals do take their smaller width now (the look
-    // kept them whole): one fit, once the peeking flag is off.
-    for (const tab of tabs()) tab.refit?.();
     save();
   }
 
