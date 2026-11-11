@@ -13,24 +13,67 @@
 NET_DIR = "/tmp/.pier-net"
 NET_PROXY_PORT = 3128
 PICKER_MODULE = os.path.realpath(__file__)
+# Connections relayed at once for one Pi, and refused hosts remembered for the log.
+NET_CONNECTIONS_MAX = 128
+NET_BLOCKED_KEPT = 256
+
+# A label of a host name as resolvers take it: letters, digits, "-" inside, "_" (some
+# real names have one), 63 characters at most.
+HOST_LABEL_RE = re.compile(r"[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?")
+
+
+def plain_host(host):
+    """host in lower case, without its final dot, when it is plainly a DNS name or an IP
+    address; None otherwise. The allowlist must judge the very name the connection then
+    goes to: getaddrinfo stops at a NUL byte, so "evil.net<NUL>.github.com" would pass
+    as a name under .github.com and reach evil.net."""
+    host = host.lower().rstrip(".")
+    if not host or len(host) > 253:
+        return None
+    if host == "localhost":
+        return "127.0.0.1"  # as network_allow stores it (parse_allow)
+    if ":" in host:  # an IPv6 address only; inet_pton refuses a %zone and a NUL
+        try:
+            socket.inet_pton(socket.AF_INET6, host)
+        except (OSError, ValueError):
+            return None
+        return host
+    return host if all(HOST_LABEL_RE.fullmatch(label) for label in host.split(".")) else None
+
+
+def plain_port(text):
+    """text as a TCP port (1 to 65535), None otherwise. isdigit() alone says yes to "²",
+    which int() refuses, and to "99999", which no socket takes."""
+    if not (text.isascii() and text.isdigit()):
+        return None
+    port = int(text)
+    return port if 0 < port < 65536 else None
 
 
 def parse_allow(entries):
-    """Entries of network_allow: (host or ".suffix", port or None) pairs."""
+    """Entries of network_allow: (host or ".suffix", port or None) pairs. An entry that is
+    not one is left out, and said in the log."""
     rules = []
     for entry in entries:
         entry = entry.strip().lower().rstrip(".")
         if not entry:
             continue
         host, _, port = entry.rpartition(":") if entry.count(":") == 1 else (entry, "", "")
-        if port and not port.isdigit():
+        number = plain_port(port) if port else None
+        name = plain_host(host[1:]) if host.startswith(".") else plain_host(host)
+        if (port and number is None) or name is None:
+            log("warn", "net.bad-allow", entry=entry[:200], hint="host, .suffix, host:port or .suffix:port")
             continue
-        rules.append(("127.0.0.1" if host == "localhost" else host, int(port) if port else None))
+        rules.append(("." + name if host.startswith(".") else name, number))
     return rules
 
 
 def allowed(rules, host, port):
-    host = host.lower().rstrip(".")
+    """Whether network_allow lets Pi reach host:port. A host that is not plainly a name
+    or an address (plain_host) is refused, whatever the rules say."""
+    host = plain_host(host)
+    if host is None:
+        return False
     for rule_host, rule_port in rules:
         if rule_port is None and port not in (80, 443):
             continue
@@ -114,7 +157,8 @@ class NetProxy:
         self.server.bind(self.socket)
         os.chmod(self.socket, 0o600)
         self.server.listen(64)
-        self.blocked = {}  # host -> when it was last logged
+        self.blocked = {}  # host -> when it was last logged (NET_BLOCKED_KEPT at most)
+        self.slots = threading.BoundedSemaphore(NET_CONNECTIONS_MAX)
         threading.Thread(target=self.serve, daemon=True).start()
 
     def local_ports(self):
@@ -127,56 +171,84 @@ class NetProxy:
                 client, _ = self.server.accept()
             except OSError:
                 return
+            if not self.slots.acquire(blocking=False):
+                # A Pi (or what it runs) opening connections without end: refused, not queued.
+                self.note("net.full", "net.full", most=NET_CONNECTIONS_MAX)
+                try:
+                    client.sendall(b"HTTP/1.1 503 Too many connections\r\nContent-Length: 0\r\n\r\n")
+                    client.close()
+                except OSError:
+                    pass
+                continue
             threading.Thread(target=self.handle, args=(client,), daemon=True).start()
 
+    def note(self, key, event, **fields):
+        """Logs event at most once a minute per key: a Pi retrying in a loop would fill
+        the log otherwise. The oldest keys go past NET_BLOCKED_KEPT."""
+        now = time.monotonic()
+        if now - self.blocked.get(key, -1e9) <= 60:
+            return
+        self.blocked.pop(key, None)
+        self.blocked[key] = now
+        while len(self.blocked) > NET_BLOCKED_KEPT:
+            self.blocked.pop(next(iter(self.blocked)))
+        log("warn", event, project=self.project, **fields)
+
     def handle(self, client):
+        """One connection from the sandbox: its CONNECT line read, its target checked once
+        and that same target reached. Both sockets are closed however it ends."""
+        upstream = None
         try:
             client.settimeout(30)
             head = b""
             while b"\r\n\r\n" not in head and len(head) < 8192:
                 chunk = client.recv(4096)
                 if not chunk:
-                    client.close()
                     return
                 head += chunk
-            line = head.split(b"\r\n", 1)[0].decode("latin-1")
-            parts = line.split()
-            target = parts[1] if len(parts) == 3 and parts[0].upper() == "CONNECT" else ""
-            host, _, port = target.rpartition(":")
-            host = host.strip("[]")
-            if not host or not port.isdigit():
-                client.sendall(b"HTTP/1.1 405 Only CONNECT\r\nContent-Length: 0\r\n\r\n")
-                client.close()
+            if b"\r\n\r\n" not in head:
+                client.sendall(b"HTTP/1.1 431 Request head too long\r\nContent-Length: 0\r\n\r\n")
                 return
-            port = int(port)
+            head, rest = head.split(b"\r\n\r\n", 1)
+            parts = head.split(b"\r\n", 1)[0].decode("latin-1").split()
+            if len(parts) != 3 or parts[0].upper() != "CONNECT":
+                client.sendall(b"HTTP/1.1 405 Only CONNECT\r\nContent-Length: 0\r\n\r\n")
+                return
+            name, _, number = parts[1].rpartition(":")
+            host, port = plain_host(name.strip("[]")), plain_port(number)
+            if host is None or port is None:
+                self.note("net.bad-target", "net.bad-target", target=parts[1][:200],
+                          hint="refused before network_allow: not a plain host:port")
+                client.sendall(b"HTTP/1.1 400 Not a plain host:port\r\nContent-Length: 0\r\n\r\n")
+                return
             if not allowed(self.rules, host, port):
-                now = time.monotonic()
-                if now - self.blocked.get(host, -1e9) > 60:
-                    self.blocked[host] = now
-                    log("warn", "net.blocked", project=self.project, host=host, port=port,
-                        hint="add it to network_allow in ~/.config/pier-picker/config.toml")
+                self.note(host, "net.blocked", host=host, port=port,
+                          hint="add it to network_allow in ~/.config/pier-picker/config.toml")
                 client.sendall(b"HTTP/1.1 403 Not allowed by network_allow\r\nContent-Length: 0\r\n\r\n")
-                client.close()
                 return
             try:
                 upstream = socket.create_connection((host, port), timeout=15)
             except OSError as exc:
                 client.sendall(f"HTTP/1.1 502 {exc.strerror or 'unreachable'}\r\nContent-Length: 0\r\n\r\n".encode("latin-1", "replace"))
-                client.close()
                 return
             upstream.settimeout(None)
             keepalive(upstream)
             client.settimeout(None)
             client.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")
-            rest = head.split(b"\r\n\r\n", 1)[1]
             if rest:
                 upstream.sendall(rest)
             relay_both(client, upstream)
-        except OSError:
-            try:
-                client.close()
-            except OSError:
-                pass
+        except OSError as exc:
+            # The sandbox side went away, or said nothing for 30 s: no one left to answer.
+            log("debug", "net.dropped", project=self.project, err=exc.strerror or type(exc).__name__)
+        finally:
+            for sock in (client, upstream):
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except OSError:
+                        pass
+            self.slots.release()
 
     def close(self):
         try:

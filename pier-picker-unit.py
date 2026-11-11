@@ -94,6 +94,25 @@ class AllowList(unittest.TestCase):
         self.assertTrue(m.allowed(rules, "127.0.0.1", 8080))
         self.assertFalse(m.allowed(rules, "127.0.0.1", 8081))
         self.assertEqual(len(rules), 3, "an entry with a bad port is left out")
+        self.assertTrue(m.allowed(rules, "localhost", 8080), "as the rule names it")
+
+    def test_only_the_name_that_is_reached_is_judged(self):
+        rules = m.parse_allow([".github.com"])
+        # getaddrinfo stops at a NUL: this name would reach evil.net
+        self.assertFalse(m.allowed(rules, "evil.net\0.github.com", 443))
+        self.assertFalse(m.allowed(rules, "evil.net .github.com", 443))
+        self.assertFalse(m.allowed(rules, "evil.net/.github.com", 443))
+        self.assertEqual(m.plain_host("API.GitHub.com."), "api.github.com")
+        self.assertEqual(m.plain_host("::1"), "::1")
+        self.assertIsNone(m.plain_host("fe80::1%eth0"), "no zone: what follows % is free text")
+        self.assertIsNone(m.plain_host("a" * 254))
+
+    def test_ports_are_ports(self):
+        self.assertIsNone(m.plain_port("\u00b2"), "a digit to isdigit(), not to int()")
+        self.assertIsNone(m.plain_port("99999"))
+        self.assertIsNone(m.plain_port("0"))
+        self.assertEqual(m.plain_port("443"), 443)
+        self.assertEqual(m.parse_allow(["host:\u00b2", "host:99999", "bad host"]), [], "left out, never a crash")
 
     def test_trailing_dots_and_case(self):
         rules = m.parse_allow(["Registry.NPMJS.org."])
@@ -627,6 +646,8 @@ class Proxy(Home):
     def ask(self, request, rules):
         proxy = object.__new__(m.NetProxy)
         proxy.project, proxy.rules, proxy.blocked = "p", m.parse_allow(rules), {}
+        proxy.slots = threading.BoundedSemaphore(1)
+        proxy.slots.acquire()  # as serve() does before handle()
         mine, theirs = socket.socketpair()
         thread = threading.Thread(target=proxy.handle, args=(theirs,), daemon=True)
         thread.start()
@@ -651,6 +672,33 @@ class Proxy(Home):
         answer = self.ask(f"CONNECT 127.0.0.1:{port} HTTP/1.1\r\n\r\n".encode(), [f"localhost:{port}"])
         server.close()
         self.assertIn(b"200", answer)
+
+    def test_a_name_cut_short_by_a_nul_reaches_nothing(self):
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        server.settimeout(0.5)
+        port = server.getsockname()[1]
+        answer = self.ask(f"CONNECT localhost\0.github.com:{port} HTTP/1.1\r\n\r\n".encode(), [f".github.com:{port}"])
+        with self.assertRaises(OSError, msg="nothing came through to the server"):
+            server.accept()
+        server.close()
+        self.assertIn(b"400", answer)
+
+    def test_a_head_without_its_end_reaches_nothing(self):
+        answer = self.ask(f"CONNECT 127.0.0.1:9 HTTP/1.1\r\nX: {'a' * 9000}".encode(), ["localhost:9"])
+        self.assertIn(b"431", answer)
+
+    def test_a_port_that_only_looks_like_a_number(self):
+        self.assertIn(b"400", self.ask("CONNECT api.github.com:\u00b2 HTTP/1.1\r\n\r\n".encode("latin-1"), [".github.com"]))
+
+    def test_the_log_of_refusals_stays_small(self):
+        proxy = object.__new__(m.NetProxy)
+        proxy.project, proxy.blocked = "p", {}
+        for i in range(m.NET_BLOCKED_KEPT + 50):
+            proxy.note(f"h{i}", "net.blocked", host=f"h{i}")
+        self.assertEqual(len(proxy.blocked), m.NET_BLOCKED_KEPT)
+        self.assertNotIn("h0", proxy.blocked, "the oldest go first")
 
 
 # --- labs ----------------------------------------------------------------------------------
