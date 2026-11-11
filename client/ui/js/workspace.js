@@ -60,12 +60,8 @@ const workspace = (() => {
     if (dock.side) {
       const empty = !dock.tabs.length;
       dock.el.hidden = empty && !dragging;
-      const peeking = Boolean(dock.peek) && !dock.collapsed && !empty;
-      dock.splitter.hidden = empty || dock.collapsed || peeking;
+      dock.splitter.hidden = empty || dock.collapsed;
       dock.el.classList.toggle("collapsed", dock.collapsed && !empty);
-      // Unfolded for a look, the side floats over the terminals (style.css, .side.peek):
-      // their size does not change, so no program redraws and no scroll jumps.
-      dock.el.classList.toggle("peek", peeking);
       // While a tab is dragged, an empty side shows as a wide drop target.
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);
@@ -332,13 +328,11 @@ const workspace = (() => {
     setCurrentTab(tab);
   }
 
-  /** A click on a tab shows it. Collapsing a side is its own button (‹ ›) or the
-   *  tab's right-click menu: a click meant to look at a tab never hides the panel.
-   *  On a collapsed side, the click unfolds it for a look ("peek"): it folds back once
-   *  you are back on the terminals (see foldPeeks), unless you keep it open (the pin button). */
+  /** A click on a tab shows it. On a folded side the click unfolds it, and it stays
+   *  open: going back to the terminals does not re-fold it (that resized the terminal
+   *  twice, and each resize makes Pi reprint, so the view jumped). Collapsing is the ‹ ›
+   *  button or the tab's right-click menu. */
   function clickTab(tab) {
-    const dock = docks[tab.dock];
-    if (dock.side && dock.collapsed) dock.peek = true;
     show(tab);
     save();
   }

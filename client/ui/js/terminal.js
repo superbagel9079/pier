@@ -84,7 +84,24 @@ function makeTerminal(tab, kind) {
   let pendingKeys = "";    // a Ctrl-b that turned out to be for Pi, sent with the next key
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
-  tab.refit = () => { if (visible()) { try { fit.fit(); } catch { /* not laid out yet */ } } };
+  // Fitting changes the width, so Pi (in its regular mode) reprints the whole
+  // conversation and xterm lands at the bottom. Keep the view where it was: the distance
+  // from the bottom is noted, and once Pi's reprint has pulled the view to the bottom
+  // (over the next moments, the exact time unknown), it is pulled back up by as much.
+  tab.refit = () => {
+    if (!visible()) return;
+    const buffer = term.buffer.active;
+    const fromBottom = Math.max(0, buffer.baseY - buffer.viewportY);
+    try { fit.fit(); } catch { return; /* not laid out yet */ }
+    if (fromBottom === 0) return; // was at the bottom: it belongs there, whatever is written
+    const restore = () => {
+      const now = term.buffer.active;
+      // Only when the view is at the very bottom: that is the reprint landing, not the
+      // user scrolling somewhere on purpose in the meantime.
+      if (now.viewportY === now.baseY) term.scrollToLine(Math.max(0, now.baseY - fromBottom));
+    };
+    for (const ms of [60, 180, 360, 600]) setTimeout(() => { if (visible()) restore(); }, ms);
+  };
   // The padding around the text, and the leftover below the last row, take the
   // terminal's own background, as in kitty or foot: no band of another colour.
   tab.applyTheme = () => {
