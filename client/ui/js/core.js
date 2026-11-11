@@ -16,6 +16,16 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** A cost in dollars, or "" for none: two significant digits, at least two decimals
+ *  ($0.00027, $0.0034, $0.042, $0.42, $1.23). Cheap models spend fractions of a cent
+ *  a request, which a fixed $0.000 would show as nothing. */
+function dollars(cost) {
+  if (!(cost > 0)) return "";
+  if (cost < 0.00001) return "<$0.00001";
+  const decimals = Math.max(2, Math.min(5, Math.ceil(-Math.log10(cost)) + 1));
+  return `$${cost.toFixed(decimals).replace(/(\.\d\d\d*?)0+$/, "$1")}`; // $0.06, not $0.060
+}
+
 /** Text with no letter nor digit in it, short: a glyph standing for an action. */
 function isGlyph(text) {
   const value = String(text || "").trim();
