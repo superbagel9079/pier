@@ -373,7 +373,7 @@ def mounted_shares(home):
     shares = []
     try:
         with open("/proc/mounts", encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
+            lines = handle.read().split("\n")  # a mount point may hold U+2028: not a line break here
     except OSError:
         return shares
     for line in lines:
@@ -392,7 +392,7 @@ def mounted_paths():
     mount answers a stat with an error, or not at all)."""
     try:
         with open("/proc/mounts", encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
+            lines = handle.read().split("\n")
     except OSError:
         return set()
     return {re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), line.split()[1]) for line in lines if len(line.split()) > 1}

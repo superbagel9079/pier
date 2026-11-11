@@ -241,6 +241,7 @@ def forge_text(forge, path, accept):
         with forge_open(urllib.request.Request(url, headers=headers), FORGE_TIMEOUT) as answer:
             return answer.read(400 * 1024).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
+        exc.close()  # the error is the answer too, with its connection
         raise ApiError(f"{forge['kind']} refused ({exc.code})")
     except OSError as exc:
         raise ApiError(f"{forge['url']} did not answer ({exc})")
@@ -617,7 +618,7 @@ AGENT_PROMPTS = {
 
 
 def agent_prompt(kind, number):
-    if kind not in AGENT_PROMPTS or not str(number).isdigit() or not 0 < int(number) < 10**7:
+    if kind not in AGENT_PROMPTS or not (str(number).isascii() and str(number).isdigit()) or not 0 < int(number) < 10**7:
         raise ApiError("a task or a review, and its number")
     return AGENT_PROMPTS[kind].format(n=int(number))
 

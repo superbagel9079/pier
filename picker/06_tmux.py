@@ -45,7 +45,7 @@ def read_pi_sessions():
     if result.returncode != 0:
         return {}
     sessions = {}
-    for line in result.stdout.splitlines():
+    for line in result.stdout.split("\n"):  # a path may hold U+2028 and the like: see preview_info
         parts = line.split("\t", 4)
         if len(parts) != 5:
             continue
@@ -54,7 +54,7 @@ def read_pi_sessions():
             "name": name,
             "path": path,
             "attached": attached not in ("", "0"),
-            "last_attached": int(last) if last.isdigit() else 0,
+            "last_attached": int(last) if last.isascii() and last.isdigit() else 0,
             "file": file or None,  # what tmux recorded; what Pi says wins (see pi_sessions)
         }
     return sessions

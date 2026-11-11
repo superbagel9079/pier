@@ -305,6 +305,30 @@ def seccomp_pipe():
     return read
 
 
+_TIOCSTI_SAID = []
+
+
+def tiocsti_guard(bwrap_argv):
+    """bwrap_argv with what keeps the sandbox from typing into its terminal, and the fd
+    bwrap must inherit (None without one): the filter where there is one for this machine;
+    elsewhere --new-session (Pi then misses window size changes), unless the kernel
+    already refuses TIOCSTI (dev.tty.legacy_tiocsti = 0, Linux 6.2 and later)."""
+    fd = seccomp_pipe()
+    if fd is not None:
+        return [bwrap_argv[0], "--seccomp", str(fd), *bwrap_argv[1:]], fd
+    try:
+        with open("/proc/sys/dev/tty/legacy_tiocsti", encoding="ascii") as handle:
+            if handle.read().strip() == "0":
+                return bwrap_argv, None
+    except OSError:
+        pass
+    if not _TIOCSTI_SAID:
+        _TIOCSTI_SAID.append(True)
+        log("warn", "sandbox.new-session", machine=os.uname().machine if hasattr(os, "uname") else "",
+            hint="no TIOCSTI filter for this machine: the sandbox gets its own session, and Pi misses window size changes")
+    return [bwrap_argv[0], "--new-session", *bwrap_argv[1:]], None
+
+
 def git_jail(path):
     """bwrap arguments that run git on path's repository with nothing else: the
     repository read-only, the rest of home hidden, no network, no way out. A project's
@@ -406,7 +430,7 @@ def git_status(path):
     if out is None:
         return None
     info = {"dirty": False, "ahead": 0, "behind": 0}
-    for line in out.decode("utf-8", "replace").splitlines():
+    for line in out.decode("utf-8", "replace").split("\n"):  # see preview_info
         if line.startswith("# branch.ab "):
             parts = line.split()
             try:
@@ -443,9 +467,11 @@ def preview_info(path):
     }
     if git_dir(path):
         out = git_run(path, "log", "-3", "--format=%ct%x09%s") or b""
-        for line in out.decode("utf-8", "replace").splitlines():
+        # Split at line breaks only: splitlines() also cuts at U+2028, U+0085, 0x1C..., which
+        # a commit subject (Pi's to write) may hold, and would make a line of the rest.
+        for line in out.decode("utf-8", "replace").split("\n"):
             stamp, _, subject = line.partition("\t")
-            if stamp.isdigit():
+            if stamp.isascii() and stamp.isdigit():
                 info["commits"].append((int(stamp), subject))
     return info
 

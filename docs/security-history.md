@@ -40,3 +40,23 @@ An outside review of the picker's network proxy. Fixed in pier-picker 4.44:
 - **A request head that never ends** no longer connects anywhere (431). A port only looking like a number (`²`, `99999`) no longer crashes the proxy or the reading of `network_allow`, whose bad entries are now said in the log (`net.bad-allow`).
 - **Limits:** 128 connections at once per Pi (503 past that), the record of refused hosts capped, both sockets always closed. A rule `localhost:PORT` also matches `CONNECT localhost:PORT`.
 - **Still as before:** a host allowed by name is reached at whatever address it resolves to, a private one included (a name you allow on your LAN must keep working).
+
+### Second review of 11 November 2026: leaks and ports
+
+Nothing open to Pi. Fixed in pier-picker 4.45:
+
+- **Ports read the same everywhere:** the sandbox's bridge, a lab host's and a machine's port, and a task's number take only ASCII digits in range (`²` was a digit to the check and a crash to the reading).
+- **A forge's error answers are closed**, a `304 not modified` included: each left a connection open until Python collected it.
+- **The unit tests close what they open** (a pipe, two test servers), and fail when the watch does not end once its input closes.
+
+### Third review of 11 November 2026: what runs outside the sandbox
+
+Fixed in pier-picker 4.45 and Pier's next version:
+
+- **Package updates ran outside the sandbox.** `pi update` read `~/.pi`, which Pi writes from its sandbox: a git hook, an `.npmrc` or a package changed there ran with all your rights at the next update. Package updates now run in Pi's sandbox, as `pi install` does; Pi itself is updated by a fixed npm command, and its version read in its `package.json`: Pi is never run outside its sandbox for them.
+- **A name allowed by `network_allow` could lead to this machine**: its DNS (a tunnel service, a wildcard domain) could answer 127.0.0.1 or the clouds' metadata address 169.254.169.254. Those, link-local, unspecified and multicast addresses are refused for a name (403, `net.inner-address`); an address named in a rule is still reached as written, and your local network stays reachable by name. The proxy connects to the address it checked, with no second lookup.
+- **Text Pi writes broke two parsers:** a commit subject or a restore point's label holding U+2028 (and the like) made a line of its own; the preview could crash, a point lost its label. Git's, tmux's and the mounts' output is now split at line breaks only.
+- **The push sandbox could write the mirror's config and hooks**, which git then reads outside, with the token: they are read-only in there now.
+- **`COM²`, `LPT³` and `CON .txt`** passed the check of Windows' reserved names (take back, and a writable share): refused now.
+- **On a machine without the TIOCSTI filter** (neither x86-64 nor arm64), the sandbox now gets its own session, unless the kernel already refuses TIOCSTI; it is said in the log.
+- **The npm registry's error answers are closed**, and the CI fails when a test leaves a file or socket open.

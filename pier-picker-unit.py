@@ -113,6 +113,34 @@ class AllowList(unittest.TestCase):
         self.assertIsNone(m.plain_port("0"))
         self.assertEqual(m.plain_port("443"), 443)
         self.assertEqual(m.parse_allow(["host:\u00b2", "host:99999", "bad host"]), [], "left out, never a crash")
+        with self.assertRaises(m.ApiError, msg="an answer, not a ValueError"):
+            m.agent_prompt(next(iter(m.AGENT_PROMPTS)), "\u00b2")
+
+    def test_a_commit_subject_makes_no_line_of_its_own(self):
+        saved = m.git_dir, m.git_run
+        m.git_dir = lambda path: True
+        m.git_run = lambda path, *args: "1700000000\tfix ²\tfake\n1700000001\tok\x1c²\tx\n".encode()
+        try:
+            commits = m.preview_info(tempfile.gettempdir())["commits"]
+        finally:
+            m.git_dir, m.git_run = saved
+        self.assertEqual(commits, [(1700000000, "fix ²\tfake"), (1700000001, "ok\x1c²\tx")])
+
+    def test_a_name_never_leads_to_this_machine(self):
+        answers = ["127.0.0.1", "169.254.169.254", "::ffff:127.0.0.1", "fe80::1%eth0", "10.0.0.5", "140.82.112.3"]
+
+        def lookup(host, port, type=0):
+            return [(socket.AF_INET6 if ":" in a else socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                     (a, port, 0, 0) if ":" in a else (a, port)) for a in answers]
+        saved = m.socket.getaddrinfo
+        m.socket.getaddrinfo = lookup
+        try:
+            kept = [a[3][0] for a in m.name_addresses("tunnel.example", 443)]
+            self.assertEqual(kept, ["10.0.0.5", "140.82.112.3"], "the LAN stays, this machine and link-local go")
+            answers[:] = ["127.0.0.1"]
+            self.assertEqual(len(m.name_addresses("127.0.0.1", 8080)), 1, "an address named in a rule is reached as written")
+        finally:
+            m.socket.getaddrinfo = saved
 
     def test_trailing_dots_and_case(self):
         rules = m.parse_allow(["Registry.NPMJS.org."])
@@ -402,6 +430,8 @@ class Watch(Home):
         m.watch_signature = lambda kind, value, home: (kind, self.calls["conv"]) if kind == "conversations" else None
         read, write = os.pipe()
         self.feed = os.fdopen(write, "w")
+        # The read end is the test's to close, not api_watch's (on the VM it reads stdin).
+        self.source = os.fdopen(read, "r")
         self.out = io.StringIO()
         out = self.out
 
@@ -411,7 +441,7 @@ class Watch(Home):
 
             def flush(self):
                 pass
-        self.thread = threading.Thread(target=m.api_watch, args=(self.home, {}, os.fdopen(read, "r"), Out()), daemon=True)
+        self.thread = threading.Thread(target=m.api_watch, args=(self.home, {}, self.source, Out()), daemon=True)
 
     def tearDown(self):
         (m.watch_part, m.watch_signature, m.WATCH_TICK, m.WATCH_MIN, every, m.WATCH_SILENCE) = self.saved_watch
@@ -423,7 +453,11 @@ class Watch(Home):
             pass
         if self.thread.ident is not None:
             self.thread.join(5)
+        stuck = self.thread.is_alive()
+        if not stuck:  # never closed under a thread still reading it
+            self.source.close()
         super().tearDown()
+        self.assertFalse(stuck, "the watch ends when its input closes")
 
     def lines(self):
         return [json.loads(line) for line in self.out.getvalue().splitlines()]
@@ -771,10 +805,12 @@ class Leftovers(Home):
             threading.Thread(target=server.serve_forever, daemon=True).start()
         try:
             request = urllib.request.Request(f"http://127.0.0.1:{first.server_port}/go", headers={"Authorization": "Bearer t"})
-            m.forge_open(request, 5).read()
+            with m.forge_open(request, 5) as response:
+                response.read()
         finally:
-            first.shutdown()
-            other.shutdown()
+            for server in (first, other):
+                server.shutdown()  # stops serve_forever; server_close frees the socket
+                server.server_close()
         self.assertEqual(seen[first.server_port], "Bearer t")
         self.assertIsNone(seen[other.server_port], "not sent on to another host")
 

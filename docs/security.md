@@ -27,7 +27,7 @@
 
 - **The executable is not signed:** Windows shows a warning on first start.
 - **The sandbox hides `~/.ssh`,** so Pi cannot `git push` over SSH, unless you add `sandbox_read = ["~/.ssh"]`. Pi could then read the keys.
-- **`~/.pi` is shared by every project** and writable by Pi (except the conversations: each Pi sees only its project's). A Pi manipulated in one project could add a package, an extension or an MCP server that the Pis of other projects will load, and `pi update` installs those packages outside the sandbox. Setup shows the list of packages: look at it before updating.
+- **`~/.pi` is shared by every project** and writable by Pi (except the conversations: each Pi sees only its project's). A Pi manipulated in one project could add a package, an extension or an MCP server that the Pis of other projects will load, and the Pis of other projects run it. Package updates (`pi update` of a package, or of all of them) run in Pi's sandbox like `pi install`, so what Pi left in `~/.pi` runs with Pi's rights only; Pi itself is updated by a fixed npm command, without running Pi. Setup shows the list of packages: look at it now and then.
 
 ## Network and encryption
 

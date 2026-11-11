@@ -270,7 +270,7 @@ def scanned_keys(machine):
     except (OSError, subprocess.SubprocessError) as exc:
         raise ApiError(f"{machine['host']} did not show its key ({exc})")
     out = []
-    for line in scan.stdout.decode("utf-8", "replace").splitlines():
+    for line in scan.stdout.decode("utf-8", "replace").split("\n"):
         if not line.strip() or line.startswith("#"):
             continue
         try:
@@ -905,7 +905,7 @@ def api_machine_add(home, name, host, port, user, policy, description=""):
         raise ApiError("a machine's name: lowercase letters, digits and '-', starting with a letter, not taken")
     if not LAB_HOST_RE.fullmatch(host or "") or not LAB_USER_RE.fullmatch(user or ""):
         raise ApiError("a host name or address, and a user name")
-    if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536 or policy not in ("ask", "auto"):
+    if plain_port(str(port or "22")) is None or policy not in ("ask", "auto"):
         raise ApiError("a port, and ask or auto")
     _, public = machine_key()
     data["machines"][name] = {"host": host, "port": int(port or 22), "user": user, "policy": policy, "added": int(time.time()),
@@ -964,7 +964,7 @@ def api_host_add(home, name, host, port, user, description):
     if user == "root":
         raise ApiError("not root: labs are made by an account of its own, in the incus group (not incus-admin), "
                        "whose Incus project is restricted; root's key would open the whole host to Pi's labs")
-    if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536:
+    if plain_port(str(port or "22")) is None:
         raise ApiError("a port")
     _, public = machine_key()
     data["hosts"][name] = {"kind": "ssh", "host": host, "port": int(port or 22), "user": user, "added": int(time.time()),

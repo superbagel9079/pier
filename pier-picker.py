@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.44"
+VERSION = "4.45"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -693,6 +693,30 @@ def seccomp_pipe():
     return read
 
 
+_TIOCSTI_SAID = []
+
+
+def tiocsti_guard(bwrap_argv):
+    """bwrap_argv with what keeps the sandbox from typing into its terminal, and the fd
+    bwrap must inherit (None without one): the filter where there is one for this machine;
+    elsewhere --new-session (Pi then misses window size changes), unless the kernel
+    already refuses TIOCSTI (dev.tty.legacy_tiocsti = 0, Linux 6.2 and later)."""
+    fd = seccomp_pipe()
+    if fd is not None:
+        return [bwrap_argv[0], "--seccomp", str(fd), *bwrap_argv[1:]], fd
+    try:
+        with open("/proc/sys/dev/tty/legacy_tiocsti", encoding="ascii") as handle:
+            if handle.read().strip() == "0":
+                return bwrap_argv, None
+    except OSError:
+        pass
+    if not _TIOCSTI_SAID:
+        _TIOCSTI_SAID.append(True)
+        log("warn", "sandbox.new-session", machine=os.uname().machine if hasattr(os, "uname") else "",
+            hint="no TIOCSTI filter for this machine: the sandbox gets its own session, and Pi misses window size changes")
+    return [bwrap_argv[0], "--new-session", *bwrap_argv[1:]], None
+
+
 def git_jail(path):
     """bwrap arguments that run git on path's repository with nothing else: the
     repository read-only, the rest of home hidden, no network, no way out. A project's
@@ -794,7 +818,7 @@ def git_status(path):
     if out is None:
         return None
     info = {"dirty": False, "ahead": 0, "behind": 0}
-    for line in out.decode("utf-8", "replace").splitlines():
+    for line in out.decode("utf-8", "replace").split("\n"):  # see preview_info
         if line.startswith("# branch.ab "):
             parts = line.split()
             try:
@@ -831,9 +855,11 @@ def preview_info(path):
     }
     if git_dir(path):
         out = git_run(path, "log", "-3", "--format=%ct%x09%s") or b""
-        for line in out.decode("utf-8", "replace").splitlines():
+        # Split at line breaks only: splitlines() also cuts at U+2028, U+0085, 0x1C..., which
+        # a commit subject (Pi's to write) may hold, and would make a line of the rest.
+        for line in out.decode("utf-8", "replace").split("\n"):
             stamp, _, subject = line.partition("\t")
-            if stamp.isdigit():
+            if stamp.isascii() and stamp.isdigit():
                 info["commits"].append((int(stamp), subject))
     return info
 
@@ -1278,6 +1304,45 @@ def allowed(rules, host, port):
     return False
 
 
+def name_addresses(host, port):
+    """The addresses a name allowed by network_allow is reached at: those it resolves to,
+    less the ones a name must never lead to: this machine (127.0.0.0/8, ::1), link-local
+    (169.254.0.0/16, the clouds' metadata service at 169.254.169.254 included, fe80::/10),
+    unspecified and multicast. A name whose DNS someone else holds could point there and
+    reach the VM's own services. Addresses of the local network stay reachable: a name
+    you allow on your LAN must keep working. An IP address is reached as written (only a
+    rule naming it lets it through). [] when nothing is left; OSError when nothing resolves."""
+    import ipaddress
+    try:
+        ipaddress.ip_address(host)
+        literal = True
+    except ValueError:
+        literal = False
+    found = []
+    for family, kind, proto, _, address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+        ip = ipaddress.ip_address(address[0].split("%")[0])
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        if literal or not (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast):
+            found.append((family, kind, proto, address))
+    return found
+
+
+def connect_to(addresses, timeout):
+    """A connection to the first of addresses that answers: those checked, with no
+    second lookup that could answer otherwise."""
+    error = OSError("unreachable")
+    for family, kind, proto, address in addresses:
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(timeout)
+            sock.connect(address)
+            return sock
+        except OSError as exc:
+            sock.close()
+            error = exc
+    raise error
+
+
 def node_major(env):
     """The major version of the node Pi runs on, None when there is none."""
     node = shutil.which("node", path=env.get("PATH"))
@@ -1418,7 +1483,13 @@ class NetProxy:
                 client.sendall(b"HTTP/1.1 403 Not allowed by network_allow\r\nContent-Length: 0\r\n\r\n")
                 return
             try:
-                upstream = socket.create_connection((host, port), timeout=15)
+                addresses = name_addresses(host, port)
+                if not addresses:
+                    self.note(f"inner:{host}", "net.inner-address", host=host, port=port,
+                              hint="this name leads to this machine or a link-local address: name the address itself in network_allow if it is meant")
+                    client.sendall(b"HTTP/1.1 403 This name leads to this machine or a link-local address\r\nContent-Length: 0\r\n\r\n")
+                    return
+                upstream = connect_to(addresses, 15)
             except OSError as exc:
                 client.sendall(f"HTTP/1.1 502 {exc.strerror or 'unreachable'}\r\nContent-Length: 0\r\n\r\n".encode("latin-1", "replace"))
                 return
@@ -1460,7 +1531,8 @@ def net_bridge(args):
         print("usage: --net-bridge SOCKET [PORT...] -- PROGRAM", file=sys.stderr)
         return 2
     split = args.index("--")
-    path, ports, program = args[0], [int(p) for p in args[1:split] if p.isdigit()], args[split + 1:]
+    path, program = args[0], args[split + 1:]
+    ports = [port for port in map(plain_port, args[1:split]) if port is not None]
 
     def listen(port, forward):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1730,11 +1802,11 @@ def exec_pi(path, extra):
     sandboxed = sandbox_wanted(config)
 
     def launch(command):
-        # In the sandbox, the filter stopping Pi from typing into its terminal (see
-        # tiocsti_filter): a fresh pipe each time, bwrap reads it to the end.
-        fd = seccomp_pipe() if sandboxed else None
-        if fd is not None:
-            command = [command[0], "--seccomp", str(fd), *command[1:]]
+        # In the sandbox, what stops Pi from typing into its terminal (see tiocsti_guard):
+        # a fresh pipe each time, bwrap reads it to the end.
+        fd = None
+        if sandboxed:
+            command, fd = tiocsti_guard(command)
         kept = [held for held, _ in sessions] + ([] if fd is None else [fd])
         try:
             child = subprocess.Popen(command, cwd=workdir, env=env, pass_fds=kept)
@@ -1824,7 +1896,7 @@ def read_pi_sessions():
     if result.returncode != 0:
         return {}
     sessions = {}
-    for line in result.stdout.splitlines():
+    for line in result.stdout.split("\n"):  # a path may hold U+2028 and the like: see preview_info
         parts = line.split("\t", 4)
         if len(parts) != 5:
             continue
@@ -1833,7 +1905,7 @@ def read_pi_sessions():
             "name": name,
             "path": path,
             "attached": attached not in ("", "0"),
-            "last_attached": int(last) if last.isdigit() else 0,
+            "last_attached": int(last) if last.isascii() and last.isdigit() else 0,
             "file": file or None,  # what tmux recorded; what Pi says wins (see pi_sessions)
         }
     return sessions
@@ -2553,7 +2625,9 @@ def checkpoint_list(project):
     out = checkpoint_git(project, "for-each-ref", "--sort=-refname",
                          "--format=%(refname)%00%(objectname)%00%(tree)%00%(contents:subject)", "refs/devbox/")
     points = []
-    for row in out.decode("utf-8", "replace").splitlines():
+    # Split at line breaks only: the subject is JSON written with ensure_ascii=False, where
+    # U+2028 stays as it is, and splitlines() would cut the point's label there.
+    for row in out.decode("utf-8", "replace").split("\n"):
         fields = row.split("\0")
         if len(fields) != 4:
             continue
@@ -2563,7 +2637,7 @@ def checkpoint_list(project):
             meta = json.loads(subject)
         except ValueError:
             meta = {}
-        if not isinstance(meta, dict) or not ident.isdigit():
+        if not isinstance(meta, dict) or not (ident.isascii() and ident.isdigit()):
             continue
         points.append({"id": ident, "at": int(ident) / 1e9, "ref": ref, "commit": commit, "tree": tree,
                        "reason": meta.get("reason", "manual"), "label": meta.get("label", ""),
@@ -3247,7 +3321,7 @@ def mounted_shares(home):
     shares = []
     try:
         with open("/proc/mounts", encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
+            lines = handle.read().split("\n")  # a mount point may hold U+2028: not a line break here
     except OSError:
         return shares
     for line in lines:
@@ -3266,7 +3340,7 @@ def mounted_paths():
     mount answers a stat with an error, or not at all)."""
     try:
         with open("/proc/mounts", encoding="utf-8", errors="replace") as handle:
-            lines = handle.read().splitlines()
+            lines = handle.read().split("\n")
     except OSError:
         return set()
     return {re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), line.split()[1]) for line in lines if len(line.split()) > 1}
@@ -5285,6 +5359,7 @@ _GALLERY = {}  # query -> (when, results)
 
 def api_gallery(home, query):
     """Packages of the gallery (pi.dev/packages): those tagged pi-package on npm."""
+    import urllib.error
     import urllib.parse
     import urllib.request
     query = " ".join((query or "").split())[:100]
@@ -5297,6 +5372,8 @@ def api_gallery(home, query):
         with urllib.request.urlopen(url, timeout=10) as answer:
             data = json.loads(answer.read(4 * 1024 * 1024))
     except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()  # the error is the answer too, with its connection
         raise ApiError(f"the npm registry did not answer ({exc})")
     results = []
     for item in data.get("objects") or []:
@@ -5310,6 +5387,45 @@ def api_gallery(home, query):
     reply = {"query": query, "results": results}
     _GALLERY[query] = (time.monotonic(), reply)
     return reply
+
+
+def run_in_pi_sandbox(command, project, home, config, env):
+    """Runs a Pi command that handles packages (install, remove, update) in Pi's sandbox
+    for project (~/.pi for yours), network limited as Pi's is: a package's scripts, or
+    a git hook or an .npmrc Pi left in ~/.pi, run with no more than Pi's rights. With the
+    sandbox off, as it is. (status, network: whether the network was limited); status
+    None when it could not start (said)."""
+    network = None
+    if sandbox_wanted(config):
+        if not shutil.which("bwrap"):
+            print(SANDBOX_MISSING)
+            return None, None
+        for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
+            env.pop(key, None)
+        network, unlimited = network_plan(config, env, project)
+        if unlimited:
+            print(f"Pier: {unlimited}")
+        if network:
+            proxy_env(env)
+        command = sandbox_argv(command, os.path.realpath(project), home, config, env, network)
+        print("(in Pi's sandbox: the packages see ~/.pi and this project only"
+              + (", and reach only network_allow)" if network else ")"), flush=True)
+    else:
+        print("(sandbox off: npm's install scripts run with all your rights)", flush=True)
+    fd = None
+    if sandbox_wanted(config):  # bwrap's: only in the sandbox
+        command, fd = tiocsti_guard(command)
+    try:
+        status = subprocess.call(command, env=env, cwd=project, pass_fds=() if fd is None else (fd,))
+    except OSError as exc:
+        print(f"cannot run pi: {exc}")
+        status = 1
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if network:
+            network.close()
+    return status, network
 
 
 def pi_package(args):
@@ -5335,38 +5451,11 @@ def pi_package(args):
         project, local = resolve_inside(home, scope), ["-l"]
     command = [*argv, action, *local, source]
     print(f"$ pi {action} {' '.join(local + [source])}", flush=True)
-    network = None
-    if sandbox_wanted(config):
-        if not shutil.which("bwrap"):
-            print(SANDBOX_MISSING)
-            pause_for_enter("press Enter to close ")
-            return 1
-        for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
-            env.pop(key, None)
-        network, unlimited = network_plan(config, env, project)
-        if unlimited:
-            print(f"Pier: {unlimited}")
-        if network:
-            proxy_env(env)
-        command = sandbox_argv(command, os.path.realpath(project), home, config, env, network)
-        print("(in Pi's sandbox: the package sees ~/.pi and this project only"
-              + (", and reaches only network_allow)" if network else ")"), flush=True)
-    else:
-        print("(sandbox off: npm's install scripts run with all your rights)", flush=True)
     log("info", f"pi.{action}", source=source, scope="user" if not local else project)
-    fd = seccomp_pipe() if sandbox_wanted(config) else None  # bwrap reads it: only in the sandbox
-    if fd is not None:
-        command = [command[0], "--seccomp", str(fd), *command[1:]]
-    try:
-        status = subprocess.call(command, env=env, cwd=project, pass_fds=() if fd is None else (fd,))
-    except OSError as exc:
-        print(f"cannot run pi: {exc}")
-        status = 1
-    finally:
-        if fd is not None:
-            os.close(fd)
-        if network:
-            network.close()
+    status, network = run_in_pi_sandbox(command, project, home, config, env)
+    if status is None:
+        pause_for_enter("press Enter to close ")
+        return 1
     log("warn" if status else "info", f"pi.{action}-done", source=source, status=status)
     forget_versions(home)
     print("\n" + ("done" if not status else f"pi {action} failed (status {status})")
@@ -5548,17 +5637,19 @@ def forge_request(forge, method, path, body=None):
                 while len(_FORGE_ETAGS) > FORGE_ETAGS_KEPT:
                     _FORGE_ETAGS.pop(next(iter(_FORGE_ETAGS)))
     except urllib.error.HTTPError as exc:
-        if exc.code == 304 and known:
-            text = known[1]
-            return json.loads(text) if text.strip() else {}
-        detail = ""
-        try:
-            payload = json.loads(exc.read(64 * 1024) or b"{}")
-            detail = payload.get("message") or payload.get("error") or ""
-            if isinstance(detail, (dict, list)):
-                detail = json.dumps(detail)[:300]
-        except (ValueError, OSError):
-            pass
+        # The error is the answer too, with its connection: closed whatever it said.
+        with exc:
+            if exc.code == 304 and known:
+                text = known[1]
+                return json.loads(text) if text.strip() else {}
+            detail = ""
+            try:
+                payload = json.loads(exc.read(64 * 1024) or b"{}")
+                detail = payload.get("message") or payload.get("error") or ""
+                if isinstance(detail, (dict, list)):
+                    detail = json.dumps(detail)[:300]
+            except (ValueError, OSError):
+                pass
         raise ApiError(f"{forge['kind']} refused ({exc.code}){': ' + str(detail)[:300] if detail else ''}")
     except (OSError, ValueError) as exc:
         raise ApiError(f"{forge['url']} did not answer ({exc})")
@@ -5844,7 +5935,11 @@ def git_push(home, project, link, branch):
     jail = git_jail(project)
     if jail is not None:
         cut = jail.index("--unshare-all")
-        jail = jail[:cut] + ["--bind", mirror, mirror] + jail[cut:]
+        # The mirror is written (objects, refs), but not what mirror_git then reads outside
+        # with the token: its config (a push URL, a proxy) and hooks stay read-only.
+        kept = [arg for name in ("config", "hooks", "info")
+                for arg in ("--ro-bind-try", os.path.join(mirror, name), os.path.join(mirror, name))]
+        jail = jail[:cut] + ["--bind", mirror, mirror, *kept] + jail[cut:]
     # The commits, into the mirror: git reads the project in its jail, writes nowhere else.
     jailed_git(jail, "--git-dir", mirror, "fetch", "--no-tags", "--quiet", os.path.realpath(project),
                f"+refs/heads/{branch}:refs/heads/{branch}")
@@ -6403,6 +6498,7 @@ def forge_text(forge, path, accept):
         with forge_open(urllib.request.Request(url, headers=headers), FORGE_TIMEOUT) as answer:
             return answer.read(400 * 1024).decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
+        exc.close()  # the error is the answer too, with its connection
         raise ApiError(f"{forge['kind']} refused ({exc.code})")
     except OSError as exc:
         raise ApiError(f"{forge['url']} did not answer ({exc})")
@@ -6779,7 +6875,7 @@ AGENT_PROMPTS = {
 
 
 def agent_prompt(kind, number):
-    if kind not in AGENT_PROMPTS or not str(number).isdigit() or not 0 < int(number) < 10**7:
+    if kind not in AGENT_PROMPTS or not (str(number).isascii() and str(number).isdigit()) or not 0 < int(number) < 10**7:
         raise ApiError("a task or a review, and its number")
     return AGENT_PROMPTS[kind].format(n=int(number))
 
@@ -7060,7 +7156,7 @@ def scanned_keys(machine):
     except (OSError, subprocess.SubprocessError) as exc:
         raise ApiError(f"{machine['host']} did not show its key ({exc})")
     out = []
-    for line in scan.stdout.decode("utf-8", "replace").splitlines():
+    for line in scan.stdout.decode("utf-8", "replace").split("\n"):
         if not line.strip() or line.startswith("#"):
             continue
         try:
@@ -7695,7 +7791,7 @@ def api_machine_add(home, name, host, port, user, policy, description=""):
         raise ApiError("a machine's name: lowercase letters, digits and '-', starting with a letter, not taken")
     if not LAB_HOST_RE.fullmatch(host or "") or not LAB_USER_RE.fullmatch(user or ""):
         raise ApiError("a host name or address, and a user name")
-    if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536 or policy not in ("ask", "auto"):
+    if plain_port(str(port or "22")) is None or policy not in ("ask", "auto"):
         raise ApiError("a port, and ask or auto")
     _, public = machine_key()
     data["machines"][name] = {"host": host, "port": int(port or 22), "user": user, "policy": policy, "added": int(time.time()),
@@ -7754,7 +7850,7 @@ def api_host_add(home, name, host, port, user, description):
     if user == "root":
         raise ApiError("not root: labs are made by an account of its own, in the incus group (not incus-admin), "
                        "whose Incus project is restricted; root's key would open the whole host to Pi's labs")
-    if not str(port or "22").isdigit() or not 0 < int(port or 22) < 65536:
+    if plain_port(str(port or "22")) is None:
         raise ApiError("a port")
     _, public = machine_key()
     data["hosts"][name] = {"kind": "ssh", "host": host, "port": int(port or 22), "user": user, "added": int(time.time()),
@@ -8340,26 +8436,54 @@ def versions_path(home):
 
 
 def npm_latest(name):
+    import urllib.error
     import urllib.request
     url = "https://registry.npmjs.org/" + name.replace("/", "%2F") + "/latest"
-    with urllib.request.urlopen(url, timeout=3) as answer:
-        data = json.loads(answer.read(1024 * 1024))
+    try:
+        with urllib.request.urlopen(url, timeout=3) as answer:
+            data = json.loads(answer.read(1024 * 1024))
+    except urllib.error.HTTPError as exc:  # a 404 for a name Pi wrote, a 429: closed, then said
+        exc.close()
+        raise
     version = data.get("version") if isinstance(data, dict) else None
     return version if isinstance(version, str) else None
 
 
-def installed_pi_version(home):
+VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-[\w.]+)?")
+
+
+def pi_package_folder(home):
+    """The folder of Pi's npm package (holding its package.json), found from its program;
+    None when Pi was not installed by npm."""
     config, _ = load_config(home)
     argv = pi_argv(config, child_env(home))
     if not argv:
         return None
-    try:
-        out = subprocess.run([*argv, "--version"], capture_output=True, text=True, timeout=10,
-                             stdin=subprocess.DEVNULL, env=child_env(home))
-    except (OSError, subprocess.SubprocessError):
+    folder = os.path.dirname(os.path.realpath(argv[0]))
+    for _ in range(6):
+        manifest = read_json_file(os.path.join(folder, "package.json"))
+        if isinstance(manifest, dict) and manifest.get("name") == PI_NPM:
+            return folder
+        folder = os.path.dirname(folder)
+    return None
+
+
+def installed_pi_version(home):
+    """Pi's version, read in its package.json: Pi is not run for it, so nothing it would
+    load from ~/.pi (which Pi itself can write) runs outside its sandbox."""
+    folder = pi_package_folder(home)
+    manifest = read_json_file(os.path.join(folder, "package.json")) if folder else None
+    version = manifest.get("version") if isinstance(manifest, dict) else None
+    return version if isinstance(version, str) and VERSION_RE.fullmatch(version) else None
+
+
+def pi_npm_prefix(home):
+    """The npm prefix Pi is installed under (PREFIX/lib/node_modules/<Pi's package>)."""
+    folder = pi_package_folder(home)
+    tail = os.path.join("lib", "node_modules", *PI_NPM.split("/"))
+    if not folder or not folder.endswith(os.sep + tail):
         return None
-    found = re.search(r"\d+\.\d+\.\d+[\w.-]*", out.stdout + out.stderr)
-    return found.group(0) if found else None
+    return folder[:-len(tail) - 1] or "/"
 
 
 def pi_program_key(home):
@@ -8456,28 +8580,63 @@ def forget_versions(home):
 
 PI_UPDATE_TARGET = re.compile(r"(npm:|git:|https://)[A-Za-z0-9@/._:+~-]{1,200}")
 
-# When Pi was installed by root (`sudo npm install -g`, in /usr/local), it cannot update
-# itself and says which npm command would. That command, and only one of that shape
-# (npm, a prefix, install -g, plain options, Pi's own package at a version), may be run
-# with sudo once the user says yes; sudo asks for the password in this terminal.
+# When Pi was installed by root (`sudo npm install -g`, in /usr/local), updating it needs
+# sudo. Only a command of this shape (npm, a system prefix, install -g, Pi's own package
+# at a version) is run with sudo, once the user says yes; sudo asks for the password in
+# this terminal.
 NPM_SELF_UPDATE = re.compile(
-    r"npm --prefix (/usr|/usr/local|/opt/[\w.-]+) install -g((?: --ignore-scripts| --min-release-age=\d+)*) "
-    + re.escape(PI_NPM) + r"@\d+\.\d+\.\d+(?:-[\w.]+)?")
+    r"npm --prefix (/usr|/usr/local|/opt/[\w.-]+) install -g " + re.escape(PI_NPM) + r"@\d+\.\d+\.\d+(?:-[\w.]+)?")
 
 
-def suggested_self_update(output):
-    """The npm command Pi suggests when it cannot update itself, checked; else None."""
-    found = re.search(r"Update it yourself with:\s*(npm [^\r\n]+(?:\r?\n[^\r\n]+)?)", output)
-    if not found:
-        return None
-    command = " ".join(found.group(1).split())  # the terminal may have wrapped it
-    match = NPM_SELF_UPDATE.match(command)
-    return command[:match.end()] if match else None
+def pi_self_update(home, env):
+    """Pi itself, updated by a fixed npm command (npm --prefix PREFIX install -g Pi@latest),
+    not by `pi update --self`: Pi reads ~/.pi/agent/settings.json, which Pi can write from
+    its sandbox, and whose npmCommand chooses what runs; this runs outside the sandbox
+    (Pi's program is read-only in there). A prefix of root's: the same command with sudo,
+    once the user says yes."""
+    prefix = pi_npm_prefix(home)
+    if prefix is None:
+        print("Pi was not installed with npm install -g: update it the way it was installed.")
+        return 1
+    try:
+        latest = npm_latest(PI_NPM)
+    except (OSError, ValueError) as exc:
+        print(f"the npm registry did not answer ({exc})")
+        return 1
+    npm = shutil.which("npm", path=env.get("PATH"))
+    if not latest or not VERSION_RE.fullmatch(latest) or not npm:
+        print("npm not found on PATH" if not npm else "the npm registry gave no version of Pi")
+        return 1
+    command = f"npm --prefix {shlex.quote(prefix)} install -g {PI_NPM}@{latest}"
+    print(f"$ {command}", flush=True)
+    log("info", "pi.self-update", prefix=prefix, version=latest)
+    try:
+        # From / : no project's .npmrc is read on the way.
+        status = subprocess.call([npm, *shlex.split(command)[1:]], env=env, cwd="/")
+    except OSError as exc:
+        print(f"cannot run npm: {exc}")
+        status = 1
+    log("warn" if status else "info", "pi.self-update-done", status=status)
+    if status and NPM_SELF_UPDATE.fullmatch(command) and not os.access(prefix, os.W_OK) and shutil.which("sudo"):
+        print(f"\nPi is installed for all users (by root): updating it needs sudo.\n  sudo {command}")
+        sys.stdout.write("Run it now? sudo asks for your password here. [y/N] ")
+        sys.stdout.flush()
+        try:
+            answer = sys.stdin.readline().strip().lower()
+        except (OSError, ValueError):
+            answer = ""
+        if answer in ("y", "yes", "o", "oui"):
+            log("info", "pi.update-sudo", command=command)
+            status = subprocess.call(["sudo", *shlex.split(command)], env=env, cwd="/")
+            log("warn" if status else "info", "pi.update-sudo-done", status=status)
+    return status
 
 
 def pi_update(args):
-    """--pi-update [--all | --extensions | SOURCE]: `pi update` in a terminal of Pier, then
-    the versions are asked again."""
+    """--pi-update [--all | --extensions | SOURCE]: an update in a terminal of Pier, then
+    the versions are asked again. Pi itself (no argument, --all) by pi_self_update; the
+    packages (--extensions, --all, SOURCE) by `pi update` in Pi's sandbox, as `pi install`
+    is: a git hook, an .npmrc or a package Pi changed in ~/.pi runs with Pi's rights only."""
     home = home_dir()
     config, _ = load_config(home)
     env = child_env(home)
@@ -8488,35 +8647,16 @@ def pi_update(args):
     if len(args) > 1 or (args and args[0] not in ("--all", "--extensions") and not PI_UPDATE_TARGET.fullmatch(args[0])):
         print("usage: --pi-update [--all | --extensions | SOURCE]")
         return 2
-    command = [*argv, "update", *args]
-    print("$ pi update " + " ".join(args), flush=True)
     log("info", "pi.update", args=list(args))
-    output = []
-    try:
-        child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 text=True, errors="replace", bufsize=1)
-        for text in child.stdout:  # shown as it comes, and kept to read Pi's advice
-            sys.stdout.write(text)
-            sys.stdout.flush()
-            output.append(text)
-        status = child.wait()
-    except OSError as exc:
-        print(f"cannot run pi: {exc}")
-        status = 1
+    status = 0
+    if not args or args[0] == "--all":
+        status = pi_self_update(home, env)
+    if args:
+        packages = ["--extensions"] if args[0] in ("--all", "--extensions") else [args[0]]
+        print("\n$ pi update " + " ".join(packages), flush=True)
+        done, _ = run_in_pi_sandbox([*argv, "update", *packages], os.path.join(home, ".pi"), home, config, env)
+        status = status or (1 if done is None else done)
     log("warn" if status else "info", "pi.update-done", args=list(args), status=status)
-    fix = suggested_self_update("".join(output)) if status and args[:1] != ["--extensions"] else None
-    if fix and shutil.which("sudo"):
-        print(f"\nPi is installed for all users (by root): updating it needs sudo.\n  sudo {fix}")
-        sys.stdout.write("Run it now? sudo asks for your password here. [y/N] ")
-        sys.stdout.flush()
-        try:
-            answer = sys.stdin.readline().strip().lower()
-        except (OSError, ValueError):
-            answer = ""
-        if answer in ("y", "yes", "o", "oui"):
-            log("info", "pi.update-sudo", command=fix)
-            status = subprocess.call(["sudo", *shlex.split(fix)], env=env)
-            log("warn" if status else "info", "pi.update-sudo-done", status=status)
     forget_versions(home)
     print("\n" + ("done" if not status else f"pi update failed (status {status})")
           + ". Running Pis keep their version until they restart.")

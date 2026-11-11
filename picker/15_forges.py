@@ -168,17 +168,19 @@ def forge_request(forge, method, path, body=None):
                 while len(_FORGE_ETAGS) > FORGE_ETAGS_KEPT:
                     _FORGE_ETAGS.pop(next(iter(_FORGE_ETAGS)))
     except urllib.error.HTTPError as exc:
-        if exc.code == 304 and known:
-            text = known[1]
-            return json.loads(text) if text.strip() else {}
-        detail = ""
-        try:
-            payload = json.loads(exc.read(64 * 1024) or b"{}")
-            detail = payload.get("message") or payload.get("error") or ""
-            if isinstance(detail, (dict, list)):
-                detail = json.dumps(detail)[:300]
-        except (ValueError, OSError):
-            pass
+        # The error is the answer too, with its connection: closed whatever it said.
+        with exc:
+            if exc.code == 304 and known:
+                text = known[1]
+                return json.loads(text) if text.strip() else {}
+            detail = ""
+            try:
+                payload = json.loads(exc.read(64 * 1024) or b"{}")
+                detail = payload.get("message") or payload.get("error") or ""
+                if isinstance(detail, (dict, list)):
+                    detail = json.dumps(detail)[:300]
+            except (ValueError, OSError):
+                pass
         raise ApiError(f"{forge['kind']} refused ({exc.code}){': ' + str(detail)[:300] if detail else ''}")
     except (OSError, ValueError) as exc:
         raise ApiError(f"{forge['url']} did not answer ({exc})")
@@ -464,7 +466,11 @@ def git_push(home, project, link, branch):
     jail = git_jail(project)
     if jail is not None:
         cut = jail.index("--unshare-all")
-        jail = jail[:cut] + ["--bind", mirror, mirror] + jail[cut:]
+        # The mirror is written (objects, refs), but not what mirror_git then reads outside
+        # with the token: its config (a push URL, a proxy) and hooks stay read-only.
+        kept = [arg for name in ("config", "hooks", "info")
+                for arg in ("--ro-bind-try", os.path.join(mirror, name), os.path.join(mirror, name))]
+        jail = jail[:cut] + ["--bind", mirror, mirror, *kept] + jail[cut:]
     # The commits, into the mirror: git reads the project in its jail, writes nowhere else.
     jailed_git(jail, "--git-dir", mirror, "fetch", "--no-tags", "--quiet", os.path.realpath(project),
                f"+refs/heads/{branch}:refs/heads/{branch}")
