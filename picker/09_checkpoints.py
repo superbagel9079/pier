@@ -209,7 +209,9 @@ def checkpoint_list(project):
     out = checkpoint_git(project, "for-each-ref", "--sort=-refname",
                          "--format=%(refname)%00%(objectname)%00%(tree)%00%(contents:subject)", "refs/devbox/")
     points = []
-    for row in out.decode("utf-8", "replace").splitlines():
+    # Split at line breaks only: the subject is JSON written with ensure_ascii=False, where
+    # U+2028 stays as it is, and splitlines() would cut the point's label there.
+    for row in out.decode("utf-8", "replace").split("\n"):
         fields = row.split("\0")
         if len(fields) != 4:
             continue
@@ -219,7 +221,7 @@ def checkpoint_list(project):
             meta = json.loads(subject)
         except ValueError:
             meta = {}
-        if not isinstance(meta, dict) or not ident.isdigit():
+        if not isinstance(meta, dict) or not (ident.isascii() and ident.isdigit()):
             continue
         points.append({"id": ident, "at": int(ident) / 1e9, "ref": ref, "commit": commit, "tree": tree,
                        "reason": meta.get("reason", "manual"), "label": meta.get("label", ""),

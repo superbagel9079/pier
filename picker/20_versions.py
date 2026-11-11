@@ -3,26 +3,54 @@ def versions_path(home):
 
 
 def npm_latest(name):
+    import urllib.error
     import urllib.request
     url = "https://registry.npmjs.org/" + name.replace("/", "%2F") + "/latest"
-    with urllib.request.urlopen(url, timeout=3) as answer:
-        data = json.loads(answer.read(1024 * 1024))
+    try:
+        with urllib.request.urlopen(url, timeout=3) as answer:
+            data = json.loads(answer.read(1024 * 1024))
+    except urllib.error.HTTPError as exc:  # a 404 for a name Pi wrote, a 429: closed, then said
+        exc.close()
+        raise
     version = data.get("version") if isinstance(data, dict) else None
     return version if isinstance(version, str) else None
 
 
-def installed_pi_version(home):
+VERSION_RE = re.compile(r"\d+\.\d+\.\d+(?:-[\w.]+)?")
+
+
+def pi_package_folder(home):
+    """The folder of Pi's npm package (holding its package.json), found from its program;
+    None when Pi was not installed by npm."""
     config, _ = load_config(home)
     argv = pi_argv(config, child_env(home))
     if not argv:
         return None
-    try:
-        out = subprocess.run([*argv, "--version"], capture_output=True, text=True, timeout=10,
-                             stdin=subprocess.DEVNULL, env=child_env(home))
-    except (OSError, subprocess.SubprocessError):
+    folder = os.path.dirname(os.path.realpath(argv[0]))
+    for _ in range(6):
+        manifest = read_json_file(os.path.join(folder, "package.json"))
+        if isinstance(manifest, dict) and manifest.get("name") == PI_NPM:
+            return folder
+        folder = os.path.dirname(folder)
+    return None
+
+
+def installed_pi_version(home):
+    """Pi's version, read in its package.json: Pi is not run for it, so nothing it would
+    load from ~/.pi (which Pi itself can write) runs outside its sandbox."""
+    folder = pi_package_folder(home)
+    manifest = read_json_file(os.path.join(folder, "package.json")) if folder else None
+    version = manifest.get("version") if isinstance(manifest, dict) else None
+    return version if isinstance(version, str) and VERSION_RE.fullmatch(version) else None
+
+
+def pi_npm_prefix(home):
+    """The npm prefix Pi is installed under (PREFIX/lib/node_modules/<Pi's package>)."""
+    folder = pi_package_folder(home)
+    tail = os.path.join("lib", "node_modules", *PI_NPM.split("/"))
+    if not folder or not folder.endswith(os.sep + tail):
         return None
-    found = re.search(r"\d+\.\d+\.\d+[\w.-]*", out.stdout + out.stderr)
-    return found.group(0) if found else None
+    return folder[:-len(tail) - 1] or "/"
 
 
 def pi_program_key(home):
@@ -119,28 +147,63 @@ def forget_versions(home):
 
 PI_UPDATE_TARGET = re.compile(r"(npm:|git:|https://)[A-Za-z0-9@/._:+~-]{1,200}")
 
-# When Pi was installed by root (`sudo npm install -g`, in /usr/local), it cannot update
-# itself and says which npm command would. That command, and only one of that shape
-# (npm, a prefix, install -g, plain options, Pi's own package at a version), may be run
-# with sudo once the user says yes; sudo asks for the password in this terminal.
+# When Pi was installed by root (`sudo npm install -g`, in /usr/local), updating it needs
+# sudo. Only a command of this shape (npm, a system prefix, install -g, Pi's own package
+# at a version) is run with sudo, once the user says yes; sudo asks for the password in
+# this terminal.
 NPM_SELF_UPDATE = re.compile(
-    r"npm --prefix (/usr|/usr/local|/opt/[\w.-]+) install -g((?: --ignore-scripts| --min-release-age=\d+)*) "
-    + re.escape(PI_NPM) + r"@\d+\.\d+\.\d+(?:-[\w.]+)?")
+    r"npm --prefix (/usr|/usr/local|/opt/[\w.-]+) install -g " + re.escape(PI_NPM) + r"@\d+\.\d+\.\d+(?:-[\w.]+)?")
 
 
-def suggested_self_update(output):
-    """The npm command Pi suggests when it cannot update itself, checked; else None."""
-    found = re.search(r"Update it yourself with:\s*(npm [^\r\n]+(?:\r?\n[^\r\n]+)?)", output)
-    if not found:
-        return None
-    command = " ".join(found.group(1).split())  # the terminal may have wrapped it
-    match = NPM_SELF_UPDATE.match(command)
-    return command[:match.end()] if match else None
+def pi_self_update(home, env):
+    """Pi itself, updated by a fixed npm command (npm --prefix PREFIX install -g Pi@latest),
+    not by `pi update --self`: Pi reads ~/.pi/agent/settings.json, which Pi can write from
+    its sandbox, and whose npmCommand chooses what runs; this runs outside the sandbox
+    (Pi's program is read-only in there). A prefix of root's: the same command with sudo,
+    once the user says yes."""
+    prefix = pi_npm_prefix(home)
+    if prefix is None:
+        print("Pi was not installed with npm install -g: update it the way it was installed.")
+        return 1
+    try:
+        latest = npm_latest(PI_NPM)
+    except (OSError, ValueError) as exc:
+        print(f"the npm registry did not answer ({exc})")
+        return 1
+    npm = shutil.which("npm", path=env.get("PATH"))
+    if not latest or not VERSION_RE.fullmatch(latest) or not npm:
+        print("npm not found on PATH" if not npm else "the npm registry gave no version of Pi")
+        return 1
+    command = f"npm --prefix {shlex.quote(prefix)} install -g {PI_NPM}@{latest}"
+    print(f"$ {command}", flush=True)
+    log("info", "pi.self-update", prefix=prefix, version=latest)
+    try:
+        # From / : no project's .npmrc is read on the way.
+        status = subprocess.call([npm, *shlex.split(command)[1:]], env=env, cwd="/")
+    except OSError as exc:
+        print(f"cannot run npm: {exc}")
+        status = 1
+    log("warn" if status else "info", "pi.self-update-done", status=status)
+    if status and NPM_SELF_UPDATE.fullmatch(command) and not os.access(prefix, os.W_OK) and shutil.which("sudo"):
+        print(f"\nPi is installed for all users (by root): updating it needs sudo.\n  sudo {command}")
+        sys.stdout.write("Run it now? sudo asks for your password here. [y/N] ")
+        sys.stdout.flush()
+        try:
+            answer = sys.stdin.readline().strip().lower()
+        except (OSError, ValueError):
+            answer = ""
+        if answer in ("y", "yes", "o", "oui"):
+            log("info", "pi.update-sudo", command=command)
+            status = subprocess.call(["sudo", *shlex.split(command)], env=env, cwd="/")
+            log("warn" if status else "info", "pi.update-sudo-done", status=status)
+    return status
 
 
 def pi_update(args):
-    """--pi-update [--all | --extensions | SOURCE]: `pi update` in a terminal of Pier, then
-    the versions are asked again."""
+    """--pi-update [--all | --extensions | SOURCE]: an update in a terminal of Pier, then
+    the versions are asked again. Pi itself (no argument, --all) by pi_self_update; the
+    packages (--extensions, --all, SOURCE) by `pi update` in Pi's sandbox, as `pi install`
+    is: a git hook, an .npmrc or a package Pi changed in ~/.pi runs with Pi's rights only."""
     home = home_dir()
     config, _ = load_config(home)
     env = child_env(home)
@@ -151,35 +214,16 @@ def pi_update(args):
     if len(args) > 1 or (args and args[0] not in ("--all", "--extensions") and not PI_UPDATE_TARGET.fullmatch(args[0])):
         print("usage: --pi-update [--all | --extensions | SOURCE]")
         return 2
-    command = [*argv, "update", *args]
-    print("$ pi update " + " ".join(args), flush=True)
     log("info", "pi.update", args=list(args))
-    output = []
-    try:
-        child = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 text=True, errors="replace", bufsize=1)
-        for text in child.stdout:  # shown as it comes, and kept to read Pi's advice
-            sys.stdout.write(text)
-            sys.stdout.flush()
-            output.append(text)
-        status = child.wait()
-    except OSError as exc:
-        print(f"cannot run pi: {exc}")
-        status = 1
+    status = 0
+    if not args or args[0] == "--all":
+        status = pi_self_update(home, env)
+    if args:
+        packages = ["--extensions"] if args[0] in ("--all", "--extensions") else [args[0]]
+        print("\n$ pi update " + " ".join(packages), flush=True)
+        done, _ = run_in_pi_sandbox([*argv, "update", *packages], os.path.join(home, ".pi"), home, config, env)
+        status = status or (1 if done is None else done)
     log("warn" if status else "info", "pi.update-done", args=list(args), status=status)
-    fix = suggested_self_update("".join(output)) if status and args[:1] != ["--extensions"] else None
-    if fix and shutil.which("sudo"):
-        print(f"\nPi is installed for all users (by root): updating it needs sudo.\n  sudo {fix}")
-        sys.stdout.write("Run it now? sudo asks for your password here. [y/N] ")
-        sys.stdout.flush()
-        try:
-            answer = sys.stdin.readline().strip().lower()
-        except (OSError, ValueError):
-            answer = ""
-        if answer in ("y", "yes", "o", "oui"):
-            log("info", "pi.update-sudo", command=fix)
-            status = subprocess.call(["sudo", *shlex.split(fix)], env=env)
-            log("warn" if status else "info", "pi.update-sudo-done", status=status)
     forget_versions(home)
     print("\n" + ("done" if not status else f"pi update failed (status {status})")
           + ". Running Pis keep their version until they restart.")

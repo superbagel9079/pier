@@ -87,6 +87,45 @@ def allowed(rules, host, port):
     return False
 
 
+def name_addresses(host, port):
+    """The addresses a name allowed by network_allow is reached at: those it resolves to,
+    less the ones a name must never lead to: this machine (127.0.0.0/8, ::1), link-local
+    (169.254.0.0/16, the clouds' metadata service at 169.254.169.254 included, fe80::/10),
+    unspecified and multicast. A name whose DNS someone else holds could point there and
+    reach the VM's own services. Addresses of the local network stay reachable: a name
+    you allow on your LAN must keep working. An IP address is reached as written (only a
+    rule naming it lets it through). [] when nothing is left; OSError when nothing resolves."""
+    import ipaddress
+    try:
+        ipaddress.ip_address(host)
+        literal = True
+    except ValueError:
+        literal = False
+    found = []
+    for family, kind, proto, _, address in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM):
+        ip = ipaddress.ip_address(address[0].split("%")[0])
+        ip = getattr(ip, "ipv4_mapped", None) or ip
+        if literal or not (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast):
+            found.append((family, kind, proto, address))
+    return found
+
+
+def connect_to(addresses, timeout):
+    """A connection to the first of addresses that answers: those checked, with no
+    second lookup that could answer otherwise."""
+    error = OSError("unreachable")
+    for family, kind, proto, address in addresses:
+        sock = socket.socket(family, kind, proto)
+        try:
+            sock.settimeout(timeout)
+            sock.connect(address)
+            return sock
+        except OSError as exc:
+            sock.close()
+            error = exc
+    raise error
+
+
 def node_major(env):
     """The major version of the node Pi runs on, None when there is none."""
     node = shutil.which("node", path=env.get("PATH"))
@@ -227,7 +266,13 @@ class NetProxy:
                 client.sendall(b"HTTP/1.1 403 Not allowed by network_allow\r\nContent-Length: 0\r\n\r\n")
                 return
             try:
-                upstream = socket.create_connection((host, port), timeout=15)
+                addresses = name_addresses(host, port)
+                if not addresses:
+                    self.note(f"inner:{host}", "net.inner-address", host=host, port=port,
+                              hint="this name leads to this machine or a link-local address: name the address itself in network_allow if it is meant")
+                    client.sendall(b"HTTP/1.1 403 This name leads to this machine or a link-local address\r\nContent-Length: 0\r\n\r\n")
+                    return
+                upstream = connect_to(addresses, 15)
             except OSError as exc:
                 client.sendall(f"HTTP/1.1 502 {exc.strerror or 'unreachable'}\r\nContent-Length: 0\r\n\r\n".encode("latin-1", "replace"))
                 return
@@ -269,7 +314,8 @@ def net_bridge(args):
         print("usage: --net-bridge SOCKET [PORT...] -- PROGRAM", file=sys.stderr)
         return 2
     split = args.index("--")
-    path, ports, program = args[0], [int(p) for p in args[1:split] if p.isdigit()], args[split + 1:]
+    path, program = args[0], args[split + 1:]
+    ports = [port for port in map(plain_port, args[1:split]) if port is not None]
 
     def listen(port, forward):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -539,11 +585,11 @@ def exec_pi(path, extra):
     sandboxed = sandbox_wanted(config)
 
     def launch(command):
-        # In the sandbox, the filter stopping Pi from typing into its terminal (see
-        # tiocsti_filter): a fresh pipe each time, bwrap reads it to the end.
-        fd = seccomp_pipe() if sandboxed else None
-        if fd is not None:
-            command = [command[0], "--seccomp", str(fd), *command[1:]]
+        # In the sandbox, what stops Pi from typing into its terminal (see tiocsti_guard):
+        # a fresh pipe each time, bwrap reads it to the end.
+        fd = None
+        if sandboxed:
+            command, fd = tiocsti_guard(command)
         kept = [held for held, _ in sessions] + ([] if fd is None else [fd])
         try:
             child = subprocess.Popen(command, cwd=workdir, env=env, pass_fds=kept)

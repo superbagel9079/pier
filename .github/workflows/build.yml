@@ -107,7 +107,15 @@ jobs:
       - name: pier-picker.py is picker/ joined
         run: python -B tools/bundle.py --check
       - name: Unit tests
-        run: python -B pier-picker-unit.py
+        # bash: -o pipefail, a failing test fails the step through tee. A file or socket
+        # left open (ResourceWarning) fails it too.
+        shell: bash
+        run: |
+          python -B -W always::ResourceWarning pier-picker-unit.py 2>&1 | tee unit.log
+          if grep -q ResourceWarning unit.log; then
+            echo "::error::a test leaves a file or socket open (ResourceWarning above)"
+            exit 1
+          fi
       - name: The suite of the VM
         run: python -B pier-picker-tests.py
 

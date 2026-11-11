@@ -358,6 +358,7 @@ _GALLERY = {}  # query -> (when, results)
 
 def api_gallery(home, query):
     """Packages of the gallery (pi.dev/packages): those tagged pi-package on npm."""
+    import urllib.error
     import urllib.parse
     import urllib.request
     query = " ".join((query or "").split())[:100]
@@ -370,6 +371,8 @@ def api_gallery(home, query):
         with urllib.request.urlopen(url, timeout=10) as answer:
             data = json.loads(answer.read(4 * 1024 * 1024))
     except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()  # the error is the answer too, with its connection
         raise ApiError(f"the npm registry did not answer ({exc})")
     results = []
     for item in data.get("objects") or []:
@@ -383,6 +386,45 @@ def api_gallery(home, query):
     reply = {"query": query, "results": results}
     _GALLERY[query] = (time.monotonic(), reply)
     return reply
+
+
+def run_in_pi_sandbox(command, project, home, config, env):
+    """Runs a Pi command that handles packages (install, remove, update) in Pi's sandbox
+    for project (~/.pi for yours), network limited as Pi's is: a package's scripts, or
+    a git hook or an .npmrc Pi left in ~/.pi, run with no more than Pi's rights. With the
+    sandbox off, as it is. (status, network: whether the network was limited); status
+    None when it could not start (said)."""
+    network = None
+    if sandbox_wanted(config):
+        if not shutil.which("bwrap"):
+            print(SANDBOX_MISSING)
+            return None, None
+        for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
+            env.pop(key, None)
+        network, unlimited = network_plan(config, env, project)
+        if unlimited:
+            print(f"Pier: {unlimited}")
+        if network:
+            proxy_env(env)
+        command = sandbox_argv(command, os.path.realpath(project), home, config, env, network)
+        print("(in Pi's sandbox: the packages see ~/.pi and this project only"
+              + (", and reach only network_allow)" if network else ")"), flush=True)
+    else:
+        print("(sandbox off: npm's install scripts run with all your rights)", flush=True)
+    fd = None
+    if sandbox_wanted(config):  # bwrap's: only in the sandbox
+        command, fd = tiocsti_guard(command)
+    try:
+        status = subprocess.call(command, env=env, cwd=project, pass_fds=() if fd is None else (fd,))
+    except OSError as exc:
+        print(f"cannot run pi: {exc}")
+        status = 1
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if network:
+            network.close()
+    return status, network
 
 
 def pi_package(args):
@@ -408,38 +450,11 @@ def pi_package(args):
         project, local = resolve_inside(home, scope), ["-l"]
     command = [*argv, action, *local, source]
     print(f"$ pi {action} {' '.join(local + [source])}", flush=True)
-    network = None
-    if sandbox_wanted(config):
-        if not shutil.which("bwrap"):
-            print(SANDBOX_MISSING)
-            pause_for_enter("press Enter to close ")
-            return 1
-        for key in ("DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK", "XDG_RUNTIME_DIR"):
-            env.pop(key, None)
-        network, unlimited = network_plan(config, env, project)
-        if unlimited:
-            print(f"Pier: {unlimited}")
-        if network:
-            proxy_env(env)
-        command = sandbox_argv(command, os.path.realpath(project), home, config, env, network)
-        print("(in Pi's sandbox: the package sees ~/.pi and this project only"
-              + (", and reaches only network_allow)" if network else ")"), flush=True)
-    else:
-        print("(sandbox off: npm's install scripts run with all your rights)", flush=True)
     log("info", f"pi.{action}", source=source, scope="user" if not local else project)
-    fd = seccomp_pipe() if sandbox_wanted(config) else None  # bwrap reads it: only in the sandbox
-    if fd is not None:
-        command = [command[0], "--seccomp", str(fd), *command[1:]]
-    try:
-        status = subprocess.call(command, env=env, cwd=project, pass_fds=() if fd is None else (fd,))
-    except OSError as exc:
-        print(f"cannot run pi: {exc}")
-        status = 1
-    finally:
-        if fd is not None:
-            os.close(fd)
-        if network:
-            network.close()
+    status, network = run_in_pi_sandbox(command, project, home, config, env)
+    if status is None:
+        pause_for_enter("press Enter to close ")
+        return 1
     log("warn" if status else "info", f"pi.{action}-done", source=source, status=status)
     forget_versions(home)
     print("\n" + ("done" if not status else f"pi {action} failed (status {status})")

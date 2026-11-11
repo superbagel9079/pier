@@ -20,6 +20,12 @@
       <button id="btn-prefs" class="link" hidden>settings</button>
       <button id="btn-disconnect" class="link" hidden>disconnect</button>
     </nav>
+    <!-- Windows: Pier draws its own title bar (tauri.windows.conf.json); see main.js. -->
+    <div id="window-buttons" hidden>
+      <button id="win-min" title="Minimize" aria-label="Minimize"></button>
+      <button id="win-max" title="Maximize" aria-label="Maximize"></button>
+      <button id="win-close" title="Close" aria-label="Close"></button>
+    </div>
   </header>
 
   <!-- The palette (Ctrl+Shift+K): anything, by a few letters. -->

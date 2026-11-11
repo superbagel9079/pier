@@ -138,9 +138,12 @@ pub fn safe_parts(rel: &str) -> Option<Vec<&str>> {
     }
     let parts: Vec<&str> = rel.split('/').collect();
     let bad = |p: &str| {
-        let stem = p.split('.').next().unwrap_or_default().to_ascii_uppercase();
-        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
-            || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT")) && stem.as_bytes()[3].is_ascii_digit());
+        let stem = p.split('.').next().unwrap_or_default().trim_end_matches(' ').to_ascii_uppercase();
+        // COM1 to COM9, and COM¹ to COM³ (Windows reserves them too): one character after
+        // the three letters, counted as a character, not as bytes ("²" is two).
+        let mut tail = stem.chars().skip(3);
+        let numbered = matches!((tail.next(), tail.next()), (Some(c), None) if c.is_ascii_digit() || "¹²³".contains(c));
+        let device = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") || ((stem.starts_with("COM") || stem.starts_with("LPT")) && numbered);
         p.is_empty()
             || p == "."
             || p == ".."
@@ -304,6 +307,10 @@ mod tests {
             assert!(safe_parts(bad).is_none(), "{bad:?}");
         }
         assert!(safe_parts("COMMON.md").is_some());
+        for device in ["COM\u{b2}", "lpt\u{b3}.txt", "com9", "CON .txt"] {
+            assert!(safe_parts(device).is_none(), "{device:?}: a device to Windows");
+        }
+        assert!(safe_parts("COM10").is_some() && safe_parts("LPT\u{b2}x").is_some());
         assert!(safe_parts("invoice\u{202E}fdp.exe").is_none(), "direction-changing");
         assert!(safe_parts("a\u{200B}b").is_none(), "invisible");
         assert!(safe_parts("payload.exe:Zone.Identifier").is_none(), "a stream");
