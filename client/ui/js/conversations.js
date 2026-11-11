@@ -161,7 +161,7 @@ function makeConversations(tab) {
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   function piRow(p, pi, s) {
     return keyed(`pi:${pi.slot}`, el("li", { className: "running" },
-      el("span", { className: pi.working ? "live-dot" : "dim", textContent: pi.working ? "●" : "○" }),
+      el("span", { className: pi.working ? "live-dot" : "dim", textContent: pi.working ? "■" : "□" }),
       el("div", { className: "meta" },
         el("span", { className: s ? "title" : "title fresh", textContent: s ? conversationTitle(s) : "New conversation", title: s?.prompt || "Pi writes it at its first answer" }),
         el("span", { className: "dim small facts", textContent: factLine([`Pi #${pi.n} ${pi.working ? "working" : "waiting"}`, ...(s ? facts(s) : ["nothing said yet"])]) })),

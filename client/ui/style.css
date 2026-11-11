@@ -661,7 +661,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions li.project-head:first-child { margin-top: 2px; }
 .sessions li.project-head .project-name { font-weight: 700; flex: 1 1 auto; min-width: 0; }
 .sessions li.project-head .fold { background: none; border: none; color: var(--dim); padding: 0 2px; width: 1.2em; line-height: 1.35; }
-.sessions li.project-head.in-use .project-name::before { content: "● "; }
+.sessions li.project-head.in-use .project-name::before { content: "■ "; }
 .sessions li.interrupted { display: block; background: var(--chip); box-shadow: inset 2px 0 0 var(--fg); padding: var(--s1) var(--s2); margin: 2px 0 var(--s1) 1.6em; color: var(--dim); }
 .sessions li.interrupted:hover { background: var(--chip); }
 .sessions li.interrupted .link { margin-left: 6px; }
