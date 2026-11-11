@@ -86,30 +86,122 @@ function makeTerminal(tab, kind) {
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
   // The width changes when a side opens or folds. An alternate-screen program (the
   // picker, an editor) redraws itself to the new size, with nothing to keep. A plain
-  // conversation (Pi's regular mode) is reprinted whole and xterm lands at the bottom:
-  // the distance from the bottom is noted, and once the reprint has settled there, the
-  // view is pulled back up by as much, so the place being read is not lost.
+  // conversation (Pi's regular mode) is different: at a new width Pi clears the screen
+  // and the scrollback and prints the whole conversation again, rewrapped, and xterm
+  // lands at the bottom. So the place being read is held by its text, not by a line
+  // count (the rewrap changes every count): the words at the top of the view are noted
+  // before the fit, and looked for again after xterm's own reflow and after Pi's
+  // reprint. Pi sends its reprint as one synchronized update (ESC[?2026h … ESC[?2026l),
+  // which xterm paints only at its end: the view is put back in place before that paint,
+  // so the conversation does not move on screen.
+  let held = null;         // { anchor, until }: a place to put back after Pi's reprint
+  let reprinting = false;  // a clear came from Pi while a place is held
+  let seen = "";           // the end of the last chunk, for a sequence cut in two
+  const reprintDecoder = new TextDecoder();
+
+  /** The text of a row, and whether it goes on from the row before (xterm's own wrap). */
+  const rowText = (buffer, y) => {
+    const line = buffer.getLine(y);
+    return line ? { text: line.translateToString(true), wrapped: line.isWrapped } : { text: "", wrapped: false };
+  };
+  const squeeze = (text) => text.replace(/\s+/g, " ").trim();
+
+  /** The words at the top of the view, when it is not at the bottom of a conversation. */
+  function anchorOf() {
+    const buffer = term.buffer.active;
+    if (buffer.type !== "normal" || buffer.viewportY >= buffer.baseY) return null;
+    let text = "";
+    let lead = 0;          // empty rows above the first words, kept above them again
+    for (let y = buffer.viewportY; y < buffer.viewportY + term.rows && text.length < 160; y++) {
+      const part = squeeze(rowText(buffer, y).text);
+      if (part) text = text ? `${text} ${part}` : part;
+      else if (!text) lead++;
+    }
+    if (text.length < 8) return null; // nothing that could be found again
+    return { text: text.slice(0, 160), lead, where: buffer.viewportY / Math.max(1, buffer.baseY) };
+  }
+
+  /** Scrolls so that the anchor's words are at the top again; false when they are not
+   *  found. Of several places with the same words, the one nearest the old position. */
+  function putBack(anchor) {
+    const buffer = term.buffer.active;
+    if (buffer.type !== "normal") return false;
+    let flat = "";
+    const starts = [];     // where each row's text begins in flat, and its row
+    for (let y = 0; y < buffer.length; y++) {
+      const { text, wrapped } = rowText(buffer, y);
+      const piece = squeeze(text);
+      if (!piece) continue;
+      if (flat && !wrapped) flat += " ";
+      starts.push([flat.length, y]);
+      flat += piece;
+    }
+    const rowAt = (at) => {
+      let lo = 0;
+      let hi = starts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (starts[mid][0] <= at) lo = mid; else hi = mid - 1;
+      }
+      return starts[lo][1];
+    };
+    for (const size of [160, 100, 60, 30]) {
+      const needle = anchor.text.slice(0, size);
+      if (needle.length < 8 || needle.length < Math.min(size, anchor.text.length)) continue;
+      let best = -1;
+      let bestGap = Infinity;
+      for (let at = flat.indexOf(needle); at !== -1; at = flat.indexOf(needle, at + 1)) {
+        const row = rowAt(at);
+        const gap = Math.abs(row / Math.max(1, buffer.baseY) - anchor.where);
+        if (gap < bestGap) { best = row; bestGap = gap; }
+      }
+      if (best !== -1) {
+        term.scrollToLine(Math.max(0, Math.min(best - anchor.lead, buffer.baseY)));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Watches the VM's output while a place is held: a clear, then the end of the
+   *  synchronized update, is Pi's reprint done. Returns what to run once xterm has
+   *  taken the chunk in, or null. */
+  function watchReprint(bytes) {
+    if (!held) return null;
+    if (performance.now() > held.until) { held = null; reprinting = false; seen = ""; return null; }
+    const text = seen + reprintDecoder.decode(bytes, { stream: true });
+    seen = text.slice(-12);
+    if (!reprinting && /\x1b\[[23]J/.test(text)) reprinting = true;
+    if (!reprinting) return null;
+    // The last end of a synchronized update in this chunk, after the clear.
+    const clearAt = Math.max(text.lastIndexOf("\x1b[2J"), text.lastIndexOf("\x1b[3J"));
+    const endAt = text.lastIndexOf("\x1b[?2026l");
+    if (endAt === -1 || (clearAt !== -1 && endAt < clearAt)) return null;
+    reprinting = false;
+    seen = "";             // this end is handled: not to be found again in the next chunk
+    const anchor = held.anchor;
+    // Held a little longer: a side unfolded for a look folds back soon, and Pi
+    // reprints once more then; the same place is put back after that one too.
+    return () => putBack(anchor);
+  }
+  // Scrolling or typing here says where the reader is now: nothing to put back.
+  const letGo = () => { held = null; reprinting = false; seen = ""; };
+  tab.pane.addEventListener("wheel", letGo, { passive: true });
+  tab.pane.addEventListener("keydown", letGo, true);
+
   tab.refit = () => {
     if (!visible()) return;
-    const buffer = term.buffer.active;
-    const keep = buffer.type === "normal" ? Math.max(0, buffer.baseY - buffer.viewportY) : 0;
+    const before = [term.cols, term.rows];
+    // A place still held (the side folds back before Pi's first reprint has come, or
+    // just after it) stays the one to keep: the view meanwhile is only a reflow.
+    const anchor = held?.anchor ?? anchorOf();
     try { fit.fit(); } catch { return; /* not laid out yet */ }
-    if (keep === 0) return; // at the bottom, or an alternate screen: nothing to hold
-    let done = false;
-    let settle = 0;
-    let scroll;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      clearTimeout(settle);
-      scroll.dispose();
-      const now = term.buffer.active;
-      if (now.viewportY === now.baseY && now.baseY > 0) term.scrollToLine(Math.max(0, now.baseY - keep));
-    };
-    // The reprint arrives as a burst of output that scrolls to the bottom; restore once
-    // it has been quiet for a moment, and give up after a while if it never comes.
-    scroll = term.onScroll(() => { clearTimeout(settle); settle = setTimeout(finish, 150); });
-    setTimeout(finish, 3000);
+    if (!anchor) return; // at the bottom, or an alternate screen: nothing to hold
+    putBack(anchor);     // after xterm's own reflow, until Pi's reprint comes
+    if (term.cols !== before[0] || term.rows !== before[1]) {
+      // The size goes to the VM 120 ms later (onResize below); the reprint follows.
+      held = { anchor, until: performance.now() + 4000 };
+    }
   };
   // The padding around the text, and the leftover below the last row, take the
   // terminal's own background, as in kitty or foot: no band of another colour.
@@ -138,7 +230,11 @@ function makeTerminal(tab, kind) {
     tab.refit();
     try {
       const opened = [term.cols, term.rows];
-      const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes, written) => { latency.answer(); term.write(bytes, written); }, tab.params);
+      const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes, written) => {
+        latency.answer();
+        const reprinted = watchReprint(bytes);
+        term.write(bytes, reprinted ? () => { reprinted(); written(); } : written);
+      }, tab.params);
       if (closed || mine !== starts) {
         backend.termClose(fresh); // the tab closed or restarted meanwhile: nothing left running
         return;
