@@ -86,7 +86,7 @@ function conversationEditor(at, project, session, categories, { done, failed }) 
 const usageTokens = (u) => (u ? (u.input || 0) + (u.output || 0) + (u.cacheRead || 0) + (u.cacheWrite || 0) : 0);
 const shortNumber = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(Math.round(n)));
 /** What a conversation cost: in dollars when the model has a price in Pi, else tokens. */
-const spentText = (cost, count) => (cost >= 0.005 ? `$${cost.toFixed(2)}` : count ? `${shortNumber(count)} tok` : "");
+const spentText = (cost, count) => dollars(cost) || (count ? `${shortNumber(count)} tok` : "");
 
 /** A project's use today and over 7 days, from its conversations' usage per day (UTC,
  *  as Pi stamps it). */
@@ -102,7 +102,7 @@ function projectTotals(sessions) {
     }
   }
   if (!sum.week[0]) return "";
-  const text = ([count, cost]) => [cost >= 0.005 ? `$${cost.toFixed(2)}` : "", count ? `${shortNumber(count)} tok` : ""].filter(Boolean).join(", ") || "nothing";
+  const text = ([count, cost]) => [dollars(cost), count ? `${shortNumber(count)} tok` : ""].filter(Boolean).join(", ") || "nothing";
   return factLine([`today ${text(sum.today)}`, `7 d ${text(sum.week)}`]);
 }
 

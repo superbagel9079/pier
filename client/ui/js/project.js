@@ -118,7 +118,7 @@ function makeProject(tab) {
     if (u) {
       const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
       if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
-      parts.push(u.cost ? `$${u.cost.toFixed(u.cost < 1 ? 3 : 2)}` : "cost unknown");
+      parts.push(dollars(u.cost) || "cost unknown");
       if (u.model) parts.push(u.model);
       usage.textContent = `session · ${parts.join(" · ")}`;
     }
