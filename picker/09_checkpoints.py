@@ -404,7 +404,9 @@ class PromptWatcher(threading.Thread):
             return self.file if os.path.exists(self.file) else None
         now = time.monotonic()
         if now < self.next_claim:
-            return self.file
+            # Between two looks, the file found last: only if it is there (Pi writes its
+            # session file at the first message, and may move on to another).
+            return self.file if self.file and os.path.exists(self.file) else None
         self.next_claim = now + 2
         others = {p["file"] for p in project_pis(pi_sessions(), self.project) if p["name"] != self.slot}
         folder = session_dir(self.project)
@@ -412,11 +414,16 @@ class PromptWatcher(threading.Thread):
             names = [os.path.join(folder, n) for n in os.listdir(folder) if n.endswith(".jsonl")]
         except OSError:
             names = []
-        fresh = [f for f in names if f != self.file and f not in others and os.path.getmtime(f) >= self.started
+        def when(path):  # a file gone between listdir and here: as old as can be
+            try:
+                return os.path.getmtime(path)
+            except OSError:
+                return 0
+        fresh = [f for f in names if f != self.file and f not in others and when(f) >= self.started
                  and session_ran_in(f, self.project)]
-        newest = max(fresh, key=os.path.getmtime, default=None)
-        mine = os.path.getmtime(self.file) if self.file and os.path.exists(self.file) else 0
-        if newest and os.path.getmtime(newest) > mine:
+        newest = max(fresh, key=when, default=None)
+        mine = when(self.file) if self.file else 0
+        if newest and when(newest) > mine:
             log("info", "pi.session-file", project=self.project, slot=self.slot, file=newest, previous=self.file)
             self.file = newest
             set_pi_file(self.slot, newest)
@@ -426,15 +433,21 @@ class PromptWatcher(threading.Thread):
         session = self.own_file()
         if session is None:
             return
-        size = os.path.getsize(session)
+        try:
+            size = os.path.getsize(session)
+        except FileNotFoundError:
+            return  # gone since own_file looked: the next tick finds the one Pi writes now
         start = self.offsets.get(session, 0)  # a file that appeared since Pi started: all of it is new
         if size < start:
             start = 0
         if size == start:
             return
-        with open_plain(session, sessions_root()) as handle:
-            handle.seek(start)
-            chunk = handle.read(size - start)
+        try:
+            with open_plain(session, sessions_root()) as handle:
+                handle.seek(start)
+                chunk = handle.read(size - start)
+        except FileNotFoundError:
+            return
         end = chunk.rfind(b"\n")
         if end < 0:
             return  # a line still being written

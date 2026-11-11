@@ -264,6 +264,15 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 #dock-center { flex: 1; min-width: 160px; }
 /* A side never takes more than 45% of the window, however wide it was dragged. */
 .dock.side { flex: 0 1 auto; width: var(--width, 380px); max-width: 45%; }
+/* A side unfolded for a look (a click on a folded side's tab) floats over the
+   terminals instead of pushing them: resized, a terminal reflows, Pi redraws, and the
+   place it was scrolled to is lost. The center keeps the folded side's strip as its
+   margin, so its width does not move at all. Pinned, the side takes its place again. */
+.side.peek { position: absolute; top: 0; bottom: 0; z-index: 15; box-shadow: 0 0 0 1px var(--strong), 0 6px 24px rgba(0, 0, 0, .45); }
+#dock-left.peek { left: 0; }
+#dock-right.peek { right: 0; }
+#workspace:has(> #dock-left.peek) > #dock-center { margin-left: 30px; }
+#workspace:has(> #dock-right.peek) > #dock-center { margin-right: 30px; }
 /* Between two docks: the background, a line only under the pointer. */
 .splitter { flex: 0 0 4px; cursor: col-resize; background: var(--bg); }
 .splitter:hover, .splitter.dragging { background: var(--strong); }

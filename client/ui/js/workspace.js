@@ -60,8 +60,12 @@ const workspace = (() => {
     if (dock.side) {
       const empty = !dock.tabs.length;
       dock.el.hidden = empty && !dragging;
-      dock.splitter.hidden = empty || dock.collapsed;
+      const peeking = Boolean(dock.peek) && !dock.collapsed && !empty;
+      dock.splitter.hidden = empty || dock.collapsed || peeking;
       dock.el.classList.toggle("collapsed", dock.collapsed && !empty);
+      // Unfolded for a look, the side floats over the terminals (style.css, .side.peek):
+      // their size does not change, so no program redraws and no scroll jumps.
+      dock.el.classList.toggle("peek", peeking);
       // While a tab is dragged, an empty side shows as a wide drop target.
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);

@@ -14,6 +14,16 @@ document.addEventListener("contextmenu", (event) => {
   if (field || String(window.getSelection?.() || "").trim()) return;
   event.preventDefault();
 });
+// Over a text box's scrollbar, the arrow as on every other scrollbar: Chromium keeps the
+// box's text cursor there once scrollbars are styled (style.css), and no CSS reaches it.
+document.addEventListener("mousemove", (event) => {
+  const box = event.target;
+  if (box.tagName !== "TEXTAREA") return;
+  const onBar = event.offsetX >= box.clientWidth || event.offsetY >= box.clientHeight;
+  const want = onBar ? "default" : "";
+  if (box.style.cursor !== want) box.style.cursor = want;
+}, { passive: true });
+
 // Windows: no system title bar (tauri.windows.conf.json), Pier's top bar is it. Pressed
 // where nothing is to click, it moves the window; twice, it maximizes or restores it.
 (() => {

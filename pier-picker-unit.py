@@ -116,6 +116,19 @@ class AllowList(unittest.TestCase):
         with self.assertRaises(m.ApiError, msg="an answer, not a ValueError"):
             m.agent_prompt(next(iter(m.AGENT_PROMPTS)), "\u00b2")
 
+    def test_the_watch_waits_for_a_session_file_not_there(self):
+        watcher = object.__new__(m.PromptWatcher)
+        watcher.slot, watcher.project, watcher.offsets = "pi-1", tempfile.gettempdir(), {}
+        watcher.file = os.path.join(tempfile.gettempdir(), "pier-no-such-session.jsonl")
+        watcher.next_claim = time.monotonic() + 60  # between two looks
+        saved = m.pier_state
+        m.pier_state = lambda slot: None
+        try:
+            self.assertIsNone(watcher.own_file(), "a file Pi has not written yet is no file")
+            watcher.tick()  # was: FileNotFoundError, logged as checkpoint.watch-failed
+        finally:
+            m.pier_state = saved
+
     def test_a_commit_subject_makes_no_line_of_its_own(self):
         saved = m.git_dir, m.git_run
         m.git_dir = lambda path: True
