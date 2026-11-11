@@ -160,8 +160,10 @@ function makeConversations(tab) {
 
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   function piRow(p, pi, s) {
-    return keyed(`pi:${pi.slot}`, el("li", { className: "running" },
-      el("span", { className: pi.working ? "live-dot" : "dim", textContent: pi.working ? "■" : "□" }),
+    // Its bar on the left says it runs: bright and breathing while Pi works, grey
+    // while it waits. The column of the mark stays, as on the other rows (pinned: ★).
+    return keyed(`pi:${pi.slot}`, el("li", { className: pi.working ? "running working" : "running" },
+      el("span", { className: "dim", textContent: s?.pinned ? "★" : " " }),
       el("div", { className: "meta" },
         el("span", { className: s ? "title" : "title fresh", textContent: s ? conversationTitle(s) : "New conversation", title: s?.prompt || "Pi writes it at its first answer" }),
         el("span", { className: "dim small facts", textContent: factLine([`Pi #${pi.n} ${pi.working ? "working" : "waiting"}`, ...(s ? facts(s) : ["nothing said yet"])]) })),

@@ -109,9 +109,7 @@ function makeProject(tab) {
     const agent = $(".agent", tab.pane);
     agent.replaceChildren();
     if (!activity?.session) { agent.textContent = "no session yet"; return; }
-    const dot = el("span", { textContent: activity.working ? "■" : "□" });
-    if (activity.working) dot.className = "live-dot";
-    agent.append(dot, ` ${activity.working ? "working" : "idle"}`);
+    agent.append(el("span", { className: activity.working ? "live-dot" : "dim", textContent: activity.working ? "working" : "idle" }));
     const usage = $(".usage", tab.pane);
     const u = activity.usage;
     usage.hidden = !u;
