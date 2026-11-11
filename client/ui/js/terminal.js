@@ -184,6 +184,88 @@ function makeTerminal(tab, kind) {
     // reprints once more then; the same place is put back after that one too.
     return () => putBack(anchor);
   }
+  /** Hands the VM's bytes to xterm, the end of a reprint followed by putting the place back. */
+  function deliver(bytes, written) {
+    const reprinted = watchReprint(bytes);
+    term.write(bytes, reprinted ? () => { reprinted(); written?.(); } : written);
+  }
+
+  // A synchronized update (ESC[?2026h … ESC[?2026l) is given to xterm whole, in one
+  // write. xterm paints nothing during one, but only for a second: a long conversation
+  // reprinted by Pi (at a new width) takes longer than that to come from the VM, and
+  // xterm then showed it being cleared and written again, the view running up and back
+  // down. Held here, it is painted once, finished. The bytes held are acknowledged at
+  // once (the VM is not slowed for them); a hold that does not end is let go after a
+  // while, or past a size.
+  const SYNC_ON = new TextEncoder().encode("\x1b[?2026h");
+  const SYNC_OFF = new TextEncoder().encode("\x1b[?2026l");
+  let gateTail = new Uint8Array(0); // the last bytes, for a marker cut in two
+  let holding = null;               // { parts, size, since, timer }
+
+  const find = (hay, needle, from) => {
+    const first = needle[0];
+    for (let i = hay.indexOf(first, from); i !== -1 && i <= hay.length - needle.length; i = hay.indexOf(first, i + 1)) {
+      let j = 1;
+      while (j < needle.length && hay[i + j] === needle[j]) j++;
+      if (j === needle.length) return i;
+    }
+    return -1;
+  };
+
+  function hold(part) {
+    if (!part.length) return;
+    holding.parts.push(part);
+    holding.size += part.length;
+    if (holding.size > 32 * 1024 * 1024 || performance.now() - holding.since > 5000) letOut("too long");
+  }
+
+  function letOut(why) {
+    if (!holding) return;
+    const { parts, size, since, timer } = holding;
+    holding = null;
+    clearTimeout(timer);
+    const all = new Uint8Array(size);
+    let at = 0;
+    for (const part of parts) { all.set(part, at); at += part.length; }
+    if (size > 64 * 1024) uiLog("debug", "term-sync-held", { why, bytes: size, ms: Math.round(performance.now() - since) });
+    if (size) deliver(all);
+  }
+
+  function gate(bytes, written) {
+    const off = gateTail.length;
+    const probe = new Uint8Array(off + bytes.length);
+    probe.set(gateTail, 0);
+    probe.set(bytes, off);
+    gateTail = probe.slice(Math.max(0, probe.length - (SYNC_ON.length - 1)));
+    let from = 0;   // where the next marker is looked for (a whole marker never fits in the tail)
+    let at = off;   // the first byte of this chunk not yet passed on
+    let wrote = false;
+    for (;;) {
+      if (!holding) {
+        const on = find(probe, SYNC_ON, from);
+        if (on === -1) break;
+        const start = Math.max(on, off);
+        if (start > at) { deliver(probe.subarray(at, start)); }
+        at = start;
+        holding = { parts: [], size: 0, since: performance.now(), timer: setTimeout(() => letOut("no end"), 3000) };
+        from = on + SYNC_ON.length;
+      } else {
+        const end = find(probe, SYNC_OFF, from);
+        if (end === -1) break;
+        const stop = Math.max(end + SYNC_OFF.length, off);
+        hold(probe.subarray(at, stop));
+        at = stop;
+        letOut("end");
+        from = end + SYNC_OFF.length;
+      }
+    }
+    if (at < probe.length) {
+      if (holding) hold(probe.subarray(at));
+      else { deliver(probe.subarray(at), written); wrote = true; }
+    }
+    if (!wrote) written?.(); // held, or already passed on in pieces: taken in all the same
+  }
+
   // Scrolling or typing here says where the reader is now: nothing to put back.
   const letGo = () => { held = null; reprinting = false; seen = ""; };
   tab.pane.addEventListener("wheel", letGo, { passive: true });
@@ -232,8 +314,7 @@ function makeTerminal(tab, kind) {
       const opened = [term.cols, term.rows];
       const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes, written) => {
         latency.answer();
-        const reprinted = watchReprint(bytes);
-        term.write(bytes, reprinted ? () => { reprinted(); written(); } : written);
+        gate(bytes, written);
       }, tab.params);
       if (closed || mine !== starts) {
         backend.termClose(fresh); // the tab closed or restarted meanwhile: nothing left running
