@@ -1,5 +1,5 @@
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
-API_READS = {"version", "projects", "ls", "shares", "activity", "diff", "contexts",
+API_READS = {"version", "projects", "ls", "file", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
              "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
@@ -50,6 +50,7 @@ API_COMMANDS = {
     "version": lambda home, config, a: api_version(home, config),
     "projects": lambda home, config, a: api_projects(home, config),
     "ls": lambda home, config, a: api_ls(home, a[0]),
+    "file": lambda home, config, a: api_file(home, a[0], a[1]),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
     "type": lambda home, config, a: api_type(home, typed_text(a[0]), a[1], a[2]),

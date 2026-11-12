@@ -23,7 +23,9 @@ function makeDiff(tab) {
   const path = el("span", { className: "path", textContent: rel, title: `${project}/${rel}` });
   const refresh = el("button", { className: "link", textContent: "refresh" });
   const mention = el("button", { className: "link", textContent: "mention in Pi" });
-  head.append(path, refresh, mention);
+  const whole = el("button", { className: "link", textContent: "file", title: "The whole file, as it is now" });
+  whole.addEventListener("click", () => openFile(rel, project));
+  head.append(path, whole, refresh, mention);
   const error = el("p", { className: "error", hidden: true });
   const body = el("div");
   tab.pane.append(head, error, body);

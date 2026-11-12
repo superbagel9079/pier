@@ -152,7 +152,7 @@ Everything is read from **Pi's session log**, which it writes as it goes (`~/.pi
 - **The session's cost:** input, output and cached tokens, cost in dollars, model.
 - **Files:** the tree with the same marks (◐ being read, ● read, ✎ being changed, ✓ changed, ! failed) and the git state.
 - **Several Pis in the project:** a list at the top chooses whose work is followed (by default, the one used last).
-- **A click** on a changed file opens its **diff** in a tab: the git diff, and the changes Pi made itself, even outside git. **A double click** mentions the file in Pi.
+- **A click** on a changed file opens its **diff** in a tab: the git diff, and the changes Pi made itself, even outside git (**file** there shows the whole file). On any other file, it opens the **file**: read only, with its line numbers and its syntax in the theme's colors (Python, Rust, JavaScript/TypeScript, CSS, Go, C, shell, TOML, YAML, JSON, SQL); a Markdown file shows as a page (**source** for its text). At most 1 MB of a file is shown; a binary file is not. **A double click** mentions the file in Pi.
 - **What is not possible:** knowing what Pi **will** read next. Pi decides as it goes.
 - **Restore:** the restore points, see below.
 
@@ -208,6 +208,7 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
   - how many Pis run there, how many conversations, its totals (today, 7 days);
   - **new**: one more Pi, in a new conversation;
   - **last**: continues the last conversation;
+  - **orchestrate**: a new **orchestrator** Pi, which splits the work and starts worker Pis once you approve them; it and its workers may consult read-only helpers (see [Git](git-and-team.md#c2-an-orchestrator-and-its-workers)); its workers show right under it, "worker of #N" with their task;
   - **setup**: opens its configuration in Setup.
 - **The running Pis**, first: each with its conversation (Pi #1, Pi #2…, working or waiting for you), **open** (its terminal) and **stop**. A Pi just started, with no conversation yet, shows as "*New conversation*". **stop them all** when there are several.
 - **Which Pi holds which conversation:** each Pi started by Pier says so itself, even when you switch conversations in Pi (`/new`, `/resume`, `/fork`), and even before its first answer. Pier starts it with a small extension (`--extension ~/.local/state/pier-picker/pi/ext/pier-session.ts`; nothing is added to Pi's settings). At each change, it writes its conversation and whether it is working to `~/.local/state/pier-picker/pi/pis/<tmux session>/state.json`. In the sandbox, each Pi sees only its own folder there, and the extensions read-only: a Pi cannot write what another one says. It shows in the list of extensions when Pi starts. It adds no tool, reads no message and sends nothing over the network. To do without it: `track_sessions = false` in the picker's config; Pier then guesses as before.
@@ -261,7 +262,7 @@ What each page holds:
   - **Import a skill from this computer…**: a folder holding a `SKILL.md`, copied into the skills (under the name it declares);
   - **Install a package…**: as on the Packages page.
 
-  Under the extensions, **Pier's**: the ones Pier gives each Pi it starts (`--extension`, from `~/.local/state/pier-picker/pi/ext/`), which Pi lists at its start beside yours but which are not in Pi's settings: `pier-session.ts` (which conversation a Pi writes; `track_sessions`), `pier-git.ts` (the forge's tools; `git_tools`) and `pier-labs.ts` (the labs' tools, once a lab host is set up). Their box, greyed, says whether the next Pi gets each; they are turned off in the picker's config, not here.
+  Under the extensions, **Pier's**: the ones Pier gives each Pi it starts (`--extension`, from `~/.local/state/pier-picker/pi/ext/`), which Pi lists at its start beside yours but which are not in Pi's settings: `pier-session.ts` (which conversation a Pi writes; `track_sessions`), `pier-git.ts` (the forge's tools; `git_tools`), `pier-labs.ts` (the labs' tools, once a lab host is set up) and `pier-workers.ts` (worker Pis and read-only helpers, for every Pi; `workers`, `helpers`). Their box, greyed, says whether the next Pi gets each; they are turned off in the picker's config, not here.
 
   A local skill has **⋯** (shown under the pointer): **Edit its SKILL.md…** (Ctrl+S saves) and **Put it in the bin**, a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
 

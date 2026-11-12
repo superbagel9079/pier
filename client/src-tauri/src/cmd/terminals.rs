@@ -7,13 +7,13 @@ use crate::*;
 /// The command line of a "pi" terminal: the picker's --attach-control, which opens
 /// the Pi (see open_pi there) and attaches to it in tmux's control mode (term.rs).
 /// Only what Pier itself asks is accepted: the Pi used last or a new one (nothing),
-/// a new Pi (--new), a running one (--slot NAME), or a conversation (--continue,
+/// a new Pi (--new), an orchestrator (--orchestrator), a running one (--slot NAME), or a conversation (--continue,
 /// --session FILE): its Pi if one runs it, else a new Pi on it.
 pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
     let slot_name = |name: &str| name.starts_with("pi-") && name.len() < 100 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     let allowed = match args {
         [] => true,
-        [flag] => flag == "--continue" || flag == "--new",
+        [flag] => flag == "--continue" || flag == "--new" || flag == "--orchestrator",
         [flag, file] if flag == "--session" => file.ends_with(".jsonl") && file.contains("/.pi/") && !file.contains('\n'),
         [flag, name] if flag == "--slot" => slot_name(name),
         // A new Pi asked to take a task or review a pull request: the picker writes the

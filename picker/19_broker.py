@@ -189,6 +189,9 @@ class GitBroker:
     def __init__(self, project):
         self.project = project
         self.home = home_dir()
+        # Who this Pi is in a team (see workers): from the picker's environment, never
+        # from a request.
+        self.role, self.slot, self.parent, self.task = pi_role()
         folder = os.path.join(os.path.dirname(state_path(self.home)), "net")
         os.makedirs(folder, mode=0o700, exist_ok=True)
         self.socket = os.path.join(folder, f"{os.getpid()}-git.sock")
@@ -245,6 +248,8 @@ class GitBroker:
 
     def answer(self, request):
         op = request.get("op")
+        if op in WORKER_OPS:
+            return workers_answer(self.home, self.project, self.role, self.slot, self.parent, self.task, request)
         if op in LAB_OPS:
             log("info", f"lab.tool-{op}", project=self.project, lab=request.get("lab"))
             return lab_answer(self.home, self.project, request)

@@ -520,13 +520,26 @@ def exec_pi(path, extra):
     workdir = worktree or path
     git_extension = pier_git_extension() if config["git_tools"] else None
     labs_extension = pier_labs_extension() if labs_enabled(home) else None
-    if git_extension or labs_extension:
+    # Workers and helpers (see workers): every Pi may start workers (a worker none) and
+    # consult helpers; an orchestrator or a worker gets its model.
+    role = pi_role()[0] if config["workers"] else None
+    team_extension = pier_team_extension() if config["workers"] or config["helpers"] else None
+    if role:
+        tracked = tracked + pi_model_args(config, role, os.environ.get("PIER_MODEL"))
+    if team_extension:
+        env["PIER_WORKERS"] = "1" if config["workers"] and role != "worker" else ""
+        env["PIER_HELPERS"] = "1" if config["helpers"] else ""
+        # The helpers: where they write, which models they may get.
+        env["PIER_SESSIONS"] = session_dir(os.path.realpath(path))
+        env["PIER_HELPER_MODELS"] = ",".join(helper_models(config))
+        env["PIER_HELPER_MODEL"] = config["helper_model"] if MODEL_RE.fullmatch(config["helper_model"] or "") else ""
+    if git_extension or labs_extension or team_extension:
         try:
             broker = GitBroker(os.path.realpath(path))
         except OSError as exc:
             log("warn", "git.broker-failed", project=path, err=str(exc))
         if broker:
-            for extension in (git_extension, labs_extension):
+            for extension in (git_extension, labs_extension, team_extension):
                 if extension:
                     tracked = tracked + ["--extension", extension]
             env["PIER_GIT_SOCKET"] = broker.socket

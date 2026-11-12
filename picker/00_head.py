@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.49"
+VERSION = "4.50"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -73,6 +73,13 @@ DEFAULTS = {
     "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
     "git_tools": True,                 # Pi gets git tools for the forge (push, pull requests), through the picker
     "worktrees": True,                 # a second Pi in a git project works in a worktree of its own (.pi-worktrees)
+    "workers": True,                   # a Pi may start worker Pis (once the user approves), see workers
+    "helpers": True,                   # a Pi may consult read-only helpers (scout, reviewer...), see workers
+    "workers_max": 4,                  # at most that many workers at once per orchestrator
+    "orchestrator_model": "",          # the orchestrator's model ("provider/id", "sonnet:high"); "" Pi's default
+    "worker_model": "",                # the workers' model by default; "" Pi's default
+    "worker_models": [],               # the models an orchestrator may choose for a worker, besides worker_model
+    "helper_model": "",                # the read-only helpers' model by default (see consult); "" Pi's default
 }
 
 # Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its

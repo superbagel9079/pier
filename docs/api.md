@@ -10,6 +10,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | Command | Purpose |
 |---|---|
 | `version`, `projects`, `ls` | state, recent projects and running Pis, folder contents |
+| `file PROJECT REL` | a file of the project, for the viewer: `text` (at most 1 MB, cut at a line; `truncated`), or `binary` |
 | `paste-image`, `paste-file` | receive an image or a file and **type** it into Pi (`@path`) |
 | `upload-dir` | receive a folder as a tar archive (a copy) |
 | `type` | type text into Pi's input box, never pressing Enter |

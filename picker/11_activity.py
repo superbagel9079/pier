@@ -58,11 +58,13 @@ def mtime_of(path):
         return 0  # gone between listdir and here: as old as can be
 
 
-# pi-multiagent (pi install npm:pi-multiagent) runs its sub-agents as Pis of their own,
-# in the project's sessions folder, each named "agent_team <run>/<step> <agent>". They
-# are the parent Pi's work, not the user's conversations: never taken as the latest one
-# or as a Pi's own, and listed apart (see api_conversations).
-SUBAGENT_PREFIX = "agent_team "
+# Sub-agents are Pis of their own, writing in the project's sessions folder: Pier's
+# read-only helpers (the consult tool of an orchestrator or a worker, see workers), each
+# named "pier-helper <role>: <title>", and pi-multiagent's (pi install npm:pi-multiagent),
+# "agent_team <run>/<step> <agent>". They are the parent Pi's work, not the user's
+# conversations: never taken as the latest one or as a Pi's own, and listed apart (see
+# api_conversations).
+SUBAGENT_PREFIX = ("pier-helper ", "agent_team ")
 
 
 def subagent_session(path):

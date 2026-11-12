@@ -177,6 +177,8 @@ def pier_extensions(home):
          "description": "git tools for the forge (push, pull requests, tasks), through the picker: the token stays out of the sandbox"},
         {"name": "pier-labs.ts", "enabled": labs_enabled(home), "setting": None,
          "description": "the labs' tools (disposable machines), once a lab host is set up in Labs"},
+        {"name": "pier-workers.ts", "enabled": bool(config["workers"] or config["helpers"]), "setting": "workers, helpers",
+         "description": "worker Pis (start_worker...: the first one waits for your approval) and read-only helpers (consult: scout, reviewer, critic, checker); a worker gets report instead of start_worker"},
     ]
 
 

@@ -112,12 +112,23 @@ def pi_file(pi, project, count):
 
 def pi_infos(project, home, pis):
     infos = []
+    teams = load_teams(home) if pis else {}
     for pi in pis:
         file = pi_file(pi, project, len(pis))
         working = pi.get("working")
-        infos.append({"slot": pi["name"], "n": slot_number(pi["name"], project, home), "file": file,
-                      "attached": pi["attached"], "last_attached": pi["last_attached"],
-                      "working": working if working is not None else bool(file) and session_working(file)})
+        info = {"slot": pi["name"], "n": slot_number(pi["name"], project, home), "file": file,
+                "attached": pi["attached"], "last_attached": pi["last_attached"],
+                "working": working if working is not None else bool(file) and session_working(file),
+                # An orchestrator: started as one, or an ordinary Pi that started workers.
+                "role": "orchestrator" if (teams.get(pi["name"]) or {}).get("lead") or
+                        (teams.get(pi["name"]) or {}).get("workers") else None}
+        # A worker: whose, and on what (see workers).
+        for slot, team in teams.items():
+            worker = next((w for w in team.get("workers") or [] if w.get("slot") == pi["name"]), None)
+            if worker:
+                info.update(role="worker", orchestrator=slot_number(slot, project, home), task=worker.get("title"),
+                            reported=bool(worker.get("report")))
+        infos.append(info)
     return infos
 
 
@@ -131,6 +142,8 @@ def open_pi(project, extra, env, home, width, height):
       ["--session", FILE] the same for that conversation
       ["--agent-task", KIND, N]  a new Pi, in a new conversation, asked to take task N or
                           review pull request N (KIND: task, review; see AGENT_PROMPTS)
+      ["--orchestrator"]  a new Pi, in a new conversation, that may start workers
+      ["--worker", PARENT, TASK]  the worker its orchestrator's team waits for (see workers)
       anything else       a new Pi with those arguments (--resume...)
     """
     refusal = pi_refusal(project, home)
@@ -147,6 +160,15 @@ def open_pi(project, extra, env, home, width, height):
         if len(extra) != 2 or extra[1] not in names:
             raise ApiError("that Pi is not running any more")
         return extra[1], False
+    role_env = None
+    if extra == ["--orchestrator"]:
+        if not load_config(home)[0]["workers"]:
+            raise ApiError("workers are turned off in the picker's config (workers = false)")
+        extra, role_env = ["--session", new_session_file(project)], {"PIER_ROLE": "orchestrator"}
+    elif extra[:1] == ["--worker"]:
+        if len(extra) != 3:
+            raise ApiError("--worker takes its orchestrator and its task")
+        extra, role_env = worker_open_args(project, home, extra[1], extra[2])
     if extra[:1] == ["--agent-task"]:
         if len(extra) != 3:
             raise ApiError("--agent-task takes a kind and a number")
@@ -167,7 +189,12 @@ def open_pi(project, extra, env, home, width, height):
         name = free_slot(project, home, sessions)
         # Another Pi works in the folder: this one gets a worktree of its own, on its branch.
         worktree = make_worktree(project, name, home) if pis else None
-        if start_pi_session(project, extra, env, home, width, height, name, worktree=worktree):
+        if role_env and role_env["PIER_ROLE"] == "worker" and not worktree:
+            # In the folder itself, it would write over the orchestrator's work.
+            raise ApiError("git could not make the worker a worktree of its own: nothing was started")
+        if start_pi_session(project, extra, env, home, width, height, name, worktree=worktree, role_env=role_env):
+            if role_env and role_env["PIER_ROLE"] == "orchestrator":
+                register_orchestrator(home, project, name)
             return name, True
         # Another call took that name meanwhile: look again.
         forget_pi_sessions()

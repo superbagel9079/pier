@@ -69,3 +69,18 @@ git_tools = true
 # In a git project, a Pi started beside another works in a worktree of its own
 # (.pi-worktrees/<its session>), on a branch pi/agent-N-...
 worktrees = true
+
+# A Pi may start worker Pis, each in a worktree of its own (Conversations: orchestrate
+# starts one meant for it); the first one waits for your approval in Pier. At most
+# workers_max at once.
+workers = true
+workers_max = 4
+# Models, as Pi's --model takes them ("provider/id", "sonnet:high"); "" is Pi's default.
+# worker_models: those the orchestrator may choose for a given worker.
+orchestrator_model = ""
+worker_model = ""
+worker_models = []
+# The read-only helpers an orchestrator or a worker consults (scout, reviewer, critic,
+# checker): their model by default; they may also get worker_model or worker_models.
+helpers = true
+helper_model = ""

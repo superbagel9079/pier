@@ -665,6 +665,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions li.folder-head .fold { background: none; border: none; color: var(--dim); padding: 0 2px; width: 1.2em; line-height: 1.35; }
 .sessions li.folder-head .folder-name { cursor: pointer; font-weight: 600; }
 .sessions li.folder-head.subagents .folder-name { font-weight: 400; color: var(--dim); }
+/* A worker, under its orchestrator: set in, its own bar kept. */
+.sessions li.running.in-team { margin-left: 1.6em; }
 .sessions li.in-folder { margin-left: calc(0.6em + 1px); padding-left: calc(1em - 1px); box-shadow: inset 1px 0 0 var(--line); }
 /* A project's head: its name, then its facts. */
 .sessions li.project-head { gap: 6px; margin-top: var(--s4); padding-top: 6px; border-top: 1px solid var(--line); }
@@ -706,3 +708,44 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 ::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--fg) 28%, transparent); }
 ::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--fg) 40%, transparent); }
 ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+
+/* ---------------------------------------------------------------- File viewer */
+
+/* The syntax in the theme's terminal colors when it has them (see applyTheme). */
+:root {
+  --syn-keyword: var(--ansi-magenta, #d670d6); --syn-string: var(--ansi-green, #98c379);
+  --syn-number: var(--ansi-yellow, #d19a66); --syn-call: var(--ansi-blue, #61afef);
+  --syn-type: var(--ansi-cyan, #56b6c2); --syn-comment: var(--dim);
+}
+:root[data-theme="light"] {
+  --syn-keyword: var(--ansi-magenta, #a626a4); --syn-string: var(--ansi-green, #50a14f);
+  --syn-number: var(--ansi-yellow, #986801); --syn-call: var(--ansi-blue, #4078f2);
+  --syn-type: var(--ansi-cyan, #0184bc);
+}
+.syn-keyword { color: var(--syn-keyword); }
+.syn-string { color: var(--syn-string); }
+.syn-number { color: var(--syn-number); }
+.syn-call { color: var(--syn-call); }
+.syn-type { color: var(--syn-type); }
+.syn-comment { color: var(--syn-comment); font-style: italic; }
+.file-body { min-height: 0; }
+.code-view { display: flex; align-items: flex-start; background: var(--chip); border: 1px solid var(--line); overflow-x: auto; font-size: var(--t-small); }
+.code-view pre { margin: 0; padding: var(--s2) 0; line-height: 1.5; font-family: var(--code); tab-size: 4; }
+.code-view .gutter { position: sticky; left: 0; flex: none; padding: var(--s2) var(--s2) var(--s2) var(--s3); text-align: right;
+  color: var(--dim); background: var(--chip); border-right: 1px solid var(--line); user-select: none; }
+.code-view .src { flex: 1; padding-left: var(--s3); padding-right: var(--s3); white-space: pre; }
+.md-page { max-width: 80ch; line-height: 1.6; font-size: var(--t-text); }
+.md-page .md-h { margin: 1.2em 0 0.4em; }
+.md-page h2.md-h { font-size: var(--t-title); border-bottom: 1px solid var(--line); padding-bottom: var(--s1); }
+.md-page h3.md-h, .md-page h4.md-h, .md-page h5.md-h, .md-page h6.md-h { font-size: var(--t-text); }
+.md-page p { margin: 0 0 0.8em; }
+.md-page code { background: var(--raise); padding: 0 var(--s1); font-size: 0.95em; }
+.md-page .md-code { background: var(--chip); border: 1px solid var(--line); padding: var(--s2) var(--s3); overflow-x: auto; font-size: var(--t-small); line-height: 1.5; }
+.md-page .md-list { margin: 0 0 0.8em; padding-left: 1.6em; }
+.md-page .md-nested { margin-left: 1.4em; }
+.md-page blockquote { margin: 0 0 0.8em; padding-left: var(--s3); border-left: 2px solid var(--line); color: var(--dim); }
+.md-page hr { border: 0; border-top: 1px solid var(--line); margin: 1.2em 0; }
+.md-page .md-link { text-decoration: underline; text-decoration-color: var(--dim); }
+.md-page .md-table { border-collapse: collapse; margin: 0 0 0.8em; font-size: var(--t-small); }
+.md-page .md-table th, .md-page .md-table td { border: 1px solid var(--line); padding: var(--s1) var(--s2); text-align: left; }
+.md-page .md-table th { background: var(--raise); }

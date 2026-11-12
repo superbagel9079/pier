@@ -30,14 +30,16 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.49" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.50" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
   const SESSIONS = "/home/leo/.pi/agent/sessions/--home-leo-work--";
   let mockPis = [
     { slot: "pi-work-1a2b3c", n: 1, file: `${SESSIONS}/b.jsonl`, attached: true, last_attached: 2 },
-    { slot: "pi-work-1a2b3c-2", n: 2, file: `${SESSIONS}/a.jsonl`, attached: false, last_attached: 1 },
+    { slot: "pi-work-1a2b3c-2", n: 2, file: `${SESSIONS}/a.jsonl`, attached: false, last_attached: 1, role: "orchestrator" },
+    // A worker of Pi #2, on its task, in its own worktree (see workers on the VM).
+    { slot: "pi-work-1a2b3c-3", n: 3, file: null, attached: false, last_attached: 0, role: "worker", orchestrator: 2, task: "Write the RSS tests", reported: false },
   ];
   const pisNow = () => mockPis.map((pi) => ({ ...pi, working: pi.n === 1 && tick % 2 === 1 }));
   // The watch: the same answers as the API, sent when they change.
@@ -83,7 +85,9 @@ function mockBackend() {
       args: { machine: "gpu-box", where: "leo@192.168.1.40:22", op: "lab_run", command: "nvidia-smi\npython train.py --epochs 3 --data /data/small", what: "run: nvidia-smi…" } },
     { id: "a3", project: "/home/leo/work", kind: "review", reason: "alex asked this account's Pis for a review", at: Date.now() / 1000, state: "pending",
       args: { number: 14, verdict: "request_changes", repo: "leo/work", sha: "9a8b7c6d5e4f", title: "Rate-limit the API", author: "alex", head: "pi/task-9", base: "main", draft: false,
-        body: "The limiter counts per process, not per user:\n\n- two workers double the limit\n- the counter is never reset\n\nKeep it in Redis, keyed by user." } }];
+        body: "The limiter counts per process, not per user:\n\n- two workers double the limit\n- the counter is never reset\n\nKeep it in Redis, keyed by user." } },
+    { id: "a4", project: "/home/leo/work", kind: "workers", reason: "the feed fix splits into the parser, the tests and the docs", at: Date.now() / 1000, state: "pending",
+      args: { orchestrator: 2, max: 4, models: ["anthropic/sonnet", "haiku"], first: "Write the RSS tests", first_model: "haiku" } }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
   // A folder (category) to show from the start.
   const mockLabels = Object.fromEntries(["c", "old0", "old1"].map((n) => [`/home/leo/.pi/agent/sessions/--home-leo-work--/${n}.jsonl`, { category: "business" }]));
@@ -123,16 +127,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.49") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.49", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.49" };
+      if (pickerVersion !== "4.50") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.50", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.50" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.49", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.49";
-      return { status: "connected", bundled: "4.49", version: { version: "4.49", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.50", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.50";
+      return { status: "connected", bundled: "4.50", version: { version: "4.50", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.49" ? 22 : 21 }, bundled: "4.49", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.50" ? 22 : 21 }, bundled: "4.50", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -212,13 +216,26 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.49", checks: [
+        return { version: "4.50", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
           { name: "sshfs", ok: false, detail: "sharing a folder of this computer live", fix: "sudo apt install sshfs" },
           { name: "Node 24 or newer", ok: false, detail: "Pi runs on Node 22", fix: "install Node 24 (nodejs.org, or nvm install 24)" },
           { name: "Pi", ok: true, detail: "the agent itself" }] };
+      }
+      if (args[0] === "file") {
+        const rel = args[2];
+        const samples = {
+          "README.md": "# Feed reader\n\nA small **RSS** reader, written in `Rust`.\n\n## Build\n\n```sh\ncargo build --release # optimised\n```\n\n- fetches feeds\n- [x] parses Atom\n- [ ] OPML import\n\n| Command | What |\n|---|---|\n| `run` | starts it |\n\n> Pi wrote most of it.\n",
+          "notes.md": "Remember: the cache is per feed.\n",
+          "Cargo.toml": "[package]\nname = \"feed\"\nversion = \"0.3.1\" # bumped by Pi\nedition = \"2021\"\n\n[dependencies]\nreqwest = { version = \"0.12\", features = [\"json\"] }\n",
+        };
+        const rust = Array.from({ length: 60 }, (_, i) => i % 12 === 0
+          ? `/// Parses feed number ${i}.\npub fn parse_${i}(body: &str) -> Result<Feed, Error> {`
+          : i % 12 === 11 ? "}\n" : `    let items = body.lines().filter(|l| !l.is_empty()).count(); // ${i}\n    if items > ${i * 10} { return Err(Error::TooMany(items)); }`).join("\n");
+        const text = samples[rel] ?? (rel.endsWith(".rs") ? `use std::collections::HashMap;\n\n${rust}\n` : "");
+        return { file: rel, project: args[1], size: text.length, binary: false, truncated: false, text };
       }
       if (args[0] === "ls") {
         const dir = args[1] || "/home/leo";
@@ -283,9 +300,9 @@ function mockBackend() {
             { path: `${SESSIONS}/c.jsonl`, modified: 1791600000, name: null, prompt: "Fix the RSS feed", usage: mockUsage(3, 0.12, 40000) },
             ...Array.from({ length: 14 }, (_, i) => ({ path: `${SESSIONS}/old${i}.jsonl`, modified: 1791000000 - i * 90000, name: null,
               prompt: `An older question number ${i + 1}`, usage: mockUsage(2, 0, 5000) })),
-            // Two sub-agents of pi-multiagent (agent_team), under the conversation that ran them.
+            // Two sub-agents: one of pi-multiagent (agent_team), one of Pier's helpers (consult).
             { path: `${SESSIONS}/sub1.jsonl`, modified: 1791790000, name: "agent_team r1/scout package:scout", prompt: "Map the RSS code", usage: mockUsage(2, 0, 30000), subagent: true },
-            { path: `${SESSIONS}/sub2.jsonl`, modified: 1791789000, name: "agent_team r1/reviewer package:reviewer", prompt: "Review the feed fix", usage: mockUsage(2, 0, 22000), subagent: true },
+            { path: `${SESSIONS}/sub2.jsonl`, modified: 1791789000, name: "pier-helper reviewer: feed fix", prompt: "You are a reviewer. Review the feed fix", usage: mockUsage(2, 0, 22000), subagent: true },
           ].filter(alive).map((session) => ({ ...session, slot: mockPis.find((p) => p.file === session.path)?.slot || null,
             ...labelOf(session.path) })),
         };

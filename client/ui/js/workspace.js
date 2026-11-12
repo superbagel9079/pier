@@ -16,6 +16,7 @@ const KINDS = {
   pi: { title: "pi", terminal: true },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
+  file: { title: "file", make: (tab) => makeFile(tab) },
   takeback: { title: "Pi's work", make: (tab) => makeTakeBack(tab) },
   logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
   labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },

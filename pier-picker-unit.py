@@ -952,5 +952,180 @@ class Gallery(unittest.TestCase):
             m.gallery_pi_dev("x", urllib)
 
 
+class FileViewer(Home):
+    """A project file for Pier's viewer: its text, cut at a line, never outside the project."""
+
+    def test_read(self):
+        self.write("work/app/src/main.rs", "fn main() {}\n")
+        self.write("work/secret.txt", "not the project's")
+        answer = m.api_file(self.home, "work/app", "src/main.rs")
+        self.assertEqual((answer["file"], answer["text"], answer["binary"], answer["truncated"]),
+                         ("src/main.rs", "fn main() {}\n", False, False))
+        for outside in ("../secret.txt", "", "/etc/passwd"):
+            with self.assertRaises(m.ApiError):
+                m.api_file(self.home, "work/app", outside)
+        with self.assertRaises(m.ApiError):
+            m.api_file(self.home, "work/app", "src")  # a folder
+
+    def test_binary_and_large(self):
+        full = self.path("work", "app", "logo.png")
+        os.makedirs(os.path.dirname(full))
+        with open(full, "wb") as handle:
+            handle.write(b"\x89PNG\0\0data")
+        answer = m.api_file(self.home, "work/app", "logo.png")
+        self.assertTrue(answer["binary"])
+        self.assertIsNone(answer["text"])
+        self.write("work/app/big.log", "a line of the log\n" * (m.FILE_VIEW_MAX // 10))
+        answer = m.api_file(self.home, "work/app", "big.log")
+        self.assertTrue(answer["truncated"])
+        self.assertTrue(answer["text"].endswith("log\n"))  # no half line
+        self.assertLessEqual(len(answer["text"]), m.FILE_VIEW_MAX)
+
+
+class Workers(Home):
+    """An orchestrator's team: approved once, started in worktrees, messaged, reported;
+    with tmux, git and the approval in Pier stood in for."""
+
+    def setUp(self):
+        super().setUp()
+        self.project = self.path("work", "app")
+        os.makedirs(self.project)
+        self.running = {"app": {}}
+        self.started, self.asked = [], []
+        self.stood_in = {name: getattr(m, name) for name in (
+            "read_pi_sessions", "git_dir", "git_head", "ask_approval", "wait_approval", "open_pi", "worktree_state",
+            "worker_branch", "pier_state", "slot_number", "child_env")}
+        m.read_pi_sessions = lambda: self.running
+        m.git_dir = lambda project: os.path.join(project, ".git")
+        m.git_head = lambda project: "abc"
+        m.ask_approval = lambda home, project, kind, args, reason, replaces=None: self.asked.append(args) or {"id": "x"}
+        m.wait_approval = lambda home, approval, what: approval
+        m.worktree_state = lambda project, path: (0, 1)
+        m.worker_branch = lambda project, slot: (None, f"pi/agent-{slot}")
+        m.pier_state = lambda slot: {"file": None, "working": True}
+        m.slot_number = lambda name, project, home: int(name.split("-")[1]) if "-" in name else 1
+        m.child_env = lambda home: {}
+
+        def open_pi(project, extra, env, home, width, height):
+            args, role_env = m.worker_open_args(project, home, extra[1], extra[2])
+            name = f"app-{len(self.running) + 1}"
+            self.running[name] = {}
+            self.started.append((name, role_env))
+            return name, True
+        m.open_pi = open_pi
+        m.register_orchestrator(self.home, self.project, "app")
+
+    def tearDown(self):
+        for name, value in self.stood_in.items():
+            setattr(m, name, value)
+        super().tearDown()
+
+    def config(self, text):
+        self.write(".config/pier-picker/config.toml", text)
+
+    def orchestrator(self, op, **request):
+        return m.workers_answer(self.home, self.project, "orchestrator", "app", None, None, {"op": op, **request})
+
+    def worker(self, slot, op, **request):
+        task = next(env["PIER_TASK"] for name, env in self.started if name == slot)
+        return m.workers_answer(self.home, self.project, "worker", slot, "app", task, {"op": op, **request})
+
+    def test_models(self):
+        self.config('worker_model = "sonnet"\nworker_models = ["haiku", "bad model!"]\norchestrator_model = "opus:high"\n')
+        config, _ = m.load_config(self.home)
+        self.assertEqual(m.allowed_models(config), ["haiku", "sonnet"])
+        self.assertEqual(m.pi_model_args(config, "orchestrator"), ["--model", "opus:high"])
+        self.assertEqual(m.pi_model_args(config, "worker", "haiku"), ["--model", "haiku"])
+        self.assertEqual(m.pi_model_args(config, "worker", "gpt-9"), ["--model", "sonnet"])  # not allowed: the default
+        self.assertEqual(m.pi_model_args(config, None), [])
+        self.config('helper_model = "haiku"\nworker_model = "sonnet"\nworker_models = ["haiku", "flash"]\n')
+        config, _ = m.load_config(self.home)
+        self.assertEqual(m.helper_models(config), ["haiku", "flash", "sonnet"])
+
+    def test_helpers(self):
+        # consult is given to an orchestrator and a worker, read-only; its conversations
+        # are sub-agents' (see subagent_session).
+        source = m.PIER_TEAM_EXTENSION
+        self.assertIn('name: "consult"', source)
+        self.assertIn('"--tools", "read,grep,find,ls"', source)
+        self.assertIn("pier-helper ", source)
+        self.assertIn('if (process.env.PIER_HELPERS === "1") helpers(pi);', source)
+        self.assertIn('if (process.env.PIER_ROLE === "worker") worker(pi);', source)
+        self.assertTrue(any("pier-helper ".startswith(p) for p in m.SUBAGENT_PREFIX))
+        self.assertTrue(any("agent_team r1/scout".startswith(p) for p in m.SUBAGENT_PREFIX))
+
+    def test_a_team(self):
+        self.config('workers_max = 2\nworker_models = ["haiku"]\n')
+        first = self.orchestrator("start_worker", title="API", task="Write the API", model="haiku")
+        self.assertEqual((first["worker"], first["model"]), (2, "haiku"))
+        self.assertEqual(self.asked[0]["max"], 2)  # the user approved a team of two
+        self.orchestrator("start_worker", title="Docs", task="Write the docs")
+        self.assertEqual(len(self.asked), 1)       # once per team
+        with self.assertRaises(m.ApiError):        # a third: past what was approved
+            self.orchestrator("start_worker", title="More", task="More")
+        with self.assertRaises(m.ApiError):        # a model the user did not allow
+            self.orchestrator("start_worker", title="X", task="Y", model="opus")
+        self.assertEqual([env["PIER_ROLE"] for _, env in self.started], ["worker", "worker"])
+        self.assertEqual(self.started[0][1]["PIER_MODEL"], "haiku")
+        # Each worker gets its task once, whatever reloads it.
+        prompt = self.worker("app-2", "worker_task")["prompt"]
+        self.assertIn("Write the API", prompt)
+        self.assertIsNone(self.worker("app-2", "worker_task")["prompt"])
+        # Messages go to the worker named, once.
+        self.orchestrator("message_worker", worker=2, text="use JSON")
+        self.assertEqual(self.worker("app-2", "inbox")["messages"], ["use JSON"])
+        self.assertEqual(self.worker("app-2", "inbox")["messages"], [])
+        self.assertEqual(self.worker("app-3", "inbox")["messages"], [])
+        views = {v["worker"]: v for v in self.orchestrator("workers")["workers"]}
+        self.assertEqual(views[3]["state"], "starting")  # its task not taken yet
+        self.worker("app-3", "worker_task")
+        # A report, then what the orchestrator sees.
+        self.worker("app-2", "report", summary="done, 3 commits")
+        m.pier_state = lambda slot: {"file": None, "working": slot != "app-2"}
+        views = {v["worker"]: v for v in self.orchestrator("workers")["workers"]}
+        self.assertEqual((views[2]["state"], views[2]["report"], views[2]["branch"]), ("reported", "done, 3 commits", "pi/agent-app-2"))
+        self.assertEqual(views[3]["state"], "working")
+        # A worker that stopped frees its place.
+        del self.running["app-2"]
+        self.assertEqual({v["worker"]: v["state"] for v in self.orchestrator("workers")["workers"]}[2], "reported")
+        self.orchestrator("start_worker", title="More", task="More")
+
+    def test_refusals(self):
+        self.config("workers = false\n")
+        with self.assertRaises(m.ApiError):
+            self.orchestrator("start_worker", title="A", task="B")
+        self.config("")
+        m.git_head = lambda project: None  # no commit: no worktree, no worker
+        with self.assertRaises(m.ApiError):
+            self.orchestrator("start_worker", title="A", task="B")
+        # A worker's operations are not an orchestrator's, and the other way round.
+        with self.assertRaises(m.ApiError):
+            self.orchestrator("report", summary="x")
+        with self.assertRaises(m.ApiError):
+            m.workers_answer(self.home, self.project, "worker", "app-2", "app", "0" * 16, {"op": "start_worker"})
+        # Only a worker the team waits for starts, with a task id of the right shape.
+        with self.assertRaises(m.ApiError):
+            m.worker_open_args(self.project, self.home, "app", "0123456789abcdef")
+        with self.assertRaises(m.ApiError):
+            m.worker_open_args(self.project, self.home, "app", "../x")
+
+    def test_an_ordinary_pi_leads(self):
+        # Any Pi but a worker may start workers: it then shows as an orchestrator.
+        self.running["app-5"] = {}
+        pis = [{"name": "app-5", "attached": False, "last_attached": 0, "file": None, "working": True}]
+        self.assertIsNone(m.pi_infos(self.project, self.home, pis)[0]["role"])
+        m.workers_answer(self.home, self.project, None, "app-5", None, None, {"op": "start_worker", "title": "UI", "task": "Do the UI"})
+        self.assertEqual(m.pi_infos(self.project, self.home, pis)[0]["role"], "orchestrator")
+        # Without a slot (not started by the picker), it cannot.
+        with self.assertRaises(m.ApiError):
+            m.workers_answer(self.home, self.project, None, None, None, None, {"op": "start_worker", "title": "A", "task": "B"})
+
+    def test_teams_for_pier(self):
+        self.orchestrator("start_worker", title="API", task="Write the API")
+        teams = m.api_teams(self.home)
+        self.assertEqual(teams["orchestrators"], ["app"])
+        self.assertEqual(teams["workers"]["app-2"]["title"], "API")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
