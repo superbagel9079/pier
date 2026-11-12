@@ -63,11 +63,13 @@ const workspace = (() => {
       // While a tab is dragged, an empty side shows as a wide drop target.
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);
+      dock.splitter.setAttribute("aria-valuenow", String(dock.width));
       const collapse = $(".collapse", dock.el);
       if (dock.peek) collapse.replaceChildren(pinIcon());
       else collapse.textContent = (name === "right") === dock.collapsed ? "‹" : "›";
       collapse.title = dock.peek ? "Keep this side open (otherwise it folds back when you go back to the terminals)"
         : dock.collapsed ? "Expand" : "Collapse";
+      collapse.setAttribute("aria-label", collapse.title); // its text is a glyph or the pin
     }
     const bar = $(".tabs", dock.el);
     bar.replaceChildren();
@@ -216,6 +218,13 @@ const workspace = (() => {
     }
     const box = el("div");
     box.className = "empty";
+    // The centre left empty (a side hides instead): the Pier mark gives it a centre.
+    if (name === "center") {
+      const mark = el("pre", { className: "mark" });
+      mark.setAttribute("aria-hidden", "true");
+      showMark(mark, { cols: 4, rows: 2 });
+      box.append(mark);
+    }
     box.append(el("span", { textContent: "Open a tab here" }), choices);
     return box;
   }
@@ -468,6 +477,8 @@ const workspace = (() => {
   });
   center.addEventListener("pointerdown", () => foldPeeks(), true);
 
+  const MIN_SIDE_WIDTH = 220; // px: narrower, a side's panels cut their lines
+
   for (const name of DOCKS) {
     const dock = docks[name];
     $(".add", dock.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));
@@ -485,12 +496,17 @@ const workspace = (() => {
     let resizing = false;
     let frame = 0;
     let lastX = 0;
+    /** The side at width px, held between MIN_SIDE_WIDTH and 60% of the workspace. */
+    const setWidth = (width) => {
+      const box = $("#workspace").getBoundingClientRect();
+      dock.width = Math.round(Math.min(box.width * 0.6, Math.max(MIN_SIDE_WIDTH, width)));
+      dock.el.style.setProperty("--width", `${dock.width}px`);
+      dock.splitter.setAttribute("aria-valuenow", String(dock.width));
+    };
     const applyWidth = () => {
       frame = 0;
       const box = $("#workspace").getBoundingClientRect();
-      const width = name === "left" ? lastX - box.left : box.right - lastX;
-      dock.width = Math.round(Math.min(box.width * 0.6, Math.max(220, width)));
-      dock.el.style.setProperty("--width", `${dock.width}px`);
+      setWidth(name === "left" ? lastX - box.left : box.right - lastX);
     };
     const stopResizing = () => {
       if (!resizing) return;
@@ -511,13 +527,30 @@ const workspace = (() => {
     dock.splitter.addEventListener("pointerup", stopResizing);
     dock.splitter.addEventListener("pointercancel", stopResizing);
     dock.splitter.addEventListener("lostpointercapture", stopResizing);
-    // A double click on the divider: back to the usual width.
-    dock.splitter.addEventListener("dblclick", () => {
-      dock.width = defaultLayout()[name]?.width || 320;
-      dock.el.style.setProperty("--width", `${dock.width}px`);
+    // A double click on the divider, or Enter on it: back to the usual width.
+    const resetWidth = () => {
+      setWidth(defaultLayout()[name]?.width || 320);
+      save();
+    };
+    dock.splitter.addEventListener("dblclick", resetWidth);
+    // By keyboard too, as the ARIA window splitter: Tab reaches the divider, the arrows
+    // move it 16 px (64 with Shift) the way they point, on either side.
+    dock.splitter.tabIndex = 0;
+    dock.splitter.setAttribute("aria-label", `Width of the ${name} side`);
+    dock.splitter.setAttribute("aria-valuemin", String(MIN_SIDE_WIDTH));
+    dock.splitter.addEventListener("focus", () => {
+      const box = $("#workspace").getBoundingClientRect();
+      dock.splitter.setAttribute("aria-valuemax", String(Math.round(box.width * 0.6)));
+    });
+    dock.splitter.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); resetWidth(); return; }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const step = (e.shiftKey ? 64 : 16) * (e.key === "ArrowRight" ? 1 : -1);
+      setWidth(dock.width + (name === "left" ? step : -step));
       save();
     });
-    dock.splitter.title = "Drag to resize; double-click for the usual width";
+    dock.splitter.title = "Drag to resize, or the arrow keys; double-click or Enter for the usual width";
   }
 
   // --- persistence ---

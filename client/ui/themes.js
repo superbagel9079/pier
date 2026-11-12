@@ -159,17 +159,18 @@ function completeTheme(theme) {
   ui.field ||= mix(ui.bg, ui.fg, 0.05);
   ui.hover ||= mix(ui.bg, ui.fg, 0.09);
   ui.accent ||= ui.fg;
-  // WCAG AA: dim text 4.5:1 wherever it is drawn: the background, the panels and the
-  // surfaces style.css mixes from bg and fg (--surface 5%, --raise 10%, --strong 16%), a
-  // field, a row under the pointer. The edge of a field and the accent (focus rings, the
-  // active tab) 3:1, so they are seen (1.4.11).
-  const surfaces = [ui.bg, ui.panel, ui.field, ui.hover, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.fg, 0.10), mix(ui.bg, ui.fg, 0.16)];
-  ui.dim = readable(ui.dim, ui.fg, surfaces, 4.5);
-  ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);
-  ui.accent = readable(ui.accent, ui.fg, [ui.bg, ui.panel, ui.field, ui.hover], 3);
   const terminal = { ...theme.terminal };
   ui.green = flatten(ui.green || terminal.green, ui.bg) || "#3fb950";
   ui.red = flatten(ui.red || terminal.red, ui.bg) || "#f85149";
+  // WCAG AA: dim text 4.5:1 wherever it is drawn: the background, the panels and the
+  // surfaces style.css mixes from bg and fg (--surface 5%, --raise 10%, --strong 16%), a
+  // field, a row under the pointer, and a removed line of a diff (--del-bg: the red at
+  // 18%). The edge of a field and the accent (focus rings, the active tab) 3:1, so they
+  // are seen (1.4.11).
+  const surfaces = [ui.bg, ui.panel, ui.field, ui.hover, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.fg, 0.10), mix(ui.bg, ui.fg, 0.16), mix(ui.bg, ui.red, 0.18)];
+  ui.dim = readable(ui.dim, ui.fg, surfaces, 4.5);
+  ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);
+  ui.accent = readable(ui.accent, ui.fg, [ui.bg, ui.panel, ui.field, ui.hover], 3);
   return { ...theme, dark: theme.dark ?? luminance(ui.bg) < 0.5, ui, terminal };
 }
 
@@ -268,4 +269,9 @@ function themesFromFile(text, fileName) {
     ui: Object.fromEntries(Object.entries(t.ui).filter(([, v]) => v)),
     terminal: Object.fromEntries(Object.entries(t.terminal).filter(([, v]) => v)),
   }));
+}
+
+// The unit tests (client/test, in Node) read these; in the page there is no module.
+if (typeof module === "object" && module.exports) {
+  module.exports = { UI_KEYS, BUILTIN_THEMES, completeTheme, mix, contrast };
 }

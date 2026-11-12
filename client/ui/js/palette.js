@@ -118,12 +118,21 @@ const palette = (() => {
     try { item[3](); } catch (error) { uiLog("warn", "palette-failed", { msg: String(error) }); }
   }
 
+  let release = null; // undoes the keyboard trap while open (trapDialog)
+
   function open() {
     if ($("#workspace").hidden) return; // not connected: nothing to reach
+    if (!box.hidden) { input.focus(); return; } // already open
+    // A dialog is already asking something: the palette would open under it and the
+    // dialog would take its keys. It waits for the answer.
+    if ([...document.querySelectorAll('[aria-modal="true"]')].some((n) => n.getClientRects().length)) return;
     if (!vm.latest("conversations")) { vm.follow({ conversations: true }); followed = true; }
     items = collect();
     input.value = "";
     selected = 0;
+    // Modal like Pier's other dialogs: Tab stays inside, Escape closes it from anywhere,
+    // and the focus goes back where it was (a terminal, most often).
+    release = trapDialog($(".palette-box", box), close);
     box.hidden = false;
     render();
     input.focus();
@@ -131,6 +140,8 @@ const palette = (() => {
 
   function close() {
     box.hidden = true;
+    release?.();
+    release = null;
     if (followed) {
       followed = false;
       vm.follow({ conversations: workspace.find("conversations")?.shown === true });

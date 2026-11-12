@@ -11,6 +11,8 @@ function showConnect(view) {
   $("#status").disabled = true;
   $("#connect").hidden = false;
   for (const name of ["setup", "login", "trust", "picker"]) $(`#view-${name}`).hidden = name !== view;
+  // The mark above the form: revealed once, the first time a connection screen shows.
+  showMark($("#connect-mark"), { cols: 4, rows: 2, reveal: true });
   $("#btn-prefs").hidden = true;
   $("#btn-palette").hidden = true;
   $("#btn-handoff").hidden = true;

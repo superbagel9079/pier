@@ -42,3 +42,7 @@ GitHub Actions runs them at every push to `main` and every pull request, on Linu
 ## The interface
 
 It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection; then take back file by file, the clipboard only after a real key, the Logs tab under thousands of lines, dragging a divider, and a collapsed side unfolded for a look.
+
+For the audit of 12 November 2026 the same ran in Chromium with Playwright, in Pier dark and light, at two widths and with reduced motion: see [The UI audit](ui-audit-2026-11-12.md).
+
+Two of its helpers have unit tests, which the CI runs on Linux and Windows: `node --test client/test/dither.test.js client/test/themes.test.js` from the repository's root, in Node 18 or later, with nothing to install. `dither.test.js` covers the Bayer matrix and its thresholds, flat and out-of-range tones, the mark's grid against the icon's, its shape at every size, its characters and its light, and the reveal, which only ever adds cells. `themes.test.js` covers every built-in theme on every surface (dim 4.5:1, the accent and the edges 3:1), a theme of two colours, a translucent colour, and the terminal's red. Name the two files: Node 24 takes `node --test client/test` for a single file and fails.

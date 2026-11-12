@@ -70,6 +70,8 @@ jobs:
         run: |
           cargo clippy --locked --all-targets -- -D warnings
           cargo fmt --check
+      - name: The interface's helpers (the runner's Node)
+        run: node --test client/test/dither.test.js client/test/themes.test.js
       - name: The picker compiles (Python 3.12, as on the VM)
         if: runner.os == 'Linux'
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

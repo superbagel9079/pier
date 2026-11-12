@@ -136,7 +136,15 @@ input[type="number"]:focus::-webkit-inner-spin-button { opacity: 1; }
 select option { background: var(--field); color: var(--fg); }
 /* The focus ring on the field's own edge: never cut by the panel around it. */
 input:focus, select:focus, textarea:focus, .drop:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
-:focus-visible { outline-color: var(--accent); }
+/* The keyboard's place, always seen: a 2 px ring in the accent (3:1 on every surface, see
+   completeTheme), outside the control. Fields, tabs and choices draw theirs on their edge. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Whatever can be used says so: the hand over every enabled control, set once here, the
+   barred circle over a disabled one. Text fields keep their text cursor. */
+a[href], button, summary, select, label[for], label.check, [role="button"], [role="tab"],
+input[type="checkbox"], input[type="radio"], input[type="color"] { cursor: pointer; }
+:is(button, select, input, textarea):disabled, label.check:has(> input:disabled) { cursor: not-allowed; }
 
 /* Checkboxes: a square box, an X when checked. The X is drawn (two diagonals), not a
    character: a glyph's size and place change with the font, and it ends up small and
@@ -171,7 +179,7 @@ input[type="checkbox"]::before {
 }
 input[type="checkbox"]:checked::before { visibility: visible; }
 input[type="checkbox"]:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
-input[type="checkbox"]:disabled { opacity: .5; cursor: default; }
+input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
 
 /* Buttons: the main one filled, the others a chip; actions in a row are words. */
 button {
@@ -187,10 +195,14 @@ button:hover { background: color-mix(in srgb, var(--fg) 85%, var(--bg)); }
 button.secondary { background: var(--chip); color: var(--fg); }
 button.secondary:hover { background: var(--hover); }
 button.link { background: none; border: none; color: var(--dim); padding: 0; }
-button.link:hover, button.link:focus-visible { color: var(--fg); }
+/* A word that acts: underlined under the pointer or the keyboard, not only brighter. */
+button.link:hover, button.link:focus-visible { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
 button.icon { background: none; border: none; color: var(--dim); padding: 0 var(--s2); font-size: var(--t-title); line-height: 1; }
-button.icon:hover { color: var(--fg); }
-button:disabled { opacity: .5; cursor: default; }
+button.icon:hover { color: var(--fg); background: var(--hover); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+/* Pressed, a control gives a little (0.97): the click is felt before its result arrives. */
+button { transition: transform .1s ease-out; }
+button:active:not(:disabled) { transform: scale(.97); }
 
 /* Switches and page tabs: chips side by side, the chosen one filled. */
 .switch { display: inline-flex; gap: 2px; flex-wrap: wrap; }
@@ -215,6 +227,14 @@ details label { margin-top: var(--s2); }
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 180px); gap: var(--s2) var(--s4); align-items: center; }
 .grid label { display: block; }
 .grid select, .grid input { width: 100%; min-width: 0; }
+/* Settings: room for a select's longest built-in text ("follow the system (Pier dark /
+   light)"). On a narrow window each label goes over its field instead, so neither the
+   labels nor that text pay for two columns. */
+#prefs .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 340px); }
+@media (max-width: 900px) {
+  #prefs .grid { grid-template-columns: minmax(0, 1fr); row-gap: var(--s1); }
+  #prefs .grid > label:not(:first-child) { margin-top: var(--s2); }
+}
 
 /* ---------------------------------------------------------------- top bar */
 
@@ -234,15 +254,15 @@ body.own-titlebar #topbar { padding-right: 0; user-select: none; }
 /* Above the overlays (settings, palette: z-index 20), as the system's buttons would be. */
 #window-buttons { display: flex; align-self: stretch; margin: calc(-1 * var(--s2)) 0 calc(-1 * var(--s2)) calc(var(--s4) * -1 + var(--s2)); position: relative; z-index: 21; }
 #window-buttons[hidden] { display: none; }
-#window-buttons button { width: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); display: grid; place-content: center; cursor: default; }
+#window-buttons button { width: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); display: grid; place-content: center; cursor: pointer; }
 #window-buttons button:hover { background: color-mix(in srgb, var(--fg) 12%, transparent); }
-#window-buttons button:active { background: color-mix(in srgb, var(--fg) 20%, transparent); }
+#window-buttons button:active { background: color-mix(in srgb, var(--fg) 20%, transparent); transform: none; }
 #window-buttons #win-close:hover { background: #c42b1c; color: #fff; }
 #window-buttons #win-close:active { background: #b22a1d; color: #fff; }
 #window-buttons button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 #status, #target { min-width: 0; flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #status { padding: 0; font: inherit; }
-#status:disabled { cursor: default; opacity: 1; }
+#status:disabled { cursor: not-allowed; opacity: 1; }
 #target.live { color: var(--fg); }
 /* Narrow, the bar gives way by the longest link (cut with an ellipsis), never by the
    window's buttons. */
@@ -259,6 +279,15 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 #connect { flex: 1; overflow: auto; padding: 32px var(--s5); background: var(--surface); }
 #connect > div { max-width: 520px; margin: 0 auto; }
 
+/* The Pier mark, drawn in text by dither.js: the icon's own cells, shaded the way a 1-bit
+   screen shows tone (docs/design.md, the one motif). Decorative: hidden from screen readers and
+   never caught by a selection. Its line count is fixed, so nothing moves as it appears. */
+.mark { margin: 0; padding: 0; background: none; overflow: hidden; font-size: 7px; line-height: 1.2; color: var(--fg); user-select: none; }
+#connect > .mark { max-width: 520px; margin: 0 auto var(--s5); }
+/* A short window keeps its height for the form. */
+@media (max-height: 640px) { #connect > .mark { display: none; } }
+.empty .mark { margin-bottom: var(--s2); color: var(--dim); }
+
 /* ---------------------------------------------------------------- workspace: three docks */
 
 #workspace { flex: 1; display: flex; min-height: 0; position: relative; }
@@ -269,6 +298,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 /* Between two docks: the background, a line only under the pointer. */
 .splitter { flex: 0 0 4px; cursor: col-resize; background: var(--bg); }
 .splitter:hover, .splitter.dragging { background: var(--strong); }
+/* Reached by Tab (the arrows move it): the whole divider lit, its own focus ring. */
+.splitter:focus-visible { outline: none; background: var(--accent); }
 /* The zone under a dragged tab: its tab bar lightens. */
 .drop-over > .dock-head { background: var(--raise); }
 
@@ -408,9 +439,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .group li .count { margin-left: auto; color: var(--dim); }
 .group li.clickable { cursor: pointer; }
 .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.live-dot { animation: pulse 1.2s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+/* .live-dot, a running state's mark or word: still, as the sessions' bar further down is. */
 
 .resource-items { list-style: none; margin: 0; padding: 0; }
 .resource-items li { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); min-height: 28px; border-top: 1px solid var(--line); }
@@ -481,8 +510,9 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
   background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; }
 .settings-nav .back { align-self: flex-start; padding: var(--s1) 0; }
 .settings-nav input[type="search"] { width: 100%; }
+/* Titled like every section here: bold and plain, never capitals spaced out. */
 .settings-group { margin: var(--s4) 0 var(--s1); padding: 0 var(--s2); font-size: var(--t-label); color: var(--dim);
-  text-transform: uppercase; letter-spacing: .06em; }
+  font-weight: 600; }
 .prefs-tabs { display: flex; flex-direction: column; gap: 2px; }
 .prefs-tabs button { background: none; border: none; color: var(--dim); padding: var(--s1) var(--s2); margin: 0; text-align: left; white-space: nowrap; }
 .prefs-tabs button:hover { color: var(--fg); background: var(--hover); }
@@ -494,6 +524,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .prefs-pages > * { max-width: 760px; }
 .prefs-page > .grid { margin-bottom: var(--s2); }
 .prefs-page > h2:first-child, .prefs-page > div:first-child + h2 { margin-top: 0; }
+/* Two pages shown together (Appearance, then Layout): the second keeps its space above. */
+.settings:not(.searching) .prefs-page:not([hidden]) ~ .prefs-page:not([hidden]) > h2:first-child { margin-top: var(--s5); }
 .settings.searching #prefs-title { display: none; }
 .settings.searching .prefs-page::before { content: attr(data-title); display: block; font-weight: 600; font-size: var(--t-title);
   margin: var(--s5) 0 var(--s2); padding-bottom: var(--s1); border-bottom: 1px solid var(--line); }
@@ -553,11 +585,11 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .overlay.palette { align-items: flex-start; padding-top: 12vh; }
 .palette-box { background: var(--surface); width: min(640px, 100%); display: flex; flex-direction: column; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); }
 .palette-box input { padding: var(--s3) var(--s4); font-size: var(--t-title); background: var(--chip); }
-.palette-box input:focus { outline: none; }
+.palette-box input:focus { outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
 #palette-list { list-style: none; margin: 0; padding: var(--s1) 0; max-height: 50vh; overflow-y: auto; }
 #palette-list li { display: flex; gap: var(--s2); align-items: baseline; padding: var(--s1) var(--s4); cursor: pointer; min-width: 0; }
 #palette-list li.selected { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
-#palette-list .kind { flex: 0 0 7.5em; color: var(--dim); font-size: var(--t-label); text-transform: uppercase; letter-spacing: .04em; }
+#palette-list .kind { flex: 0 0 7.5em; color: var(--dim); font-size: var(--t-label); }
 #palette-list .label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #palette-list .detail { flex: 0 1 auto; color: var(--dim); font-size: var(--t-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
 #palette-list li.empty { color: var(--dim); cursor: default; }
@@ -605,7 +637,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 
 .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree ul { padding-left: var(--s4); }
-.tree .node { display: flex; gap: var(--s2); padding: 1px var(--s2); cursor: default; white-space: nowrap; }
+.tree .node { display: flex; gap: var(--s2); padding: 1px var(--s2); cursor: pointer; white-space: nowrap; }
 .tree .node:hover { background: var(--hover); }
 .tree .node.selected { background: var(--fg); color: var(--bg); }
 .tree .node .badge { min-width: 1.2em; }
@@ -639,6 +671,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .diff { margin: 0 0 var(--s4); padding: 0; background: var(--chip); font-size: var(--t-small); overflow-x: auto; }
 .diff div { padding: 0 var(--s2); white-space: pre; min-height: 1.5em; }
 .diff .add { background: var(--add-bg); }
+/* Removed lines dimmed: completeTheme (themes.js) keeps dim 4.5:1 on this tint too. */
 .diff .del { background: var(--del-bg); color: var(--dim); }
 .diff .hunk { color: var(--dim); background: var(--raise); }
 .edit-title { color: var(--dim); font-size: var(--t-small); margin: var(--s2) 0 var(--s1); }
@@ -699,11 +732,11 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions .meta .title.fresh { font-style: italic; color: var(--dim); }
 .sessions .meta .facts { line-height: 1.4; margin-top: 1px; font-size: var(--t-small); }
 .sessions .row-actions { display: flex; gap: var(--s2); flex: 0 0 auto; line-height: 1.35; }
-/* A running Pi: a bar on its left, grey while it waits, bright and breathing while it works. */
+/* A running Pi: a bar on its left, grey while it waits, bright while it works. Still: a
+   pulse that never stops is motion past 5 s with no way to pause it (WCAG 2.2.2), and the
+   facts line says "working" already. */
 .sessions li.running { box-shadow: inset 2px 0 0 var(--dim); padding-left: var(--s2); }
-.sessions li.running.working { box-shadow: inset 2px 0 0 var(--fg); animation: bar-pulse 1.2s ease-in-out infinite; }
-@keyframes bar-pulse { 50% { box-shadow: inset 2px 0 0 var(--dim); } }
-@media (prefers-reduced-motion: reduce) { .sessions li.running.working { animation: none; } }
+.sessions li.running.working { box-shadow: inset 2px 0 0 var(--fg); }
 .sessions li.archived .ellipsis, .sessions li.archived .title { color: var(--dim); }
 .sessions li.category, .sessions li.more { align-items: center; }
 .sessions li.category:hover, .sessions li.project-head:hover, .sessions li.more:hover, .sessions li.label-editor:hover { background: none; }
@@ -746,7 +779,26 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .log-lines .trace { color: var(--dim); padding-left: 2ch; white-space: pre; overflow-x: auto; }
 .log-lines .entry.ERROR .lvl, .log-lines .entry.ERROR .event { color: var(--red, var(--fg)); }
 .log-lines .entry.WARN .lvl { font-weight: 700; }
-.log-lines .entry.DEBUG { opacity: .75; }
+/* Debug lines step back in the dim colour (4.5:1 by completeTheme), not by opacity, which
+   took their details under 3.6:1. */
+.log-lines .entry.DEBUG { color: var(--dim); }
+
+/* ---------------------------------------------------------------- motion */
+
+/* What opens over the work (menus, lists, the palette, dialogs, notes) grows from 95 % in
+   150 to 200 ms, from where it comes, so the eye follows it into place. Closing is
+   instant: nothing stands between a choice and the work. None if the system asks. */
+@keyframes open-in { from { opacity: 0; transform: scale(.95); } }
+.menu { animation: open-in .15s ease-out; transform-origin: top left; }
+.combo-list { animation: open-in .15s ease-out; transform-origin: top center; }
+.palette-box { animation: open-in .18s ease-out; transform-origin: top center; }
+.dialog { animation: open-in .2s ease-out; }
+.toast { animation: open-in .15s ease-out; transform-origin: top right; }
+@media (prefers-reduced-motion: reduce) {
+  .menu, .combo-list, .palette-box, .dialog, .toast { animation: none; }
+  button { transition: none; }
+  button:active:not(:disabled) { transform: none; }
+}
 
 /* ---------------------------------------------------------------- scrollbars */
 
