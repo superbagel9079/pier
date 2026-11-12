@@ -84,7 +84,207 @@ function makeTerminal(tab, kind) {
   let pendingKeys = "";    // a Ctrl-b that turned out to be for Pi, sent with the next key
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
-  tab.refit = () => { if (visible()) { try { fit.fit(); } catch { /* not laid out yet */ } } };
+  // The width changes when a side opens or folds. An alternate-screen program (the
+  // picker, an editor) redraws itself to the new size, with nothing to keep. A plain
+  // conversation (Pi's regular mode) is different: at a new width Pi clears the screen
+  // and the scrollback and prints the whole conversation again, rewrapped, and xterm
+  // lands at the bottom. So the place being read is held by its text, not by a line
+  // count (the rewrap changes every count): the words at the top of the view are noted
+  // before the fit, and looked for again after xterm's own reflow and after Pi's
+  // reprint. Pi sends its reprint as one synchronized update (ESC[?2026h … ESC[?2026l),
+  // which xterm paints only at its end: the view is put back in place before that paint,
+  // so the conversation does not move on screen.
+  let held = null;         // { anchor, until }: a place to put back after Pi's reprint
+  let reprinting = false;  // a clear came from Pi while a place is held
+  let seen = "";           // the end of the last chunk, for a sequence cut in two
+  const reprintDecoder = new TextDecoder();
+
+  /** The text of a row, and whether it goes on from the row before (xterm's own wrap). */
+  const rowText = (buffer, y) => {
+    const line = buffer.getLine(y);
+    return line ? { text: line.translateToString(true), wrapped: line.isWrapped } : { text: "", wrapped: false };
+  };
+  const squeeze = (text) => text.replace(/\s+/g, " ").trim();
+
+  /** The words at the top of the view, when it is not at the bottom of a conversation. */
+  function anchorOf() {
+    const buffer = term.buffer.active;
+    if (buffer.type !== "normal" || buffer.viewportY >= buffer.baseY) return null;
+    let text = "";
+    let lead = 0;          // empty rows above the first words, kept above them again
+    for (let y = buffer.viewportY; y < buffer.viewportY + term.rows && text.length < 160; y++) {
+      const part = squeeze(rowText(buffer, y).text);
+      if (part) text = text ? `${text} ${part}` : part;
+      else if (!text) lead++;
+    }
+    if (text.length < 8) return null; // nothing that could be found again
+    return { text: text.slice(0, 160), lead, where: buffer.viewportY / Math.max(1, buffer.baseY) };
+  }
+
+  /** Scrolls so that the anchor's words are at the top again; false when they are not
+   *  found. Of several places with the same words, the one nearest the old position. */
+  function putBack(anchor) {
+    const buffer = term.buffer.active;
+    if (buffer.type !== "normal") return false;
+    let flat = "";
+    const starts = [];     // where each row's text begins in flat, and its row
+    for (let y = 0; y < buffer.length; y++) {
+      const { text, wrapped } = rowText(buffer, y);
+      const piece = squeeze(text);
+      if (!piece) continue;
+      if (flat && !wrapped) flat += " ";
+      starts.push([flat.length, y]);
+      flat += piece;
+    }
+    const rowAt = (at) => {
+      let lo = 0;
+      let hi = starts.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi + 1) >> 1;
+        if (starts[mid][0] <= at) lo = mid; else hi = mid - 1;
+      }
+      return starts[lo][1];
+    };
+    for (const size of [160, 100, 60, 30]) {
+      const needle = anchor.text.slice(0, size);
+      if (needle.length < 8 || needle.length < Math.min(size, anchor.text.length)) continue;
+      let best = -1;
+      let bestGap = Infinity;
+      for (let at = flat.indexOf(needle); at !== -1; at = flat.indexOf(needle, at + 1)) {
+        const row = rowAt(at);
+        const gap = Math.abs(row / Math.max(1, buffer.baseY) - anchor.where);
+        if (gap < bestGap) { best = row; bestGap = gap; }
+      }
+      if (best !== -1) {
+        term.scrollToLine(Math.max(0, Math.min(best - anchor.lead, buffer.baseY)));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Watches the VM's output while a place is held: a clear, then the end of the
+   *  synchronized update, is Pi's reprint done. Returns what to run once xterm has
+   *  taken the chunk in, or null. */
+  function watchReprint(bytes) {
+    if (!held) return null;
+    if (performance.now() > held.until) { held = null; reprinting = false; seen = ""; return null; }
+    const text = seen + reprintDecoder.decode(bytes, { stream: true });
+    seen = text.slice(-12);
+    if (!reprinting && /\x1b\[[23]J/.test(text)) reprinting = true;
+    if (!reprinting) return null;
+    // The last end of a synchronized update in this chunk, after the clear.
+    const clearAt = Math.max(text.lastIndexOf("\x1b[2J"), text.lastIndexOf("\x1b[3J"));
+    const endAt = text.lastIndexOf("\x1b[?2026l");
+    if (endAt === -1 || (clearAt !== -1 && endAt < clearAt)) return null;
+    reprinting = false;
+    seen = "";             // this end is handled: not to be found again in the next chunk
+    const anchor = held.anchor;
+    // Held a little longer: a side unfolded for a look folds back soon, and Pi
+    // reprints once more then; the same place is put back after that one too.
+    return () => putBack(anchor);
+  }
+  /** Hands the VM's bytes to xterm, the end of a reprint followed by putting the place back. */
+  function deliver(bytes, written) {
+    const reprinted = watchReprint(bytes);
+    term.write(bytes, reprinted ? () => { reprinted(); written?.(); } : written);
+  }
+
+  // A synchronized update (ESC[?2026h … ESC[?2026l) is given to xterm whole, in one
+  // write. xterm paints nothing during one, but only for a second: a long conversation
+  // reprinted by Pi (at a new width) takes longer than that to come from the VM, and
+  // xterm then showed it being cleared and written again, the view running up and back
+  // down. Held here, it is painted once, finished. The bytes held are acknowledged at
+  // once (the VM is not slowed for them); a hold that does not end is let go after a
+  // while, or past a size.
+  const SYNC_ON = new TextEncoder().encode("\x1b[?2026h");
+  const SYNC_OFF = new TextEncoder().encode("\x1b[?2026l");
+  let gateTail = new Uint8Array(0); // the last bytes, for a marker cut in two
+  let holding = null;               // { parts, size, since, timer }
+
+  const find = (hay, needle, from) => {
+    const first = needle[0];
+    for (let i = hay.indexOf(first, from); i !== -1 && i <= hay.length - needle.length; i = hay.indexOf(first, i + 1)) {
+      let j = 1;
+      while (j < needle.length && hay[i + j] === needle[j]) j++;
+      if (j === needle.length) return i;
+    }
+    return -1;
+  };
+
+  function hold(part) {
+    if (!part.length) return;
+    holding.parts.push(part);
+    holding.size += part.length;
+    if (holding.size > 32 * 1024 * 1024 || performance.now() - holding.since > 5000) letOut("too long");
+  }
+
+  function letOut(why) {
+    if (!holding) return;
+    const { parts, size, since, timer } = holding;
+    holding = null;
+    clearTimeout(timer);
+    const all = new Uint8Array(size);
+    let at = 0;
+    for (const part of parts) { all.set(part, at); at += part.length; }
+    if (size > 64 * 1024) uiLog("debug", "term-sync-held", { why, bytes: size, ms: Math.round(performance.now() - since) });
+    if (size) deliver(all);
+  }
+
+  function gate(bytes, written) {
+    const off = gateTail.length;
+    const probe = new Uint8Array(off + bytes.length);
+    probe.set(gateTail, 0);
+    probe.set(bytes, off);
+    gateTail = probe.slice(Math.max(0, probe.length - (SYNC_ON.length - 1)));
+    let from = 0;   // where the next marker is looked for (a whole marker never fits in the tail)
+    let at = off;   // the first byte of this chunk not yet passed on
+    let wrote = false;
+    for (;;) {
+      if (!holding) {
+        const on = find(probe, SYNC_ON, from);
+        if (on === -1) break;
+        const start = Math.max(on, off);
+        if (start > at) { deliver(probe.subarray(at, start)); }
+        at = start;
+        holding = { parts: [], size: 0, since: performance.now(), timer: setTimeout(() => letOut("no end"), 3000) };
+        from = on + SYNC_ON.length;
+      } else {
+        const end = find(probe, SYNC_OFF, from);
+        if (end === -1) break;
+        const stop = Math.max(end + SYNC_OFF.length, off);
+        hold(probe.subarray(at, stop));
+        at = stop;
+        letOut("end");
+        from = end + SYNC_OFF.length;
+      }
+    }
+    if (at < probe.length) {
+      if (holding) hold(probe.subarray(at));
+      else { deliver(probe.subarray(at), written); wrote = true; }
+    }
+    if (!wrote) written?.(); // held, or already passed on in pieces: taken in all the same
+  }
+
+  // Scrolling or typing here says where the reader is now: nothing to put back.
+  const letGo = () => { held = null; reprinting = false; seen = ""; };
+  tab.pane.addEventListener("wheel", letGo, { passive: true });
+  tab.pane.addEventListener("keydown", letGo, true);
+
+  tab.refit = () => {
+    if (!visible()) return;
+    const before = [term.cols, term.rows];
+    // A place still held (the side folds back before Pi's first reprint has come, or
+    // just after it) stays the one to keep: the view meanwhile is only a reflow.
+    const anchor = held?.anchor ?? anchorOf();
+    try { fit.fit(); } catch { return; /* not laid out yet */ }
+    if (!anchor) return; // at the bottom, or an alternate screen: nothing to hold
+    putBack(anchor);     // after xterm's own reflow, until Pi's reprint comes
+    if (term.cols !== before[0] || term.rows !== before[1]) {
+      // The size goes to the VM 120 ms later (onResize below); the reprint follows.
+      held = { anchor, until: performance.now() + 4000 };
+    }
+  };
   // The padding around the text, and the leftover below the last row, take the
   // terminal's own background, as in kitty or foot: no band of another colour.
   tab.applyTheme = () => {
@@ -112,7 +312,10 @@ function makeTerminal(tab, kind) {
     tab.refit();
     try {
       const opened = [term.cols, term.rows];
-      const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes, written) => { latency.answer(); term.write(bytes, written); }, tab.params);
+      const fresh = await backend.termOpen(kind, term.cols, term.rows, (bytes, written) => {
+        latency.answer();
+        gate(bytes, written);
+      }, tab.params);
       if (closed || mine !== starts) {
         backend.termClose(fresh); // the tab closed or restarted meanwhile: nothing left running
         return;
