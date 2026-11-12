@@ -30,7 +30,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.5", os: "browser", picker: "4.46" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.46" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
