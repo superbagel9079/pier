@@ -62,7 +62,7 @@ network_limit = true
 # For example: network_allow = ["bifrost.example.org", ".hindsight.example", "127.0.0.1:8080"]
 network_allow = []
 
-# Pi gets git tools for the forge connected in Pier (Setup > Git): push its pi/...
+# Pi gets git tools for the forge connected in Pier (Repository > Git): push its pi/...
 # branches, open pull requests. The token stays with the picker; merging waits for you.
 git_tools = true
 

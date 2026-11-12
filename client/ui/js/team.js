@@ -1,4 +1,4 @@
-// The Team page of Setup, giving a conversation to a colleague, and what waits for this
+// The Team page of Repository, giving a conversation to a colleague, and what waits for this
 // account's Pis wherever the user is.
 
 // ============================================================================

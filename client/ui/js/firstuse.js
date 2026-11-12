@@ -14,7 +14,7 @@ async function openVmReady(version = null) {
   if (!checks) {
     try { checks = (await backend.api(["version"])).checks; } catch (e) { flashStatus(`could not ask the VM: ${e}`); return; }
   }
-  if (!Array.isArray(checks)) { flashStatus("this picker does not say what the VM has: update it (Settings > Picker)"); return; }
+  if (!Array.isArray(checks)) { flashStatus("this picker does not say what the VM has: update it (Settings > General)"); return; }
   const missing = checks.filter((c) => !c.ok);
   const rows = el("ul", { className: "resource-items" });
   for (const c of checks) {

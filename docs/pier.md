@@ -32,7 +32,7 @@ The installation is careful: the new file is written next to the old one, Pier c
 
 **The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions, Skills, Packages, Advanced) and **Repository** (Git and Team, which were pages of Setup). Settings open on **General** (Picker, Behavior, Updates); Layout is in Appearance. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
 
-Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Layout > **Panels** puts them on the left):
+Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Appearance > **Panels** puts them on the left):
 
 - **Conversations**: every conversation, of every project, with their Pis;
 - **Activity**: what the Pi in use does;

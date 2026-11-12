@@ -1,4 +1,4 @@
-// Skills, extensions and prompts, and packages, in the Setup tab.
+// Skills, extensions and prompts, and packages, in the Project panel.
 
 // ============================================================================
 // What Pi loads, managed: each skill, extension and prompt turned on or off (as

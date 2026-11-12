@@ -1,4 +1,4 @@
-// The Git page of Setup, and Pi's requests waiting for the user.
+// The Git page of Repository, and Pi's requests waiting for the user.
 
 // ============================================================================
 // A project connected to a forge (GitHub, GitLab, Gitea / Forgejo): Pi pushes its pi/…

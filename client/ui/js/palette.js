@@ -43,7 +43,7 @@ const palette = (() => {
     }
     const panel = (kind) => workspace.find(kind) || workspace.add(kind, side);
     for (const button of document.querySelectorAll("#tpl-setup")[0]?.content.querySelectorAll(".setup-pages .mode") || []) {
-      out.push(["page", `Setup: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
+      out.push(["page", `Project: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
     }
     for (const [mode, label, detail] of [["activity", "Activity", "what Pi read and changed"], ["files", "Files", "the project's files"],
       ["restore", "Restore points", "undo what Pi did: go back to before a prompt"]]) {

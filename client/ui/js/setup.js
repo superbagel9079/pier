@@ -1,4 +1,4 @@
-// The Setup tab: a project's instructions, what Pi reads at startup, its conversations.
+// The Project panel: a project's instructions, skills, packages and prompts.
 
 // ============================================================================
 // Setup: what a project's Pi starts with, and its sessions
@@ -50,12 +50,7 @@ function makeSetup(tab) {
   const packageTools = makePackageTools($$(".package-tools"), () => data?.project || project(), () => manager.load());
 
   // The four pages; the one chosen is remembered.
-  function showPage(page, initial = false) {
-    // Git and Team: the Repository panel now (repository.js).
-    if (page === "git" || page === "team") {
-      if (!initial) { repositoryTab(page); return; } // the page shown here stays as it was
-      page = "instructions";
-    }
+  function showPage(page) {
     if (!["instructions", "skills", "packages", "advanced"].includes(page)) page = "instructions";
     for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.classList.toggle("active", b.dataset.page === page);
     for (const section of tab.pane.querySelectorAll(".setup-page")) section.hidden = section.dataset.page !== page;
@@ -66,7 +61,7 @@ function makeSetup(tab) {
   }
   for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
   tab.showPage = (page) => showPage(page); // from the palette
-  showPage(prefs.setupPage, true);
+  showPage(prefs.setupPage);
 
   const project = () => chosen || target?.path || select.value || "";
 
@@ -116,12 +111,6 @@ function makeSetup(tab) {
 
   // --- the project's conversations: a line, the list is in Conversations ---
 
-  function link(text, title, action) {
-    const b = el("button", { className: "link", textContent: text, title });
-    b.addEventListener("click", action);
-    return b;
-  }
-
   /** One line on what the project holds, and the counts on the page buttons. */
   function renderSummary() {
     const box = $$(".setup-summary");
@@ -140,7 +129,7 @@ function makeSetup(tab) {
     ].filter(Boolean);
     box.replaceChildren(
       el("span", { className: "dim", textContent: facts.join(" · ") }),
-      link("open them in Conversations", "Its Pis and conversations: new, continue, stop", () => {
+      linkButton("open them in Conversations", "Its Pis and conversations: new, continue, stop", () => {
         const conversations = workspace.find("conversations") || workspace.add("conversations", "left");
         conversations?.focusProject?.(data.project);
       }),
@@ -284,7 +273,7 @@ function makeSetup(tab) {
       el("span", { className: "ellipsis", textContent: name }),
       el("span", { className: "dim small", textContent: detail || "" }),
       action || null);
-    const update = (label, args, title) => link("update", title, () => {
+    const update = (label, args, title) => linkButton("update", title, () => {
       workspace.add("update", workspace.find("main")?.dock || "center", { params: { label, args } });
     });
     // Packages: compact rows, as on the Skills page.
@@ -304,7 +293,7 @@ function makeSetup(tab) {
       const behind = p.installed !== false && newer(p.latest, p.version);
       outdated += behind ? 1 : 0;
       const detail = p.installed === false ? "not installed" : behind ? `v${p.version} → ${p.latest}` : p.version ? `v${p.version}` : "";
-      const remove = link("remove", `pi remove ${p.source}, in a terminal (in Pi's sandbox)`, async () => {
+      const remove = linkButton("remove", `pi remove ${p.source}, in a terminal (in Pi's sandbox)`, async () => {
         if (!(await ask(`Remove the package ${name}? Pi stops loading its skills and extensions at its next start.`))) return;
         openPackageTerminal("remove", p.scope === "project" ? data.project : "user", p.source, name, () => manager.load());
       });

@@ -7,8 +7,6 @@
 const KINDS = {
   picker: { title: "picker", terminal: true },
   shell: { title: "shell", terminal: true },
-  // Given to Pi lives in Activity now; this kind stays for a layout saved before.
-  context: { title: "Given to Pi", single: true, make: (tab) => makeContext(tab) },
   project: { title: "Activity", single: true, make: (tab) => makeProject(tab) },
   setup: { title: "Project", single: true, make: (tab) => makeSetup(tab) },
   repository: { title: "Repository", single: true, make: (tab) => makeRepository(tab) },
@@ -23,9 +21,8 @@ const KINDS = {
   lab: { title: "lab", terminal: true },
 };
 const DOCKS = ["left", "center", "right"];
-const DOCK_NAMES = { left: "left", center: "center", right: "right" };
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
-// The terminals in the middle, every panel on one side (Settings > Layout chooses which):
+// The terminals in the middle, every panel on one side (Settings > Appearance chooses which):
 // Conversations first, then what the Pi in use does (and what it was given), the
 // project's setup. Repository comes when the project has one; Logs and Labs on demand.
 function defaultLayout(side = prefs.panelSide) {
@@ -45,7 +42,7 @@ const workspace = (() => {
     const node = $(`#dock-${name}`);
     docks[name] = {
       name, el: node, side: name !== "center", tabs: [], active: null, collapsed: false,
-      width: name === "left" ? 320 : 380, splitter: $(`.splitter[data-dock="${name}"]`),
+      width: defaultLayout()[name]?.width || 320, splitter: $(`.splitter[data-dock="${name}"]`),
     };
   }
   let nextId = 1;
@@ -153,7 +150,7 @@ const workspace = (() => {
   function contextMenu(tab, x, y) {
     const dock = docks[tab.dock];
     const items = [["Rename…", () => rename(tab)], null];
-    for (const name of DOCKS) items.push([`Move to the ${DOCK_NAMES[name]}`, () => move(tab, name), tab.dock === name]);
+    for (const name of DOCKS) items.push([`Move to the ${name}`, () => move(tab, name), tab.dock === name]);
     if (dock.side && dock.peek) items.push(["Keep this side open", () => keepOpen(tab.dock)]);
     if (dock.side) items.push(["Collapse this side", () => { dock.peek = false; dock.collapsed = true; render(tab.dock); save(); }, dock.collapsed]);
     if (KINDS[tab.kind].terminal) {
@@ -516,7 +513,7 @@ const workspace = (() => {
     dock.splitter.addEventListener("lostpointercapture", stopResizing);
     // A double click on the divider: back to the usual width.
     dock.splitter.addEventListener("dblclick", () => {
-      dock.width = defaultLayout()[name]?.width || (name === "left" ? 320 : 400);
+      dock.width = defaultLayout()[name]?.width || 320;
       dock.el.style.setProperty("--width", `${dock.width}px`);
       save();
     });
@@ -531,10 +528,8 @@ const workspace = (() => {
       const dock = docks[name];
       saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed || Boolean(dock.peek), width: dock.width };
     }
-    // Names given by the user, for the tabs that come back at the next connection.
-    saved.knowsSetup = true;
-    saved.knowsConversations = true;
     saved.layout = 6;
+    // Names given by the user, for the tabs that come back at the next connection.
     saved.titles = Object.fromEntries(tabs().filter((t) => t.renamed && (t.pinned || KINDS[t.kind].single)).map((t) => [keyOf(t), t.title]));
     return saved;
   }
@@ -544,11 +539,9 @@ const workspace = (() => {
     try { localStorage.setItem("devbox.layout.v3", JSON.stringify(snapshot())); } catch { /* storage off */ }
   }
 
-  function restore(layout) {
-    let saved = layout;
-    if (!saved) {
-      try { saved = JSON.parse(localStorage.getItem("devbox.layout.v3")); } catch { /* default */ }
-    }
+  function restore() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem("devbox.layout.v3")); } catch { /* default */ }
     saved = saved || defaultLayout();
     // An older layout gets the new arrangement once (Reset layout gives it again); the
     // names given to tabs stay.
@@ -560,7 +553,7 @@ const workspace = (() => {
       const want = saved[name] || defaultLayout()[name];
       const dock = docks[name];
       dock.width = want.width || dock.width;
-      for (const key of (want.tabs || []).map((k) => (k === "send" || k === "shares" ? "context" : k))) {
+      for (const key of want.tabs || []) {
         if (key === "main") {
           if (!mainPlaced) place(create("picker", { pinned: true }), name, { reveal: false });
           mainPlaced = true;
@@ -572,8 +565,6 @@ const workspace = (() => {
       dock.collapsed = Boolean(want.collapsed) && dock.side;
     }
     if (!mainPlaced) place(create("picker", { pinned: true }), "center", { reveal: true });
-    if (!saved.knowsSetup && !find("setup")) place(create("setup"), "right", { reveal: false });
-    if (!saved.knowsConversations && !find("conversations")) place(create("conversations"), "right", { reveal: false });
     for (const [key, title] of Object.entries(saved.titles || {})) {
       const tab = find(key);
       if (tab && typeof title === "string" && title.trim()) Object.assign(tab, { title: title.trim(), renamed: true });
@@ -622,7 +613,7 @@ const workspace = (() => {
     renderAll();
   }
 
-  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, keyOf, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
+  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
 })();
 
 // Focus follows the mouse (a setting), as on many Linux desktops: the tab under the

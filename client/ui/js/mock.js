@@ -108,6 +108,10 @@ function mockBackend() {
                   files: [{ name: "20261012-1433-rapport.pdf", path: "/home/leo/work/.pi-files/20261012-1433-rapport.pdf", size: 120400 }],
                   copies: [] };
   let tick = 0;
+  let mockWorktrees = [
+    { name: "pi-work-1a2b3c-2", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-2", branch: "pi/agent-2-20261016-1530-ab12", changed: 2, ahead: 3, running: true },
+    { name: "pi-work-1a2b3c-4", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-4", branch: "pi/agent-4-20261015-0910-cd34", changed: 0, ahead: 1, running: false },
+  ];
   const echoes = {};
   const files = {
     "/home/leo/work": [
@@ -201,7 +205,7 @@ function mockBackend() {
       }
       if (args[0] === "labs") return mockLabs();
       if (args[0] === "collaborators") return { login: "leo", collaborators: ["alex", "sam"] };
-      if (args[0] === "worktrees") return { worktrees: [{ name: "pi-work-1a2b3c-2", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-2", branch: "pi/agent-2-20261016-1530-ab12", changed: 2, ahead: 3, running: true }] };
+      if (args[0] === "worktrees") return { worktrees: mockWorktrees };
       if (args[0] === "skill-read") return { name: args[3], text: `---\nname: ${args[3]}\ndescription: demo\n---\n\n# ${args[3]}\n` };
       if (args[0] === "projects") {
         const pis = pisNow();
@@ -422,6 +426,12 @@ function mockBackend() {
     repoUnlink: async () => { mockLink = null; return {}; },
     repoCreate: async (project, forge, name) => { mockLink = { forge, repo: `leo/${name}`, default_branch: "main", prefix: "pi/", mode: "ask", merge_method: "merge" }; return mockLink; },
     prMerge: async (project, number) => ({ merged: number }),
+    worktreeRemove: async (project, name) => {
+      const tree = mockWorktrees.find((w) => w.name === name);
+      if (tree?.running) throw "a Pi still works in that worktree: stop it first";
+      mockWorktrees = mockWorktrees.filter((w) => w.name !== name);
+      return { removed: name };
+    },
     approvalAnswer: async (id, approve) => { mockApprovals = mockApprovals.filter((a) => a.id !== id); return { id, state: approve ? "done" : "refused" }; },
     skillDelete: async (scope, project, name) => {
       mockSkills = mockSkills.filter((s) => s.name !== name);

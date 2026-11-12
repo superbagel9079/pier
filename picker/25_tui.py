@@ -567,7 +567,7 @@ class Picker:
         x = max(2, (w - logo_w) // 2)
         for i, line in enumerate(LOGO):
             put(self.scr, 1 + i, x, line, curses.A_BOLD, w - 2 - x)
-        # The logo alone: the version is in Pier (Settings > Picker) and in --version.
+        # The logo alone: the version is in Pier (Settings > General) and in --version.
         return len(LOGO) + 2
 
     def git_text(self, entry):

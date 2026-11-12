@@ -1,4 +1,4 @@
-// The Project tab: what Pi reads and changes, the files, the restore points.
+// The Activity panel: what Pi reads and changes, the files, what it was given, the restore points.
 
 // ============================================================================
 // Project: what the agent reads and changes, and the files
