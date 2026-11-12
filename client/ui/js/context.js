@@ -336,6 +336,7 @@ function closeHandOff() {
 
 async function openHandOff() {
   const live = await backend.shareList();
+  if (!$("#handoff").hidden) return; // a double click: already open, and trapped once
   const list = $("#handoff-shares");
   list.replaceChildren();
   for (const share of live) {

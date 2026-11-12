@@ -51,11 +51,11 @@ function ditherLevel(tone, x, y, levels) {
 /** The mark as lines of text, one string. Each cell of the icon becomes cols characters
  *  by rows lines; a character is about twice as tall as it is wide, so cols = 2 × rows
  *  keeps the cells square. The light falls from the top left: the glyph's tone is
- *  dithered across ramp, so the shading reads as a 1-bit screen's while the edges stay
+ *  dithered across MARK_RAMP, so the shading reads as a 1-bit screen's while the edges stay
  *  exactly the icon's. progress (0 to 1) draws only the cells whose threshold it has
  *  passed, in Bayer order: the reveal. Every call returns as many lines, whatever progress.
  *  markText({ cols: 2, rows: 1 }) → 10 lines, the widest 20 characters. */
-function markText({ cols = 2, rows = 1, ramp = MARK_RAMP, progress = 1 } = {}) {
+function markText({ cols = 2, rows = 1, progress = 1 } = {}) {
   const width = PIER_MARK[0].length * cols;
   const height = PIER_MARK.length * rows;
   const lines = [];
@@ -70,7 +70,7 @@ function markText({ cols = 2, rows = 1, ramp = MARK_RAMP, progress = 1 } = {}) {
       // 1 at the top left down to 0.45 at the bottom right; never the ramp's empty
       // first step, so the glyph always stays whole.
       const tone = 1 - (0.55 * (x / (width - 1) + y / (height - 1))) / 2;
-      line += ramp[Math.max(1, ditherLevel(tone, x, y, ramp.length))];
+      line += MARK_RAMP[Math.max(1, ditherLevel(tone, x, y, MARK_RAMP.length))];
     }
     lines.push(line.trimEnd());
   }
@@ -100,5 +100,5 @@ function showMark(pre, { cols = 2, rows = 1, reveal = false } = {}) {
 
 // Node (client/test) reads this same file; in the page there is no module and this is skipped.
 if (typeof module === "object" && module.exports) {
-  module.exports = { BAYER_4, PIER_MARK, MARK_RAMP, MARK_REVEAL_MS, bayerThreshold, ditherLevel, markText };
+  module.exports = { BAYER_4, PIER_MARK, MARK_RAMP, bayerThreshold, ditherLevel, markText };
 }
