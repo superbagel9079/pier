@@ -863,7 +863,8 @@ class Conversations(Home):
         if title:
             lines.append({"type": "session_info", "name": title})
         with open(path, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write("".join(json.dumps(line) + "\n" for line in lines))
+            # Compact, as Pi writes it (JSON.stringify): the picker looks for '"type":"session_info"'.
+            handle.write("".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines))
         os.utime(path, (when, when))
         return path
 
