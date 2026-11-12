@@ -57,6 +57,9 @@ const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 const PASSTHROUGH: &[&str] = &[
     "projects",
     "ls",
+    "file",
+    "config",
+    "models",
     "type",
     "diff",
     "log",
@@ -1088,6 +1091,8 @@ pub fn run() {
             session_mark,
             session_delete,
             category_rename,
+            config_set,
+            pi_default,
             shares_cleanup,
             shortcut_status,
             watch_start,
@@ -1145,6 +1150,9 @@ mod tests {
         let resume = attach_command("/x", &["--session".into(), "/home/leo/.pi/agent/sessions/--x--/a.jsonl".into()]).unwrap();
         assert!(resume.ends_with("'--session' '/home/leo/.pi/agent/sessions/--x--/a.jsonl'"), "{resume}");
         assert!(attach_command("/x", &["--continue".into()]).is_ok());
+        assert!(attach_command("/x", &["--orchestrator".into()]).is_ok());
+        // A worker is started by its orchestrator's broker, on the VM, never from Pier.
+        assert!(attach_command("/x", &["--worker".into(), "pi-x".into(), "0123456789abcdef".into()]).is_err());
         assert!(attach_command("/x", &["--new".into()]).is_ok());
         assert!(attach_command("/x", &["--agent-task".into(), "review".into(), "14".into()]).is_ok());
         assert_eq!(lab_command(&["db-tests".into()]).unwrap(), "--lab-shell 'db-tests'");
@@ -1213,6 +1221,8 @@ mod tests {
             "mark",
             "session-delete",
             "category-rename",
+            "config-set",
+            "pi-default",
         ] {
             assert!(!PASSTHROUGH.contains(&command), "{command} must go through its own command");
         }

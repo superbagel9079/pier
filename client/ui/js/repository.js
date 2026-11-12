@@ -31,11 +31,3 @@ function makeRepository(tab) {
   label();
   showPage(page);
 }
-
-/** The Repository panel, opened beside the others when it was closed. */
-function repositoryTab(page = null) {
-  const tab = workspace.find("repository") || workspace.add("repository", prefs.panelSide === "left" ? "left" : "right");
-  workspace.show(tab);
-  if (page) tab.showPage?.(page);
-  return tab;
-}

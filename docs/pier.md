@@ -13,7 +13,7 @@ A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and Java
 - **Is the VM ready?** Once connected, when something Pier needs is missing on the VM (tmux, bubblewrap, git, sshfs, Python 3.12, Node 24, Pi, enough `MaxSessions`), a page lists what is there and what is not, each missing thing with the command that puts it right (**copy**, then paste it in a shell tab). It shows once for each new set of missing things, and at any time from the palette (Ctrl+Shift+K, "ready").
 - **Open a folder…:** with no conversation yet, Conversations offers to choose a folder of the VM, walking down from home, and starts Pi in it (also in the palette).
 - **Waiting for you:** whatever Pi asks you (a merge, a review, a repository, a command on a machine, a lab on another network) is counted in the top bar ("2 waiting"), and one click lists them all, each shown whole, with **Refuse** and **Approve**. They are still in Repository > Git and the Labs tab too.
-- **The palette** also reaches every page of Settings ("Settings: Labs"), of Setup ("Setup: Git") and of Activity ("Activity: Restore points"), the Labs tab, Hand off, and the above. **Settings** open on the Picker page, then Behavior and Updates.
+- **The palette** also reaches every page of Settings ("Settings: Labs"), of Project ("Project: Instructions") and of Activity ("Activity: Restore points"), the Labs tab, Hand off, and the above. **Settings** open on Agents.
 - **Password:** asked once, kept **in memory only** and never written to disk. It is used to reconnect by itself when the PC went to sleep. It is forgotten as soon as the address or the user changes.
 - **Server fingerprint:** checked as `ssh` does. On first contact, Pier shows it for you to confirm, and only that key can be trusted. If it changes later, **the connection is refused before the password is sent**.
 - **The connection settings** are changed from the login screen ("change connection"), not from the Settings.
@@ -30,9 +30,9 @@ The installation is careful: the new file is written next to the old one, Pier c
 
 ## The workspace
 
-**The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions, Skills, Packages, Advanced) and **Repository** (Git and Team, which were pages of Setup). Settings open on **General** (Picker, Behavior, Updates); Layout is in Appearance. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
+**The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions and Advanced; Skills and Packages are in Settings > Extensions & skills) and **Repository** (Git and Team, which were pages of Setup). Settings fill the window and open on **Agents**; Layout is in Appearance, the picker in Connection. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
 
-Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Layout > **Panels** puts them on the left):
+Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Appearance > **Panels** puts them on the left):
 
 - **Conversations**: every conversation, of every project, with their Pis;
 - **Activity**: what the Pi in use does;
@@ -152,7 +152,7 @@ Everything is read from **Pi's session log**, which it writes as it goes (`~/.pi
 - **The session's cost:** input, output and cached tokens, cost in dollars, model.
 - **Files:** the tree with the same marks (◐ being read, ● read, ✎ being changed, ✓ changed, ! failed) and the git state.
 - **Several Pis in the project:** a list at the top chooses whose work is followed (by default, the one used last).
-- **A click** on a changed file opens its **diff** in a tab: the git diff, and the changes Pi made itself, even outside git. **A double click** mentions the file in Pi.
+- **A click** on a changed file opens its **diff** in a tab: the git diff, and the changes Pi made itself, even outside git (**file** there shows the whole file). On any other file, it opens the **file**: read only, with its line numbers and its syntax in the theme's colors (Python, Rust, JavaScript/TypeScript, CSS, Go, C, shell, TOML, YAML, JSON, SQL); a Markdown file shows as a page (**source** for its text). At most 1 MB of a file is shown; a binary file is not. **A double click** mentions the file in Pi.
 - **What is not possible:** knowing what Pi **will** read next. Pi decides as it goes.
 - **Restore:** the restore points, see below.
 
@@ -208,6 +208,7 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
   - how many Pis run there, how many conversations, its totals (today, 7 days);
   - **new**: one more Pi, in a new conversation;
   - **last**: continues the last conversation;
+  - **orchestrate**: a new **orchestrator** Pi, which splits the work and starts worker Pis once you approve them; it and its workers may consult read-only helpers (see [Git](git-and-team.md#c2-an-orchestrator-and-its-workers)); its workers show right under it, "worker of #N" with their task;
   - **setup**: opens its configuration in Setup.
 - **The running Pis**, first: each with its conversation (Pi #1, Pi #2…, working or waiting for you), **open** (its terminal) and **stop**. A Pi just started, with no conversation yet, shows as "*New conversation*". **stop them all** when there are several.
 - **Which Pi holds which conversation:** each Pi started by Pier says so itself, even when you switch conversations in Pi (`/new`, `/resume`, `/fork`), and even before its first answer. Pier starts it with a small extension (`--extension ~/.local/state/pier-picker/pi/ext/pier-session.ts`; nothing is added to Pi's settings). At each change, it writes its conversation and whether it is working to `~/.local/state/pier-picker/pi/pis/<tmux session>/state.json`. In the sandbox, each Pi sees only its own folder there, and the extensions read-only: a Pi cannot write what another one says. It shows in the list of extensions when Pi starts. It adds no tool, reads no message and sends nothing over the network. To do without it: `track_sessions = false` in the picker's config; Pier then guesses as before.
@@ -224,14 +225,12 @@ Pier reads Pi's sessions folder (`~/.pi/agent/sessions`). The view is only updat
 
 ## The Setup tab: a project's configuration, as in Claude Projects
 
-For Pi, **a project is a folder**: each session started in it begins with the same context. This tab makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top sums the project up (Pi's version, packages, skills and how many are off, MCP servers, conversations, with **open them in Conversations**), then six pages, the one chosen being remembered:
+For Pi, **a project is a folder**: each session started in it begins with the same context. The **Project** panel makes it visible and editable. It follows the project of the Pi in use (or the one chosen in its list, or opened with **setup** in Conversations). A line at the top sums the project up (Pi's version, packages, skills, MCP servers, with **manage**, and its conversations, with **open them**), then two pages, the one chosen being remembered:
 
 - **Instructions:** `AGENTS.md` and, folded, what Pi reads at startup;
-- **Skills:** skills, extensions and prompt templates, with a filter and **+ Add**;
-- **Packages:** Pi, the packages, **Install a package…** and the gallery;
-- **Git:** the project's repository, its pull requests, Pi's requests waiting for you (Part XIII);
-- **Team:** tasks, reviews between Pis and conversations shared with colleagues (Part XIII, D);
-- **Advanced:** MCP servers, the default model, and Pi's system prompt.
+- **Advanced:** MCP servers, the default model (**change** opens Settings > Agents), and Pi's system prompt.
+
+Pi, its packages, skills, extensions and prompt templates are in **Settings > Extensions & skills** (yours apply to every project; a project's own, in its `.pi` folder, are listed with them for the project chosen at the top of the page). The repository and the team are in the **Repository** panel (Part XIII).
 
 What each page holds:
 
@@ -256,16 +255,16 @@ What each page holds:
 
   The latest versions are asked of the npm registry from the VM, in the background, at most every 6 hours (`~/.local/state/pier-picker/versions.json`). **update** opens a "pi update" tab, visible from start to end. For Pi itself it runs `npm --prefix <where Pi is> install -g @earendil-works/pi-coding-agent@<latest>`, a fixed command: Pi is not run for it, since what it reads in `~/.pi` (its `npmCommand` setting, for one) is Pi's to write. For packages it runs `pi update <package>` or `pi update --extensions` in Pi's sandbox, as `pi install`. If Pi was installed for all users (`sudo npm install -g`, in `/usr` or `/usr/local`), the npm command needs root: the tab offers to run it with `sudo` (sudo asks for your password in that terminal; only a command of that exact form, for Pi's own package, is accepted). Pi's version is read in its `package.json`, without running it. Better: install Pi for your own account, in `~/.npm-global` (the picker finds it there first and the sandbox exposes it read-only): `pi update` then works without sudo. Pis already running keep their version until they restart. To add an MCP server on the VM: `pi mcp add …`.
 
-  On the Skills page, one line each, under "Yours" and "This project"; a skill left out has its name dimmed. **+ Add** offers, each asking for you (every project) or this project only:
+  In Settings > Extensions & skills, one line each, under "Yours" and "This project"; a skill left out has its name dimmed. **+ Add** offers, each asking for you (every project) or this project only:
   - **New skill…**: a skill of your own, made from a template (`name` and `description` in its front matter), then opened to edit;
   - **Import a skill from this computer…**: a folder holding a `SKILL.md`, copied into the skills (under the name it declares);
-  - **Install a package…**: as on the Packages page.
+  - **Install a package…**: as under the packages.
 
-  Under the extensions, **Pier's**: the ones Pier gives each Pi it starts (`--extension`, from `~/.local/state/pier-picker/pi/ext/`), which Pi lists at its start beside yours but which are not in Pi's settings: `pier-session.ts` (which conversation a Pi writes; `track_sessions`), `pier-git.ts` (the forge's tools; `git_tools`) and `pier-labs.ts` (the labs' tools, once a lab host is set up). Their box, greyed, says whether the next Pi gets each; they are turned off in the picker's config, not here.
+  Under the extensions, **Pier's**: the ones Pier gives each Pi it starts (`--extension`, from `~/.local/state/pier-picker/pi/ext/`), which Pi lists at its start beside yours but which are not in Pi's settings: `pier-session.ts` (which conversation a Pi writes; `track_sessions`), `pier-git.ts` (the forge's tools; `git_tools`), `pier-labs.ts` (the labs' tools, once a lab host is set up) and `pier-workers.ts` (worker Pis and read-only helpers, for every Pi; `workers`, `helpers`). Their box, greyed, says whether the next Pi gets each; they are turned off in the picker's config, not here.
 
   A local skill has **⋯** (shown under the pointer): **Edit its SKILL.md…** (Ctrl+S saves) and **Put it in the bin**, a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
 
-  On the Packages page: **Install a package…**, a source (`npm:…`, `git:…`, `https://…`) installed by `pi install` (`-l` for the project) in a tab where it runs, visible; and the **gallery**, the packages of [pi.dev/packages](https://pi.dev/packages), searched from the VM as you type the way the site searches (name, description), with their author, their downloads a month and **install**. A package named exactly is also asked for by name on npm, so one published since pi.dev last looked shows too. When pi.dev does not answer, npm's search (packages tagged `pi-package`) does, ranked worse: it favours the popular ones.
+  Under the packages: **Install a package…**, a source (`npm:…`, `git:…`, `https://…`) installed by `pi install` (`-l` for the project) in a tab where it runs, visible; and the **gallery**, the packages of [pi.dev/packages](https://pi.dev/packages), searched from the VM as you type the way the site searches (name, description), with their author, their downloads a month and **install**. A package named exactly is also asked for by name on npm, so one published since pi.dev last looked shows too. When pi.dev does not answer, npm's search (packages tagged `pi-package`) does, ranked worse: it favours the popular ones.
 
   A package's extensions run code with your rights when Pi starts, and skills can tell Pi to do anything: look at a package before installing it. `pi install` and `pi remove` run in Pi's sandbox (when it is on), network limited as Pi's: npm's install scripts see `~/.pi` and the project only. A package from a site outside `network_allow` needs it added there first.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).
@@ -279,12 +278,19 @@ What each page holds:
 
 ## Settings (once connected)
 
-The categories in a column on the left, the page on the right; the window opens again on the last page shown.
+**settings** in the top bar fills the window: the categories in a column on the left, in three groups (Pi, Pier, System), the page on the right. The terminals and panels stay as they were behind; **‹ Back to Pier** (or Esc) brings them back. It opens again on the last page shown. **search settings**, above the categories, shows every page holding the words typed, one under the other, the lines that hold them marked; the categories with a match stay bright. ↑ ↓ move between the categories.
 
-- **Layout:** which side the panels go to (Panels), where each tab lives, and Reset layout.
+- **Agents** (written to the picker's `config.toml` on the VM, for the Pis started from then on; a line config.toml sets has a bar on its left and **reset**, which drops it; each shows its key):
+  - **Models:** Pi's **default model** (written in Pi's own settings, as `/model` does), the **orchestrator**'s, the **workers**' and the **helpers**', and the other models a Pi may choose for a worker. Each field offers the models Pi lists (`pi --list-models`: its providers and a gateway's, such as Bifrost's, as models of one provider), and takes one typed as `provider/id`;
+  - **Several Pis:** workers on or off, at most how many at once, helpers on or off;
+  - **What Pier gives each Pi:** restore points, a worktree for each extra Pi, the git tools, the extension that says which conversation each Pi holds.
+- **Extensions & skills:** Pi's version and its packages (update, remove, **Install a package…**, the gallery), then the skills, extensions and prompt templates, yours and the chosen project's own (see Part VIII).
+- **Git & forges:** the accounts on GitHub, GitLab, Gitea / Forgejo (add one, forget one: its token is deleted on the VM), and Pi's git tools on or off. Each project's repository picks one of them in Repository > Git.
+- **Network & sandbox:** the sandbox and the network limit (turning either off asks first), then where Pi may connect: the places **built in** (model providers, npm, GitHub, PyPI) and **yours** (a gateway, Hindsight, a mirror; added or taken out one by one, each checked). **Each has its box**: unchecked, it stays listed but Pi no longer reaches it (`network_off`), a built-in one too: with a gateway such as Bifrost carrying every model, the providers' own hosts can be unchecked. When Pi's default model goes through a provider of your own, the page says its host must be checked. With the network limit off, the list does not apply, and the page says so.
 - **Appearance:** theme, and for the terminals: font size, font (any monospaced font installed on this computer; the list offers the usual ones found here, and a font missing falls back to Cascadia Mono, with a note), and the space around their text (0 to 40 px, 8 by default; the scrollbar stays against the edge). **Pier's font** (panels, menus, settings): the terminals' by default, another console font, the system's sans, or one typed by name; paths, branches, logs and diffs stay in the terminals' font. Built-in themes, 24: Pier dark/light (or "follow the system"), Ayu dark/light, Catppuccin Latte/Mocha, Dracula, Everforest Dark, GitHub dark/light, Gruvbox dark/light, Kanagawa, Monokai, Night Owl, Nord, One Dark/Light, Rosé Pine (and Dawn), Solarized dark/light, Tokyo Night, Tomorrow Night. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
   - **Import a VS Code or Zed theme…:** takes the `.json` of a VS Code theme (the extension's `themes/` folder, comments accepted) or a Zed theme (zed.dev/themes, `~/.config/zed/themes`; a Zed file can hold several themes, all are added). Missing colours are derived from the others.
-  - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes.
+  - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes. **Fields** colours the fields, **Hover** a line under the pointer, **Accent** focus rings, the active tab and the category shown.
+  - **Where the panels go:** which side the panels go to (Panels), where each tab lives, and Reset layout.
 - **Terminals:** the copy and paste keys, copying on selection or with Ctrl+Shift+C, focus following the mouse, drawing by the graphics card.
 - **Behavior:**
   - Ctrl+Alt+V;
@@ -292,8 +298,7 @@ The categories in a column on the left, the page on the right; the window opens 
   - notifications;
   - also deleting, when a Pi ends, what was given to it;
   - resuming shares after a reconnection.
-- **Picker:** its version and Pier's, automatic updates (on by default), and a button to install it again.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
 - **Labs:** turning labs on, the **lab hosts** (add one, use Pi's VM, test, make default; how to make one ready), the limits (labs at a time, lifetime, CPUs, memory, disk, default image), the network of a new lab by default (Incus's NAT, your VLAN with its one-time setup, or none), the **networks** labs can be plugged into (what each is for, and how to add one), and the machines with Pier's key.
 - **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](../RELEASING.md).
-- **Connection:** where Pier connects (changed from the login screen).
+- **Connection:** where Pier connects (changed from the login screen), and **the picker**: its version and Pier's, automatic updates (on by default), and a button to install it again.

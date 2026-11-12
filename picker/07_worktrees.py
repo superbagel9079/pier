@@ -167,7 +167,7 @@ def api_stop(home, path, slot):
     return {"project": project, "stopped": len(pis)}
 
 
-def start_pi_session(path, extra, env, home, width, height, name=None, worktree=None):
+def start_pi_session(path, extra, env, home, width, height, name=None, worktree=None, role_env=None):
     """A detached tmux session running Pi in path, styled to stay discreet. False on failure.
     PI_PICKER_SLOT tells --exec-pi its session name, to record its conversation there."""
     name = name or session_name(path, home)
@@ -175,6 +175,8 @@ def start_pi_session(path, extra, env, home, width, height, name=None, worktree=
     # -f: a server started here reads Pier's config, not ~/.tmux.conf (see tmux_conf).
     conf = write_tmux_conf(load_config(home)[0])
     where = ["-e", f"PIER_WORKTREE={worktree}"] if worktree else []
+    for key, value in (role_env or {}).items():  # an orchestrator's or a worker's (see workers)
+        where += ["-e", f"{key}={value}"]
     if not run_quiet(tmux_cmd("-f", conf, "new-session", "-d", "-s", name, "-c", path, "-e", f"PI_PICKER_SLOT={name}", *where,
                               "-x", str(width), "-y", str(height), *command), env):
         log("error", "tmux.new-session-failed", project=path, session=name)

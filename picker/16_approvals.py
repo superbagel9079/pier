@@ -64,13 +64,15 @@ def api_approval_answer(home, ident, answer):
         if approval is None:
             raise ApiError("that request is no longer waiting")
         kind = approval.get("kind")
-        approval.update(state="refused" if answer != "yes" else "approved" if kind == "lab" else "running", answered=int(time.time()))
+        approval.update(state="refused" if answer != "yes" else "approved" if kind in ("lab", "workers") else "running",
+                        answered=int(time.time()))
         save_approvals(home, approvals)
     if answer != "yes":
         log("info", "git.approval-refused", id=ident, kind=kind)
         return {"id": ident, "state": "refused"}
-    if kind == "lab":
-        log("info", "lab.approved", id=ident, machine=(approval.get("args") or {}).get("machine"))
+    if kind in ("lab", "workers"):
+        # Done by the broker waiting for it (a lab's command; an orchestrator's workers).
+        log("info", f"{kind}.approved", id=ident)
         return {"id": ident, "state": "approved"}
     try:
         result = approved_action(home, approval)

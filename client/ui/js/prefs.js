@@ -1,4 +1,5 @@
-// The settings dialog: layout, themes, behavior, the picker, diagnostics.
+// Settings: the whole window, categories on the left, a search over all of them;
+// layout, themes, behavior, the picker, diagnostics (Agents and Network: settings.js).
 
 // ============================================================================
 // Preferences dialog
@@ -70,35 +71,117 @@ function openPrefs() {
   backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
   $("#prefs-shortcut-note").hidden = true;
   backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !prefs.shortcut; }).catch(() => {});
-  $("#prefs").hidden = false;
-  $("#prefs-close").focus();
+  showSettingsPage(prefsPage);
+  if ($("#prefs").hidden) {
+    // The workspace stays as it was behind (terminals run on), only out of sight.
+    $("#workspace").hidden = true;
+    $("#prefs").hidden = false;
+    $("#prefs-search").value = "";
+    searchSettings("");
+  }
+  $(`#prefs .prefs-tabs button[data-page="${prefsPage}"]`)?.focus();
 }
 
 function closePrefs() {
+  if ($("#prefs").hidden) return;
   closeThemeEditor(); // an unsaved theme is not kept
   $("#prefs").hidden = true;
+  $("#workspace").hidden = false;
+  for (const tab of workspace.tabs()) tab.refit?.();
+  workspace.find("main")?.onShow?.();
 }
 
-/** One page of the settings at a time; the one last shown comes back next time. */
-let prefsPage = "general"; // the essential first: the picker, the VM, updates
-// A tab shows its pages one under the other: General the picker, Behavior and Updates,
-// Appearance its own and Layout. A page asked by its own name opens its tab.
-const PREFS_GROUPS = { general: ["picker", "behavior", "updates"], appearance: ["appearance", "layout"] };
-const prefsTabOf = (page) => Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
-function showPrefsPage(page) {
+/** One category of the settings at a time; the one last shown comes back next time. */
+let prefsPage = "agents";
+// A category shows its pages one under the other: Appearance its own and Layout,
+// Connection the VM and the picker. A page asked by its own name ("picker", "layout"),
+// or by an older one ("general"), opens its category.
+const PREFS_GROUPS = { appearance: ["appearance", "layout"], connection: ["connection", "picker"] };
+const PREFS_OLD = { general: "connection" };
+const prefsTabOf = (page) => PREFS_OLD[page] || Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
+const prefsTabs = () => [...document.querySelectorAll("#prefs .prefs-tabs button")];
+
+function showSettingsPage(page) {
   page = prefsTabOf(page);
+  if (!prefsTabs().some((t) => t.dataset.page === page)) page = "agents";
   prefsPage = page;
   const shown = PREFS_GROUPS[page] || [page];
-  for (const tab of document.querySelectorAll("#prefs .prefs-tabs button")) tab.setAttribute("aria-selected", String(tab.dataset.page === page));
+  const tabs = prefsTabs();
+  for (const tab of tabs) {
+    const on = tab.dataset.page === page;
+    tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
+  }
+  $("#prefs-title").textContent = tabs.find((t) => t.dataset.page === page)?.textContent || "Settings";
+  if ($("#prefs-search").value.trim()) return; // the search shows what matches, wherever it is
   for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = !shown.includes(section.dataset.page);
+  settingsPageShown(page);
 }
-for (const tab of document.querySelectorAll("#prefs .prefs-tabs button")) tab.addEventListener("click", () => showPrefsPage(tab.dataset.page));
-showPrefsPage(prefsPage);
+/** A page asked for from elsewhere (Labs' settings link, the update button, the palette). */
+function showPrefsPage(page) {
+  $("#prefs-search").value = "";
+  searchSettings("");
+  showSettingsPage(page);
+}
+for (const tab of prefsTabs()) tab.addEventListener("click", () => showPrefsPage(tab.dataset.page));
+// The categories, a vertical tab list: arrows move, Home and End go to the ends.
+$("#prefs .prefs-tabs").addEventListener("keydown", (e) => {
+  const tabs = prefsTabs();
+  const at = tabs.indexOf(document.activeElement);
+  if (at < 0) return;
+  const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (to === undefined) return;
+  e.preventDefault();
+  const tab = tabs[(to + tabs.length) % tabs.length];
+  tab.focus();
+  showPrefsPage(tab.dataset.page);
+});
+
+/** Every page whose text holds the words typed, one under the other, its title above;
+ *  the lines that hold them marked. Empty: back to the category shown. */
+function searchSettings(query) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const pages = [...document.querySelectorAll("#prefs .prefs-page")];
+  $("#prefs").classList.toggle("searching", words.length > 0);
+  for (const node of document.querySelectorAll("#prefs .found")) node.classList.remove("found");
+  if (!words.length) {
+    $("#prefs-nothing").hidden = true;
+    showSettingsPage(prefsPage);
+    return;
+  }
+  const matches = (text) => { const t = text.toLowerCase(); return words.every((w) => t.includes(w)); };
+  // A setting's text, and what its fields hold (a model, a host).
+  const textOf = (node) => `${node.textContent} ${[...node.querySelectorAll("input:not([type=checkbox]), select")].map((i) => i.value).join(" ")}`;
+  let any = false;
+  for (const page of pages) {
+    const hit = matches(`${page.dataset.title || ""} ${textOf(page)}`);
+    page.hidden = !hit;
+    if (!hit) continue;
+    any = true;
+    for (const row of page.querySelectorAll(".setting-row, label, h2, .check, .hint, button")) {
+      if (matches(textOf(row)) && !row.closest(".found")) row.classList.add("found");
+    }
+  }
+  for (const tab of prefsTabs()) {
+    const shown = PREFS_GROUPS[tab.dataset.page] || [tab.dataset.page];
+    tab.classList.toggle("has-match", pages.some((p) => shown.includes(p.dataset.page) && !p.hidden));
+  }
+  $("#prefs-nothing").hidden = any;
+}
+$("#prefs-search").addEventListener("input", (e) => searchSettings(e.target.value));
 
 $("#btn-prefs").addEventListener("click", openPrefs);
 $("#prefs-close").addEventListener("click", closePrefs);
-$("#prefs").addEventListener("pointerdown", (e) => { if (e.target.id === "prefs") closePrefs(); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#prefs").hidden) closePrefs(); });
+// Escape: out of the search first, then back to Pier. A dialog open above has it first.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || $("#prefs").hidden || e.defaultPrevented) return;
+  if (document.activeElement === $("#prefs-search") && $("#prefs-search").value) {
+    $("#prefs-search").value = "";
+    searchSettings("");
+    return;
+  }
+  closePrefs();
+});
 /** Every panel to the side chosen, the terminals in the middle. */
 function placePanels() {
   workspace.arrange(defaultLayout()); // moves tabs, never restarts a terminal
@@ -107,13 +190,13 @@ function placePanels() {
 }
 $("#prefs-reset").addEventListener("click", () => {
   placePanels();
-  openPrefs();
+  fillLayout();
 });
 $("#prefs-side").addEventListener("change", (e) => {
   prefs.panelSide = e.target.value;
   savePrefs();
   placePanels();
-  openPrefs();
+  fillLayout();
 });
 $("#prefs-theme").addEventListener("change", (e) => {
   closeThemeEditor();

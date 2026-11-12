@@ -175,6 +175,21 @@ function makeConversations(tab) {
     return [relTime(s.modified), u ? `${u.turns} msg` : "", u ? spentText(u.cost, usageTokens(u)) : "", s.category, s.archived ? "archived" : ""];
   };
 
+  /** Who a running Pi is: "Pi #2", an orchestrator, or a worker of one, on its task. */
+  const piRole = (pi) => pi.role === "orchestrator" ? `Pi #${pi.n}, orchestrator,`
+    : pi.role === "worker" ? `Pi #${pi.n}, worker of #${pi.orchestrator}${pi.task ? ` on "${pi.task}"` : ""},` : `Pi #${pi.n}`;
+
+  /** A read-only helper a Pi consults now (consult): under its Pi while it runs; its
+   *  conversation goes to the sub-agents folder once it is done. */
+  function helperRow(pi, h, i) {
+    const since = Math.max(0, Math.round(Date.now() / 1000 - (h.since || 0)));
+    return keyed(`helper:${pi.slot}:${i}`, el("li", { className: "running working helper in-team" },
+      el("span", { className: "dim", textContent: " " }),
+      el("div", { className: "meta" },
+        el("span", { className: "title", textContent: `${h.role} · ${h.title}`, title: "A read-only helper: it reads the project and answers its Pi" }),
+        el("span", { className: "dim small facts", textContent: `helper of Pi #${pi.n}, reading · ${since < 60 ? `${since} s` : `${Math.round(since / 60)} min`}` }))));
+  }
+
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   function piRow(p, pi, s) {
     // Its bar on the left says it runs: bright and breathing while Pi works, grey
@@ -183,7 +198,7 @@ function makeConversations(tab) {
       el("span", { className: "dim", textContent: s?.pinned ? "★" : " " }),
       el("div", { className: "meta" },
         el("span", { className: s ? "title" : "title fresh", textContent: s ? conversationTitle(s) : "New conversation", title: s?.prompt || "Pi writes it at its first answer" }),
-        el("span", { className: "dim small facts", textContent: factLine([`Pi #${pi.n} ${pi.working ? "working" : "waiting"}`, ...(s ? facts(s) : ["nothing said yet"])]) })),
+        el("span", { className: "dim small facts", textContent: factLine([`${piRole(pi)} ${pi.working ? "working" : pi.reported ? "reported" : "waiting"}`, ...(s ? facts(s) : ["nothing said yet"])]) })),
       el("span", { className: "row-actions" },
         linkButton("open", "Open its terminal", () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n)),
         linkButton("stop", "Stop this Pi; its conversation stays saved", () => stop(p, pi)),
@@ -210,7 +225,7 @@ function makeConversations(tab) {
       el("button", { className: "fold", textContent: open ? "▾" : "▸", title: open ? "Fold" : "Show its conversations" }),
       el("div", { className: "meta" },
         el("span", { className: "title folder-name", textContent: folder.name,
-          title: folder.subagents ? "Conversations of the sub-agents run by pi-multiagent (agent_team): a Pi's work, not yours" : "" }),
+          title: folder.subagents ? "Conversations of sub-agents (the helpers an orchestrator or a worker consults, pi-multiagent's agent_team): a Pi's work, not yours" : "" }),
         el("span", { className: "dim small facts", textContent: `${count} conv.` })),
       el("span", { className: "row-actions" },
         folder.subagents ? null : linkButton("⋯", "Rename or delete this category", (event) => {
@@ -287,6 +302,7 @@ function makeConversations(tab) {
       el("span", { className: "row-actions" },
         linkButton("new", "A new Pi in this project, in a new conversation", () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : [])),
         p.sessions.length ? linkButton("last", "Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"])) : null,
+        linkButton("orchestrate", "A new orchestrator Pi: it splits the work and starts worker Pis, each in a git worktree of its own, once you approve its workers; it and its workers may consult read-only helpers (scout, reviewer, critic, checker)", () => openPiTerminal(p.project, p.label, ["--orchestrator"])),
         linkButton("setup", "Instructions and what Pi loads in this project", () => workspace.find("setup")?.openProject?.(p.project))));
     li.querySelector(".fold").addEventListener("click", () => {
       view.folded[p.project] = !folded;
@@ -333,13 +349,26 @@ function makeConversations(tab) {
           el("span", { textContent: "Pi stopped in the middle of its work (the VM restarted?): its conversation is saved." }),
           linkButton("continue where it stopped", "", () => openPiTerminal(p.project, p.label, ["--session", p.interrupted]))));
       }
-      // Running Pis first, each with its conversation; then pinned, then the latest.
+      // Running Pis first, each with its conversation, an orchestrator's workers right
+      // under it; then pinned, then the latest.
       const held = new Set(matches.filter((s) => s.slot).map((s) => s.slot));
-      if (!query) for (const pi of pis) if (!p.sessions.some((s) => s.slot === pi.slot)) list.append(piRow(p, pi, null));
-      for (const s of matches.filter((x) => x.slot)) {
-        const pi = pis.find((x) => x.slot === s.slot);
-        list.append(pi ? piRow(p, pi, s) : row(p, s));
-        shown += 1;
+      const fresh = (pi) => !p.sessions.some((s) => s.slot === pi.slot);
+      const ordered = [...pis.filter((pi) => fresh(pi) && pi.role !== "worker"),
+        ...matches.filter((s) => s.slot).map((s) => pis.find((x) => x.slot === s.slot) || s).filter((x) => query || x.role !== "worker")];
+      // A search lists what matches, flat; otherwise each worker follows its orchestrator.
+      const workersOf = (pi) => query ? [] : pis.filter((w) => w.role === "worker" && w.orchestrator === pi.n);
+      const orphans = query ? [] : pis.filter((w) => w.role === "worker" && !pis.some((o) => o.role === "orchestrator" && o.n === w.orchestrator));
+      for (const item of [...ordered, ...orphans]) {
+        for (const pi of item.slot && pis.includes(item) ? [item, ...(item.role === "orchestrator" ? workersOf(item) : [])] : [item]) {
+          const s = matches.find((x) => x.slot === pi.slot);
+          if (!pis.includes(pi)) { list.append(row(p, pi)); shown += 1; continue; } // a session whose Pi just went
+          if (!s && (query || !fresh(pi))) continue;
+          const li = piRow(p, pi, s || null);
+          if (pi.role === "worker" && item !== pi) li.classList.add("in-team");
+          list.append(li);
+          if (!query) (pi.helpers || []).forEach((h, i) => list.append(helperRow(pi, h, i)));
+          if (s) shown += 1;
+        }
       }
       const idle = matches.filter((s) => !s.slot && !s.deleted);
       const pinnedFirst = (xs) => [...xs.filter((s) => s.pinned), ...xs.filter((s) => !s.pinned)];

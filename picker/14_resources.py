@@ -177,6 +177,8 @@ def pier_extensions(home):
          "description": "git tools for the forge (push, pull requests, tasks), through the picker: the token stays out of the sandbox"},
         {"name": "pier-labs.ts", "enabled": labs_enabled(home), "setting": None,
          "description": "the labs' tools (disposable machines), once a lab host is set up in Labs"},
+        {"name": "pier-workers.ts", "enabled": bool(config["workers"] or config["helpers"]), "setting": "workers, helpers",
+         "description": "worker Pis (start_worker...: the first one waits for your approval) and read-only helpers (consult: scout, reviewer, critic, checker); a worker gets report instead of start_worker"},
     ]
 
 
@@ -558,3 +560,69 @@ def pi_package(args):
     return status
 
 
+
+
+# --- Pi's models, for Settings > Agents ----------------------------------------------------
+
+MODELS_SECONDS = 20
+MODELS_MAX = 2000
+_MODEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]*")
+_PROVIDER_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def parse_pi_models(text):
+    """["provider/id", ...] from what `pi --list-models` prints: a table, a provider and a
+    model id first on each line (the header and anything else are skipped)."""
+    models = []
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines():
+        cells = line.split()
+        if len(cells) < 2 or cells[0].lower() in ("provider", "providers") or not _PROVIDER_TOKEN.fullmatch(cells[0]):
+            continue
+        if not _MODEL_TOKEN.fullmatch(cells[1]):
+            continue
+        models.append(f"{cells[0]}/{cells[1]}")
+    return list(dict.fromkeys(models))[:MODELS_MAX]
+
+
+def pi_default_model(home):
+    """Pi's default model as "provider/id" (its settings.json), "" when it has none."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    settings = settings if isinstance(settings, dict) else {}
+    provider, model = settings.get("defaultProvider"), settings.get("defaultModel")
+    if isinstance(model, str) and model:
+        return f"{provider}/{model}" if isinstance(provider, str) and provider else model
+    return ""
+
+
+def api_models(home):
+    """The models Pi knows (`pi --list-models`: its providers and models.json's, a
+    gateway such as Bifrost included), and its default."""
+    config, _ = load_config(home)
+    env = dict(child_env(home), NO_COLOR="1", TERM="dumb")
+    models, problem = [], None
+    try:
+        result = subprocess.run(list(config["pi_command"]) + ["--list-models"], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, errors="replace", env=env, timeout=MODELS_SECONDS)
+        models = parse_pi_models(result.stdout)
+        if not models:
+            problem = (result.stderr.strip() or result.stdout.strip() or f"pi --list-models exited {result.returncode}")[-300:]
+    except (OSError, subprocess.SubprocessError) as exc:
+        problem = f"pi --list-models: {exc}"
+    providers = sorted({m.split("/", 1)[0] for m in models})
+    return {"models": models, "providers": providers, "default": pi_default_model(home), "problem": problem}
+
+
+def api_pi_default(home, value):
+    """Pi's default model (its settings.json: defaultProvider, defaultModel) from
+    "provider/id"."""
+    value = (value or "").strip()
+    if not MODEL_RE.fullmatch(value) or "/" not in value:
+        raise ApiError("a model as provider/id")
+    provider, model = value.split("/", 1)
+
+    def change(settings):
+        settings["defaultProvider"], settings["defaultModel"] = provider, model
+
+    write_settings("user", None, change)
+    log("info", "pi.default-model", provider=provider)
+    return {"default": pi_default_model(home)}

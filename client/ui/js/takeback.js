@@ -94,21 +94,9 @@ function makeTakeBack(tab) {
     detail.replaceChildren();
     if (answer.too_big) detail.append(el("p", { className: "dim small", textContent: "Too big to show (over 1 MB)." }));
     else if (answer.binary) detail.append(el("p", { className: "dim small", textContent: "Not text: no difference to show." }));
-    else detail.append(diffLines(answer.diff || "", 3000));
-  }
-
-  /** A unified diff, "-" your version, "+" Pi's, at most max lines. */
-  function diffLines(text, max) {
-    const pre = el("div", { className: "diff" });
-    const all = text.replace(/\n$/, "").split("\n");
-    for (const line of all.slice(0, max)) {
-      const kind = line.startsWith("@@") ? "hunk" : line.startsWith("+") && !line.startsWith("+++") ? "add"
-        : line.startsWith("-") && !line.startsWith("---") ? "del" : "";
-      pre.append(el("div", { className: kind, textContent: line.length > 2000 ? `${line.slice(0, 2000)}…` : line }));
-    }
-    if (all.length > max) pre.append(el("div", { className: "dim", textContent: `… ${(all.length - max).toLocaleString()} more lines` }));
-    if (!text) pre.append(el("div", { className: "dim", textContent: "No difference in the text (only line ends or spaces at the end?)." }));
-    return pre;
+    else if (!answer.diff) detail.append(el("p", { className: "dim small", textContent: "No difference in the text (only line ends or spaces at the end?)." }));
+    // A unified diff, "-" your version, "+" Pi's.
+    else detail.append(diffBlock(answer.diff.replace(/\n$/, ""), { max: 3000 }));
   }
 
   function render() {

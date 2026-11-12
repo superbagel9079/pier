@@ -42,6 +42,7 @@ PARTS = [
     ("team", "# --- the team: "),
     ("labs", "# --- labs: "),
     ("broker", "LAB_OPS = ("),
+    ("workers", "# --- workers: "),
     ("versions", "def versions_path(home):"),
     ("api", "# Reads Pier repeats every few seconds:"),
     ("watch", "# --- watch: "),

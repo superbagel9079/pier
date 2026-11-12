@@ -4,6 +4,29 @@
 // Diff: what changed in a file, from git and from Pi's own edits
 // ============================================================================
 
+const DIFF_LINES_MAX = 5000; // a lockfile or a minified file would freeze the page
+const DIFF_LINE_MAX = 4000;   // characters of one line: a minified line of 2 MB would be one block
+
+/** The class of a line of a unified diff: hunk, add, del or none. */
+const diffKind = (line) => (line.startsWith("@@") ? "hunk" : line.startsWith("+") && !line.startsWith("+++") ? "add"
+  : line.startsWith("-") && !line.startsWith("---") ? "del" : "");
+
+/** A diff drawn line by line (the diff tabs, Pi's work): at most max lines, each cut at
+ *  DIFF_LINE_MAX characters; kindOf gives each line its class. */
+function diffBlock(text, { max = DIFF_LINES_MAX, kindOf = diffKind } = {}) {
+  const pre = el("div", { className: "diff" });
+  const all = text.split("\n");
+  for (const line of all.slice(0, max)) {
+    if (line === "" && pre.lastChild?.textContent === "") continue;
+    const shown = line.length > DIFF_LINE_MAX ? `${line.slice(0, DIFF_LINE_MAX)} … (${(line.length - DIFF_LINE_MAX).toLocaleString()} more characters)` : line;
+    pre.append(el("div", { className: kindOf(line), textContent: shown }));
+  }
+  if (all.length > max) {
+    pre.append(el("div", { className: "dim", textContent: `… ${(all.length - max).toLocaleString()} more lines not shown` }));
+  }
+  return pre;
+}
+
 /** Opens (or shows) the diff of a project file, next to the main terminal: against
  *  git and Pi's edits, or, given a restore point, against the file as it was then. */
 function openDiff(rel, project, point = null) {
@@ -23,29 +46,12 @@ function makeDiff(tab) {
   const path = el("span", { className: "path", textContent: rel, title: `${project}/${rel}` });
   const refresh = el("button", { className: "link", textContent: "refresh" });
   const mention = el("button", { className: "link", textContent: "mention in Pi" });
-  head.append(path, refresh, mention);
+  const whole = el("button", { className: "link", textContent: "file", title: "The whole file, as it is now" });
+  whole.addEventListener("click", () => openFile(rel, project));
+  head.append(path, whole, refresh, mention);
   const error = el("p", { className: "error", hidden: true });
   const body = el("div");
   tab.pane.append(head, error, body);
-
-  const LINES_MAX = 5000; // a lockfile or a minified file would freeze the page
-  const LINE_MAX = 4000;   // characters of one line: a minified line of 2 MB would be one block
-  function lines(text, kindOf) {
-    const pre = el("div", { className: "diff" });
-    const all = text.split("\n");
-    for (const line of all.slice(0, LINES_MAX)) {
-      if (line === "" && pre.lastChild?.textContent === "") continue;
-      const shown = line.length > LINE_MAX ? `${line.slice(0, LINE_MAX)} … (${(line.length - LINE_MAX).toLocaleString()} more characters)` : line;
-      pre.append(el("div", { className: kindOf(line), textContent: shown }));
-    }
-    if (all.length > LINES_MAX) {
-      pre.append(el("div", { className: "dim", textContent: `… ${(all.length - LINES_MAX).toLocaleString()} more lines not shown` }));
-    }
-    return pre;
-  }
-
-  const gitKind = (line) => (line.startsWith("@@") ? "hunk" : line.startsWith("+") && !line.startsWith("+++") ? "add"
-    : line.startsWith("-") && !line.startsWith("---") ? "del" : "");
 
   async function reloadSincePoint() {
     let result;
@@ -58,7 +64,7 @@ function makeDiff(tab) {
     body.replaceChildren();
     if (result.diff) {
       body.append(el("p", { className: "edit-title", textContent: `changes since ${point.when} (${result.label || result.reason}), - then, + now` }));
-      body.append(lines(result.diff.trimEnd(), gitKind));
+      body.append(diffBlock(result.diff.trimEnd()));
       const undo = el("button", { className: "secondary", textContent: `Put it back as it was at ${point.when}` });
       undo.addEventListener("click", async () => {
         if (!(await ask(`Put ${rel} back as it was at ${point.when}? What is there now is saved first, as a restore point.`))) return;
@@ -90,7 +96,7 @@ function makeDiff(tab) {
     body.replaceChildren();
     if (result.diff) {
       body.append(el("p", { className: "edit-title", textContent: result.untracked ? "new file, not yet in git" : "git diff against the last commit" }));
-      body.append(lines(result.diff.trimEnd(), gitKind));
+      body.append(diffBlock(result.diff.trimEnd()));
     } else if (result.diff === "") {
       body.append(el("p", { className: "dim", textContent: "No difference with the last commit." }));
     }
@@ -99,10 +105,10 @@ function makeDiff(tab) {
       for (const edit of result.edits) {
         const when = edit.at ? new Date(edit.at).toLocaleTimeString() : "";
         body.append(el("p", { className: "edit-title", textContent: `${edit.tool} · ${edit.state} · ${when}` }));
-        if (edit.tool === "write") body.append(lines(String(edit.content ?? "").split("\n").map((l) => `+${l}`).join("\n"), () => "add"));
+        if (edit.tool === "write") body.append(diffBlock(String(edit.content ?? "").split("\n").map((l) => `+${l}`).join("\n"), { kindOf: () => "add" }));
         for (const change of edit.changes || []) {
           const text = [...change.old.split("\n").map((l) => `-${l}`), ...change.new.split("\n").map((l) => `+${l}`)].join("\n");
-          body.append(lines(text, gitKind));
+          body.append(diffBlock(text));
         }
       }
     }

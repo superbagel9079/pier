@@ -195,6 +195,11 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = theme.dark ? "dark" : "light";
   for (const key of UI_KEYS) root.style.setProperty(`--${key}`, theme.ui[key]);
+  // The file viewer's syntax colors: the terminal's, when the theme has them.
+  for (const key of ["magenta", "green", "yellow", "blue", "cyan"]) {
+    if (theme.terminal?.[key]) root.style.setProperty(`--ansi-${key}`, theme.terminal[key]);
+    else root.style.removeProperty(`--ansi-${key}`);
+  }
   for (const tab of workspace.tabs()) tab.applyTheme?.();
 }
 

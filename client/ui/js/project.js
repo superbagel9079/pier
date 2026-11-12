@@ -1,4 +1,4 @@
-// The Project tab: what Pi reads and changes, the files, the restore points.
+// The Activity panel: what Pi reads and changes, the files, what it was given, the restore points.
 
 // ============================================================================
 // Project: what the agent reads and changes, and the files
@@ -117,8 +117,9 @@ function makeProject(tab) {
       const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
       if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
       parts.push(dollars(u.cost) || "cost unknown");
-      if (u.model) parts.push(u.model);
-      usage.textContent = `session · ${parts.join(" · ")}`;
+      usage.replaceChildren(`session · ${parts.join(" · ")}`);
+      // The model: a click goes where models are chosen.
+      if (u.model) usage.append(" · ", linkButton(u.model, "The models of Pi, the orchestrator, workers and helpers: Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); }));
     }
   }
 
@@ -244,7 +245,10 @@ function makeProject(tab) {
       row.classList.add("selected");
       if (entry.kind !== "dir") {
         const rel = li.dataset.rel;
+        // A file Pi or git changed: its changes (the file itself is a link away); any
+        // other: the file.
         if (activity && (activity.git[rel] || activity.files[rel]?.edits)) openDiff(rel, base);
+        else openFile(rel, base);
         return;
       }
       let children = $(":scope > ul", li);

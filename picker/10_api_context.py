@@ -368,6 +368,34 @@ def api_ls(home, path):
             "entries": entries[:LS_LIMIT], "truncated": truncated}
 
 
+FILE_VIEW_MAX = 1024 * 1024  # what Pier shows of a file: a 50 MB log would freeze it
+BINARY_PROBE = 8192
+
+
+def api_file(home, path, file):
+    """A file of the project, for Pier's viewer: its text (at most FILE_VIEW_MAX bytes),
+    or binary=True. Only a plain file inside the project, opened without following a
+    link out of it."""
+    project = resolve_inside(home, path)
+    full = os.path.realpath(os.path.join(project, file))
+    if full == project or not within(full, project):
+        raise ApiError(f"not in the project: {file}")
+    rel = os.path.relpath(full, project).replace(os.sep, "/")
+    try:
+        with open_plain(full, project) as handle:
+            size = os.fstat(handle.fileno()).st_size
+            data = handle.read(FILE_VIEW_MAX + 1)
+    except OSError as exc:
+        raise ApiError(f"cannot read {rel}: {exc.strerror or exc}")
+    truncated = len(data) > FILE_VIEW_MAX
+    data = data[:FILE_VIEW_MAX]
+    binary = b"\0" in data[:BINARY_PROBE]
+    text = None if binary else data.decode("utf-8", "replace")
+    if truncated and text and "\n" in text:
+        text = text[:text.rindex("\n") + 1]  # no half line at the end
+    return {"file": rel, "project": project, "size": size, "binary": binary, "truncated": truncated, "text": text}
+
+
 def mounted_shares(home):
     """sshfs mounts made for sharing, under some project's .pi-shared."""
     shares = []

@@ -85,6 +85,14 @@ Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [co
 | `track_sessions` | each Pi tells Pier which conversation it holds (an extension Pier gives it) | `true` |
 | `git_tools` | Pi gets git tools for the forge (push, pull requests), through the picker (see [Git](git-and-team.md#git-pi-with-a-repository-as-a-developer)) | `true` |
 | `worktrees` | in a git project, a Pi beside another works in a worktree of its own | `true` |
+| `workers` | a Pi may start worker Pis, once you approve them (see [Git](git-and-team.md#c2-an-orchestrator-and-its-workers)) | `true` |
+| `workers_max` | at most that many workers at once per orchestrator | `4` |
+| `orchestrator_model` | the orchestrator's model, as Pi's `--model` takes it (`"provider/id"`, `"sonnet:high"`); `""`: Pi's default | `""` |
+| `worker_model` | the workers' model when the orchestrator names none; `""`: Pi's default | `""` |
+| `worker_models` | the models an orchestrator may choose for a worker, besides `worker_model` | `[]` |
+| `network_off` | places of the built-in list or of `network_allow` turned off: kept listed, not reached (Settings > Network & sandbox, a box on each) | `[]` |
+| `helpers` | a Pi may consult read-only helpers (scout, reviewer, critic, checker) | `true` |
+| `helper_model` | the read-only helpers' model (`consult`); `""`: Pi's default. A helper may also get `worker_model` or one of `worker_models` | `""` |
 | `network_limit` | in the sandbox, Pi reaches only Anthropic, OpenRouter, DeepSeek, npm, GitHub, PyPI and `network_allow` (see [Security](security.md#security)); another model provider (OpenAI, Google, Mistral…) is to add there | `true` |
 | `network_allow` | more places Pi may reach: `"host"`, `"host:port"`, `".domain"`, `"127.0.0.1:8080"` | `[]` |
 

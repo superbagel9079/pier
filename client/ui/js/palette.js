@@ -43,7 +43,7 @@ const palette = (() => {
     }
     const panel = (kind) => workspace.find(kind) || workspace.add(kind, side);
     for (const button of document.querySelectorAll("#tpl-setup")[0]?.content.querySelectorAll(".setup-pages .mode") || []) {
-      out.push(["page", `Setup: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
+      out.push(["page", `Project: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
     }
     for (const [mode, label, detail] of [["activity", "Activity", "what Pi read and changed"], ["files", "Files", "the project's files"],
       ["restore", "Restore points", "undo what Pi did: go back to before a prompt"]]) {
@@ -113,6 +113,8 @@ const palette = (() => {
     close();
     if (!item) return;
     uiLog("debug", "palette", { kind: item[0] });
+    // Anything but a setting or a theme happens in the workspace: out of the settings.
+    if (!["setting", "theme"].includes(item[0]) && item[1] !== "Settings") closePrefs();
     try { item[3](); } catch (error) { uiLog("warn", "palette-failed", { msg: String(error) }); }
   }
 

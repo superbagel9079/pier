@@ -1,4 +1,4 @@
-// The Context tab: what was given to each project's Pi; Hand off; paste and drop.
+// Given to Pi, a view of Activity: what was given to each project's Pi; Hand off; paste and drop.
 
 // ============================================================================
 // Context: everything given to a project's Pi
@@ -392,18 +392,13 @@ document.addEventListener("keydown", (e) => {
 
 /** What was given to Pi: Activity's view (Activity opened if it was closed). */
 function contextTab({ reveal = false } = {}) {
-  const old = workspace.find("context"); // a layout from before, still holding its own tab
-  if (old) {
-    if (reveal) workspace.show(old);
-    return old;
-  }
   const project = workspace.find("project") || workspace.add("project", prefs.panelSide === "left" ? "left" : "right");
   if (reveal) project.showGiven();
   return project.given;
 }
 
 /** Given to Pi, if it is open somewhere. */
-const givenToPi = () => workspace.find("context") || workspace.find("project")?.given;
+const givenToPi = () => workspace.find("project")?.given;
 
 // Ctrl+V anywhere in the window, terminals included. An image goes to Pi; files and
 // folders copied in the file manager go through Context (folders ask first). The

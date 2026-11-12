@@ -50,6 +50,13 @@ def plain_port(text):
     return port if 0 < port < 65536 else None
 
 
+def network_allowed(config):
+    """The places Pi may reach: the built-in ones and network_allow, but those turned off
+    (network_off: Settings > Network, a box on each)."""
+    off = {e.strip().lower() for e in config["network_off"]}
+    return [e for e in list(NETWORK_ALLOW) + list(config["network_allow"]) if e.strip().lower() not in off]
+
+
 def parse_allow(entries):
     """Entries of network_allow: (host or ".suffix", port or None) pairs. An entry that is
     not one is left out, and said in the log."""
@@ -396,7 +403,7 @@ def network_plan(config, env, project):
         # Node's fetch follows HTTPS_PROXY only from Node 24 on (NODE_USE_ENV_PROXY):
         # limited, Pi could not reach its model at all.
         return None, f"network not limited: Node {major} found, Node 24 or newer is needed (or set network_limit = false)"
-    rules = parse_allow(list(NETWORK_ALLOW) + list(config["network_allow"]))
+    rules = parse_allow(network_allowed(config))
     return NetProxy(project, rules), None
 
 
@@ -520,13 +527,26 @@ def exec_pi(path, extra):
     workdir = worktree or path
     git_extension = pier_git_extension() if config["git_tools"] else None
     labs_extension = pier_labs_extension() if labs_enabled(home) else None
-    if git_extension or labs_extension:
+    # Workers and helpers (see workers): every Pi may start workers (a worker none) and
+    # consult helpers; an orchestrator or a worker gets its model.
+    role = pi_role()[0] if config["workers"] else None
+    team_extension = pier_team_extension() if config["workers"] or config["helpers"] else None
+    if role:
+        tracked = tracked + pi_model_args(config, role, os.environ.get("PIER_MODEL"))
+    if team_extension:
+        env["PIER_WORKERS"] = "1" if config["workers"] and role != "worker" else ""
+        env["PIER_HELPERS"] = "1" if config["helpers"] else ""
+        # The helpers: where they write, which models they may get.
+        env["PIER_SESSIONS"] = session_dir(os.path.realpath(path))
+        env["PIER_HELPER_MODELS"] = ",".join(helper_models(config))
+        env["PIER_HELPER_MODEL"] = config["helper_model"] if MODEL_RE.fullmatch(config["helper_model"] or "") else ""
+    if git_extension or labs_extension or team_extension:
         try:
             broker = GitBroker(os.path.realpath(path))
         except OSError as exc:
             log("warn", "git.broker-failed", project=path, err=str(exc))
         if broker:
-            for extension in (git_extension, labs_extension):
+            for extension in (git_extension, labs_extension, team_extension):
                 if extension:
                     tracked = tracked + ["--extension", extension]
             env["PIER_GIT_SOCKET"] = broker.socket

@@ -18,6 +18,7 @@ function approvalSummary(a) {
   if (a.kind === "review") return `post a review of #${args.number} (${String(args.verdict || "").replace("_", " ")})`;
   if (a.kind === "create_repo") return `create the repository ${short(args.name)}${args.account ? ` on ${short(args.account)}` : ""}`;
   if (a.kind === "lab") return `${short(args.what || args.op)} on ${short(args.machine)}`;
+  if (a.kind === "workers") return `start up to ${args.max} worker Pis (Pi #${args.orchestrator})`;
   return short(a.kind);
 }
 
@@ -60,6 +61,12 @@ function approvalItem(a, answer) {
     what = `create the repository ${args.name} (${args.private === false ? "public" : "private"})`;
     facts = [args.account ? `on ${args.account} · ${FORGE_LABELS[args.forge_kind] || args.forge_kind} · ${args.forge_url}` : "on an account the request does not name (asked by an older picker)",
       args.description || ""];
+  } else if (a.kind === "workers") {
+    what = `start worker Pis: up to ${args.max} at once, while it runs`;
+    facts = [`orchestrator: Pi #${args.orchestrator}`,
+      `models: ${(args.models || []).join(", ")}`,
+      `first: "${args.first}" (${args.first_model})`,
+      "each a Pi of its own, in a git worktree of its own, visible in Conversations; they cost tokens like any Pi"];
   } else if (a.kind === "lab") {
     facts = [args.where || ""];
     if (args.op === "lab_run") {

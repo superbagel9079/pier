@@ -159,10 +159,14 @@ function completeTheme(theme) {
   ui.field ||= mix(ui.bg, ui.fg, 0.05);
   ui.hover ||= mix(ui.bg, ui.fg, 0.09);
   ui.accent ||= ui.fg;
-  // WCAG AA: dim text 4.5:1 where it is drawn (the background, panels, a row under the
-  // pointer); the edge of a field 3:1, so it is seen (1.4.11).
-  ui.dim = readable(ui.dim, ui.fg, [ui.bg, ui.panel, ui.hover], 4.5);
+  // WCAG AA: dim text 4.5:1 wherever it is drawn: the background, the panels and the
+  // surfaces style.css mixes from bg and fg (--surface 5%, --raise 10%, --strong 16%), a
+  // field, a row under the pointer. The edge of a field and the accent (focus rings, the
+  // active tab) 3:1, so they are seen (1.4.11).
+  const surfaces = [ui.bg, ui.panel, ui.field, ui.hover, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.fg, 0.10), mix(ui.bg, ui.fg, 0.16)];
+  ui.dim = readable(ui.dim, ui.fg, surfaces, 4.5);
   ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);
+  ui.accent = readable(ui.accent, ui.fg, [ui.bg, ui.panel, ui.field, ui.hover], 3);
   const terminal = { ...theme.terminal };
   ui.green = flatten(ui.green || terminal.green, ui.bg) || "#3fb950";
   ui.red = flatten(ui.red || terminal.red, ui.bg) || "#f85149";

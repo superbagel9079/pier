@@ -7,7 +7,7 @@ A project can be connected to a repository of **GitHub**, **GitLab** or **Gitea 
 
 #### A. Connecting
 
-- With nothing connected, the page only asks where the code lives: **GitHub…**, **GitLab…** or **Gitea / Forgejo…**. Each asks for the address and a token (**Add an account…** adds another later). GitHub: a fine-grained token limited to the repositories Pi works on, with *Contents* and *Pull requests* in read and write (*Administration* too, to let Pi create repositories). GitLab: a token with the `api` scope (a project access token limits it to one project). Gitea / Forgejo: a token with read and write on repositories. Pier checks it with the service before keeping it.
+- With nothing connected, the page only asks where the code lives: **GitHub…**, **GitLab…** or **Gitea / Forgejo…**. Each asks for the address and a token (Settings > **Git & forges** adds another later, or forgets one; Repository > Git links there). GitHub: a fine-grained token limited to the repositories Pi works on, with *Contents* and *Pull requests* in read and write (*Administration* too, to let Pi create repositories). GitLab: a token with the `api` scope (a project access token limits it to one project). Gitea / Forgejo: a token with read and write on repositories. Pier checks it with the service before keeping it.
 - **Connect a repository…** (`owner/name`) or **Create a repository…** (private by default). The project becomes a git repository if it is not one yet.
 - The page then shows the repository, the branch checked out, the **open pull requests** with their checks (✓ passed, ✗ failed, … running), and for each one **copy link** and **merge ▾** (merge, squash and merge, rebase and merge; the repository's method first).
 - Two settings, under the repository, saved as soon as they are chosen:
@@ -43,6 +43,20 @@ Two Pis in the same folder would step on each other's files. In a git project, t
 - `.pi-worktrees` is left out of git (its own `.gitignore`, and the repository's `info/exclude`) and of the restore points.
 - `worktrees = false` in the picker's config turns this off.
 - Known: the worktree holds its own copy of the project's `AGENTS.md`, so a Pi there reads it twice (the worktree's and the folder's); and Activity shows its files under `.pi-worktrees/…`.
+
+#### C2. An orchestrator and its workers
+
+An **orchestrator** is a Pi that splits a piece of work into tasks and gives each to a **worker** Pi; the workers work at the same time, each on its own; the orchestrator then puts their work together. Start one with **orchestrate** on a project's line in Conversations (not to be confused with the team of D: that one is people). Any other Pi may also become one by itself, when it finds a piece of work large enough to split: it has the same tools, and its first worker waits for your approval all the same; it then shows as an orchestrator.
+
+- **Its tools:** `start_worker` (a title, the whole task: a worker does not see the orchestrator's conversation; optionally a model), `list_workers`, `wait_workers`, `message_worker`, `stop_worker`. When a worker reports or stops, Pier tells the orchestrator, which goes on by itself.
+- **The first worker waits for you:** Pier asks you to approve its workers, showing how many workers at most (`workers_max`), which models, the first task and why. Approved, the orchestrator starts up to that many at once, for as long as it runs; refused, none.
+- **Each worker** is a Pi of its own, in Conversations under its orchestrator ("Pi #3, worker of #2 on …"): open it, watch it, stop it as any Pi. It works in a git worktree of its own (see C), on its own branch, commits there, and says what it did with `report`. It starts nobody: one level only.
+- **Putting it together:** the workers' branches are in the same repository, so the orchestrator merges them itself in its folder (`git merge`), fixes the conflicts and runs the tests. A worker's worktree goes when its work is merged and it stops; one with work not merged stays.
+- **Models:** `orchestrator_model` for the orchestrator, `worker_model` for the workers, `worker_models` for those an orchestrator may choose for a given task (a strong model to plan and merge, cheaper ones to do). Each model's provider must be reachable (`network_allow`) and signed in in Pi.
+- **Needs** a git project with at least one commit: without worktrees, workers would write over each other; the orchestrator is told so.
+- **Read-only helpers:** every Pi (orchestrator, worker or not) has `consult`, which asks up to 4 helpers at once, each a short Pi in the same folder and sandbox with only Pi's reading tools (`read`, `grep`, `find`, `ls`): a **scout** explores the code, a **reviewer** reads a change, a **critic** challenges a plan, a **checker** checks a claim. They answer once (10 minutes at most), write nothing and start nobody; while they run, Conversations lists them under their Pi ("scout · Map the parser, helper of Pi #1, reading"); their conversations then go to the project's **sub-agents** folder. Their model: `helper_model`, or one of the workers' models the Pi names. Without a helper, an orchestrator would read the whole code itself, filling its context; with them, it gets their conclusions.
+- **What a worker reports**, or a helper answers, is a Pi's writing: the Pi that asked is told to check it (the branch, the tests), not to take it as orders.
+- `workers = false` in the picker's config turns the workers off, `helpers = false` the helpers.
 
 #### D. The team: several people, several Pis
 

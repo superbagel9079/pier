@@ -7,13 +7,13 @@ use crate::*;
 /// The command line of a "pi" terminal: the picker's --attach-control, which opens
 /// the Pi (see open_pi there) and attaches to it in tmux's control mode (term.rs).
 /// Only what Pier itself asks is accepted: the Pi used last or a new one (nothing),
-/// a new Pi (--new), a running one (--slot NAME), or a conversation (--continue,
+/// a new Pi (--new), an orchestrator (--orchestrator), a running one (--slot NAME), or a conversation (--continue,
 /// --session FILE): its Pi if one runs it, else a new Pi on it.
 pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
     let slot_name = |name: &str| name.starts_with("pi-") && name.len() < 100 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     let allowed = match args {
         [] => true,
-        [flag] => flag == "--continue" || flag == "--new",
+        [flag] => flag == "--continue" || flag == "--new" || flag == "--orchestrator",
         [flag, file] if flag == "--session" => file.ends_with(".jsonl") && file.contains("/.pi/") && !file.contains('\n'),
         [flag, name] if flag == "--slot" => slot_name(name),
         // A new Pi asked to take a task or review a pull request: the picker writes the
@@ -175,6 +175,19 @@ pub(crate) async fn session_delete(app: AppHandle, state: State<'_, AppState>, p
 #[tauri::command]
 pub(crate) async fn category_rename(app: AppHandle, state: State<'_, AppState>, project: String, old: String, new: String) -> Result<Value, String> {
     api(&app, &state, &["category-rename", &project, &old, &new], &[]).await
+}
+
+/// Sets a key of the picker's config.toml (Settings: Agents, Network & sandbox), its
+/// value in JSON; "null" puts the default back. The picker checks the key and the value.
+#[tauri::command]
+pub(crate) async fn config_set(app: AppHandle, state: State<'_, AppState>, key: String, value: String) -> Result<Value, String> {
+    api(&app, &state, &["config-set", &key], value.as_bytes()).await
+}
+
+/// Sets Pi's default model ("provider/id"), in Pi's own settings.json.
+#[tauri::command]
+pub(crate) async fn pi_default(app: AppHandle, state: State<'_, AppState>, model: String) -> Result<Value, String> {
+    api(&app, &state, &["pi-default", &model], &[]).await
 }
 
 /// Pins a conversation (kept on top) or archives it (out of the lists, still found by a
