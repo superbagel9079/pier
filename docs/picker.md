@@ -90,6 +90,7 @@ Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [co
 | `orchestrator_model` | the orchestrator's model, as Pi's `--model` takes it (`"provider/id"`, `"sonnet:high"`); `""`: Pi's default | `""` |
 | `worker_model` | the workers' model when the orchestrator names none; `""`: Pi's default | `""` |
 | `worker_models` | the models an orchestrator may choose for a worker, besides `worker_model` | `[]` |
+| `network_off` | places of the built-in list or of `network_allow` turned off: kept listed, not reached (Settings > Network & sandbox, a box on each) | `[]` |
 | `helpers` | a Pi may consult read-only helpers (scout, reviewer, critic, checker) | `true` |
 | `helper_model` | the read-only helpers' model (`consult`); `""`: Pi's default. A helper may also get `worker_model` or one of `worker_models` | `""` |
 | `network_limit` | in the sandbox, Pi reaches only Anthropic, OpenRouter, DeepSeek, npm, GitHub, PyPI and `network_allow` (see [Security](security.md#security)); another model provider (OpenAI, Google, Mistral…) is to add there | `true` |

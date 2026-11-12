@@ -13,7 +13,7 @@ A **Tauri** app: the logic is in Rust, the interface in plain HTML, CSS and Java
 - **Is the VM ready?** Once connected, when something Pier needs is missing on the VM (tmux, bubblewrap, git, sshfs, Python 3.12, Node 24, Pi, enough `MaxSessions`), a page lists what is there and what is not, each missing thing with the command that puts it right (**copy**, then paste it in a shell tab). It shows once for each new set of missing things, and at any time from the palette (Ctrl+Shift+K, "ready").
 - **Open a folder…:** with no conversation yet, Conversations offers to choose a folder of the VM, walking down from home, and starts Pi in it (also in the palette).
 - **Waiting for you:** whatever Pi asks you (a merge, a review, a repository, a command on a machine, a lab on another network) is counted in the top bar ("2 waiting"), and one click lists them all, each shown whole, with **Refuse** and **Approve**. They are still in Repository > Git and the Labs tab too.
-- **The palette** also reaches every page of Settings ("Settings: Labs"), of Setup ("Setup: Git") and of Activity ("Activity: Restore points"), the Labs tab, Hand off, and the above. **Settings** open on the Picker page, then Behavior and Updates.
+- **The palette** also reaches every page of Settings ("Settings: Labs"), of Setup ("Setup: Git") and of Activity ("Activity: Restore points"), the Labs tab, Hand off, and the above. **Settings** open on Agents.
 - **Password:** asked once, kept **in memory only** and never written to disk. It is used to reconnect by itself when the PC went to sleep. It is forgotten as soon as the address or the user changes.
 - **Server fingerprint:** checked as `ssh` does. On first contact, Pier shows it for you to confirm, and only that key can be trusted. If it changes later, **the connection is refused before the password is sent**.
 - **The connection settings** are changed from the login screen ("change connection"), not from the Settings.
@@ -30,7 +30,7 @@ The installation is careful: the new file is written next to the old one, Pier c
 
 ## The workspace
 
-**The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions, Skills, Packages, Advanced) and **Repository** (Git and Team, which were pages of Setup). Settings open on **General** (Picker, Behavior, Updates); Layout is in Appearance. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
+**The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions, Skills, Packages, Advanced) and **Repository** (Git and Team, which were pages of Setup). Settings fill the window and open on **Agents**; Layout is in Appearance, the picker in Connection. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
 
 Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Appearance > **Panels** puts them on the left):
 
@@ -280,12 +280,17 @@ What each page holds:
 
 ## Settings (once connected)
 
-The categories in a column on the left, the page on the right; the window opens again on the last page shown.
+**settings** in the top bar fills the window: the categories in a column on the left, in three groups (Pi, Pier, System), the page on the right. The terminals and panels stay as they were behind; **‹ Back to Pier** (or Esc) brings them back. It opens again on the last page shown. **search settings**, above the categories, shows every page holding the words typed, one under the other, the lines that hold them marked; the categories with a match stay bright. ↑ ↓ move between the categories.
 
-- **Layout:** which side the panels go to (Panels), where each tab lives, and Reset layout.
+- **Agents** (written to the picker's `config.toml` on the VM, for the Pis started from then on; a line config.toml sets has a bar on its left and **reset**, which drops it; each shows its key):
+  - **Models:** Pi's **default model** (written in Pi's own settings, as `/model` does), the **orchestrator**'s, the **workers**' and the **helpers**', and the other models a Pi may choose for a worker. Each field offers the models Pi lists (`pi --list-models`: its providers and a gateway's, such as Bifrost's, as models of one provider), and takes one typed as `provider/id`;
+  - **Several Pis:** workers on or off, at most how many at once, helpers on or off;
+  - **What Pier gives each Pi:** restore points, a worktree for each extra Pi, the git tools, the extension that says which conversation each Pi holds.
+- **Network & sandbox:** the sandbox and the network limit (turning either off asks first), then where Pi may connect: the places **built in** (model providers, npm, GitHub, PyPI) and **yours** (a gateway, Hindsight, a mirror; added or taken out one by one, each checked). **Each has its box**: unchecked, it stays listed but Pi no longer reaches it (`network_off`), a built-in one too: with a gateway such as Bifrost carrying every model, the providers' own hosts can be unchecked. When Pi's default model goes through a provider of your own, the page says its host must be checked. With the network limit off, the list does not apply, and the page says so.
 - **Appearance:** theme, and for the terminals: font size, font (any monospaced font installed on this computer; the list offers the usual ones found here, and a font missing falls back to Cascadia Mono, with a note), and the space around their text (0 to 40 px, 8 by default; the scrollbar stays against the edge). **Pier's font** (panels, menus, settings): the terminals' by default, another console font, the system's sans, or one typed by name; paths, branches, logs and diffs stay in the terminals' font. Built-in themes, 24: Pier dark/light (or "follow the system"), Ayu dark/light, Catppuccin Latte/Mocha, Dracula, Everforest Dark, GitHub dark/light, Gruvbox dark/light, Kanagawa, Monokai, Night Owl, Nord, One Dark/Light, Rosé Pine (and Dawn), Solarized dark/light, Tokyo Night, Tomorrow Night. The theme colours the whole interface **and** the terminal (the 16 ANSI colours included).
   - **Import a VS Code or Zed theme…:** takes the `.json` of a VS Code theme (the extension's `themes/` folder, comments accepted) or a Zed theme (zed.dev/themes, `~/.config/zed/themes`; a Zed file can hold several themes, all are added). Missing colours are derived from the others.
-  - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes.
+  - **Customize…:** changes each colour with a live preview, then saves it under a name. Starting from a built-in or imported theme makes a copy; one of your themes is changed in place. "delete this theme" deletes one of your themes. **Fields** colours the fields, **Hover** a line under the pointer, **Accent** focus rings, the active tab and the category shown.
+  - **Where the panels go:** which side the panels go to (Panels), where each tab lives, and Reset layout.
 - **Terminals:** the copy and paste keys, copying on selection or with Ctrl+Shift+C, focus following the mouse, drawing by the graphics card.
 - **Behavior:**
   - Ctrl+Alt+V;
@@ -293,8 +298,7 @@ The categories in a column on the left, the page on the right; the window opens 
   - notifications;
   - also deleting, when a Pi ends, what was given to it;
   - resuming shares after a reconnection.
-- **Picker:** its version and Pier's, automatic updates (on by default), and a button to install it again.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
 - **Labs:** turning labs on, the **lab hosts** (add one, use Pi's VM, test, make default; how to make one ready), the limits (labs at a time, lifetime, CPUs, memory, disk, default image), the network of a new lab by default (Incus's NAT, your VLAN with its one-time setup, or none), the **networks** labs can be plugged into (what each is for, and how to add one), and the machines with Pier's key.
 - **Updates:** Pier's version; whether a new one is out, with its notes and **Install and restart**; **Check now**; looking by itself at startup, then every 6 hours (on by default). When a new Pier is out, "update to 0.3.0" also shows in the top bar. An update comes from this repository's GitHub releases and is installed only if signed with the project's key; shares are stopped before Pier restarts. How to publish one: [RELEASING.md](../RELEASING.md).
-- **Connection:** where Pier connects (changed from the login screen).
+- **Connection:** where Pier connects (changed from the login screen), and **the picker**: its version and Pier's, automatic updates (on by default), and a button to install it again.

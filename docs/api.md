@@ -11,6 +11,10 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 |---|---|
 | `version`, `projects`, `ls` | state, recent projects and running Pis, folder contents |
 | `file PROJECT REL` | a file of the project, for the viewer: `text` (at most 1 MB, cut at a line; `truncated`), or `binary` |
+| `config` | the keys of `config.toml` Pier changes (Settings > Agents, Network & sandbox): `value`, `default`, whether the file `set`s it; the places Pi always reaches |
+| `config-set KEY` | `KEY = value` in `config.toml`, the value in JSON on stdin (`null`: the line goes). Only those keys, each checked; the rest of the file stays as it was, and it must read back |
+| `models` | the models Pi lists (`pi --list-models`) as `provider/id`, its providers, its default model |
+| `pi-default MODEL` | Pi's default model (`provider/id`), in its own `settings.json` |
 | `paste-image`, `paste-file` | receive an image or a file and **type** it into Pi (`@path`) |
 | `upload-dir` | receive a folder as a tar archive (a copy) |
 | `type` | type text into Pi's input box, never pressing Enter |

@@ -113,6 +113,8 @@ const palette = (() => {
     close();
     if (!item) return;
     uiLog("debug", "palette", { kind: item[0] });
+    // Anything but a setting or a theme happens in the workspace: out of the settings.
+    if (!["setting", "theme"].includes(item[0]) && item[1] !== "Settings") closePrefs();
     try { item[3](); } catch (error) { uiLog("warn", "palette-failed", { msg: String(error) }); }
   }
 

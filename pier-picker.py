@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.50"
+VERSION = "4.52"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -71,6 +71,7 @@ DEFAULTS = {
     "track_sessions": True,            # Pi tells Pier which conversation it holds (an extension Pier gives it)
     "network_limit": True,             # in the sandbox, Pi reaches only NETWORK_ALLOW and network_allow
     "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
+    "network_off": [],                 # places of NETWORK_ALLOW or network_allow turned off (kept in the list)
     "git_tools": True,                 # Pi gets git tools for the forge (push, pull requests), through the picker
     "worktrees": True,                 # a second Pi in a git project works in a worktree of its own (.pi-worktrees)
     "workers": True,                   # a Pi may start worker Pis (once the user approves), see workers
@@ -285,6 +286,147 @@ def save_state(home, state):
         pass
 
 
+
+
+# --- the config, from Pier's settings ----------------------------------------------------
+# Pier reads and changes some keys of config.toml (Settings: Agents, Network & sandbox):
+# only these, each checked, the rest of the file (comments, other keys) left as it is.
+
+def _model_ok(value):
+    return value == "" or bool(MODEL_RE.fullmatch(value))
+
+
+def _allow_ok(value):
+    return bool(parse_allow([value])) and len(value) <= 253
+
+
+CONFIG_EDITABLE = {
+    # key: (what the value must be, a check of each item for a list, or of the value)
+    "workers": (bool, None), "helpers": (bool, None), "workers_max": (int, lambda n: 1 <= n <= 12),
+    "orchestrator_model": (str, _model_ok), "worker_model": (str, _model_ok), "helper_model": (str, _model_ok),
+    "worker_models": (list, _model_ok),
+    "sandbox": (bool, None), "network_limit": (bool, None), "network_allow": (list, _allow_ok),
+    "network_off": (list, lambda v: v in NETWORK_ALLOW or _allow_ok(v)),
+    "checkpoints": (bool, None), "worktrees": (bool, None), "git_tools": (bool, None), "track_sessions": (bool, None),
+}
+CONFIG_LIST_MAX = 64
+
+
+def check_config_value(key, value):
+    """value for key, checked; ApiError says what is wrong."""
+    kind, check = CONFIG_EDITABLE[key]
+    if kind is bool:
+        if not isinstance(value, bool):
+            raise ApiError(f"{key}: true or false")
+    elif kind is int:
+        if isinstance(value, bool) or not isinstance(value, int) or (check and not check(value)):
+            raise ApiError(f"{key}: a whole number from 1 to 12")
+    elif kind is str:
+        if not isinstance(value, str) or not check(value.strip()):
+            raise ApiError(f"{key}: a model as Pi's --model takes it (provider/id), or empty")
+        value = value.strip()
+    else:
+        if not isinstance(value, list) or len(value) > CONFIG_LIST_MAX or not all(isinstance(v, str) for v in value):
+            raise ApiError(f"{key}: a list of at most {CONFIG_LIST_MAX} texts")
+        value = list(dict.fromkeys(v.strip() for v in value if v.strip()))
+        bad = [v for v in value if not check(v)]
+        if bad:
+            raise ApiError(f"{key}: not valid: {', '.join(bad[:3])}")
+    return value
+
+
+def toml_value(value):
+    """A value as TOML writes it: JSON's strings, numbers, booleans and arrays are TOML's."""
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _key_span(lines, key):
+    """(first, last) lines of the top-level key = ... in config.toml, or None; an array
+    may go over several lines. Only before the first [table]."""
+    start = re.compile(rf"\s*{re.escape(key)}\s*=")
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("["):
+            return None  # a table: top-level keys are above it
+        if start.match(line):
+            depth, j, quote = 0, i, None
+            while j < len(lines):
+                text = lines[j] if j > i else lines[j].split("=", 1)[1]
+                for c in text:
+                    if quote:
+                        quote = None if c == quote else quote
+                    elif c in "\"'":
+                        quote = c
+                    elif c == "#":
+                        break
+                    elif c == "[":
+                        depth += 1
+                    elif c == "]":
+                        depth -= 1
+                if depth <= 0:
+                    return i, j
+                j += 1
+            return i, len(lines) - 1
+    return None
+
+
+def config_set(home, key, value):
+    """key = value in config.toml (None: the line goes, the default comes back). The file
+    must read back with the new value, else nothing is written."""
+    if key not in CONFIG_EDITABLE:
+        raise ApiError(f"{key} is not changed from Pier: edit config.toml")
+    if tomllib is None:
+        raise ApiError("changing config.toml needs python 3.11 or newer on the VM")
+    if value is not None:
+        value = check_config_value(key, value)
+    path = config_path(home)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+    except FileNotFoundError:
+        text = ""
+    except OSError as exc:
+        raise ApiError(f"cannot read config.toml: {exc.strerror or exc}")
+    lines = text.split("\n")
+    span = _key_span(lines, key)
+    new = [] if value is None else [f"{key} = {toml_value(value)}"]
+    if span:
+        lines[span[0]:span[1] + 1] = new
+    elif new:
+        # Above the first table, after the keys already there.
+        first_table = next((i for i, line in enumerate(lines) if line.lstrip().startswith("[")), None)
+        at = first_table if first_table is not None else len(lines)
+        while at > 0 and lines[at - 1].strip() == "" and first_table is None:
+            at -= 1
+        lines[at:at] = new
+    out = "\n".join(lines)
+    if not out.endswith("\n"):
+        out += "\n"
+    try:
+        data = tomllib.loads(out)
+    except tomllib.TOMLDecodeError as exc:
+        raise ApiError(f"config.toml would not read back ({exc}): edit it by hand")
+    if (data.get(key) if value is not None else key in data) != (value if value is not None else False):
+        raise ApiError(f"{key} is written in a way Pier cannot change (in a table?): edit config.toml by hand")
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    atomic_write(path, out, os.path.dirname(path), 0o600)
+    log("info", "config.set", key=key, reset=value is None)
+    return {"key": key, "value": load_config(home)[0][key], "default": value is None}
+
+
+def api_config(home):
+    """The keys Pier changes: their values, defaults, whether config.toml sets them; and
+    the places Pi always reaches."""
+    config, warning = load_config(home)
+    written = {}
+    if tomllib is not None and os.path.isfile(config_path(home)):
+        try:
+            with open(config_path(home), "rb") as handle:
+                written = tomllib.load(handle)
+        except (OSError, tomllib.TOMLDecodeError):
+            written = {}
+    keys = {key: {"value": config[key], "default": DEFAULTS[key], "set": key in written} for key in CONFIG_EDITABLE}
+    return {"keys": keys, "warning": warning, "path": pretty_path(config_path(home), home),
+            "network_builtin": list(NETWORK_ALLOW), "writable": tomllib is not None}
 # --- logging -------------------------------------------------------------------------
 #
 # One line per event, in ~/.local/state/pier-picker/picker.log, readable by its owner
@@ -1274,6 +1416,13 @@ def plain_port(text):
     return port if 0 < port < 65536 else None
 
 
+def network_allowed(config):
+    """The places Pi may reach: the built-in ones and network_allow, but those turned off
+    (network_off: Settings > Network, a box on each)."""
+    off = {e.strip().lower() for e in config["network_off"]}
+    return [e for e in list(NETWORK_ALLOW) + list(config["network_allow"]) if e.strip().lower() not in off]
+
+
 def parse_allow(entries):
     """Entries of network_allow: (host or ".suffix", port or None) pairs. An entry that is
     not one is left out, and said in the log."""
@@ -1620,7 +1769,7 @@ def network_plan(config, env, project):
         # Node's fetch follows HTTPS_PROXY only from Node 24 on (NODE_USE_ENV_PROXY):
         # limited, Pi could not reach its model at all.
         return None, f"network not limited: Node {major} found, Node 24 or newer is needed (or set network_limit = false)"
-    rules = parse_allow(list(NETWORK_ALLOW) + list(config["network_allow"]))
+    rules = parse_allow(network_allowed(config))
     return NetProxy(project, rules), None
 
 
@@ -5722,6 +5871,72 @@ def pi_package(args):
     return status
 
 
+
+
+# --- Pi's models, for Settings > Agents ----------------------------------------------------
+
+MODELS_SECONDS = 20
+MODELS_MAX = 2000
+_MODEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]*")
+_PROVIDER_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+
+def parse_pi_models(text):
+    """["provider/id", ...] from what `pi --list-models` prints: a table, a provider and a
+    model id first on each line (the header and anything else are skipped)."""
+    models = []
+    for line in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines():
+        cells = line.split()
+        if len(cells) < 2 or cells[0].lower() in ("provider", "providers") or not _PROVIDER_TOKEN.fullmatch(cells[0]):
+            continue
+        if not _MODEL_TOKEN.fullmatch(cells[1]):
+            continue
+        models.append(f"{cells[0]}/{cells[1]}")
+    return list(dict.fromkeys(models))[:MODELS_MAX]
+
+
+def pi_default_model(home):
+    """Pi's default model as "provider/id" (its settings.json), "" when it has none."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    settings = settings if isinstance(settings, dict) else {}
+    provider, model = settings.get("defaultProvider"), settings.get("defaultModel")
+    if isinstance(model, str) and model:
+        return f"{provider}/{model}" if isinstance(provider, str) and provider else model
+    return ""
+
+
+def api_models(home):
+    """The models Pi knows (`pi --list-models`: its providers and models.json's, a
+    gateway such as Bifrost included), and its default."""
+    config, _ = load_config(home)
+    env = dict(child_env(home), NO_COLOR="1", TERM="dumb")
+    models, problem = [], None
+    try:
+        result = subprocess.run(list(config["pi_command"]) + ["--list-models"], stdin=subprocess.DEVNULL,
+                                capture_output=True, text=True, errors="replace", env=env, timeout=MODELS_SECONDS)
+        models = parse_pi_models(result.stdout)
+        if not models:
+            problem = (result.stderr.strip() or result.stdout.strip() or f"pi --list-models exited {result.returncode}")[-300:]
+    except (OSError, subprocess.SubprocessError) as exc:
+        problem = f"pi --list-models: {exc}"
+    providers = sorted({m.split("/", 1)[0] for m in models})
+    return {"models": models, "providers": providers, "default": pi_default_model(home), "problem": problem}
+
+
+def api_pi_default(home, value):
+    """Pi's default model (its settings.json: defaultProvider, defaultModel) from
+    "provider/id"."""
+    value = (value or "").strip()
+    if not MODEL_RE.fullmatch(value) or "/" not in value:
+        raise ApiError("a model as provider/id")
+    provider, model = value.split("/", 1)
+
+    def change(settings):
+        settings["defaultProvider"], settings["defaultModel"] = provider, model
+
+    write_settings("user", None, change)
+    log("info", "pi.default-model", provider=provider)
+    return {"default": pi_default_model(home)}
 # --- git forges: GitHub, GitLab, Gitea / Forgejo ------------------------------------------
 #
 # Pi works in git as it likes inside its sandbox (commit, branch, merge, all local). What
@@ -9563,7 +9778,7 @@ def api_write_text(home, path, which, data):
 
 
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
-API_READS = {"version", "projects", "ls", "file", "shares", "activity", "diff", "contexts",
+API_READS = {"version", "projects", "ls", "file", "config", "models", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
              "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
@@ -9578,6 +9793,14 @@ def api_log_fields(command, rest):
     if command == "restore" and rest[2:3] == ["-"]:
         return {"args": [a[:200] for a in rest[:2]], "files": "stdin"}
     return {"args": [a[:200] for a in rest]} if rest else {}
+
+
+def config_value(text):
+    """The value of config-set, in JSON on stdin; null puts the default back."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        raise ApiError("config-set takes its value in JSON")
 
 
 def stdin_bytes(limit):
@@ -9615,6 +9838,10 @@ API_COMMANDS = {
     "projects": lambda home, config, a: api_projects(home, config),
     "ls": lambda home, config, a: api_ls(home, a[0]),
     "file": lambda home, config, a: api_file(home, a[0], a[1]),
+    "config": lambda home, config, a: api_config(home),
+    "config-set": lambda home, config, a: config_set(home, a[0], config_value(read_stdin_text())),
+    "models": lambda home, config, a: api_models(home),
+    "pi-default": lambda home, config, a: api_pi_default(home, a[0]),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
     "type": lambda home, config, a: api_type(home, typed_text(a[0]), a[1], a[2]),

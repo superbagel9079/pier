@@ -50,6 +50,13 @@ def plain_port(text):
     return port if 0 < port < 65536 else None
 
 
+def network_allowed(config):
+    """The places Pi may reach: the built-in ones and network_allow, but those turned off
+    (network_off: Settings > Network, a box on each)."""
+    off = {e.strip().lower() for e in config["network_off"]}
+    return [e for e in list(NETWORK_ALLOW) + list(config["network_allow"]) if e.strip().lower() not in off]
+
+
 def parse_allow(entries):
     """Entries of network_allow: (host or ".suffix", port or None) pairs. An entry that is
     not one is left out, and said in the log."""
@@ -396,7 +403,7 @@ def network_plan(config, env, project):
         # Node's fetch follows HTTPS_PROXY only from Node 24 on (NODE_USE_ENV_PROXY):
         # limited, Pi could not reach its model at all.
         return None, f"network not limited: Node {major} found, Node 24 or newer is needed (or set network_limit = false)"
-    rules = parse_allow(list(NETWORK_ALLOW) + list(config["network_allow"]))
+    rules = parse_allow(network_allowed(config))
     return NetProxy(project, rules), None
 
 

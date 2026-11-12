@@ -177,6 +177,19 @@ pub(crate) async fn category_rename(app: AppHandle, state: State<'_, AppState>, 
     api(&app, &state, &["category-rename", &project, &old, &new], &[]).await
 }
 
+/// Sets a key of the picker's config.toml (Settings: Agents, Network & sandbox), its
+/// value in JSON; "null" puts the default back. The picker checks the key and the value.
+#[tauri::command]
+pub(crate) async fn config_set(app: AppHandle, state: State<'_, AppState>, key: String, value: String) -> Result<Value, String> {
+    api(&app, &state, &["config-set", &key], value.as_bytes()).await
+}
+
+/// Sets Pi's default model ("provider/id"), in Pi's own settings.json.
+#[tauri::command]
+pub(crate) async fn pi_default(app: AppHandle, state: State<'_, AppState>, model: String) -> Result<Value, String> {
+    api(&app, &state, &["pi-default", &model], &[]).await
+}
+
 /// Pins a conversation (kept on top) or archives it (out of the lists, still found by a
 /// search): `what` is "pinned" or "archived".
 #[tauri::command]

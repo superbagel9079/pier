@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.50"
+VERSION = "4.52"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -71,6 +71,7 @@ DEFAULTS = {
     "track_sessions": True,            # Pi tells Pier which conversation it holds (an extension Pier gives it)
     "network_limit": True,             # in the sandbox, Pi reaches only NETWORK_ALLOW and network_allow
     "network_allow": [],               # more places Pi may reach: "host", "host:port", ".domain" (any below)
+    "network_off": [],                 # places of NETWORK_ALLOW or network_allow turned off (kept in the list)
     "git_tools": True,                 # Pi gets git tools for the forge (push, pull requests), through the picker
     "worktrees": True,                 # a second Pi in a git project works in a worktree of its own (.pi-worktrees)
     "workers": True,                   # a Pi may start worker Pis (once the user approves), see workers

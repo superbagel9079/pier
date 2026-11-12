@@ -58,6 +58,8 @@ const PASSTHROUGH: &[&str] = &[
     "projects",
     "ls",
     "file",
+    "config",
+    "models",
     "type",
     "diff",
     "log",
@@ -1089,6 +1091,8 @@ pub fn run() {
             session_mark,
             session_delete,
             category_rename,
+            config_set,
+            pi_default,
             shares_cleanup,
             shortcut_status,
             watch_start,
@@ -1217,6 +1221,8 @@ mod tests {
             "mark",
             "session-delete",
             "category-rename",
+            "config-set",
+            "pi-default",
         ] {
             assert!(!PASSTHROUGH.contains(&command), "{command} must go through its own command");
         }

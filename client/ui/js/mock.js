@@ -30,7 +30,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.50" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.52" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -108,6 +108,10 @@ function mockBackend() {
                   files: [{ name: "20261012-1433-rapport.pdf", path: "/home/leo/work/.pi-files/20261012-1433-rapport.pdf", size: 120400 }],
                   copies: [] };
   let tick = 0;
+  const mockConfigDefaults = { workers: true, helpers: true, workers_max: 4, orchestrator_model: "", worker_model: "", helper_model: "",
+    worker_models: [], sandbox: true, network_limit: true, network_allow: [], network_off: [], checkpoints: true, worktrees: true, git_tools: true, track_sessions: true };
+  const mockConfig = { orchestrator_model: "bifrost/anthropic/claude-fable-5-2", network_allow: ["bifrost.lan"] };
+  let mockPiDefault = "bifrost/openrouter/anthropic/claude-haiku-5.5";
   let mockWorktrees = [
     { name: "pi-work-1a2b3c-2", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-2", branch: "pi/agent-2-20261016-1530-ab12", changed: 2, ahead: 3, running: true },
     { name: "pi-work-1a2b3c-4", path: "/home/leo/work/.pi-worktrees/pi-work-1a2b3c-4", branch: "pi/agent-4-20261015-0910-cd34", changed: 0, ahead: 1, running: false },
@@ -131,16 +135,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.50") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.50", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.50" };
+      if (pickerVersion !== "4.52") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.52", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.52" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.50", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.50";
-      return { status: "connected", bundled: "4.50", version: { version: "4.50", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.52", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.52";
+      return { status: "connected", bundled: "4.52", version: { version: "4.52", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.50" ? 22 : 21 }, bundled: "4.50", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.52" ? 22 : 21 }, bundled: "4.52", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -220,13 +224,24 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.50", checks: [
+        return { version: "4.52", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
           { name: "sshfs", ok: false, detail: "sharing a folder of this computer live", fix: "sudo apt install sshfs" },
           { name: "Node 24 or newer", ok: false, detail: "Pi runs on Node 22", fix: "install Node 24 (nodejs.org, or nvm install 24)" },
           { name: "Pi", ok: true, detail: "the agent itself" }] };
+      }
+      if (args[0] === "config") {
+        const keys = Object.fromEntries(Object.entries(mockConfigDefaults).map(([k, d]) => [k, { value: k in mockConfig ? mockConfig[k] : d, default: d, set: k in mockConfig }]));
+        return { keys, warning: null, path: "~/.config/pier-picker/config.toml", writable: true,
+                 network_builtin: [".anthropic.com", "claude.ai", "openrouter.ai", ".openrouter.ai", "api.deepseek.com", "registry.npmjs.org", ".npmjs.org", "github.com", ".github.com", ".githubusercontent.com", "pypi.org", "files.pythonhosted.org"] };
+      }
+      if (args[0] === "models") {
+        await new Promise((r) => setTimeout(r, 600));
+        const models = ["bifrost/anthropic/claude-fable-5-2", "bifrost/anthropic/claude-opus-5-5", "bifrost/anthropic/claude-sonnet-5-5",
+          "bifrost/deepseek/deepseek-v4.1-flash", "bifrost/openrouter/anthropic/claude-haiku-5.5", "anthropic/claude-sonnet-5-5"];
+        return { models, providers: ["anthropic", "bifrost"], default: mockPiDefault, problem: null };
       }
       if (args[0] === "file") {
         const rel = args[2];
@@ -520,6 +535,18 @@ function mockBackend() {
       delete mockLabels[file];
       mockLog("info", "vm.session-delete", { args: file });
       return { file, deleted: true };
+    },
+    async configSet(key, value) {
+      if (!(key in mockConfigDefaults)) throw `${key} is not changed from Pier: edit config.toml`;
+      if (key === "workers_max" && (value < 1 || value > 12)) throw "workers_max: a whole number from 1 to 12";
+      if (key === "network_allow" && value?.some((v) => /\s|\//.test(v))) throw `network_allow: not valid: ${value.find((v) => /\s|\//.test(v))}`;
+      if (value === null) delete mockConfig[key]; else mockConfig[key] = value;
+      return { key, value: value ?? mockConfigDefaults[key], default: value === null };
+    },
+    async piDefault(model) {
+      if (!model.includes("/")) throw "a model as provider/id";
+      mockPiDefault = model;
+      return { default: model };
     },
     async categoryRename(project, old, name) {
       let moved = 0;

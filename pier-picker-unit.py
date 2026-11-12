@@ -952,6 +952,60 @@ class Gallery(unittest.TestCase):
             m.gallery_pi_dev("x", urllib)
 
 
+class ConfigFromPier(Home):
+    """Settings > Agents and Network write config.toml: only their keys, checked, the
+    rest of the file kept as it was."""
+
+    def setUp(self):
+        super().setUp()
+        if m.tomllib is None:
+            self.skipTest("needs python 3.11")
+
+    def test_set_keeps_the_rest(self):
+        path = self.write(".config/pier-picker/config.toml",
+                          '# my notes\nsandbox = true # keep\nnetwork_allow = [\n  "bifrost.lan",\n  ".hindsight.example",\n]\n\n[future]\nx = 1\n')
+        m.config_set(self.home, "network_allow", ["bifrost.lan", "127.0.0.1:8080"])
+        m.config_set(self.home, "helper_model", "bifrost/deepseek/deepseek-v4.1-flash")
+        m.config_set(self.home, "workers_max", 6)
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn("# my notes\nsandbox = true # keep\n", text)
+        self.assertIn('network_allow = ["bifrost.lan", "127.0.0.1:8080"]\n', text)
+        self.assertLess(text.index("helper_model"), text.index("[future]"))  # a top-level key, above the table
+        config, warning = m.load_config(self.home)
+        self.assertEqual((config["helper_model"], config["workers_max"]), ("bifrost/deepseek/deepseek-v4.1-flash", 6))
+        # None: the line goes, the default is back.
+        m.config_set(self.home, "network_allow", None)
+        self.assertEqual(m.load_config(self.home)[0]["network_allow"], [])
+        answer = m.api_config(self.home)
+        self.assertFalse(answer["keys"]["network_allow"]["set"])
+        self.assertTrue(answer["keys"]["workers_max"]["set"])
+        self.assertIn("api.deepseek.com", answer["network_builtin"])
+        # A place turned off stays listed, but Pi no longer reaches it; a built-in one too.
+        m.config_set(self.home, "network_allow", ["bifrost.lan", "mirror.lan"])
+        m.config_set(self.home, "network_off", ["api.deepseek.com", "mirror.lan"])
+        allowed = m.network_allowed(m.load_config(self.home)[0])
+        self.assertIn("bifrost.lan", allowed)
+        self.assertNotIn("mirror.lan", allowed)
+        self.assertNotIn("api.deepseek.com", allowed)
+        self.assertIn("github.com", allowed)
+
+    def test_refusals(self):
+        for key, value in (("pi_command", ["sh"]), ("sandbox_write", ["/"]), ("workers_max", 50), ("workers", "yes"),
+                           ("helper_model", "a model; rm -rf"), ("network_allow", ["evil\0.github.com"]),
+                           ("worker_models", "haiku")):
+            with self.assertRaises(m.ApiError, msg=key):
+                m.config_set(self.home, key, value)
+        self.assertFalse(os.path.exists(m.config_path(self.home)))
+
+    def test_models_listed_by_pi(self):
+        printed = ("provider   model                      context  max-out  thinking  images\n"
+                   "anthropic  claude-fable-5-2           200K     64K      yes       yes\n"
+                   "bifrost    deepseek/deepseek-v4.1-flash  128K   8K       no        no\n"
+                   "\x1b[2mwarning: something\x1b[0m\n")
+        self.assertEqual(m.parse_pi_models(printed), ["anthropic/claude-fable-5-2", "bifrost/deepseek/deepseek-v4.1-flash"])
+
+
 class FileViewer(Home):
     """A project file for Pier's viewer: its text, cut at a line, never outside the project."""
 

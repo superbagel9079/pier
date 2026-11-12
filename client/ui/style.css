@@ -472,23 +472,72 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .tab:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 .choice span { color: var(--dim); font-size: var(--t-small); }
 
-/* Settings: the categories in a column on the left, the page on the right. */
-#prefs .dialog { width: min(800px, 100%); height: min(640px, 100%); display: grid; overflow: hidden;
-  grid-template-columns: 150px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; column-gap: var(--s5); }
-#prefs h1 { margin-top: 0; grid-column: 1 / -1; }
-.prefs-tabs { display: flex; flex-direction: column; gap: 2px; grid-column: 1; grid-row: 2; overflow-y: auto; }
-.prefs-tabs button { background: none; border: none; color: var(--dim); padding: var(--s2) var(--s2); margin: 0; text-align: left; white-space: nowrap; }
+/* Settings: the whole window under the title bar. The categories in a column on the
+   left (back, search, then grouped), the page on the right, its text at a reading width. */
+.settings { flex: 1; min-height: 0; display: flex; background: var(--bg); }
+.settings-nav { flex: 0 0 220px; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4) var(--s3);
+  background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; }
+.settings-nav .back { align-self: flex-start; padding: var(--s1) 0; }
+.settings-nav input[type="search"] { width: 100%; }
+.settings-group { margin: var(--s4) 0 var(--s1); padding: 0 var(--s2); font-size: var(--t-label); color: var(--dim);
+  text-transform: uppercase; letter-spacing: .06em; }
+.prefs-tabs { display: flex; flex-direction: column; gap: 2px; }
+.prefs-tabs button { background: none; border: none; color: var(--dim); padding: var(--s1) var(--s2); margin: 0; text-align: left; white-space: nowrap; }
 .prefs-tabs button:hover { color: var(--fg); background: var(--hover); }
-.prefs-tabs button[aria-selected="true"] { color: var(--bg); background: var(--fg); }
+.prefs-tabs button[aria-selected="true"] { color: var(--fg); background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); font-weight: 600; }
+/* Searching: the categories with something that matches stay bright. */
+.settings.searching .prefs-tabs button { color: var(--dim); background: none; box-shadow: none; font-weight: 400; }
+.settings.searching .prefs-tabs button.has-match { color: var(--fg); }
+.prefs-pages { flex: 1; min-width: 0; overflow: auto; padding: var(--s5); }
+.prefs-pages > * { max-width: 760px; }
 .prefs-page > .grid { margin-bottom: var(--s2); }
-.prefs-pages { grid-column: 2; grid-row: 2; overflow: auto; padding: 0 var(--s1) var(--s2) 0; }
-#prefs .actions.end { grid-column: 1 / -1; grid-row: 3; padding-top: var(--s3); margin-top: var(--s3); }
-@media (max-width: 620px) {
-  #prefs .dialog { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
-  .prefs-tabs { flex-direction: row; overflow-x: auto; grid-row: 2; padding: 0 0 var(--s1); }
-  .prefs-pages { grid-column: 1; grid-row: 3; }
-  #prefs .actions.end { grid-row: 4; }
+.prefs-page > h2:first-child, .prefs-page > div:first-child + h2 { margin-top: 0; }
+.settings.searching #prefs-title { display: none; }
+.settings.searching .prefs-page::before { content: attr(data-title); display: block; font-weight: 600; font-size: var(--t-title);
+  margin: var(--s5) 0 var(--s2); padding-bottom: var(--s1); border-bottom: 1px solid var(--line); }
+.settings.searching .prefs-page:first-of-type::before { margin-top: 0; }
+.settings .found { box-shadow: -2px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+@media (max-width: 720px) {
+  .settings { flex-direction: column; }
+  .settings-nav { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--line); }
+  .prefs-tabs { flex-direction: row; flex-wrap: wrap; }
+  .settings-group { display: none; }
+  .prefs-pages { padding: var(--s4); }
 }
+/* A setting of the picker's config: label and control on a line, what it does under it,
+   its key in config.toml; a bar on the left when config.toml sets it. */
+.setting-row { padding: var(--s2) var(--s3); margin: 0 calc(-1 * var(--s3)); border-left: 2px solid transparent; }
+.setting-row.modified { border-left-color: var(--accent); }
+.setting-row + .setting-row { border-top: 1px solid var(--line); }
+.setting-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
+.setting-head > label, .setting-head > span:first-child { flex: 1 1 200px; font-weight: 600; }
+.setting-head > input:not([type="checkbox"]), .setting-head > select, .setting-head > .combo { flex: 0 1 360px; min-width: 0; }
+/* Pier's own list for a field (the models): under it, in the theme; the browser's
+   would be drawn by the system. */
+.combo { position: relative; display: inline-flex; min-width: 0; }
+.combo .model-input { flex: 1; min-width: 0; padding-right: var(--s5); }
+.combo .combo-toggle { position: absolute; right: 0; top: 0; bottom: 0; padding: 0 var(--s2); color: var(--dim); }
+.combo-list { position: absolute; z-index: 30; top: 100%; left: 0; right: 0; max-height: 280px; overflow-y: auto;
+  margin: 0; padding: var(--s1) 0; list-style: none; background: var(--field); border: 1px solid var(--edge, var(--line));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35); font-family: var(--code); font-size: var(--t-small); }
+.combo-list li { padding: var(--s1) var(--s2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.combo-list li:hover { background: var(--hover); }
+.combo-list li[aria-selected="true"] { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+.setting-add .combo { flex: 1; max-width: 360px; }
+.setting-list li.off .name { color: var(--dim); text-decoration: line-through; }
+.setting-list li > input[type="checkbox"] { flex: none; margin: 0; }
+.setting-row.inactive .setting-list { opacity: .6; }
+.setting-row.toggle .setting-head > input { order: -1; flex: none; }
+.setting-row .hint { margin: var(--s1) 0 0; }
+.setting-key { margin: var(--s1) 0 0; font-family: var(--code); }
+.setting-list { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.setting-list li { display: flex; align-items: center; gap: var(--s2); padding: 2px var(--s2); background: var(--chip); }
+.setting-list li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--code); }
+.setting-list.chips { flex-direction: row; flex-wrap: wrap; }
+.setting-list.chips li { flex: none; }
+.setting-add { display: flex; gap: var(--s2); margin-top: var(--s2); }
+.setting-add input { flex: 1; min-width: 0; max-width: 360px; }
+.model-input { font-family: var(--code); }
 /* Theme settings */
 .swatches { display: flex; gap: var(--s1); margin: var(--s2) 0 2px; flex-wrap: wrap; }
 .swatches span { width: 22px; height: 14px; border: 1px solid var(--line); }

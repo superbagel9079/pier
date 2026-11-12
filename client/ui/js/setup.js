@@ -50,7 +50,7 @@ function makeSetup(tab) {
   const packageTools = makePackageTools($$(".package-tools"), () => data?.project || project(), () => manager.load());
 
   // The four pages; the one chosen is remembered.
-  function showPage(page) {
+  function showPage(page, initial = false) {
     if (!["instructions", "skills", "packages", "advanced"].includes(page)) page = "instructions";
     for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.classList.toggle("active", b.dataset.page === page);
     for (const section of tab.pane.querySelectorAll(".setup-page")) section.hidden = section.dataset.page !== page;
@@ -61,7 +61,7 @@ function makeSetup(tab) {
   }
   for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
   tab.showPage = (page) => showPage(page); // from the palette
-  showPage(prefs.setupPage);
+  showPage(prefs.setupPage, true);
 
   const project = () => chosen || target?.path || select.value || "";
 
