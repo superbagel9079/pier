@@ -30,13 +30,14 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.52" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.53" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
   const SESSIONS = "/home/leo/.pi/agent/sessions/--home-leo-work--";
   let mockPis = [
-    { slot: "pi-work-1a2b3c", n: 1, file: `${SESSIONS}/b.jsonl`, attached: true, last_attached: 2 },
+    { slot: "pi-work-1a2b3c", n: 1, file: `${SESSIONS}/b.jsonl`, attached: true, last_attached: 2,
+      helpers: [{ role: "scout", title: "Map the feed parser", since: Math.floor(Date.now() / 1000) - 40 }, { role: "reviewer", title: "Review the cache fix", since: Math.floor(Date.now() / 1000) - 12 }] },
     { slot: "pi-work-1a2b3c-2", n: 2, file: `${SESSIONS}/a.jsonl`, attached: false, last_attached: 1, role: "orchestrator" },
     // A worker of Pi #2, on its task, in its own worktree (see workers on the VM).
     { slot: "pi-work-1a2b3c-3", n: 3, file: null, attached: false, last_attached: 0, role: "worker", orchestrator: 2, task: "Write the RSS tests", reported: false },
@@ -135,16 +136,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.52") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.52", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.52" };
+      if (pickerVersion !== "4.53") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.53", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.53" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.52", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.52";
-      return { status: "connected", bundled: "4.52", version: { version: "4.52", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.53", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.53";
+      return { status: "connected", bundled: "4.53", version: { version: "4.53", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.52" ? 22 : 21 }, bundled: "4.52", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.53" ? 22 : 21 }, bundled: "4.53", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -224,7 +225,7 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.52", checks: [
+        return { version: "4.53", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
@@ -232,6 +233,7 @@ function mockBackend() {
           { name: "Node 24 or newer", ok: false, detail: "Pi runs on Node 22", fix: "install Node 24 (nodejs.org, or nvm install 24)" },
           { name: "Pi", ok: true, detail: "the agent itself" }] };
       }
+      if (args[0] === "forges") return { forges: mockForges };
       if (args[0] === "config") {
         const keys = Object.fromEntries(Object.entries(mockConfigDefaults).map(([k, d]) => [k, { value: k in mockConfig ? mockConfig[k] : d, default: d, set: k in mockConfig }]));
         return { keys, warning: null, path: "~/.config/pier-picker/config.toml", writable: true,

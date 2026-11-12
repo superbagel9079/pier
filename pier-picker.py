@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.52"
+VERSION = "4.53"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2148,6 +2148,7 @@ def pi_infos(project, home, pis):
             if worker:
                 info.update(role="worker", orchestrator=slot_number(slot, project, home), task=worker.get("title"),
                             reported=bool(worker.get("report")))
+        info["helpers"] = running_helpers(home, pi["name"])
         infos.append(info)
     return infos
 
@@ -8936,7 +8937,10 @@ WORKER_MESSAGE_MAX = 4000
 WORKER_INBOX_MAX = 20
 MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,150}")
 TASK_ID_RE = re.compile(r"[0-9a-f]{16}")
-WORKER_OPS = ("start_worker", "workers", "message_worker", "stop_worker", "worker_task", "report", "inbox")
+WORKER_OPS = ("start_worker", "workers", "message_worker", "stop_worker", "worker_task", "report", "inbox", "helpers_running")
+HELPER_ROLES = ("scout", "reviewer", "critic", "checker")
+HELPERS_SHOWN_MAX = 8
+HELPERS_STALE = 15 * 60  # a list older than that is a Pi that stopped without saying so
 
 WORKER_PROMPT = (
     "You are a worker Pi, started by the orchestrator Pi #{o} of this project for one task: {title}\n\n"
@@ -9135,6 +9139,8 @@ def workers_answer(home, project, role, slot, parent, task_id, request):
     """The workers' operations, for the Pi this broker serves: an orchestrator's on its
     team, a worker's on itself."""
     op = request.get("op")
+    if op == "helpers_running":
+        return set_running_helpers(home, slot, request.get("helpers"))
     # Any Pi but a worker leads a team: an ordinary one becomes an orchestrator at its
     # first worker (one level only: a worker starts nobody).
     if role in ("orchestrator", None) and op in ("start_worker", "workers", "message_worker", "stop_worker"):
@@ -9192,6 +9198,43 @@ def workers_answer(home, project, role, slot, parent, task_id, request):
         log("info", "workers.reported", project=project, orchestrator=parent, worker=slot)
         return {"reported": True, "note": "the orchestrator reads it; stay available for its messages"}
     raise ApiError(f"{op} is not for this Pi")
+
+
+def helpers_path(home, slot):
+    return os.path.join(os.path.dirname(state_path(home)), "helpers", f"{slot}.json")
+
+
+def set_running_helpers(home, slot, helpers):
+    """The helpers a Pi's consult runs now, said by its extension (through the broker),
+    for Conversations: [{"role", "title", "since"}]."""
+    if not slot or not NAME_RE.fullmatch(slot):
+        raise ApiError("this Pi was not started by Pier's picker")
+    shown = []
+    for h in (helpers if isinstance(helpers, list) else [])[:HELPERS_SHOWN_MAX]:
+        if isinstance(h, dict) and h.get("role") in HELPER_ROLES:
+            shown.append({"role": h["role"], "title": one_line(h.get("title"), 80) or h["role"], "since": int(time.time())})
+    path = helpers_path(home, slot)
+    if shown:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        save_private_json(path, {"at": int(time.time()), "helpers": shown})
+    else:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return {"running": len(shown)}
+
+
+def running_helpers(home, slot):
+    """What set_running_helpers kept for slot, unless stale."""
+    try:
+        with open(helpers_path(home, slot), encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict) or time.time() - (data.get("at") or 0) > HELPERS_STALE:
+        return []
+    return [h for h in data.get("helpers") or [] if isinstance(h, dict)][:HELPERS_SHOWN_MAX]
 
 
 def register_orchestrator(home, project, slot):
@@ -9346,11 +9389,19 @@ function helpers(pi: any) {
     }),
     async execute(_id: string, params: any, signal: AbortSignal, onUpdate: any) {
       const asked = (params.helpers || []).slice(0, HELPERS_MAX);
-      let left = asked.length;
-      const say = () => onUpdate?.({ content: [{ type: "text", text: `${left} helper(s) working` }], details: { left } });
+      const running = new Set(asked);
+      // Pier lists them under this Pi while they run (Conversations).
+      const tell = () => ask({ op: "helpers_running", helpers: [...running].map((h: any) => ({ role: h.role, title: h.title })) }).catch(() => {});
+      const say = () => onUpdate?.({ content: [{ type: "text", text: `${running.size} helper(s) working` }], details: { left: running.size } });
       say();
-      const answers = await Promise.all(asked.map((h: any) => runHelper(h, signal).then((answer) => { left -= 1; say(); return answer; })));
-      return text({ answers });
+      tell();
+      try {
+        const answers = await Promise.all(asked.map((h: any) => runHelper(h, signal).then((answer) => { running.delete(h); say(); tell(); return answer; })));
+        return text({ answers });
+      } finally {
+        running.clear();
+        tell();
+      }
     },
   });
 }

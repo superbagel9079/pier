@@ -128,6 +128,7 @@ def pi_infos(project, home, pis):
             if worker:
                 info.update(role="worker", orchestrator=slot_number(slot, project, home), task=worker.get("title"),
                             reported=bool(worker.get("report")))
+        info["helpers"] = running_helpers(home, pi["name"])
         infos.append(info)
     return infos
 

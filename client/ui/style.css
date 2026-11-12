@@ -241,6 +241,8 @@ body.own-titlebar #topbar { padding-right: 0; user-select: none; }
 #window-buttons #win-close:active { background: #b22a1d; color: #fff; }
 #window-buttons button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 #status, #target { min-width: 0; flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status { padding: 0; font: inherit; }
+#status:disabled { cursor: default; opacity: 1; }
 #target.live { color: var(--fg); }
 /* Narrow, the bar gives way by the longest link (cut with an ellipsis), never by the
    window's buttons. */
@@ -714,6 +716,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions li.folder-head.subagents .folder-name { font-weight: 400; color: var(--dim); }
 /* A worker, under its orchestrator: set in, its own bar kept. */
 .sessions li.running.in-team { margin-left: 1.6em; }
+.sessions li.running.helper .title { font-weight: 400; color: var(--dim); }
 .sessions li.in-folder { margin-left: calc(0.6em + 1px); padding-left: calc(1em - 1px); box-shadow: inset 1px 0 0 var(--line); }
 /* A project's head: its name, then its facts. */
 .sessions li.project-head { gap: var(--s2); margin-top: var(--s4); padding-top: var(--s2); border-top: 1px solid var(--line); }

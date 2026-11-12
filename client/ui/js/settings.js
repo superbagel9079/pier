@@ -28,6 +28,8 @@ function loadPiModels(again = false) {
 function settingsPageShown(page) {
   if (page === "agents") drawAgents();
   else if (page === "network") drawNetwork();
+  else if (page === "git") drawForges();
+  else if (page === "extensions") drawExtensions();
 }
 
 const configValue = (key) => pickerConfig?.keys?.[key]?.value;
@@ -44,6 +46,7 @@ async function setConfig(key, value, page, note) {
     return false;
   }
   if (page === "agents") drawAgents(false);
+  else if (page === "git") drawForges();
   else drawNetwork(false);
   return true;
 }
@@ -291,7 +294,6 @@ function drawAgents(again) {
       toggleRow("checkpoints", "Restore points", "The project saved before each prompt: Undo last prompt, Activity > Restore.", "agents",
         { confirmOff: "Turn restore points off? What Pi does can then no longer be undone from Pier." }),
       toggleRow("worktrees", "A worktree for each extra Pi", "A second Pi in a git project works in a worktree of its own (.pi-worktrees), on its own branch.", "agents"),
-      toggleRow("git_tools", "Git tools", "push, pull requests and tasks for the forge connected in Repository > Git, through the picker: the token stays out of Pi's reach.", "agents"),
       toggleRow("track_sessions", "Which conversation each Pi holds", "A small extension tells Pier; without it, Pier guesses from the newest file.", "agents"));
     return out;
   });
@@ -357,4 +359,87 @@ function drawNetwork(again) {
     if (!piModels) loadPiModels().then(() => { if (!$("#prefs").hidden && prefsPage === "network") drawNetwork(false); });
     return out;
   });
+}
+
+// --- Git & forges ------------------------------------------------------------------
+
+/** The accounts on the forges: everyone's, each project's repository picks one
+ *  (Repository > Git). Tokens stay on the VM. */
+async function drawForges() {
+  const section = $('#prefs .prefs-page[data-page="git"]');
+  if (!section.childElementCount) section.append(el("p", { className: "dim", textContent: "Asking the VM…" }));
+  let forges;
+  try {
+    forges = (await backend.api(["forges"])).forges || [];
+  } catch (error) {
+    section.replaceChildren(el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}` }));
+    return;
+  }
+  const error = el("p", { className: "error", hidden: true });
+  const list = el("ul", { className: "setting-list" });
+  for (const f of forges) {
+    list.append(el("li", {},
+      el("span", { className: "name", textContent: `${f.login} · ${FORGE_LABELS[f.kind] || f.kind}`, title: f.url }),
+      el("span", { className: "dim small", textContent: f.url }),
+      el("button", { className: "icon", textContent: "×", title: "Forget this account (its token is deleted on the VM)", onclick: async () => {
+        if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on ${FORGE_LABELS[f.kind]} too. Repositories connected through it can no longer be pushed to.`))) return;
+        try { await backend.forgeRemove(f.id); drawForges(); } catch (e) { showError(error, String(e)); }
+      } })));
+  }
+  if (!forges.length) list.append(el("li", { className: "dim", textContent: "No account yet: Pi works locally, nothing is pushed." }));
+  const add = el("div", { className: "toolbar" }, ...Object.entries(FORGE_LABELS).map(([kind, label]) =>
+    el("button", { className: "secondary", textContent: `${label}…`, onclick: () => forgeAccountDialog(kind, (forge) => {
+      flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
+      drawForges();
+    }) })));
+  section.replaceChildren(
+    el("h2", { textContent: "Accounts" }),
+    el("p", { className: "hint", textContent: "Where Pi pushes its pi/… branches and opens pull requests. Each project's repository is connected to one of them in Repository > Git, which also says what Pi may do there (work locally, ask to merge, merge)." }),
+    list, error, add,
+    el("p", { className: "hint", textContent: "A token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced." }),
+    el("h2", { textContent: "Pi's git tools" }),
+    (() => {
+      // A key of config.toml: drawn as on Agents, once the config is known.
+      const row = el("div");
+      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "push, pull requests and tasks for the connected forge, through the picker. Off: Pi has git, nothing more.", "git"))).catch(() => row.remove());
+      return row;
+    })());
+  if ($("#prefs-search").value.trim()) searchSettings($("#prefs-search").value);
+}
+
+// --- Extensions & skills -----------------------------------------------------------
+
+/** Pi, its packages, skills, extensions and prompt templates: yours, and the chosen
+ *  project's own. Built once; the project list and the lists drawn again on each visit. */
+let extProject = null;  // the project whose own resources are shown with yours
+let extParts = null;    // {manager, tools}
+
+/** From Project's "manage": that project's own resources, with yours. */
+function settingsExtensionsFor(project) {
+  extProject = project;
+  if (!$("#prefs").hidden && prefsPage === "extensions") drawExtensions();
+}
+
+async function drawExtensions() {
+  const select = $("#ext-project");
+  const projects = lastProjects || await fetchProjects().catch(() => null);
+  const options = [];
+  for (const p of [...(projects?.running || []), ...(projects?.recent || [])]) if (!options.some((o) => o.path === p.path)) options.push(p);
+  extProject ||= target?.path || options[0]?.path || null;
+  if (extProject && !options.some((o) => o.path === extProject)) options.push({ path: extProject, label: projectLabel(extProject) });
+  select.replaceChildren(...options.map((p) => new Option(p.label, p.path)));
+  select.value = extProject || "";
+  if (!extParts) {
+    const current = () => extProject;
+    const manager = makeResourceManager($("#ext-manager"), current,
+      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); });
+    const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load());
+    extParts = { manager, tools };
+    select.addEventListener("change", () => { extProject = select.value; extParts.manager.load(); });
+  }
+  if (!extProject) {
+    $("#ext-packages").replaceChildren(el("li", { className: "dim small note", textContent: "Open a project first: Pi's packages and skills are read from the VM through one." }));
+    return;
+  }
+  extParts.manager.load();
 }

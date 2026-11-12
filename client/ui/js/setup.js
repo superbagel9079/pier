@@ -1,4 +1,5 @@
-// The Project panel: a project's instructions, skills, packages and prompts.
+// The Project panel: a project's instructions, what Pi reads at startup, its system prompt
+// (skills, extensions and packages: Settings > Extensions & skills).
 
 // ============================================================================
 // Setup: what a project's Pi starts with, and its sessions
@@ -46,22 +47,18 @@ function makeSetup(tab) {
   let chosen = null;      // a project picked in the list, else the Pi in use
   let shownProjects = ""; // what the project list holds now
   const editors = {};
-  const manager = makeResourceManager($$(".resource-manager"), () => data?.project || project(), () => { if (data) renderSummary(); });
-  const packageTools = makePackageTools($$(".package-tools"), () => data?.project || project(), () => manager.load());
-
-  // The four pages; the one chosen is remembered.
-  function showPage(page, initial = false) {
-    if (!["instructions", "skills", "packages", "advanced"].includes(page)) page = "instructions";
+  // The two pages; the one chosen is remembered. Skills and Packages, pages here before,
+  // are in Settings now: asked for by their old name (the palette), they open there.
+  function showPage(page) {
+    if (page === "skills" || page === "packages") { openPrefs(); showPrefsPage("extensions"); return; }
+    if (!["instructions", "advanced"].includes(page)) page = "instructions";
     for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.classList.toggle("active", b.dataset.page === page);
     for (const section of tab.pane.querySelectorAll(".setup-page")) section.hidden = section.dataset.page !== page;
     if (prefs.setupPage !== page) { prefs.setupPage = page; savePrefs(); }
-    // At creation the project is not known yet: the setup's arrival loads them (onSetup).
-    if (initial) return;
-    if (page === "packages") packageTools.shown();
   }
   for (const b of tab.pane.querySelectorAll(".setup-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
   tab.showPage = (page) => showPage(page); // from the palette
-  showPage(prefs.setupPage, true);
+  showPage(["instructions", "advanced"].includes(prefs.setupPage) ? prefs.setupPage : "instructions");
 
   const project = () => chosen || target?.path || select.value || "";
 
@@ -116,20 +113,23 @@ function makeSetup(tab) {
     const box = $$(".setup-summary");
     const n = data.conversations ?? 0;
     const r = data.resources || {};
-    const managed = manager.data();
-    const skills = managed ? managed.skills : r.skills || [];
-    const off = managed ? skills.filter((s) => !s.enabled).length : 0;
+    const skills = (r.skills || []).length;
     const packages = (r.packages || []).length;
     const facts = [
       r.pi?.version && `Pi ${r.pi.version}`,
       `${packages} package${packages === 1 ? "" : "s"}`,
-      `${skills.length} skill${skills.length === 1 ? "" : "s"}${off ? ` (${off} off)` : ""}`,
+      `${skills} skill${skills === 1 ? "" : "s"}`,
       (r.mcp || []).length && `${r.mcp.length} MCP`,
-      `${n} conversation${n === 1 ? "" : "s"}`,
     ].filter(Boolean);
     box.replaceChildren(
       el("span", { className: "dim", textContent: facts.join(" · ") }),
-      linkButton("open them in Conversations", "Its Pis and conversations: new, continue, stop", () => {
+      linkButton("manage", "Skills, extensions, packages, the gallery: Settings > Extensions & skills", () => {
+        openPrefs();
+        showPrefsPage("extensions");
+        settingsExtensionsFor?.(data.project);
+      }),
+      el("span", { className: "dim", textContent: ` · ${n} conversation${n === 1 ? "" : "s"}` }),
+      linkButton("open them", "Its Pis and conversations: new, continue, stop", () => {
         const conversations = workspace.find("conversations") || workspace.add("conversations", "left");
         conversations?.focusProject?.(data.project);
       }),
@@ -246,25 +246,10 @@ function makeSetup(tab) {
 
   // --- what Pi reads ---
 
-  /** Whether version a is newer than b ("1.10.0" > "1.9.2"); false when one is missing. */
-  function newer(a, b) {
-    if (!a || !b) return false;
-    const [ma, pra] = a.split("-", 2);
-    const [mb, prb] = b.split("-", 2);
-    const pa = ma.split(".").map((x) => parseInt(x, 10) || 0);
-    const pb = mb.split(".").map((x) => parseInt(x, 10) || 0);
-    for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
-    if (!pra && prb) return true;    // 1.3.0 is newer than 1.3.0-beta.1
-    if (pra && prb) return pra.localeCompare(prb, undefined, { numeric: true }) > 0;
-    return false;
-  }
-
-  /** Pi and its packages (Packages), MCP servers and the model (Advanced). Skills,
-   *  extensions and prompts are the manager's (Skills page, resources.js). */
+  /** MCP servers and the model (Advanced). Pi, its packages, skills, extensions and
+   *  prompts: Settings > Extensions & skills. */
   function renderResources() {
-    const list = $$(".resources");
     const advanced = $$(".advanced-list");
-    list.replaceChildren();
     advanced.replaceChildren();
     const r = data.resources;
     if (!r) return;
@@ -273,39 +258,6 @@ function makeSetup(tab) {
       el("span", { className: "ellipsis", textContent: name }),
       el("span", { className: "dim small", textContent: detail || "" }),
       action || null);
-    const update = (label, args, title) => linkButton("update", title, () => {
-      workspace.add("update", workspace.find("main")?.dock || "center", { params: { label, args } });
-    });
-    // Packages: compact rows, as on the Skills page.
-    const line = (name, detail, title, ...actions) => el("li", { title: title || "" },
-      el("span", { className: "name ellipsis", textContent: name }),
-      el("span", { className: "dim small ellipsis", textContent: detail || "" }),
-      actions.length ? el("span", { className: "row-actions" }, ...actions) : null);
-    if (r.pi?.version) {
-      const behind = newer(r.pi.latest, r.pi.version);
-      list.append(line(`Pi ${r.pi.version}`, behind ? `${r.pi.latest} available` : r.pi.latest ? "up to date" : "",
-        "Pi itself. Running Pis keep their version until they restart.",
-        ...(behind ? [update("Pi", [], "pi update, in a terminal")] : [])));
-    }
-    let outdated = 0;
-    for (const p of r.packages) {
-      const name = p.source.replace(/^npm:/, "");
-      const behind = p.installed !== false && newer(p.latest, p.version);
-      outdated += behind ? 1 : 0;
-      const detail = p.installed === false ? "not installed" : behind ? `v${p.version} → ${p.latest}` : p.version ? `v${p.version}` : "";
-      const remove = linkButton("remove", `pi remove ${p.source}, in a terminal (in Pi's sandbox)`, async () => {
-        if (!(await ask(`Remove the package ${name}? Pi stops loading its skills and extensions at its next start.`))) return;
-        openPackageTerminal("remove", p.scope === "project" ? data.project : "user", p.source, name, () => manager.load());
-      });
-      list.append(line(name, [p.scope === "project" ? "this project" : "", detail].filter(Boolean).join(" · "),
-        [p.source, p.description].filter(Boolean).join(": "),
-        ...(behind ? [update(name, [p.source], `pi update ${p.source}, in a terminal`)] : []), remove));
-    }
-    if (outdated > 1) list.append(el("li", { className: "note small" }, update("all packages", ["--extensions"], "pi update --extensions, in a terminal")));
-    manager.loadFor(data.project);
-    if (prefs.setupPage === "packages") packageTools.shown();
-    packageTools.installed(r.packages);
-    if (!r.packages.length) list.append(el("li", { className: "dim small note", textContent: "No package yet: install one, or find one in the gallery below." }));
     for (const server of r.mcp) {
       advanced.append(row("MCP", server.scope, server.name, [server.kind, server.enabled ? "" : "off"].filter(Boolean).join(" · "),
         [server.description, `in ${server.from}`].filter(Boolean).join(" · ")));
@@ -313,7 +265,8 @@ function makeSetup(tab) {
     const m = r.model || {};
     if (m.defaultModel) {
       const model = [m.defaultProvider, m.defaultModel].filter(Boolean).join(" / ");
-      advanced.append(row("model", "user", model, m.defaultThinkingLevel ? `thinking ${m.defaultThinkingLevel}` : "", `Pi's default model, from settings.json: ${model}`));
+      advanced.append(row("model", "user", model, m.defaultThinkingLevel ? `thinking ${m.defaultThinkingLevel}` : "", `Pi's default model, from settings.json: ${model}`,
+        linkButton("change", "Pi's default model, and the orchestrator's, the workers', the helpers': Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); })));
     }
     if (!r.mcp.length) advanced.prepend(el("li", { className: "dim small note", textContent: "No MCP server: add one with pi mcp add on the VM." }));
   }

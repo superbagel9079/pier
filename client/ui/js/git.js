@@ -22,6 +22,40 @@ const REPO_MODES = {
 const MERGE_LABELS = { merge: "Merge commit", squash: "Squash", rebase: "Rebase" };
 const CHECK_MARKS = { success: ["✓", "checks passed"], failure: ["✗", "checks failed"], pending: ["…", "checks running"], none: ["", "no checks"] };
 
+/** Connect an account of a forge: its token checked by the picker, kept on the VM, never
+ *  seen by Pi. From Settings > Git & forges, and from a project not connected yet. */
+function forgeAccountDialog(chosen = "github", done = () => {}) {
+  const kind = el("select");
+  for (const [value, label] of Object.entries(FORGE_LABELS)) kind.add(new Option(label, value));
+  kind.value = chosen;
+  const url = el("input", { spellcheck: false });
+  const token = el("input", { type: "password", placeholder: "the token", autocomplete: "off" });
+  const hint = el("p", { className: "hint" });
+  const problem = dialogError();
+  const go = el("button", { textContent: "Connect" });
+  const dialog = resourceDialog("Connect an account", [
+    el("div", { className: "grid fields" }, el("label", { textContent: "Service" }), kind, el("label", { textContent: "Address" }), url,
+      el("label", { textContent: "Token" }), token), hint, problem], [go]);
+  const chose = () => {
+    url.value = kind.value === "github" ? "https://github.com" : kind.value === "gitlab" ? "https://gitlab.com" : "https://";
+    hint.textContent = FORGE_HINTS[kind.value];
+  };
+  kind.addEventListener("change", chose);
+  chose();
+  const connect = async () => {
+    go.disabled = true;
+    try {
+      const forge = await backend.forgeAdd(kind.value, url.value.trim(), token.value);
+      token.value = "";
+      dialog.close();
+      done(forge);
+    } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; }
+  };
+  go.addEventListener("click", connect);
+  token.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
+  token.focus();
+}
+
 function makeGitManager(box, currentProject) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
@@ -110,19 +144,11 @@ function makeGitManager(box, currentProject) {
 
     worktrees();
 
-    body.append(el("h2", { textContent: "Accounts" }));
-    const accounts = el("ul", { className: "resource-items" });
-    for (const f of data.forges) {
-      accounts.append(line(`${f.login} · ${FORGE_LABELS[f.kind]}`, f.url, f.id, action("×", "Forget this account (its token is deleted on the VM)", async () => {
-        if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on ${FORGE_LABELS[f.kind]} too.`))) return;
-        try { await backend.forgeRemove(f.id); load(); } catch (e) { showError(error, String(e)); }
-      })));
-    }
-    body.append(accounts);
-    const addAccount = el("button", { className: "secondary", textContent: "Add an account…" });
-    addAccount.addEventListener("click", () => accountDialog());
-    body.append(el("div", { className: "toolbar" }, addAccount),
-      el("p", { className: "hint", textContent: "The token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merges as chosen above; creating a repository only once you approve it here." }));
+    // The accounts are everyone's, not this project's: in Settings.
+    body.append(el("p", { className: "hint" },
+      `${data.forges.length} account${data.forges.length > 1 ? "s" : ""} on the forges (${data.forges.map((f) => `${f.login} · ${FORGE_LABELS[f.kind]}`).join(", ")}): `,
+      linkButton("Settings > Git & forges", "Add or forget an account", () => { openPrefs(); showPrefsPage("git"); }),
+      ". Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced; merges as chosen above; creating a repository only once you approve it here."));
   }
 
   // Local, so shown whether a repository is connected or not.
@@ -213,38 +239,7 @@ function makeGitManager(box, currentProject) {
     } catch (e) { showError(error, String(e)); }
   }
 
-  function accountDialog(chosen = "github") {
-    const kind = el("select");
-    for (const [value, label] of Object.entries(FORGE_LABELS)) kind.add(new Option(label, value));
-    kind.value = chosen;
-    const url = el("input", { spellcheck: false });
-    const token = el("input", { type: "password", placeholder: "the token", autocomplete: "off" });
-    const hint = el("p", { className: "hint" });
-    const problem = dialogError();
-    const go = el("button", { textContent: "Connect" });
-    const dialog = resourceDialog("Connect an account", [
-      el("div", { className: "grid fields" }, el("label", { textContent: "Service" }), kind, el("label", { textContent: "Address" }), url,
-        el("label", { textContent: "Token" }), token), hint, problem], [go]);
-    const chose = () => {
-      url.value = kind.value === "github" ? "https://github.com" : kind.value === "gitlab" ? "https://gitlab.com" : "https://";
-      hint.textContent = FORGE_HINTS[kind.value];
-    };
-    kind.addEventListener("change", chose);
-    chose();
-    const connect = async () => {
-      go.disabled = true;
-      try {
-        const forge = await backend.forgeAdd(kind.value, url.value.trim(), token.value);
-        token.value = "";
-        dialog.close();
-        say(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}.`);
-        load();
-      } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; }
-    };
-    go.addEventListener("click", connect);
-    token.addEventListener("keydown", (e) => { if (e.key === "Enter") connect(); });
-    token.focus();
-  }
+  const accountDialog = (kind) => forgeAccountDialog(kind, (forge) => { say(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}.`); load(); });
 
   const accountChoice = () => {
     const select = el("select");

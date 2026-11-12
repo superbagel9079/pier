@@ -179,6 +179,17 @@ function makeConversations(tab) {
   const piRole = (pi) => pi.role === "orchestrator" ? `Pi #${pi.n}, orchestrator,`
     : pi.role === "worker" ? `Pi #${pi.n}, worker of #${pi.orchestrator}${pi.task ? ` on "${pi.task}"` : ""},` : `Pi #${pi.n}`;
 
+  /** A read-only helper a Pi consults now (consult): under its Pi while it runs; its
+   *  conversation goes to the sub-agents folder once it is done. */
+  function helperRow(pi, h, i) {
+    const since = Math.max(0, Math.round(Date.now() / 1000 - (h.since || 0)));
+    return keyed(`helper:${pi.slot}:${i}`, el("li", { className: "running working helper in-team" },
+      el("span", { className: "dim", textContent: " " }),
+      el("div", { className: "meta" },
+        el("span", { className: "title", textContent: `${h.role} · ${h.title}`, title: "A read-only helper: it reads the project and answers its Pi" }),
+        el("span", { className: "dim small facts", textContent: `helper of Pi #${pi.n}, reading · ${since < 60 ? `${since} s` : `${Math.round(since / 60)} min`}` }))));
+  }
+
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   function piRow(p, pi, s) {
     // Its bar on the left says it runs: bright and breathing while Pi works, grey
@@ -355,6 +366,7 @@ function makeConversations(tab) {
           const li = piRow(p, pi, s || null);
           if (pi.role === "worker" && item !== pi) li.classList.add("in-team");
           list.append(li);
+          if (!query) (pi.helpers || []).forEach((h, i) => list.append(helperRow(pi, h, i)));
           if (s) shown += 1;
         }
       }

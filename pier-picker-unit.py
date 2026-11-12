@@ -1163,6 +1163,18 @@ class Workers(Home):
         with self.assertRaises(m.ApiError):
             m.worker_open_args(self.project, self.home, "app", "../x")
 
+    def test_running_helpers(self):
+        # A Pi's extension says which helpers run; Conversations lists them under it.
+        answer = m.workers_answer(self.home, self.project, None, "app", None, None,
+                                  {"op": "helpers_running", "helpers": [{"role": "scout", "title": "Map  the\nparser"}, {"role": "root", "title": "x"}]})
+        self.assertEqual(answer, {"running": 1})
+        helpers = m.running_helpers(self.home, "app")
+        self.assertEqual([(h["role"], h["title"]) for h in helpers], [("scout", "Map the parser")])
+        m.workers_answer(self.home, self.project, "worker", "app", None, None, {"op": "helpers_running", "helpers": []})
+        self.assertEqual(m.running_helpers(self.home, "app"), [])
+        with self.assertRaises(m.ApiError):
+            m.set_running_helpers(self.home, "../x", [{"role": "scout"}])
+
     def test_an_ordinary_pi_leads(self):
         # Any Pi but a worker may start workers: it then shows as an orchestrator.
         self.running["app-5"] = {}

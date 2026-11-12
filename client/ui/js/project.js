@@ -117,8 +117,9 @@ function makeProject(tab) {
       const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
       if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
       parts.push(dollars(u.cost) || "cost unknown");
-      if (u.model) parts.push(u.model);
-      usage.textContent = `session · ${parts.join(" · ")}`;
+      usage.replaceChildren(`session · ${parts.join(" · ")}`);
+      // The model: a click goes where models are chosen.
+      if (u.model) usage.append(" · ", linkButton(u.model, "The models of Pi, the orchestrator, workers and helpers: Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); }));
     }
   }
 

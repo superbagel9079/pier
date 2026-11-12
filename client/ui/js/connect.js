@@ -8,6 +8,7 @@
 function showConnect(view) {
   $("#workspace").hidden = true;
   $("#prefs").hidden = true;
+  $("#status").disabled = true;
   $("#connect").hidden = false;
   for (const name of ["setup", "login", "trust", "picker"]) $(`#view-${name}`).hidden = name !== view;
   $("#btn-prefs").hidden = true;
@@ -21,6 +22,7 @@ function showConnect(view) {
 function showWorkspace() {
   $("#connect").hidden = true;
   $("#workspace").hidden = false;
+  $("#status").disabled = false;
   $("#btn-prefs").hidden = false;
   $("#btn-palette").hidden = false;
   $("#btn-handoff").hidden = false;
@@ -42,8 +44,9 @@ function describe(s) {
 }
 
 function setStatus(text) {
-  $("#status").textContent = text;
+  $("#status").textContent = text; // once connected, a click opens Settings > Connection
 }
+$("#status").addEventListener("click", () => { openPrefs(); showPrefsPage("connection"); });
 
 function fillSetup(s) {
   const form = $("#setup-form");

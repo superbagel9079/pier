@@ -10,7 +10,7 @@
 <body>
   <header id="topbar">
     <span class="logo">Pier</span>
-    <span id="status" class="dim">not connected</span>
+    <button id="status" class="link dim" title="The connection, the picker on the VM: Settings > Connection" disabled>not connected</button>
     <span id="target" class="dim" hidden></span>
     <nav>
       <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
@@ -144,6 +144,8 @@
         <p class="settings-group">Pi</p>
         <button role="tab" data-page="agents" title="Models: Pi's default, the orchestrator, workers, helpers">Agents</button>
         <button role="tab" data-page="network" title="The sandbox, where Pi may connect">Network &amp; sandbox</button>
+        <button role="tab" data-page="extensions" title="Pi's version, its packages, skills, extensions, prompt templates, the gallery">Extensions &amp; skills</button>
+        <button role="tab" data-page="git" title="Your accounts on GitHub, GitLab, Gitea: Pi pushes and opens pull requests through them">Git &amp; forges</button>
         <button role="tab" data-page="labs" title="Disposable machines where Pi may do anything">Labs</button>
         <p class="settings-group">Pier</p>
         <button role="tab" data-page="appearance" title="Theme, fonts, where the panels go">Appearance</button>
@@ -161,6 +163,19 @@
       <p id="prefs-nothing" class="dim" hidden>No setting matches.</p>
       <section class="prefs-page" data-page="agents" data-title="Agents" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="network" data-title="Network &amp; sandbox" role="tabpanel" hidden></section>
+      <section class="prefs-page" data-page="extensions" data-title="Extensions &amp; skills" role="tabpanel" hidden>
+        <div class="toolbar">
+          <label for="ext-project">Project</label>
+          <select id="ext-project" title="Its own skills and packages are shown with yours"></select>
+        </div>
+        <p class="hint">Yours apply to every project; a project's own (in its .pi folder) to that project only. Both are listed, each marked.</p>
+        <h2>Pi and its packages</h2>
+        <ul id="ext-packages" class="resource-items resources"></ul>
+        <div id="ext-package-tools"></div>
+        <h2>Skills, extensions, prompt templates</h2>
+        <div id="ext-manager"></div>
+      </section>
+      <section class="prefs-page" data-page="git" data-title="Git &amp; forges" role="tabpanel" hidden></section>
 
       <section class="prefs-page" data-page="appearance" data-title="Appearance" role="tabpanel" hidden>
       <h2>Theme and fonts</h2>
@@ -425,7 +440,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <p class="error" hidden></p>
       <p class="setup-summary small"></p>
       <span class="switch setup-pages" role="group">
-        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="skills" title="Skills, extensions and prompt templates: on, off, new, imported">Skills</button><button class="mode" data-page="packages" title="Pi, its packages, the gallery">Packages</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
+        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
       </span>
 
       <section class="setup-page" data-page="instructions">
@@ -447,17 +462,6 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <p class="trust dim small"></p>
         </details>
       </section>
-
-      <section class="setup-page" data-page="skills" hidden>
-        <div class="resource-manager"></div>
-      </section>
-
-      <section class="setup-page" data-page="packages" hidden>
-        <ul class="resource-items resources"></ul>
-        <div class="package-tools"></div>
-      </section>
-
-
 
       <section class="setup-page" data-page="advanced" hidden>
         <h2>MCP servers and model</h2>
