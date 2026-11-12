@@ -1086,6 +1086,8 @@ pub fn run() {
             stop_pi,
             session_label,
             session_mark,
+            session_delete,
+            category_rename,
             shares_cleanup,
             shortcut_status,
             watch_start,
@@ -1209,6 +1211,8 @@ mod tests {
             "watch",
             "label",
             "mark",
+            "session-delete",
+            "category-rename",
         ] {
             assert!(!PASSTHROUGH.contains(&command), "{command} must go through its own command");
         }

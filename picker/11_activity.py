@@ -44,7 +44,30 @@ def latest_session_file(project):
     except OSError:
         return None
     paths = [p for p in (os.path.join(folder, n) for n in names) if session_ran_in(p, project)]
-    return max(paths, key=lambda f: os.stat(f).st_mtime, default=None)
+    # Newest first; a sub-agent's conversation (pi-multiagent) is never "the last one".
+    for path in sorted(paths, key=mtime_of, reverse=True):
+        if not subagent_session(path):
+            return path
+    return None
+
+
+def mtime_of(path):
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0  # gone between listdir and here: as old as can be
+
+
+# pi-multiagent (pi install npm:pi-multiagent) runs its sub-agents as Pis of their own,
+# in the project's sessions folder, each named "agent_team <run>/<step> <agent>". They
+# are the parent Pi's work, not the user's conversations: never taken as the latest one
+# or as a Pi's own, and listed apart (see api_conversations).
+SUBAGENT_PREFIX = "agent_team "
+
+
+def subagent_session(path):
+    name = session_name_of(path)
+    return bool(name) and name.startswith(SUBAGENT_PREFIX)
 
 
 _GIT_CHANGES = {}  # project -> (when, index stat, changes)

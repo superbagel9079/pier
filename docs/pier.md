@@ -211,11 +211,12 @@ Every conversation of Pi on the VM, **grouped by project**. The project of the P
   - **setup**: opens its configuration in Setup.
 - **The running Pis**, first: each with its conversation (Pi #1, Pi #2…, working or waiting for you), **open** (its terminal) and **stop**. A Pi just started, with no conversation yet, shows as "*New conversation*". **stop them all** when there are several.
 - **Which Pi holds which conversation:** each Pi started by Pier says so itself, even when you switch conversations in Pi (`/new`, `/resume`, `/fork`), and even before its first answer. Pier starts it with a small extension (`--extension ~/.local/state/pier-picker/pi/ext/pier-session.ts`; nothing is added to Pi's settings). At each change, it writes its conversation and whether it is working to `~/.local/state/pier-picker/pi/pis/<tmux session>/state.json`. In the sandbox, each Pi sees only its own folder there, and the extensions read-only: a Pi cannot write what another one says. It shows in the list of extensions when Pi starts. It adds no tool, reads no message and sends nothing over the network. To do without it: `track_sessions = false` in the picker's config; Pier then guesses as before.
-- **Then the conversations:** pinned ones (★), then the most recent (5; **show all** for the rest). Each shows:
+- **Then the conversations** outside any category: pinned ones (★), then the most recent (5; **show all** for the rest). Each shows:
   - its date and its number of messages;
-  - what it cost: in dollars when the model has a price in Pi, else in tokens (for the 300 most recent);
-  - its category.
-- **Actions:** **continue** starts a Pi on it. **⋯** gives it a **name** and a **category**, **pins** it or **archives** it: it leaves the lists, but can still be found by the search and with the **archived** box. Pier keeps these in `~/.local/state/pier-picker/labels.json`; Pi's files are not touched.
+  - what it cost: in dollars when the model has a price in Pi, else in tokens (for the 300 most recent).
+- **Then the categories, as folders:** one per category, by name, with how many conversations it holds; folded until **▸** opens it, and Pier remembers. Its **⋯** **renames** the category or **deletes** it: its conversations stay, out of any folder. A conversation goes into a folder with **⋯ > Name and category**.
+- **Sub-agents:** the conversations of the sub-agents that [pi-multiagent](https://pi.dev/packages/pi-multiagent) runs (`agent_team`; Pi names them `agent_team <run>/<step> <agent>`) go in a **sub-agents** folder of their own, last. They are a Pi's work, not yours: **last** and the recovery banner never take one, nor does the picker when it guesses a Pi's conversation.
+- **Actions:** **continue** starts a Pi on it. **⋯** gives it a **name** and a **category**, **pins** it, **archives** it (it leaves the lists, but can still be found by the search and with the **archived** box) or **deletes** it: its file goes from the VM, for good (refused while a Pi runs it: stop it first). Pier keeps names, categories, pins and archives in `~/.local/state/pier-picker/labels.json`; Pi's files are not touched, except the one deleted.
 - **Recovery after an outage:** if the VM restarted while Pi was working, the project shows a **continue where it stopped** banner.
 - **The search** covers every conversation of every project (name, question, category), archived ones included.
 
@@ -260,9 +261,11 @@ What each page holds:
   - **Import a skill from this computer…**: a folder holding a `SKILL.md`, copied into the skills (under the name it declares);
   - **Install a package…**: as on the Packages page.
 
+  Under the extensions, **Pier's**: the ones Pier gives each Pi it starts (`--extension`, from `~/.local/state/pier-picker/pi/ext/`), which Pi lists at its start beside yours but which are not in Pi's settings: `pier-session.ts` (which conversation a Pi writes; `track_sessions`), `pier-git.ts` (the forge's tools; `git_tools`) and `pier-labs.ts` (the labs' tools, once a lab host is set up). Their box, greyed, says whether the next Pi gets each; they are turned off in the picker's config, not here.
+
   A local skill has **⋯** (shown under the pointer): **Edit its SKILL.md…** (Ctrl+S saves) and **Put it in the bin**, a bin on the VM (`~/.local/state/pier-picker/trash`), where Pi does not look and from where it can be taken back.
 
-  On the Packages page: **Install a package…**, a source (`npm:…`, `git:…`, `https://…`) installed by `pi install` (`-l` for the project) in a tab where it runs, visible; and the **gallery**, the packages tagged `pi-package` on npm (those of pi.dev/packages), searched from the VM as you type, with **install**.
+  On the Packages page: **Install a package…**, a source (`npm:…`, `git:…`, `https://…`) installed by `pi install` (`-l` for the project) in a tab where it runs, visible; and the **gallery**, the packages of [pi.dev/packages](https://pi.dev/packages), searched from the VM as you type the way the site searches (name, description), with their author, their downloads a month and **install**. A package named exactly is also asked for by name on npm, so one published since pi.dev last looked shows too. When pi.dev does not answer, npm's search (packages tagged `pi-package`) does, ranked worse: it favours the popular ones.
 
   A package's extensions run code with your rights when Pi starts, and skills can tell Pi to do anything: look at a package before installing it. `pi install` and `pi remove` run in Pi's sandbox (when it is on), network limited as Pi's: npm's install scripts see `~/.pi` and the project only. A package from a site outside `network_allow` needs it added there first.
 - **Advanced:** `.pi/APPEND_SYSTEM.md` is added to Pi's system prompt, and `.pi/SYSTEM.md` replaces it (with a warning).

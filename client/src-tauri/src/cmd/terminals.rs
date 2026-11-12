@@ -163,6 +163,20 @@ pub(crate) async fn session_label(
     api(&app, &state, &["label", &project, &file, &title, &category], &[]).await
 }
 
+/// Deletes a conversation for good (Pi's file and Pier's label). The picker refuses one a
+/// Pi runs.
+#[tauri::command]
+pub(crate) async fn session_delete(app: AppHandle, state: State<'_, AppState>, project: String, file: String) -> Result<Value, String> {
+    api(&app, &state, &["session-delete", &project, &file], &[]).await
+}
+
+/// Renames a category of a project (its folder in Conversations); an empty name takes
+/// its conversations out of any folder: the category is gone, the conversations stay.
+#[tauri::command]
+pub(crate) async fn category_rename(app: AppHandle, state: State<'_, AppState>, project: String, old: String, new: String) -> Result<Value, String> {
+    api(&app, &state, &["category-rename", &project, &old, &new], &[]).await
+}
+
 /// Pins a conversation (kept on top) or archives it (out of the lists, still found by a
 /// search): `what` is "pinned" or "archived".
 #[tauri::command]

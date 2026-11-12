@@ -25,7 +25,7 @@ The picker is also Pier's engine. It opens no port: Pier runs it over SSH with `
 | `labs`, `labs-settings`, `lab-journal`, `lab-new`, `lab-edit`, `lab-network-describe`, `host-add`, `host-local`, `host-remove`, `host-test`, `lab-action`, `machine-add`, `machine-remove`, `machine-test` | labs: whether they can be made, their limits (JSON on stdin), what was run in them, a lab made by the user, a lab or machine renamed and described (the description on stdin), a lab reset or destroyed, the machines reached over SSH |
 | `--lab-shell NAME` | a terminal in a lab or on a machine (Pier's Labs tab) |
 | `--pi-package install\|remove user\|PROJECT SOURCE` | `pi install` or `pi remove` in a Pier terminal, in Pi's sandbox |
-| `conversations`, `label`, `mark` | every conversation of every project; naming them, filing them, pinning and archiving |
+| `conversations`, `label`, `mark`, `session-delete`, `category-rename` | every conversation of every project; naming them, filing them, pinning and archiving; deleting one for good; renaming a project's category, or deleting it (an empty new name) |
 | `checkpoints`, `checkpoint`, `checkpoint-diff`, `restore` | restore points: list, make one, what changed since, go back |
 | `log` | the end of the picker's log |
 | `stop DIR [SLOT]` | stop a project's Pis, or one of them |

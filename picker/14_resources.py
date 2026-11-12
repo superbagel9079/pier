@@ -162,7 +162,22 @@ def api_resources(home, path):
             out["packages"].append(info)
             for kind in MANAGED_KINDS:
                 out[kind].extend(info["resources"][kind])
+    out["pier"] = pier_extensions(home)
     return out
+
+
+def pier_extensions(home):
+    """The extensions Pier gives every Pi it starts (--extension, from pier_dir()/ext; not
+    in Pi's settings, so not in the lists above), with whether the next Pi gets each."""
+    config, _ = load_config(home)
+    return [
+        {"name": "pier-session.ts", "enabled": bool(config["track_sessions"]), "setting": "track_sessions",
+         "description": "says which conversation this Pi writes and whether it works; no tool, nothing sent"},
+        {"name": "pier-git.ts", "enabled": bool(config["git_tools"]), "setting": "git_tools",
+         "description": "git tools for the forge (push, pull requests, tasks), through the picker: the token stays out of the sandbox"},
+        {"name": "pier-labs.ts", "enabled": labs_enabled(home), "setting": None,
+         "description": "the labs' tools (disposable machines), once a lab host is set up in Labs"},
+    ]
 
 
 def write_settings(scope, project, change):
@@ -357,7 +372,10 @@ _GALLERY = {}  # query -> (when, results)
 
 
 def api_gallery(home, query):
-    """Packages of the gallery (pi.dev/packages): those tagged pi-package on npm."""
+    """Packages of the gallery: pi.dev/packages, searched as the site searches it; npm's
+    search (packages tagged pi-package) when pi.dev does not answer. npm's search hardly
+    filters (13,000 results whatever the words) and ranks by popularity: a new package,
+    even named exactly, was not in its first 250."""
     import urllib.error
     import urllib.parse
     import urllib.request
@@ -365,15 +383,65 @@ def api_gallery(home, query):
     cached = _GALLERY.get(query)
     if cached and time.monotonic() - cached[0] < 600:
         return cached[1]
+    try:
+        results, where = gallery_pi_dev(query, urllib), "pi.dev"
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()  # the error is the answer too, with its connection
+        log("info", "gallery.pi-dev-failed", err=str(exc)[:200])
+        results, where = gallery_npm(query, urllib), "npm"
+    # A package published since pi.dev last looked: asked for by its exact name.
+    exact = gallery_exact(query, urllib, json) if NPM_NAME_RE.fullmatch(query) and not any(r["name"] == query for r in results) else None
+    if exact:
+        results = [exact] + results
+    reply = {"query": query, "results": results, "from": where}
+    _GALLERY[query] = (time.monotonic(), reply)
+    return reply
+
+
+GALLERY_SIZE = 40
+_CARD_RE = re.compile(
+    r'<h3 class="packages-name"><a [^>]*>(?P<name>[^<]{1,214})</a></h3>\s*'
+    r'(?:<p class="packages-desc">(?P<desc>.*?)</p>\s*)?'
+    r'<div class="packages-meta">(?P<meta>.*?)</div>', re.S)
+
+
+def gallery_pi_dev(query, urllib):
+    """The packages pi.dev's catalog shows for query, read from its page (it has no API).
+    ValueError when the page is not the one expected: npm then answers."""
+    import html
+    url = "https://pi.dev/packages" + ("?" + urllib.parse.urlencode({"name": query}) if query else "")
+    request = urllib.request.Request(url, headers={"User-Agent": f"pier-picker/{VERSION}"})
+    with urllib.request.urlopen(request, timeout=10) as answer:
+        page = answer.read(4 * 1024 * 1024).decode("utf-8", "replace")
+    if 'class="packages-count"' not in page:
+        raise ValueError("pi.dev's catalog page changed")
+    results = []
+    for card in _CARD_RE.finditer(page):
+        name = html.unescape(card["name"]).strip()
+        if not NPM_NAME_RE.fullmatch(name) or any(r["name"] == name for r in results):
+            continue
+        meta = [html.unescape(re.sub(r"<[^>]*>", "", m)).strip() for m in re.findall(r"<span>(.*?)</span>", card["meta"] or "", re.S)]
+        desc = html.unescape(re.sub(r"<[^>]*>", "", card["desc"] or "")).strip()
+        results.append({"name": name, "version": None, "date": None, "description": desc[:300],
+                        "publisher": meta[0][:100] if meta else None,
+                        "downloads": meta[1][:20] if len(meta) > 1 and meta[1].endswith("/mo") else None,
+                        "source": f"npm:{name}"})
+        if len(results) >= GALLERY_SIZE:
+            break
+    return results
+
+
+def gallery_npm(query, urllib):
     text = "keywords:pi-package" + (f" {query}" if query else "")
-    url = "https://registry.npmjs.org/-/v1/search?" + urllib.parse.urlencode({"text": text, "size": 40})
+    url = "https://registry.npmjs.org/-/v1/search?" + urllib.parse.urlencode({"text": text, "size": GALLERY_SIZE})
     try:
         with urllib.request.urlopen(url, timeout=10) as answer:
             data = json.loads(answer.read(4 * 1024 * 1024))
     except (OSError, ValueError) as exc:
         if isinstance(exc, urllib.error.HTTPError):
-            exc.close()  # the error is the answer too, with its connection
-        raise ApiError(f"the npm registry did not answer ({exc})")
+            exc.close()
+        raise ApiError(f"neither pi.dev nor the npm registry answered ({exc})")
     results = []
     for item in data.get("objects") or []:
         pkg = item.get("package") if isinstance(item, dict) else None
@@ -383,9 +451,33 @@ def api_gallery(home, query):
         results.append({"name": pkg["name"], "version": pkg.get("version"), "date": pkg.get("date"),
                         "description": (pkg.get("description") or "")[:300], "publisher": publisher.get("username"),
                         "source": f"npm:{pkg['name']}"})
-    reply = {"query": query, "results": results}
-    _GALLERY[query] = (time.monotonic(), reply)
-    return reply
+    return results
+
+
+NPM_NAME_RE = re.compile(r"(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]{0,213}")
+
+
+def gallery_exact(name, urllib, json):
+    """The package named name on npm, as a gallery result, if it is tagged pi-package;
+    None otherwise (absent, not a Pi package, npm not answering)."""
+    url = "https://registry.npmjs.org/" + urllib.parse.quote(name, safe="@") + "/latest"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as answer:
+            pkg = json.loads(answer.read(4 * 1024 * 1024))
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
+        return None
+    keywords = pkg.get("keywords") if isinstance(pkg, dict) else None
+    if not isinstance(keywords, list) or "pi-package" not in keywords or pkg.get("name") != name:
+        return None
+    author = pkg.get("author")
+    npm_user = pkg.get("_npmUser") if isinstance(pkg.get("_npmUser"), dict) else {}
+    # Who published it, as the search says (its npm account), else its author.
+    publisher = npm_user.get("name") or (author.get("name") if isinstance(author, dict) else author if isinstance(author, str) else None)
+    return {"name": name, "version": pkg.get("version"), "date": None,
+            "description": (pkg.get("description") or "")[:300] if isinstance(pkg.get("description"), str) else "",
+            "publisher": publisher if isinstance(publisher, str) else None, "source": f"npm:{name}"}
 
 
 def run_in_pi_sandbox(command, project, home, config, env):
