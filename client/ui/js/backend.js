@@ -30,6 +30,8 @@ function realBackend() {
     sessionLabel: (project, file, title, category) => invoke("session_label", { project, file, title, category }),
     shortcutStatus: () => invoke("shortcut_status"),
     sessionMark: (project, file, what, on) => invoke("session_mark", { project, file, what, on }),
+    sessionDelete: (project, file) => invoke("session_delete", { project, file }),
+    categoryRename: (project, old, name) => invoke("category_rename", { project, old, new: name }),
     watchStart: (want) => invoke("watch_start", { want }),
     watchSet: (want) => invoke("watch_set", { want }),
     onVmUpdate: (handler) => listen("vm-update", (event) => handler(event.payload)),

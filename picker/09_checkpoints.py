@@ -420,7 +420,7 @@ class PromptWatcher(threading.Thread):
             except OSError:
                 return 0
         fresh = [f for f in names if f != self.file and f not in others and when(f) >= self.started
-                 and session_ran_in(f, self.project)]
+                 and session_ran_in(f, self.project) and not subagent_session(f)]
         newest = max(fresh, key=when, default=None)
         mine = when(self.file) if self.file else 0
         if newest and when(newest) > mine:

@@ -659,6 +659,13 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions li.category, .sessions li.more { align-items: center; }
 .sessions li.category:hover, .sessions li.project-head:hover, .sessions li.more:hover, .sessions li.label-editor:hover { background: none; }
 .sessions li.more { padding-left: 1.6em; }
+/* A category as a folder: its head like a project's, smaller; its conversations set in
+   under it, a rule on their left. */
+.sessions li.folder-head { gap: 6px; align-items: flex-start; }
+.sessions li.folder-head .fold { background: none; border: none; color: var(--dim); padding: 0 2px; width: 1.2em; line-height: 1.35; }
+.sessions li.folder-head .folder-name { cursor: pointer; font-weight: 600; }
+.sessions li.folder-head.subagents .folder-name { font-weight: 400; color: var(--dim); }
+.sessions li.in-folder { margin-left: calc(0.6em + 1px); padding-left: calc(1em - 1px); box-shadow: inset 1px 0 0 var(--line); }
 /* A project's head: its name, then its facts. */
 .sessions li.project-head { gap: 6px; margin-top: var(--s4); padding-top: 6px; border-top: 1px solid var(--line); }
 .sessions li.project-head:first-child { border-top: none; padding-top: 0; }

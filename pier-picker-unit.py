@@ -840,5 +840,117 @@ class Leftovers(Home):
         self.assertFalse(m.said_file_ok(os.path.join(m.sessions_root(), "x#(id).jsonl")))
 
 
+class Conversations(Home):
+    """Deleting a conversation, folders (categories) renamed or removed, and the
+    sub-agents of pi-multiagent kept out of "the last conversation"."""
+
+    def setUp(self):
+        super().setUp()
+        self.project = self.path("work", "test")
+        os.makedirs(self.project)
+        self.folder = m.session_dir(self.project)
+        os.makedirs(self.folder)
+        self.saved_sessions = m.pi_sessions
+        m.pi_sessions = lambda: {}
+
+    def tearDown(self):
+        m.pi_sessions = self.saved_sessions
+        super().tearDown()
+
+    def session(self, name, when, title=None):
+        path = os.path.join(self.folder, name)
+        lines = [{"type": "session", "cwd": self.project}]
+        if title:
+            lines.append({"type": "session_info", "name": title})
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            # Compact, as Pi writes it (JSON.stringify): the picker looks for '"type":"session_info"'.
+            handle.write("".join(json.dumps(line, separators=(",", ":")) + "\n" for line in lines))
+        os.utime(path, (when, when))
+        return path
+
+    def test_delete(self):
+        path = self.session("a.jsonl", 1000)
+        m.api_mark(self.home, self.project, path, "pinned", "1")
+        self.assertEqual(m.api_session_delete(self.home, self.project, path)["deleted"], True)
+        self.assertFalse(os.path.exists(path))
+        self.assertNotIn(path, m.load_labels(self.home))
+        with self.assertRaises(m.ApiError):
+            m.api_session_delete(self.home, self.project, path)
+        # Only a conversation of this project.
+        with self.assertRaises(m.ApiError):
+            m.api_session_delete(self.home, self.project, self.write("work/test/notes.jsonl", "{}"))
+
+    def test_delete_refused_while_a_pi_runs_it(self):
+        path = self.session("a.jsonl", 1000)
+        saved = m.pi_infos
+        m.pi_infos = lambda project, home, pis: [{"file": path}]
+        try:
+            with self.assertRaises(m.ApiError):
+                m.api_session_delete(self.home, self.project, path)
+        finally:
+            m.pi_infos = saved
+        self.assertTrue(os.path.exists(path))
+
+    def test_category_rename_and_remove(self):
+        a, b, c = (self.session(f"{n}.jsonl", 1000) for n in "abc")
+        m.api_label(self.home, self.project, a, "", "business")
+        m.api_label(self.home, self.project, b, "named", "business")
+        m.api_label(self.home, self.project, c, "", "other")
+        self.assertEqual(m.api_category_rename(self.home, self.project, "business", "clients")["moved"], 2)
+        labels = m.load_labels(self.home)
+        self.assertEqual([labels[a]["category"], labels[b]["category"], labels[c]["category"]], ["clients", "clients", "other"])
+        # Removed: the conversations stay, out of any folder; a label saying nothing goes.
+        m.api_category_rename(self.home, self.project, "clients", "")
+        labels = m.load_labels(self.home)
+        self.assertNotIn(a, labels)
+        self.assertEqual(labels[b], {"title": "named", "category": ""})
+
+    @unittest.skipUnless(LINUX and m.SAFE_FD, "session files are read by descriptor")
+    def test_subagents_are_never_the_last_conversation(self):
+        mine = self.session("mine.jsonl", 1000)
+        self.session("child.jsonl", 2000, title="agent_team r1/scout package:scout")
+        self.assertEqual(m.latest_session_file(self.project), mine)
+        self.assertTrue(m.subagent_session(os.path.join(self.folder, "child.jsonl")))
+        self.assertFalse(m.subagent_session(mine))
+
+
+class Gallery(unittest.TestCase):
+    """The gallery read from pi.dev's catalog page, without the network."""
+
+    def fake(self, page):
+        import urllib.parse
+
+        class Answer(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+        asked = []
+        request = types.SimpleNamespace(Request=lambda url, headers=None: url,
+                                        urlopen=lambda url, timeout=None: asked.append(url) or Answer(page.encode()))
+        return types.SimpleNamespace(parse=urllib.parse, request=request), asked
+
+    def test_cards(self):
+        page = ('<span class="packages-count">1-2 / 2 (of 5639)</span>'
+                '<h3 class="packages-name"><a href="/packages/pi-multiagent?name=x" data-package-link="true">pi-multiagent</a></h3>'
+                '<p class="packages-desc">Adds the agent_team tool &amp; a skill</p>'
+                '<div class="packages-meta"><span>vanalio</span><span>1.2K/mo</span><span>1d ago</span></div>'
+                '<h3 class="packages-name"><a href="/packages/@a/b">@a/b</a></h3>'
+                '<div class="packages-meta"><span>someone</span></div>'
+                '<h3 class="packages-name"><a href="/x">not a name!</a></h3><div class="packages-meta"></div>')
+        urllib, asked = self.fake(page)
+        results = m.gallery_pi_dev("multi agent", urllib)
+        self.assertEqual(asked, ["https://pi.dev/packages?name=multi+agent"])
+        self.assertEqual([(r["name"], r["publisher"], r["downloads"], r["source"]) for r in results],
+                         [("pi-multiagent", "vanalio", "1.2K/mo", "npm:pi-multiagent"), ("@a/b", "someone", None, "npm:@a/b")])
+        self.assertEqual(results[0]["description"], "Adds the agent_team tool & a skill")
+
+    def test_another_page_goes_to_npm(self):
+        urllib, _ = self.fake("<html>a maintenance page</html>")
+        with self.assertRaises(ValueError):
+            m.gallery_pi_dev("x", urllib)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

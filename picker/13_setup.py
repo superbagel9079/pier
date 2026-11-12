@@ -303,6 +303,51 @@ def api_mark(home, path, file, what, value):
     return {"file": file, what: entry[what]}
 
 
+def api_session_delete(home, path, file):
+    """Deletes a conversation for good: its file in Pi's sessions, and Pier's name, folder,
+    pin for it. Refused while a Pi runs it (stop it first): it would write it again."""
+    project = resolve_inside(home, path)
+    file = label_key(project, file)
+    held = {i["file"] for i in pi_infos(project, home, project_pis(pi_sessions(), project)) if i["file"]}
+    if file in held:
+        raise ApiError("a Pi runs this conversation: stop it first")
+    try:
+        st = os.lstat(file)
+    except FileNotFoundError:
+        raise ApiError("this conversation is not there any more")
+    if not stat.S_ISREG(st.st_mode):
+        raise ApiError("not a conversation file")
+    with labels_lock(home):
+        os.unlink(file)
+        labels = load_labels(home)
+        labels.pop(file, None)
+        save_labels(home, labels, file)
+    for cache in (_SESSION_INFO, _SUMMARY, _NAMES):
+        cache.pop(file, None)
+    log("info", "session.delete", project=project, file=os.path.basename(file), size=st.st_size)
+    return {"file": file, "deleted": True}
+
+
+def api_category_rename(home, path, old, new):
+    """Renames a folder (a category) in one project: every conversation in it moves to
+    the new name; an empty new name takes them out of any folder."""
+    project = resolve_inside(home, path)
+    old, new = old.strip()[:LABEL_MAX], new.strip()[:LABEL_MAX]
+    if not old:
+        raise ApiError("which category?")
+    folder = os.path.realpath(session_dir(project)) + os.sep
+    moved = 0
+    with labels_lock(home):
+        labels = load_labels(home)
+        for file, entry in list(labels.items()):
+            if entry.get("category") == old and os.path.realpath(file).startswith(folder):
+                store_label(labels, file, dict(entry, category=new))
+                moved += 1
+        write_json(labels_path(home), {f: v for f, v in labels.items() if os.path.exists(f)}, indent=1)
+    log("info", "session.category-rename", project=project, old=old, new=new, moved=moved)
+    return {"category": new or None, "moved": moved}
+
+
 def save_labels(home, labels, file):
     # Forgotten conversations go: a label lives as long as its file.
     labels = {f: v for f, v in labels.items() if os.path.exists(f) or f == file}
@@ -557,7 +602,8 @@ def api_conversations(home):
             pi = here.get(path)
             summary.update(title=label.get("title") or None, category=label.get("category") or None,
                            pinned=bool(label.get("pinned")), archived=bool(label.get("archived")),
-                           slot=pi["slot"] if pi else None, working=bool(pi and pi.get("working")))
+                           slot=pi["slot"] if pi else None, working=bool(pi and pi.get("working")),
+                           subagent=bool(summary.get("name") and summary["name"].startswith(SUBAGENT_PREFIX)))
             sessions.append(summary)
         total += len(sessions)
         running = [p for p in pis.values() if p["path"] == project]
@@ -566,7 +612,7 @@ def api_conversations(home):
         if sessions or running:
             # Interrupted: the last conversation was mid-work and no Pi runs it (the VM
             # restarted, Pi was killed): it can be taken up where it stopped.
-            last = sessions[0] if sessions else None
+            last = next((s for s in sessions if not s["subagent"]), None)
             interrupted = last["path"] if last and not last["slot"] and session_working(last["path"]) else None
             projects.append({"project": project, "label": pretty_path(project, home), "running": len(running),
                              "modified": sessions[0]["modified"] if sessions else 0, "sessions": sessions,

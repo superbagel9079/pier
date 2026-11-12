@@ -73,6 +73,8 @@ API_COMMANDS = {
     "stop": lambda home, config, a: api_stop(home, a[0], a[1]),
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
+    "session-delete": lambda home, config, a: api_session_delete(home, a[0], a[1]),
+    "category-rename": lambda home, config, a: api_category_rename(home, a[0], a[1], a[2]),
     "conversations": lambda home, config, a: api_conversations(home),
     "copy-manifest": lambda home, config, a: api_copy_manifest(home, a[0]),
     "resources": lambda home, config, a: api_resources(home, a[0]),

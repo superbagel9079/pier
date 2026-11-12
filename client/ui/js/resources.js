@@ -95,8 +95,11 @@ function makeResourceManager(box, currentProject, onChange) {
     const shown = (item) => !needle || [item.name, item.description, item.source].some((t) => t && t.toLowerCase().includes(needle));
     for (const kind of ["skills", "extensions", "prompts"]) {
       const items = (data?.[kind] || []).filter(shown);
-      if (!items.length) continue;
-      list.append(el("h3", { textContent: `${KIND_LABELS[kind]} · ${items.length}` }));
+      // Pier's own extensions: given to each Pi it starts (--extension), never in Pi's
+      // settings; shown, not toggled here (each has its setting in the picker's config).
+      const pier = kind === "extensions" ? (data?.pier || []).filter(shown) : [];
+      if (!items.length && !pier.length) continue;
+      list.append(el("h3", { textContent: `${KIND_LABELS[kind]} · ${items.length + pier.length}` }));
       for (const [scope, label] of [["user", "Yours"], ["project", "This project"]]) {
         const mine = items.filter((item) => item.scope === scope);
         if (!mine.length) continue;
@@ -104,10 +107,29 @@ function makeResourceManager(box, currentProject, onChange) {
         for (const item of mine) ul.append(row(kind, item));
         list.append(el("p", { className: "group dim small", textContent: label }), ul);
       }
+      if (pier.length) {
+        const ul = el("ul", { className: "resource-items" });
+        for (const item of pier) ul.append(pierRow(item));
+        list.append(el("p", { className: "group dim small", textContent: "Pier's: given to each Pi it starts, outside Pi's settings" }), ul);
+      }
     }
     if (!list.childElementCount) {
       list.append(el("p", { className: "dim small", textContent: needle ? "Nothing matches." : "No skill, extension or prompt yet: + Add makes one, imports one, or installs a package." }));
     }
+  }
+
+  /** One of Pier's extensions: whether the next Pi gets it, and (its title) how to change
+   *  that. */
+  function pierRow(item) {
+    const how = item.setting
+      ? `${item.setting} = ${item.enabled ? "false" : "true"} in the picker's config (~/.config/pier-picker/config.toml)`
+      : "set up a lab host in Labs";
+    return el("li", { className: item.enabled ? "" : "off", title: `${item.description}
+To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
+      // The same box as the others, greyed: its state, not a control.
+      el("input", { type: "checkbox", checked: item.enabled, disabled: true }),
+      el("span", { className: "name ellipsis", textContent: item.name }),
+      el("span", { className: "dim small ellipsis", textContent: "Pier" }));
   }
 
   function row(kind, item) {
@@ -269,7 +291,7 @@ function makePackageTools(box, currentProject, onDone) {
   box.replaceChildren(
     el("div", { className: "toolbar" }, install),
     el("h2", { textContent: "Gallery" }),
-    el("p", { className: "hint", textContent: "The packages tagged pi-package on npm (pi.dev/packages), searched from the VM." }),
+    el("p", { className: "hint", textContent: "The packages of pi.dev/packages, searched from the VM." }),
     el("div", { className: "toolbar" }, input),
     results);
   let installed = new Set();
@@ -290,11 +312,12 @@ function makePackageTools(box, currentProject, onDone) {
       const there = installed.has(pkg.source);
       const action = el("button", { className: "link", textContent: there ? "installed" : "install", disabled: there });
       action.addEventListener("click", () => installDialog(currentProject, onDone, pkg.source));
-      // The name in full, then its version and author; the description on a line of its own.
+      // The name in full, then its version (from npm), author and downloads a month (from
+      // pi.dev); the description on a line of its own.
       return el("li", { className: "two-lines", title: pkg.description || "" },
         el("div", { className: "line" },
           el("span", { className: "name", textContent: pkg.name }),
-          el("span", { className: "dim small ellipsis", textContent: [pkg.version && `v${pkg.version}`, pkg.publisher].filter(Boolean).join(" · ") }),
+          el("span", { className: "dim small ellipsis", textContent: [pkg.version && `v${pkg.version}`, pkg.publisher, pkg.downloads].filter(Boolean).join(" · ") }),
           action),
         pkg.description ? el("div", { className: "desc dim small", textContent: pkg.description }) : null);
     }));

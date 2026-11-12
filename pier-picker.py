@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.46"
+VERSION = "4.49"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2836,7 +2836,7 @@ class PromptWatcher(threading.Thread):
             except OSError:
                 return 0
         fresh = [f for f in names if f != self.file and f not in others and when(f) >= self.started
-                 and session_ran_in(f, self.project)]
+                 and session_ran_in(f, self.project) and not subagent_session(f)]
         newest = max(fresh, key=when, default=None)
         mine = when(self.file) if self.file else 0
         if newest and when(newest) > mine:
@@ -3488,7 +3488,30 @@ def latest_session_file(project):
     except OSError:
         return None
     paths = [p for p in (os.path.join(folder, n) for n in names) if session_ran_in(p, project)]
-    return max(paths, key=lambda f: os.stat(f).st_mtime, default=None)
+    # Newest first; a sub-agent's conversation (pi-multiagent) is never "the last one".
+    for path in sorted(paths, key=mtime_of, reverse=True):
+        if not subagent_session(path):
+            return path
+    return None
+
+
+def mtime_of(path):
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0  # gone between listdir and here: as old as can be
+
+
+# pi-multiagent (pi install npm:pi-multiagent) runs its sub-agents as Pis of their own,
+# in the project's sessions folder, each named "agent_team <run>/<step> <agent>". They
+# are the parent Pi's work, not the user's conversations: never taken as the latest one
+# or as a Pi's own, and listed apart (see api_conversations).
+SUBAGENT_PREFIX = "agent_team "
+
+
+def subagent_session(path):
+    name = session_name_of(path)
+    return bool(name) and name.startswith(SUBAGENT_PREFIX)
 
 
 _GIT_CHANGES = {}  # project -> (when, index stat, changes)
@@ -4731,6 +4754,51 @@ def api_mark(home, path, file, what, value):
     return {"file": file, what: entry[what]}
 
 
+def api_session_delete(home, path, file):
+    """Deletes a conversation for good: its file in Pi's sessions, and Pier's name, folder,
+    pin for it. Refused while a Pi runs it (stop it first): it would write it again."""
+    project = resolve_inside(home, path)
+    file = label_key(project, file)
+    held = {i["file"] for i in pi_infos(project, home, project_pis(pi_sessions(), project)) if i["file"]}
+    if file in held:
+        raise ApiError("a Pi runs this conversation: stop it first")
+    try:
+        st = os.lstat(file)
+    except FileNotFoundError:
+        raise ApiError("this conversation is not there any more")
+    if not stat.S_ISREG(st.st_mode):
+        raise ApiError("not a conversation file")
+    with labels_lock(home):
+        os.unlink(file)
+        labels = load_labels(home)
+        labels.pop(file, None)
+        save_labels(home, labels, file)
+    for cache in (_SESSION_INFO, _SUMMARY, _NAMES):
+        cache.pop(file, None)
+    log("info", "session.delete", project=project, file=os.path.basename(file), size=st.st_size)
+    return {"file": file, "deleted": True}
+
+
+def api_category_rename(home, path, old, new):
+    """Renames a folder (a category) in one project: every conversation in it moves to
+    the new name; an empty new name takes them out of any folder."""
+    project = resolve_inside(home, path)
+    old, new = old.strip()[:LABEL_MAX], new.strip()[:LABEL_MAX]
+    if not old:
+        raise ApiError("which category?")
+    folder = os.path.realpath(session_dir(project)) + os.sep
+    moved = 0
+    with labels_lock(home):
+        labels = load_labels(home)
+        for file, entry in list(labels.items()):
+            if entry.get("category") == old and os.path.realpath(file).startswith(folder):
+                store_label(labels, file, dict(entry, category=new))
+                moved += 1
+        write_json(labels_path(home), {f: v for f, v in labels.items() if os.path.exists(f)}, indent=1)
+    log("info", "session.category-rename", project=project, old=old, new=new, moved=moved)
+    return {"category": new or None, "moved": moved}
+
+
 def save_labels(home, labels, file):
     # Forgotten conversations go: a label lives as long as its file.
     labels = {f: v for f, v in labels.items() if os.path.exists(f) or f == file}
@@ -4985,7 +5053,8 @@ def api_conversations(home):
             pi = here.get(path)
             summary.update(title=label.get("title") or None, category=label.get("category") or None,
                            pinned=bool(label.get("pinned")), archived=bool(label.get("archived")),
-                           slot=pi["slot"] if pi else None, working=bool(pi and pi.get("working")))
+                           slot=pi["slot"] if pi else None, working=bool(pi and pi.get("working")),
+                           subagent=bool(summary.get("name") and summary["name"].startswith(SUBAGENT_PREFIX)))
             sessions.append(summary)
         total += len(sessions)
         running = [p for p in pis.values() if p["path"] == project]
@@ -4994,7 +5063,7 @@ def api_conversations(home):
         if sessions or running:
             # Interrupted: the last conversation was mid-work and no Pi runs it (the VM
             # restarted, Pi was killed): it can be taken up where it stopped.
-            last = sessions[0] if sessions else None
+            last = next((s for s in sessions if not s["subagent"]), None)
             interrupted = last["path"] if last and not last["slot"] and session_working(last["path"]) else None
             projects.append({"project": project, "label": pretty_path(project, home), "running": len(running),
                              "modified": sessions[0]["modified"] if sessions else 0, "sessions": sessions,
@@ -5176,7 +5245,22 @@ def api_resources(home, path):
             out["packages"].append(info)
             for kind in MANAGED_KINDS:
                 out[kind].extend(info["resources"][kind])
+    out["pier"] = pier_extensions(home)
     return out
+
+
+def pier_extensions(home):
+    """The extensions Pier gives every Pi it starts (--extension, from pier_dir()/ext; not
+    in Pi's settings, so not in the lists above), with whether the next Pi gets each."""
+    config, _ = load_config(home)
+    return [
+        {"name": "pier-session.ts", "enabled": bool(config["track_sessions"]), "setting": "track_sessions",
+         "description": "says which conversation this Pi writes and whether it works; no tool, nothing sent"},
+        {"name": "pier-git.ts", "enabled": bool(config["git_tools"]), "setting": "git_tools",
+         "description": "git tools for the forge (push, pull requests, tasks), through the picker: the token stays out of the sandbox"},
+        {"name": "pier-labs.ts", "enabled": labs_enabled(home), "setting": None,
+         "description": "the labs' tools (disposable machines), once a lab host is set up in Labs"},
+    ]
 
 
 def write_settings(scope, project, change):
@@ -5371,7 +5455,10 @@ _GALLERY = {}  # query -> (when, results)
 
 
 def api_gallery(home, query):
-    """Packages of the gallery (pi.dev/packages): those tagged pi-package on npm."""
+    """Packages of the gallery: pi.dev/packages, searched as the site searches it; npm's
+    search (packages tagged pi-package) when pi.dev does not answer. npm's search hardly
+    filters (13,000 results whatever the words) and ranks by popularity: a new package,
+    even named exactly, was not in its first 250."""
     import urllib.error
     import urllib.parse
     import urllib.request
@@ -5379,15 +5466,65 @@ def api_gallery(home, query):
     cached = _GALLERY.get(query)
     if cached and time.monotonic() - cached[0] < 600:
         return cached[1]
+    try:
+        results, where = gallery_pi_dev(query, urllib), "pi.dev"
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()  # the error is the answer too, with its connection
+        log("info", "gallery.pi-dev-failed", err=str(exc)[:200])
+        results, where = gallery_npm(query, urllib), "npm"
+    # A package published since pi.dev last looked: asked for by its exact name.
+    exact = gallery_exact(query, urllib, json) if NPM_NAME_RE.fullmatch(query) and not any(r["name"] == query for r in results) else None
+    if exact:
+        results = [exact] + results
+    reply = {"query": query, "results": results, "from": where}
+    _GALLERY[query] = (time.monotonic(), reply)
+    return reply
+
+
+GALLERY_SIZE = 40
+_CARD_RE = re.compile(
+    r'<h3 class="packages-name"><a [^>]*>(?P<name>[^<]{1,214})</a></h3>\s*'
+    r'(?:<p class="packages-desc">(?P<desc>.*?)</p>\s*)?'
+    r'<div class="packages-meta">(?P<meta>.*?)</div>', re.S)
+
+
+def gallery_pi_dev(query, urllib):
+    """The packages pi.dev's catalog shows for query, read from its page (it has no API).
+    ValueError when the page is not the one expected: npm then answers."""
+    import html
+    url = "https://pi.dev/packages" + ("?" + urllib.parse.urlencode({"name": query}) if query else "")
+    request = urllib.request.Request(url, headers={"User-Agent": f"pier-picker/{VERSION}"})
+    with urllib.request.urlopen(request, timeout=10) as answer:
+        page = answer.read(4 * 1024 * 1024).decode("utf-8", "replace")
+    if 'class="packages-count"' not in page:
+        raise ValueError("pi.dev's catalog page changed")
+    results = []
+    for card in _CARD_RE.finditer(page):
+        name = html.unescape(card["name"]).strip()
+        if not NPM_NAME_RE.fullmatch(name) or any(r["name"] == name for r in results):
+            continue
+        meta = [html.unescape(re.sub(r"<[^>]*>", "", m)).strip() for m in re.findall(r"<span>(.*?)</span>", card["meta"] or "", re.S)]
+        desc = html.unescape(re.sub(r"<[^>]*>", "", card["desc"] or "")).strip()
+        results.append({"name": name, "version": None, "date": None, "description": desc[:300],
+                        "publisher": meta[0][:100] if meta else None,
+                        "downloads": meta[1][:20] if len(meta) > 1 and meta[1].endswith("/mo") else None,
+                        "source": f"npm:{name}"})
+        if len(results) >= GALLERY_SIZE:
+            break
+    return results
+
+
+def gallery_npm(query, urllib):
     text = "keywords:pi-package" + (f" {query}" if query else "")
-    url = "https://registry.npmjs.org/-/v1/search?" + urllib.parse.urlencode({"text": text, "size": 40})
+    url = "https://registry.npmjs.org/-/v1/search?" + urllib.parse.urlencode({"text": text, "size": GALLERY_SIZE})
     try:
         with urllib.request.urlopen(url, timeout=10) as answer:
             data = json.loads(answer.read(4 * 1024 * 1024))
     except (OSError, ValueError) as exc:
         if isinstance(exc, urllib.error.HTTPError):
-            exc.close()  # the error is the answer too, with its connection
-        raise ApiError(f"the npm registry did not answer ({exc})")
+            exc.close()
+        raise ApiError(f"neither pi.dev nor the npm registry answered ({exc})")
     results = []
     for item in data.get("objects") or []:
         pkg = item.get("package") if isinstance(item, dict) else None
@@ -5397,9 +5534,33 @@ def api_gallery(home, query):
         results.append({"name": pkg["name"], "version": pkg.get("version"), "date": pkg.get("date"),
                         "description": (pkg.get("description") or "")[:300], "publisher": publisher.get("username"),
                         "source": f"npm:{pkg['name']}"})
-    reply = {"query": query, "results": results}
-    _GALLERY[query] = (time.monotonic(), reply)
-    return reply
+    return results
+
+
+NPM_NAME_RE = re.compile(r"(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]{0,213}")
+
+
+def gallery_exact(name, urllib, json):
+    """The package named name on npm, as a gallery result, if it is tagged pi-package;
+    None otherwise (absent, not a Pi package, npm not answering)."""
+    url = "https://registry.npmjs.org/" + urllib.parse.quote(name, safe="@") + "/latest"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as answer:
+            pkg = json.loads(answer.read(4 * 1024 * 1024))
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
+        return None
+    keywords = pkg.get("keywords") if isinstance(pkg, dict) else None
+    if not isinstance(keywords, list) or "pi-package" not in keywords or pkg.get("name") != name:
+        return None
+    author = pkg.get("author")
+    npm_user = pkg.get("_npmUser") if isinstance(pkg.get("_npmUser"), dict) else {}
+    # Who published it, as the search says (its npm account), else its author.
+    publisher = npm_user.get("name") or (author.get("name") if isinstance(author, dict) else author if isinstance(author, str) else None)
+    return {"name": name, "version": pkg.get("version"), "date": None,
+            "description": (pkg.get("description") or "")[:300] if isinstance(pkg.get("description"), str) else "",
+            "publisher": publisher if isinstance(publisher, str) else None, "source": f"npm:{name}"}
 
 
 def run_in_pi_sandbox(command, project, home, config, env):
@@ -8812,6 +8973,8 @@ API_COMMANDS = {
     "stop": lambda home, config, a: api_stop(home, a[0], a[1]),
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
+    "session-delete": lambda home, config, a: api_session_delete(home, a[0], a[1]),
+    "category-rename": lambda home, config, a: api_category_rename(home, a[0], a[1], a[2]),
     "conversations": lambda home, config, a: api_conversations(home),
     "copy-manifest": lambda home, config, a: api_copy_manifest(home, a[0]),
     "resources": lambda home, config, a: api_resources(home, a[0]),

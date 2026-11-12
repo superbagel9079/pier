@@ -30,7 +30,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.46" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.49" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -85,7 +85,10 @@ function mockBackend() {
       args: { number: 14, verdict: "request_changes", repo: "leo/work", sha: "9a8b7c6d5e4f", title: "Rate-limit the API", author: "alex", head: "pi/task-9", base: "main", draft: false,
         body: "The limiter counts per process, not per user:\n\n- two workers double the limit\n- the counter is never reset\n\nKeep it in Redis, keyed by user." } }];
   let mockSkills = [{ name: "notes", scope: "user", enabled: true }, { name: "deploy", scope: "project", enabled: false }];
-  const mockLabels = {};
+  // A folder (category) to show from the start.
+  const mockLabels = Object.fromEntries(["c", "old0", "old1"].map((n) => [`/home/leo/.pi/agent/sessions/--home-leo-work--/${n}.jsonl`, { category: "business" }]));
+  const mockDeleted = new Set();
+  const alive = (session) => !mockDeleted.has(session.path);
   const labelOf = (path) => ({ title: mockLabels[path]?.title || null, category: mockLabels[path]?.category || null,
     pinned: Boolean(mockLabels[path]?.pinned), archived: Boolean(mockLabels[path]?.archived) });
   const today = new Date().toISOString().slice(0, 10);
@@ -120,16 +123,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.46") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.46", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.46" };
+      if (pickerVersion !== "4.49") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.49", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.49" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.46", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.46";
-      return { status: "connected", bundled: "4.46", version: { version: "4.46", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.49", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.49";
+      return { status: "connected", bundled: "4.49", version: { version: "4.49", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.46" ? 22 : 21 }, bundled: "4.46", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.49" ? 22 : 21 }, bundled: "4.49", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -162,7 +165,10 @@ function mockBackend() {
         return { project: args[1], packages: [{ source: "npm:pi-hindsight", scope: "user", version: "0.4.2", installed: true }],
           skills: [...mockSkills.map((s) => item("skills", s.name, s.scope, null, s.enabled, true)), item("skills", "recall", "user", "npm:pi-hindsight", true, false)],
           extensions: [item("extensions", "memory", "user", "npm:pi-hindsight", true, false)],
-          prompts: [item("prompts", "review", "user", null, true, false)] };
+          prompts: [item("prompts", "review", "user", null, true, false)],
+          pier: [{ name: "pier-session.ts", enabled: true, setting: "track_sessions", description: "says which conversation this Pi writes and whether it works; no tool, nothing sent" },
+            { name: "pier-git.ts", enabled: true, setting: "git_tools", description: "git tools for the forge (push, pull requests, tasks), through the picker" },
+            { name: "pier-labs.ts", enabled: false, setting: null, description: "the labs' tools (disposable machines), once a lab host is set up in Labs" }] };
       }
       if (args[0] === "gallery") {
         return { query: args[1], results: [
@@ -206,7 +212,7 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.46", checks: [
+        return { version: "4.49", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
@@ -277,7 +283,10 @@ function mockBackend() {
             { path: `${SESSIONS}/c.jsonl`, modified: 1791600000, name: null, prompt: "Fix the RSS feed", usage: mockUsage(3, 0.12, 40000) },
             ...Array.from({ length: 14 }, (_, i) => ({ path: `${SESSIONS}/old${i}.jsonl`, modified: 1791000000 - i * 90000, name: null,
               prompt: `An older question number ${i + 1}`, usage: mockUsage(2, 0, 5000) })),
-          ].map((session) => ({ ...session, slot: mockPis.find((p) => p.file === session.path)?.slot || null,
+            // Two sub-agents of pi-multiagent (agent_team), under the conversation that ran them.
+            { path: `${SESSIONS}/sub1.jsonl`, modified: 1791790000, name: "agent_team r1/scout package:scout", prompt: "Map the RSS code", usage: mockUsage(2, 0, 30000), subagent: true },
+            { path: `${SESSIONS}/sub2.jsonl`, modified: 1791789000, name: "agent_team r1/reviewer package:reviewer", prompt: "Review the feed fix", usage: mockUsage(2, 0, 22000), subagent: true },
+          ].filter(alive).map((session) => ({ ...session, slot: mockPis.find((p) => p.file === session.path)?.slot || null,
             ...labelOf(session.path) })),
         };
       }
@@ -286,7 +295,7 @@ function mockBackend() {
         const now = Date.now() / 1000;
         const blog = ["Write the about page", "Fix the RSS feed dates", "Add tags to posts"].map((prompt, i) => ({
           path: `/home/leo/.pi/agent/sessions/--home-leo-clients-blog--/b${i}.jsonl`, modified: now - i * 3600 * 30, name: null, prompt,
-          slot: null, working: false, ...labelOf(`/home/leo/.pi/agent/sessions/--home-leo-clients-blog--/b${i}.jsonl`) }));
+          slot: null, working: false, ...labelOf(`/home/leo/.pi/agent/sessions/--home-leo-clients-blog--/b${i}.jsonl`) })).filter(alive);
         return { truncated: false, projects: [
           { project: "/home/leo/work", label: "~/work", running: mockPis.length, modified: now, pis: pisNow(), interrupted: null,
             sessions: setup.sessions.map((x) => ({ ...x, working: false })) },
@@ -478,6 +487,21 @@ function mockBackend() {
       return { file, title, category };
     },
     shortcutStatus: async () => false,
+    async sessionDelete(project, file) {
+      if (mockPis.some((p) => p.file === file)) throw new Error("a Pi runs this conversation: stop it first");
+      mockDeleted.add(file);
+      delete mockLabels[file];
+      mockLog("info", "vm.session-delete", { args: file });
+      return { file, deleted: true };
+    },
+    async categoryRename(project, old, name) {
+      let moved = 0;
+      for (const [file, label] of Object.entries(mockLabels)) {
+        if (label.category === old) { label.category = name.trim() || null; moved += 1; }
+      }
+      mockLog("info", "vm.category-rename", { args: `${old} -> ${name}` });
+      return { category: name.trim() || null, moved };
+    },
     async sessionMark(project, file, what, on) {
       mockLabels[file] = { ...mockLabels[file], [what]: on, ...(what === "archived" && on ? { pinned: false } : {}) };
       mockLog("info", "vm.mark", { args: `${file} ${what} ${on}` });
