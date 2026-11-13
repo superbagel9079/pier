@@ -54,10 +54,12 @@ test("a theme that gives only bg and fg gets every key, readable", () => {
   assertReadable(ui);
 });
 
-test("a theme whose own text is barely readable still gets readable dim text", () => {
-  // fg on bg is about 1.4:1 here: dim goes past fg, toward black, until it reads.
-  const { ui } = completeTheme({ id: "grey", name: "Grey", ui: { bg: "#808080", fg: "#9a9a9a" }, terminal: {} });
-  assertReadable(ui);
+test("a theme whose own text is barely readable gets readable text and dim text", () => {
+  // fg on bg about 1.4:1, dark and light: fg and dim go toward white or black until they read.
+  // Not a mid-grey bg: white is 3.95:1 on #808080, and black text darkens --strong under 4.5:1.
+  for (const [bg, fg] of [["#1e1e1e", "#333333"], ["#f4f4f4", "#d6d6d6"]]) {
+    assertReadable(completeTheme({ id: "faint", name: "Faint", ui: { bg, fg }, terminal: {} }).ui);
+  }
 });
 
 test("a translucent colour is flattened over the background", () => {
