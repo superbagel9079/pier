@@ -36,9 +36,11 @@ Reading this as: a desktop operator console for developers who drive Pi on a VM,
 
 ## The accessibility floor
 
-- **Contrast.** Text 4.5:1, dim text included, on every surface it is drawn on, a removed diff line included; the accent and the edges of fields 3:1. `completeTheme` makes every theme meet it, imported ones too; `client/test/themes.test.js` checks the built-in ones.
+- **Contrast.** Text 4.5:1, a theme's own and dim text alike, on every surface it is drawn on, the diff's tints included; the accent and the edges of fields 3:1. `completeTheme` makes every theme meet it, imported ones too; `client/test/themes.test.js` checks the built-in ones.
 - **Focus.** A 2 px accent ring, 2 px out. Tabs, checkboxes and the window buttons keep their 1 px ring, as they sit edge to edge.
 - **Dialogs.** Modal for the keyboard (`trapDialog` in `js/core.js`): Tab stays inside, Escape closes, the focus goes back where it was. The palette does not open over one.
 - **Names.** Every field has one: its label, or an `aria-label` where the placeholder is the visible label of a one-field search box.
 - **Pointer.** A hand on what can be clicked, not-allowed on what is disabled, set once in a base layer of `style.css`.
 - **Keyboard.** The splitters between the docks take the arrows (16 px; with Shift, 64); Enter, or a double click, puts the default width back.
+- **Size.** Ctrl+= and Ctrl+- zoom all of Pier. A control is at least 24 px wide or tall, a splitter grabbed 12 px wide.
+- **Said aloud.** Errors are `role="alert"`, the connection's status `aria-live`; colour alone never carries a meaning (an error is a bar and bold text).

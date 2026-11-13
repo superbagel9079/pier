@@ -10,6 +10,7 @@
         "minWidth": 760,
         "minHeight": 480,
         "dragDropEnabled": true,
+        "zoomHotkeysEnabled": true,
         "decorations": false
       }
     ]

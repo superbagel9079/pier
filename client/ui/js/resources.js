@@ -46,7 +46,7 @@ function scopeChoice(value = "user") {
 }
 
 function dialogError() {
-  return el("p", { className: "error", hidden: true });
+  return el("p", { className: "error", role: "alert", hidden: true });
 }
 
 /** The Skills page. onChange: after each load or change (the summary counts follow). */

@@ -1,6 +1,6 @@
 // The palette (Ctrl+Shift+K, everywhere, terminals included): type a few letters to reach
-// anything — a tab, a closed panel, a project (new Pi, last conversation, setup), a
-// conversation, a setting, a theme — and Enter. As in editors: nothing to aim at, no
+// anything: a tab, a closed panel, a project (new Pi, last conversation, setup), a
+// conversation, a setting, a theme, and Enter. As in editors: nothing to aim at, no
 // panel to find first.
 
 const palette = (() => {

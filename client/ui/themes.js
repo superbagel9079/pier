@@ -162,6 +162,9 @@ function completeTheme(theme) {
   const terminal = { ...theme.terminal };
   ui.green = flatten(ui.green || terminal.green, ui.bg) || "#3fb950";
   ui.red = flatten(ui.red || terminal.red, ui.bg) || "#f85149";
+  // The theme's own text 4.5:1 too, the diff's tints included (Solarized's falls short).
+  ui.fg = readable(ui.fg, luminance(ui.bg) < 0.5 ? "#ffffff" : "#000000",
+    [ui.bg, ui.panel, ui.field, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.green, 0.18), mix(ui.bg, ui.red, 0.18)], 4.5);
   // WCAG AA: dim text 4.5:1 wherever it is drawn: the background, the panels and the
   // surfaces style.css mixes from bg and fg (--surface 5%, --raise 10%, --strong 16%), a
   // field, a row under the pointer, and a removed line of a diff (--del-bg: the red at

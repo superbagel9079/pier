@@ -33,6 +33,7 @@ function showWorkspace() {
 }
 
 function showError(node, message) {
+  node.setAttribute("role", "alert"); // read out as it appears, wherever the error is
   node.textContent = message || "";
   node.hidden = !message;
   // Logged once per message: a panel that polls would repeat the same error.

@@ -197,7 +197,7 @@ button.secondary:hover { background: var(--hover); }
 button.link { background: none; border: none; color: var(--dim); padding: 0; }
 /* A word that acts: underlined under the pointer or the keyboard, not only brighter. */
 button.link:hover, button.link:focus-visible { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
-button.icon { background: none; border: none; color: var(--dim); padding: 0 var(--s2); font-size: var(--t-title); line-height: 1; }
+button.icon { background: none; border: none; color: var(--dim); padding: 0 var(--s2); font-size: var(--t-title); line-height: 1; min-width: 24px; }
 button.icon:hover { color: var(--fg); background: var(--hover); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 /* Pressed, a control gives a little (0.97): the click is felt before its result arrives. */
@@ -296,7 +296,9 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 /* A side never takes more than 45% of the window, however wide it was dragged. */
 .dock.side { flex: 0 1 auto; width: var(--width, 400px); max-width: 45%; }
 /* Between two docks: the background, a line only under the pointer. */
-.splitter { flex: 0 0 4px; cursor: col-resize; background: var(--bg); }
+.splitter { flex: 0 0 4px; cursor: col-resize; background: var(--bg); position: relative; z-index: 1; }
+/* Drawn 4 px wide, grabbed 12 px wide: the pointer need not land on a hairline. */
+.splitter::before { content: ""; position: absolute; inset: 0 -4px; }
 .splitter:hover, .splitter.dragging { background: var(--strong); }
 /* Reached by Tab (the arrows move it): the whole divider lit, its own focus ring. */
 .splitter:focus-visible { outline: none; background: var(--accent); }
@@ -480,7 +482,9 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 
 /* ---------------------------------------------------------------- dialogs */
 
-.overlay { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .55); display: flex; align-items: center; justify-content: center; padding: var(--s5); }
+/* The page behind steps back into the theme's own background: dark over a dark theme,
+   light over a light one, never a black veil over white. */
+.overlay { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 75%, transparent); display: flex; align-items: center; justify-content: center; padding: var(--s5); }
 .dialog { background: var(--surface); width: min(560px, 100%); max-height: 100%; overflow: auto; padding: var(--s5) var(--s5); box-shadow: 0 12px 40px rgba(0, 0, 0, .45); }
 .dialog.wide { width: min(860px, 100%); }
 .dialog textarea.editor { width: 100%; }
@@ -776,8 +780,10 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .log-lines .event { font-weight: 700; }
 .log-lines .fields { color: var(--dim); }
 .log-lines .trace { color: var(--dim); padding-left: 2ch; white-space: pre; overflow-x: auto; }
-.log-lines .entry.ERROR .lvl, .log-lines .entry.ERROR .event { color: var(--red, var(--fg)); }
-.log-lines .entry.WARN .lvl { font-weight: 700; }
+/* Errors marked as .error is (a bar and bold text), not by the theme's red, which reads
+   under 3:1 in many themes. */
+.log-lines .entry.ERROR { box-shadow: inset 3px 0 0 var(--fg); }
+.log-lines .entry.ERROR .lvl, .log-lines .entry.WARN .lvl { font-weight: 700; }
 /* Debug lines step back in the dim colour (4.5:1 by completeTheme), not by opacity, which
    took their details under 3.6:1. */
 .log-lines .entry.DEBUG { color: var(--dim); }

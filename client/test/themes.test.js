@@ -23,6 +23,10 @@ function assertReadable(ui) {
     const ratio = contrast(ui.dim, bg);
     assert.ok(ratio >= 4.5, `dim ${ui.dim} on ${name} ${bg}: ${ratio.toFixed(2)}:1`);
   }
+  for (const bg of [ui.bg, ui.panel, ui.field, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.green, 0.18), mix(ui.bg, ui.red, 0.18)]) {
+    const ratio = contrast(ui.fg, bg);
+    assert.ok(ratio >= 4.5, `fg ${ui.fg} on ${bg}: ${ratio.toFixed(2)}:1`);
+  }
   for (const bg of [ui.bg, ui.panel, ui.field, ui.hover]) {
     assert.ok(contrast(ui.accent, bg) >= 3, `accent ${ui.accent} on ${bg}`);
   }
@@ -38,7 +42,7 @@ test("contrast is WCAG's ratio", () => {
 });
 
 for (const theme of BUILTIN_THEMES) {
-  test(`${theme.id}: dim 4.5:1 everywhere, a removed diff line included; accent and edges 3:1`, () => {
+  test(`${theme.id}: text and dim 4.5:1 everywhere, the diff lines included; accent and edges 3:1`, () => {
     assertReadable(completeTheme(theme).ui);
   });
 }
