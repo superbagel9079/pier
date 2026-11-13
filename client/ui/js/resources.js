@@ -46,7 +46,7 @@ function scopeChoice(value = "user") {
 }
 
 function dialogError() {
-  return el("p", { className: "error", hidden: true });
+  return el("p", { className: "error", role: "alert", hidden: true });
 }
 
 /** The Skills page. onChange: after each load or change (the summary counts follow). */
@@ -54,6 +54,7 @@ function makeResourceManager(box, currentProject, onChange) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
   const filter = el("input", { type: "search", placeholder: "filter", spellcheck: false });
+  filter.setAttribute("aria-label", "Filter the list");
   const add = el("button", { className: "secondary", textContent: "+ Add ▾", title: "A new skill, a skill from this computer, a package" });
   const refresh = el("button", { className: "link", textContent: "refresh", title: "Read again what Pi loads" });
   const list = el("div", { className: "resource-lists" });
@@ -208,6 +209,7 @@ To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
       text = (await backend.api(["skill-read", where, currentProject(), name])).text;
     } catch (e) { showError(error, String(e)); return; }
     const area = el("textarea", { className: "editor", spellcheck: false, rows: 18, value: text });
+    area.setAttribute("aria-label", "SKILL.md");
     const problem = dialogError();
     const save = el("button", { textContent: "Save" });
     const dialog = resourceDialog(`${name} · SKILL.md`, [
@@ -336,6 +338,7 @@ function makePackageTools(box, currentProject, onDone) {
   const install = el("button", { className: "secondary", textContent: "Install a package…", title: "pi install npm:… / git:… / https://…, in Pi's sandbox on the VM" });
   install.addEventListener("click", () => installDialog(currentProject, onDone));
   const input = el("input", { type: "search", placeholder: "search the gallery", spellcheck: false });
+  input.setAttribute("aria-label", "Search the gallery");
   const results = el("ul", { className: "resource-items gallery" });
   box.replaceChildren(
     el("div", { className: "toolbar" }, install),

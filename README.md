@@ -103,13 +103,15 @@ All of it, with its limits: [Security](docs/security.md). To report a flaw: [SEC
 | [Outages and recovery](docs/troubleshooting.md) | what happens when something stops |
 | [Files and locations](docs/files.md) | every file on the VM, on the PC, in this repository |
 | [The picker's API](docs/api.md) | the commands Pier calls |
-| [Tests](docs/tests.md) | the suite on the VM, the unit tests, the Rust tests |
+| [Tests](docs/tests.md) | the suite on the VM, the unit tests, the Rust tests, the interface |
+| [Design](docs/design.md) | the look, the dithered pi mark, motion, the accessibility floor |
+| [The UI audit of 12 November 2026](docs/ui-audit-2026-11-12.md) | what it found, what changed, what is left |
 | [Known limits, and ideas for later](docs/limits.md) | what is left to check, and what could come |
 
 ## Contributing, releasing
 
 - The picker lives in `picker/NN_*.py`: edit the parts, then `python3 tools/bundle.py` writes `pier-picker.py` (the CI checks they match).
-- Tests: `python3 -B pier-picker-unit.py` anywhere, `pier-picker-tests.py` on a VM (the CI runs both), `cargo test` in `client/src-tauri`.
+- Tests: `python3 -B pier-picker-unit.py` anywhere, `pier-picker-tests.py` on a VM (the CI runs both), `cargo test` in `client/src-tauri`, `node --test client/test/dither.test.js client/test/themes.test.js` for the interface's helpers (Node 18 or later).
 - Releases: [RELEASING.md](RELEASING.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ## License

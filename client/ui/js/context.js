@@ -296,10 +296,13 @@ function askFolderNow(path) {
   $("#give-folder-name").textContent = path.split(/[\\/]/).filter(Boolean).pop() || path;
   $("#give-folder-path").textContent = path;
   dialog.hidden = false;
+  // Modal for the keyboard too: Tab stays inside, Escape is Cancel, the focus comes back.
+  const release = trapDialog($(".dialog", dialog), () => $("#give-folder-cancel").click());
   $("#give-folder-ro").focus();
   return new Promise((resolve) => {
     const choose = (choice) => {
       dialog.hidden = true;
+      release();
       for (const [id, handler] of handlers) $(id).removeEventListener("click", handler);
       resolve(choice);
     };
@@ -323,8 +326,17 @@ function askFolderNow(path) {
 // folders live here. Hand off turns each live share into a copy at the same path on
 // the VM (read-only shares stay read-only), so Pi, even mid-task, keeps its files.
 
+/** The hand-off dialog closed: its keyboard trap let go, the focus back where it was. */
+let releaseHandOff = null;
+function closeHandOff() {
+  $("#handoff").hidden = true;
+  releaseHandOff?.();
+  releaseHandOff = null;
+}
+
 async function openHandOff() {
   const live = await backend.shareList();
+  if (!$("#handoff").hidden) return; // a double click: already open, and trapped once
   const list = $("#handoff-shares");
   list.replaceChildren();
   for (const share of live) {
@@ -343,6 +355,7 @@ async function openHandOff() {
   $("#handoff-none").hidden = live.length > 0;
   showError($("#handoff-error"), "");
   $("#handoff").hidden = false;
+  releaseHandOff = trapDialog($("#handoff .dialog"), closeHandOff);
   $("#handoff-go").focus();
 }
 
@@ -370,7 +383,7 @@ async function handOff() {
     givenToPi()?.refresh?.();
     return;
   }
-  $("#handoff").hidden = true;
+  closeHandOff();
   if ($("#handoff-disconnect").checked) {
     await leave();
     toLogin(`Handed off. Pi keeps working on the VM: you can turn this computer off. Log in again to see what it did.${leftOut}`);
@@ -382,13 +395,7 @@ async function handOff() {
 
 $("#btn-handoff").addEventListener("click", openHandOff);
 $("#handoff-go").addEventListener("click", handOff);
-$("#handoff-cancel").addEventListener("click", () => { $("#handoff").hidden = true; });
-// Escape closes these two dialogs too, as it does the others.
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (!$("#give-folder").hidden) { e.preventDefault(); $("#give-folder-cancel").click(); }
-  else if (!$("#handoff").hidden) { e.preventDefault(); $("#handoff").hidden = true; }
-});
+$("#handoff-cancel").addEventListener("click", closeHandOff);
 
 /** What was given to Pi: Activity's view (Activity opened if it was closed). */
 function contextTab({ reveal = false } = {}) {

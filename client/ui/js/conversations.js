@@ -6,9 +6,9 @@
 /** A conversation's title: the name given in Pier, else in Pi, else its first question. */
 const conversationTitle = (s) => s?.title || s?.name || s?.prompt || "(a conversation not started yet)";
 
-/** Facts under a title, " · " between them: a line breaks between two facts, never
- *  inside one ("801k tokens" stays whole). */
-const factLine = (parts) => parts.filter(Boolean).map((t) => String(t).replace(/ /g, "\u00a0")).join(" · ");
+/** Facts under a title, " · " between them: a line breaks after a dot, never inside a
+ *  fact ("801k tokens" stays whole) nor before its dot (no "·" alone on a line). */
+const factLine = (parts) => parts.filter(Boolean).map((t) => String(t).replace(/ /g, "\u00a0")).join("\u00a0· ");
 
 function relTime(secs) {
   const d = Date.now() / 1000 - secs;

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: Pier's own commands (its dialogs to pick files and folders, and its confirmations of what only the user may decide, are opened by Rust, which keeps what they give), listening to its events, the page's yes-or-no questions (window.confirm, which the dialog plugin turns into a native message), notifications, and on Windows, where Pier draws its own title bar, moving, minimizing, maximizing and closing its own window. Nothing else: no other window API, no menu, path or tray API, no emitting events, no dialog to open files from the page.",
+  "description": "The main window: Pier's own commands (its dialogs to pick files and folders, and its confirmations of what only the user may decide, are opened by Rust, which keeps what they give), listening to its events, the page's yes-or-no questions (window.confirm, which the dialog plugin turns into a native message), notifications, and on Windows, where Pier draws its own title bar, moving, minimizing, maximizing and closing its own window; and the page's zoom (Ctrl+= and Ctrl+-, which on macOS and Linux Tauri's zoomHotkeysEnabled does through set-webview-zoom). Nothing else: no other window API, no menu, path or tray API, no emitting events, no dialog to open files from the page.",
   "windows": [
     "main"
   ],
@@ -13,6 +13,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-is-maximized",
     "core:window:allow-close",
+    "core:webview:allow-set-webview-zoom",
     "dialog:allow-message",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",

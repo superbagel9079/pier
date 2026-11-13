@@ -10,7 +10,7 @@
 <body>
   <header id="topbar">
     <span class="logo">Pier</span>
-    <button id="status" class="link dim" title="The connection, the picker on the VM: Settings > Connection" disabled>not connected</button>
+    <button id="status" class="link dim" aria-live="polite" title="The connection, the picker on the VM: Settings > Connection" disabled>not connected</button>
     <span id="target" class="dim" hidden></span>
     <nav>
       <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
@@ -31,7 +31,7 @@
   <!-- The palette (Ctrl+Shift+K): anything, by a few letters. -->
   <div id="palette" class="overlay palette" hidden>
     <div class="palette-box" role="dialog" aria-label="Go to">
-      <input id="palette-input" type="text" placeholder="a tab, a project, a conversation, a setting…" spellcheck="false" autocomplete="off">
+      <input id="palette-input" type="text" aria-label="Go to" placeholder="a tab, a project, a conversation, a setting…" spellcheck="false" autocomplete="off">
       <ul id="palette-list"></ul>
       <p class="hint">↑ ↓ to choose, Enter to go, Esc to close. Ctrl+Shift+K, from anywhere.</p>
     </div>
@@ -42,7 +42,7 @@
     <aside class="dock side" id="dock-left" data-dock="left">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab">+</button>
+        <button class="icon add" title="Add a tab" aria-label="Add a tab">+</button>
         <button class="icon collapse" title="Collapse"></button>
       </div>
       <div class="panes"></div>
@@ -51,7 +51,7 @@
     <section class="dock" id="dock-center" data-dock="center">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab">+</button>
+        <button class="icon add" title="Add a tab" aria-label="Add a tab">+</button>
       </div>
       <div class="panes"></div>
     </section>
@@ -59,7 +59,7 @@
     <aside class="dock side" id="dock-right" data-dock="right">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab">+</button>
+        <button class="icon add" title="Add a tab" aria-label="Add a tab">+</button>
         <button class="icon collapse" title="Collapse"></button>
       </div>
       <div class="panes"></div>
@@ -68,6 +68,7 @@
 
   <!-- Not connected: where the VM is, the password, the fingerprint. -->
   <section id="connect">
+    <pre id="connect-mark" class="mark" aria-hidden="true"></pre>
     <div id="view-setup" hidden>
       <h1>Connect to your VM</h1>
       <form id="setup-form" method="dialog" autocomplete="off">
@@ -189,7 +190,7 @@
         <label for="prefs-padding">Space around the terminal's text (px)</label>
         <input id="prefs-padding" type="number" min="0" max="40">
       </div>
-      <input id="prefs-termfont-other" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
+      <input id="prefs-termfont-other" aria-label="Another terminal font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
       <p id="prefs-termfont-note" class="hint" hidden></p>
       <details class="prefs-more">
       <summary>More: Pier's font, your own themes</summary>
@@ -197,7 +198,7 @@
         <label for="prefs-uifont">Pier's font (panels, menus, settings)</label>
         <select id="prefs-uifont"></select>
       </div>
-      <input id="prefs-uifont-other" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
+      <input id="prefs-uifont-other" aria-label="Another interface font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
       <div id="theme-swatches" class="swatches" aria-hidden="true"></div>
       <div class="actions">
         <button id="theme-import" class="secondary">Import a VS Code or Zed theme…</button>
@@ -409,7 +410,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   <template id="tpl-conversations">
     <div class="pane-conversations">
       <div class="toolbar">
-        <input class="conversation-filter" type="search" placeholder="search every conversation" spellcheck="false">
+        <input class="conversation-filter" type="search" aria-label="Search every conversation" placeholder="search every conversation" spellcheck="false">
         <label class="check small"><input class="show-archived" type="checkbox"> archived</label>
       </div>
       <p class="hint count"></p>
@@ -447,7 +448,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <div class="box-instructions">
         <h2>Instructions <span class="file-name dim small"></span></h2>
         <p class="hint">Read by Pi at the start of every session in this project, like a project's instructions in Claude.</p>
-        <textarea class="editor" spellcheck="false" rows="12"></textarea>
+        <textarea class="editor" spellcheck="false" rows="12" aria-label="Instructions"></textarea>
         <div class="editor-bar">
           <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
           <span class="bar-tools"><button class="link insert" title="Add a ready-made section to fill in: commands, conventions, git rules…">add a section ▾</button> <button class="link ask-pi" title="Pi reads the project and writes this file itself: the request is typed into Pi, press Enter there">let Pi write it</button> <button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
@@ -471,7 +472,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         <div class="box-append">
           <h3>Added to the system prompt <span class="file-name dim small"></span></h3>
           <p class="hint global-note" hidden></p>
-        <textarea class="editor" spellcheck="false" rows="5"></textarea>
+        <textarea class="editor" spellcheck="false" rows="5" aria-label="Added to the system prompt"></textarea>
         <div class="editor-bar">
           <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
           <span class="bar-tools"><button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
@@ -483,7 +484,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <h3>Replaces the system prompt <span class="file-name dim small"></span></h3>
           <p class="hint">Replaces Pi's own instructions entirely, including how it uses its tools. Leave it empty unless you know why you need it.</p>
           <p class="hint global-note" hidden></p>
-        <textarea class="editor" spellcheck="false" rows="5"></textarea>
+        <textarea class="editor" spellcheck="false" rows="5" aria-label="Replaces the system prompt"></textarea>
         <div class="editor-bar">
           <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
           <span class="bar-tools"><button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
@@ -522,7 +523,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         <p class="notice restore-note" hidden></p>
         <ul class="points"></ul>
         <div class="toolbar save-row">
-          <input class="point-name" placeholder="name (optional)" maxlength="120">
+          <input class="point-name" aria-label="Name of the restore point (optional)" placeholder="name (optional)" maxlength="120">
           <button class="secondary save-point">Save a restore point now</button>
           <button class="link refresh-points">refresh</button>
         </div>
@@ -542,7 +543,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <option value="1">warnings and errors</option>
           <option value="0">errors only</option>
         </select>
-        <input class="search" type="search" placeholder="filter" spellcheck="false">
+        <input class="search" type="search" aria-label="Filter the log" placeholder="filter" spellcheck="false">
         <label class="check small"><input type="checkbox" class="follow" checked> follow</label>
         <button class="link copy-report" title="Versions, connection and the end of both logs, on the clipboard">copy a report</button>
       </div>
@@ -561,6 +562,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   <script src="js/mock.js"></script>
   <script src="js/core.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/dither.js"></script>
   <script src="js/vm.js"></script>
   <script src="js/connect.js"></script>
   <script src="js/workspace.js"></script>

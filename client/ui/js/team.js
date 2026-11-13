@@ -170,12 +170,13 @@ function makeTeamManager(box, currentProject) {
   }
 
   function taskDialog() {
-    const title = el("input", { placeholder: "what to do, in a line", spellcheck: false });
+    const title = el("input", { id: "task-title", placeholder: "what to do, in a line", spellcheck: false });
     const description = el("textarea", { className: "editor", rows: 8, placeholder: "the details: what done looks like, files, constraints", spellcheck: false });
+    description.setAttribute("aria-label", "Details");
     const problem = dialogError();
     const go = el("button", { textContent: "Add the task" });
     const dialog = resourceDialog("A task for the Pis", [
-      el("div", { className: "grid fields" }, el("label", { textContent: "Title" }), title), description,
+      el("div", { className: "grid fields" }, el("label", { htmlFor: "task-title", textContent: "Title" }), title), description,
       el("p", { className: "hint", textContent: "An issue labelled pi-task in the repository: every Pi of the team can take it." }), problem], [go]);
     go.addEventListener("click", async () => {
       go.disabled = true;
@@ -211,6 +212,7 @@ async function giveDialog(project, session) {
   if (!people.collaborators.length) who.value = OTHER;
   who.addEventListener("change", () => { other.hidden = who.value !== OTHER; if (!other.hidden) other.focus(); });
   const note = el("textarea", { className: "editor", rows: 4, placeholder: "a word for them: where you stopped, what is left (optional)", spellcheck: false });
+  note.setAttribute("aria-label", "A word for them (optional)");
   const problem = dialogError();
   const go = el("button", { textContent: "Give it" });
   const dialog = resourceDialog(`Give "${conversationTitle(session)}" to a colleague`, [

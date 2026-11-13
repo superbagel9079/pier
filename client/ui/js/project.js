@@ -5,8 +5,8 @@
 // ============================================================================
 
 const STATES = {
-  modifying: { mark: "✎", label: "Being modified", live: true },
-  reading: { mark: "◐", label: "Being read", live: true },
+  modifying: { mark: "✎", label: "Being modified" },
+  reading: { mark: "◐", label: "Being read" },
   modified: { mark: "✓", label: "Modified" },
   read: { mark: "●", label: "Read" },
   error: { mark: "!", label: "Failed" },
@@ -109,7 +109,7 @@ function makeProject(tab) {
     const agent = $(".agent", tab.pane);
     agent.replaceChildren();
     if (!activity?.session) { agent.textContent = "no session yet"; return; }
-    agent.append(el("span", { className: activity.working ? "live-dot" : "dim", textContent: activity.working ? "working" : "idle" }));
+    agent.append(el("span", { className: activity.working ? "" : "dim", textContent: activity.working ? "working" : "idle" }));
     const usage = $(".usage", tab.pane);
     const u = activity.usage;
     usage.hidden = !u;
@@ -155,7 +155,7 @@ function makeProject(tab) {
         const li = el("li");
         const mark = e.state === "running" ? "…" : e.state === "error" ? "!" : "·";
         li.append(
-          el("span", { textContent: mark, className: e.state === "running" ? "live-dot" : "" }),
+          el("span", { textContent: mark }),
           el("span", { className: "dim", textContent: e.tool }),
           el("span", { className: "path", textContent: e.target }),
         );
@@ -189,7 +189,7 @@ function makeProject(tab) {
       li.addEventListener("click", (e) => { if (e.detail === 1) openDiff(path, base); });
     }
     li.append(
-      el("span", { textContent: spec.mark, className: spec.live ? "live-dot" : "" }),
+      el("span", { textContent: spec.mark }),
       splitPath(path),
     );
     if (f) {
@@ -280,7 +280,7 @@ function makeProject(tab) {
       const badge = $(":scope > .node > .badge", li);
       const git = $(":scope > .node > .git", li);
       badge.textContent = f ? (STATES[f.state]?.mark ?? "?") : li.classList.contains("dir") && touchedDirs.has(rel) ? "•" : "";
-      badge.className = "badge" + (f && STATES[f.state]?.live ? " live-dot" : "");
+      badge.className = "badge";
       git.textContent = activity.git[rel] || "";
       git.title = gitWords(activity.git[rel]);
     }
