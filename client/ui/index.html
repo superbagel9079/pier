@@ -183,6 +183,10 @@
       <div class="grid">
         <label for="prefs-theme">Theme</label>
         <select id="prefs-theme"></select>
+        <label for="prefs-uifont">Pier's font (panels, menus, settings)</label>
+        <select id="prefs-uifont"></select>
+        <label for="prefs-corners">Corners (buttons, menus, fields)</label>
+        <select id="prefs-corners"><option value="0">Square</option><option value="4">Slight</option><option value="8">Round</option></select>
         <label for="prefs-font">Terminal font size</label>
         <input id="prefs-font" type="number" min="8" max="28">
         <label for="prefs-termfont">Terminal font</label>
@@ -191,14 +195,10 @@
         <input id="prefs-padding" type="number" min="0" max="40">
       </div>
       <input id="prefs-termfont-other" aria-label="Another terminal font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
+      <input id="prefs-uifont-other" aria-label="Another interface font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
       <p id="prefs-termfont-note" class="hint" hidden></p>
       <details class="prefs-more">
-      <summary>More: Pier's font, your own themes</summary>
-      <div class="grid">
-        <label for="prefs-uifont">Pier's font (panels, menus, settings)</label>
-        <select id="prefs-uifont"></select>
-      </div>
-      <input id="prefs-uifont-other" aria-label="Another interface font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
+      <summary>More: your own themes</summary>
       <div id="theme-swatches" class="swatches" aria-hidden="true"></div>
       <div class="actions">
         <button id="theme-import" class="secondary">Import a VS Code or Zed theme…</button>

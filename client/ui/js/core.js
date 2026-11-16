@@ -86,7 +86,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  panelSide: "right", termFont: "", termPadding: 8, uiFont: "" };
+  panelSide: "right", termFont: "", termPadding: 8, uiFont: "", corners: 0 };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -114,15 +114,23 @@ function applyTermPadding() {
 }
 applyTermPadding();
 
-/** Pier's own font (Settings > Appearance): the terminals' by default, a console font
- *  chosen apart, or the system's sans. */
-const UI_SANS = "__sans__";
+/** Pier's own font (Settings > Appearance): the system's sans by default, the terminals'
+ *  font, or any font chosen apart. "__sans__" was the sans when the terminals' was the default. */
+const UI_TERM = "__term__";
 const UI_SANS_FAMILY = '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif';
+if (prefs.uiFont === "__sans__") prefs.uiFont = "";
 function uiFontFamily() {
-  if (prefs.uiFont === UI_SANS) return UI_SANS_FAMILY;
+  if (prefs.uiFont === UI_TERM) return termFontFamily();
   const name = String(prefs.uiFont || "").replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
-  return name ? `"${name}", ${termFontFamily()}` : termFontFamily();
+  return name ? `"${name}", ${UI_SANS_FAMILY}` : UI_SANS_FAMILY;
 }
+
+/** Corners (Settings > Appearance): 0 (square), 4 or 8 px, on every box. */
+function applyCorners() {
+  const px = [0, 4, 8].includes(Number(prefs.corners)) ? Number(prefs.corners) : 0;
+  document.documentElement.style.setProperty("--r", `${px}px`);
+}
+applyCorners();
 
 /** The two faces of the panels, as CSS variables: the interface, and what is code
  *  (paths, branches, logs, diffs) in the terminals' font. Set again when either changes. */

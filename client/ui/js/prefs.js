@@ -47,6 +47,7 @@ function openPrefs() {
   $("#prefs-padding").value = prefs.termPadding;
   fillTermFonts();
   fillUiFonts();
+  $("#prefs-corners").value = String(prefs.corners);
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -325,6 +326,7 @@ $("#theme-save").addEventListener("click", () => {
   closeThemeEditor();
   fillThemes();
 });
+$("#prefs-corners").addEventListener("change", (e) => { prefs.corners = Number(e.target.value); savePrefs(); applyCorners(); });
 $("#prefs-font").addEventListener("change", (e) => {
   prefs.fontSize = Math.min(28, Math.max(8, Number(e.target.value) || PREFS_DEFAULT.fontSize));
   e.target.value = prefs.fontSize;
@@ -393,23 +395,23 @@ $("#prefs-termfont-other").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.stopPropagation(); fillTermFonts(); }
 });
 $("#prefs-termfont-other").addEventListener("change", (e) => { if (e.target.value.trim()) setTermFont(e.target.value); });
-/** Pier's own font: the same list, after "the terminals'" and the system's sans. */
+/** Pier's own font: the system's sans, the terminals', then the same list. */
 function fillUiFonts() {
   installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
   const select = $("#prefs-uifont");
   const chosen = prefs.uiFont || "";
   select.replaceChildren();
-  select.add(new Option("Same as the terminals (default)", ""));
+  select.add(new Option("The system's sans, Segoe UI (default)", ""));
+  select.add(new Option("Same as the terminals", UI_TERM));
   for (const name of installedFonts) select.add(new Option(name, name));
-  if (chosen && chosen !== UI_SANS && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
-  select.add(new Option("The system's sans (Segoe UI)", UI_SANS));
+  if (chosen && chosen !== UI_TERM && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
   select.add(new Option("Other font…", OTHER_FONT));
   select.value = chosen;
   $("#prefs-uifont-other").hidden = true;
 }
 
 function setUiFont(raw) {
-  const name = raw === UI_SANS ? UI_SANS : String(raw).replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
+  const name = raw === UI_TERM ? UI_TERM : String(raw).replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
   prefs.uiFont = name;
   savePrefs();
   applyFonts();
