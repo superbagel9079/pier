@@ -1,8 +1,6 @@
 // Diff tabs.
 
-// ============================================================================
 // Diff: what changed in a file, from git and from Pi's own edits
-// ============================================================================
 
 const DIFF_LINES_MAX = 5000; // a lockfile or a minified file would freeze the page
 const DIFF_LINE_MAX = 4000;   // characters of one line: a minified line of 2 MB would be one block

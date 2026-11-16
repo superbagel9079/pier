@@ -1,8 +1,6 @@
 // The Activity panel: what Pi reads and changes, the files, what it was given, the restore points.
 
-// ============================================================================
 // Project: what the agent reads and changes, and the files
-// ============================================================================
 
 const STATES = {
   modifying: { mark: "✎", label: "Being modified" },

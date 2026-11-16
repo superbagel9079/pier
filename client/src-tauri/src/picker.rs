@@ -1,6 +1,5 @@
-//! The picker Pier carries: pier-picker.py is built into the executable, and
-//! installed on the VM, where the picker command points, when it is missing or older.
-//! Only Pier is to install: nothing to copy by hand.
+//! The picker Pier carries: pier-picker.py is built into the executable and installed on the
+//! VM, where the picker command points, when missing or older.
 
 use std::cmp::Ordering;
 
@@ -17,9 +16,8 @@ fn constant(name: &str) -> Option<&'static str> {
     })
 }
 
-/// The script as it goes to the VM: Unix line ends whatever the file has here. A
-/// Windows checkout or editor can write CRLF, and on Linux the first line then names
-/// "python3" followed by a carriage return, which does not exist.
+/// The script as it goes to the VM, with Unix line ends: CRLF from a Windows checkout would
+/// make the first line name "python3" plus a carriage return, which does not exist.
 pub fn script_for_vm() -> Vec<u8> {
     SCRIPT.replace("\r\n", "\n").into_bytes()
 }
@@ -38,10 +36,8 @@ pub fn compare_versions(a: &str, b: &str) -> Ordering {
     parts(a).cmp(&parts(b))
 }
 
-/// The shell script that installs the picker at the path of `remote_command`, reading
-/// the new script on its stdin. It checks the new file runs and says the expected
-/// version before replacing anything; the replaced file is kept next to it, as
-/// NAME.previous. Only a plain path can be installed to: "~/bin/pi-pick", "/opt/pi-pick".
+/// Shell script installing the picker (on stdin) at `remote_command`'s path: checks the new
+/// file runs before replacing, keeping the old as NAME.previous. Plain paths only.
 pub fn install_script(remote_command: &str, version: &str) -> Result<String, String> {
     let path = remote_command.trim();
     let plain = path.chars().all(|c| c.is_ascii_alphanumeric() || "._/+-~".contains(c));
@@ -58,13 +54,10 @@ pub fn install_script(remote_command: &str, version: &str) -> Result<String, Str
         None => sh_quote(path),
     };
     let expected = sh_quote(version);
-    // No backslash anywhere: the script goes through the user's shell (bash, zsh or
-    // fish) inside single quotes.
+    // No backslash anywhere: the script goes through the user's shell inside single quotes.
     //
-    // The picker itself goes to NAME.lib/pier_picker.py, and NAME is a small launcher
-    // importing it: Python then keeps it compiled (__pycache__) instead of compiling its
-    // 5000 lines at every call, which cost about 100 ms each. NAME.previous is always a
-    // whole picker, which runs by itself.
+    // NAME is a launcher for NAME.lib/pier_picker.py, so Python keeps it compiled (5000 lines
+    // cost ~100 ms per call). NAME.previous is always a whole picker.
     Ok(format!(
         r#"set -e
 dest={dest}

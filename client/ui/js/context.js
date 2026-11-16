@@ -1,14 +1,10 @@
 // Given to Pi, a view of Activity: what was given to each project's Pi; Hand off; paste and drop.
 
-// ============================================================================
 // Context: everything given to a project's Pi
-// ============================================================================
 //
-// Whatever is pasted, dropped or added goes where it belongs: an image or a file is
-// copied into the project and mentioned in Pi; a folder makes Pier ask whether to
-// share it live (read-only, or read and write) or to copy it. The panel lists what
-// each project holds, read from the VM, plus the shares remembered on this computer,
-// and anything can be taken back with its ×.
+// Pasted, dropped or added things go where they belong: an image or file is copied into the
+// project and mentioned in Pi; a folder asks: share live (read-only or read-write) or copy.
+// The panel lists what each project holds (from the VM, plus remembered shares), with ×.
 
 const previews = new Map(); // saved path on the VM -> blob URL, for this session's pastes
 
@@ -318,13 +314,10 @@ function askFolderNow(path) {
   });
 }
 
-// ============================================================================
 // Hand off: Pi keeps working with this computer off
-// ============================================================================
 //
-// Pi runs on the VM and does not need this computer, except for live shares: those
-// folders live here. Hand off turns each live share into a copy at the same path on
-// the VM (read-only shares stay read-only), so Pi, even mid-task, keeps its files.
+// Pi runs on the VM and needs this computer only for live shares. Hand off turns each into a
+// copy at the same path on the VM (read-only stays read-only), so Pi keeps its files.
 
 /** The hand-off dialog closed: its keyboard trap let go, the focus back where it was. */
 let releaseHandOff = null;
@@ -407,10 +400,8 @@ function contextTab({ reveal = false } = {}) {
 /** Given to Pi, if it is open somewhere. */
 const givenToPi = () => workspace.find("project")?.given;
 
-// Ctrl+V anywhere in the window, terminals included. An image goes to Pi; files and
-// folders copied in the file manager go through Context (folders ask first). The
-// focus stays where it was, so you keep typing your question. Text pastes are left
-// alone: pasting text in a terminal works as usual.
+// Ctrl+V anywhere in the window: an image goes to Pi; copied files and folders go through
+// Context (folders ask first). Focus stays put; text pastes are left alone.
 document.addEventListener("paste", async (event) => {
   if ($("#workspace").hidden) return;
   const items = [...(event.clipboardData?.items || [])];
@@ -428,9 +419,7 @@ document.addEventListener("paste", async (event) => {
 
 backend.onClipboardSent((results) => contextTab().handleResults(results));
 
-// ============================================================================
 // Files and folders dropped on the window
-// ============================================================================
 
 backend.onDragDrop((kind, paths, position) => {
   const x = position ? position.x / devicePixelRatio : -1;

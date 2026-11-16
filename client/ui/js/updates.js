@@ -1,6 +1,5 @@
-// Updating Pier itself: Settings > Updates, and a word in the top bar when a new Pier is
-// out. The check, the download, the signature and the installation are Tauri's updater
-// (update_check and update_install in lib.rs).
+// Updating Pier: Settings > Updates, and a word in the top bar. Check, download, signature
+// and install are Tauri's updater (update_check, update_install in lib.rs).
 
 const UPDATE_EVERY = 6 * 3600 * 1000;
 let updateFound = null; // { current, version, notes, date } once a newer Pier is known

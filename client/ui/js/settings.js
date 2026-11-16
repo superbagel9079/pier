@@ -1,9 +1,7 @@
 // Settings > Agents and Network & sandbox: keys of the picker's config.toml on the VM
 // (and Pi's own default model), read and written through the picker, which checks each.
 
-// ============================================================================
 // The picker's config, from Pier
-// ============================================================================
 
 let pickerConfig = null;   // {keys: {key: {value, default, set}}, path, warning, network_builtin, writable}
 let piModels = null;       // {models: ["provider/id"], providers, default, problem}

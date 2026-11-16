@@ -1,12 +1,8 @@
 // Pi's requests waiting for the user: a merge, a review, a repository to create, a command
 // on a machine. the top bar, Repository > Git and the Labs tab show them the same way.
 
-// ============================================================================
-// Each request shows exactly what will be done: the command whole, the pull request with
-// the commit it is at, the account a repository goes to. Then what Pi says, marked as
-// Pi's, then Refuse and Approve. The picker does what the request holds and nothing else:
-// a pull request that moved on since is not merged (see "approvals" in the picker).
-// ============================================================================
+// Each request shows exactly what will be done, then what Pi says, marked as Pi's. The picker
+// does only what the request holds: a pull request that moved on is not merged.
 
 const MERGE_NAMES = { merge: "merge commit", squash: "squash", rebase: "rebase" };
 

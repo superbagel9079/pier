@@ -83,9 +83,8 @@ DEFAULTS = {
     "helper_model": "",                # the read-only helpers' model by default (see consult); "" Pi's default
 }
 
-# Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its
-# model providers, npm and GitHub (packages, git over https). The rest is refused and
-# logged (net.blocked): add what you need to network_allow in config.toml.
+# Where Pi may connect in its sandbox when network_limit is on: model providers, npm,
+# GitHub. The rest is refused and logged (net.blocked): add hosts to network_allow.
 NETWORK_ALLOW = (
     ".anthropic.com", "claude.ai",          # Claude, Claude Max sign-in
     "openrouter.ai", ".openrouter.ai",
@@ -104,24 +103,19 @@ NAME_MAX_BYTES = 255
 # refused on top of the "--" given to git clone.
 CLONE_URL_RE = re.compile(r"(?:https?|ssh|git|file)://\S+|[\w.-]+@[\w.-]+:\S+")
 
-# A repository's own config can name a program that git status runs: core.fsmonitor.
-# It is switched off here. Clean filters declared in .git/config can still run; see
-# git_status.
+# A repository's own config can name a program git status runs (core.fsmonitor): off here.
+# Clean filters in .git/config can still run; see git_status.
 GIT_OPTIONS = ["--no-optional-locks", "-c", "core.fsmonitor=false"]
 GIT_TIMEOUT = 5
 
-# Under an SSH RemoteCommand the PATH is the bare system one. These are appended,
-# never prepended, so the user's own PATH wins.
-# Where a user's own programs live, first: what you installed for yourself wins over a
-# copy installed for everyone, as your ~/.profile would order it (an SSH command does not
-# read it). /usr/local/bin last, for systems whose PATH lacks it.
+# Under an SSH RemoteCommand PATH is the bare system one: these are appended, never
+# prepended, so the user's PATH wins. User bins first; /usr/local/bin last.
 USER_PATH = ("~/.npm-global/bin", "~/.local/bin", "~/bin", "~/.bun/bin")
 SYSTEM_PATH = ("/usr/local/bin",)
 EXTRA_PATH = USER_PATH + SYSTEM_PATH
 
-# The picker was called pi-dir-picker. Its folders are moved to the new name the first
-# time it runs (see migrate_old_name); its tmux server keeps the old name for as long
-# as it runs, so that the Pis started before are still found.
+# Renamed from pi-dir-picker: folders move on first run (see migrate_old_name); the tmux
+# server keeps the old name while it runs, so earlier Pis are still found.
 OLD_NAME = "pi-dir-picker"
 
 

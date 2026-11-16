@@ -1,8 +1,7 @@
 # --- agent activity --------------------------------------------------------------------
 #
-# Pi appends every message of a session to a JSONL file as it happens: an assistant
-# message lists its tool calls (name, arguments), and each call's result follows when
-# the tool is done. A call without a result yet is therefore running right now.
+# Pi appends each message of a session to a JSONL file as it happens: an assistant message
+# lists its tool calls, each result follows when done, so a call without one is running now.
 
 # Tools that touch one file, given as arguments["path"].
 FILE_TOOLS = {"read": "read", "edit": "modify", "write": "modify"}
@@ -58,12 +57,9 @@ def mtime_of(path):
         return 0  # gone between listdir and here: as old as can be
 
 
-# Sub-agents are Pis of their own, writing in the project's sessions folder: Pier's
-# read-only helpers (the consult tool of an orchestrator or a worker, see workers), each
-# named "pier-helper <role>: <title>", and pi-multiagent's (pi install npm:pi-multiagent),
-# "agent_team <run>/<step> <agent>". They are the parent Pi's work, not the user's
-# conversations: never taken as the latest one or as a Pi's own, and listed apart (see
-# api_conversations).
+# Sub-agents are Pis of their own in the project's sessions folder: Pier's helpers
+# ("pier-helper <role>: <title>") and pi-multiagent's ("agent_team <run>/<step> <agent>").
+# The parent's work: never the latest conversation, listed apart (see api_conversations).
 SUBAGENT_PREFIX = ("pier-helper ", "agent_team ")
 
 

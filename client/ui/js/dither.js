@@ -1,9 +1,5 @@
-// Pier's 1-bit motif: ordered (Bayer) dithering, and the Pier mark drawn with it in text.
-//
-// The mark is the icon's own drawing (client/icon-source.png, a 16×16 grid of 64 px
-// cells): nothing new is invented, it is shown the way a 1-bit screen shows tone. Text,
-// not an image: it takes the theme's colour and the console font by itself, costs no
-// download, and goes in through textContent (the CSP allows no HTML parsing).
+// Pier's 1-bit motif: ordered (Bayer) dithering, and the Pier mark (icon-source.png) in text.
+// Text takes the theme's colour and font; set via textContent (the CSP allows no HTML).
 
 /** The 4×4 Bayer matrix: the order in which an ordered dither lights its dots. */
 const BAYER_4 = [
@@ -38,23 +34,16 @@ function bayerThreshold(x, y) {
   return (BAYER_4[y & 3][x & 3] + 0.5) / 16;
 }
 
-/** tone (0 to 1, clamped) as one of levels steps at cell (x, y). Between two steps the
- *  cell's threshold decides, so a flat tone comes out as its exact share of brighter
- *  cells: 0.25 lights 4 cells of every 16.
- *  ditherLevel(0.5, 0, 0, 2) → 1; ditherLevel(0.5, 1, 0, 2) → 0. */
+/** tone (0 to 1, clamped) as one of levels steps at cell (x, y); between steps the threshold
+ *  decides: 0.25 lights 4 of 16. ditherLevel(0.5, 0, 0, 2) → 1; (0.5, 1, 0, 2) → 0. */
 function ditherLevel(tone, x, y, levels) {
   const scaled = Math.min(1, Math.max(0, tone)) * (levels - 1);
   const base = Math.floor(scaled);
   return Math.min(levels - 1, base + (scaled - base > bayerThreshold(x, y) ? 1 : 0));
 }
 
-/** The mark as lines of text, one string. Each cell of the icon becomes cols characters
- *  by rows lines; a character is about twice as tall as it is wide, so cols = 2 × rows
- *  keeps the cells square. The light falls from the top left: the glyph's tone is
- *  dithered across MARK_RAMP, so the shading reads as a 1-bit screen's while the edges stay
- *  exactly the icon's. progress (0 to 1) draws only the cells whose threshold it has
- *  passed, in Bayer order: the reveal. Every call returns as many lines, whatever progress.
- *  markText({ cols: 2, rows: 1 }) → 10 lines, the widest 20 characters. */
+/** The mark as one string of lines; each icon cell is cols × rows characters (cols = 2 × rows)
+ *  lit from the top left. progress (0 to 1) draws cells in Bayer order; same line count. */
 function markText({ cols = 2, rows = 1, progress = 1 } = {}) {
   const width = PIER_MARK[0].length * cols;
   const height = PIER_MARK.length * rows;
@@ -77,10 +66,8 @@ function markText({ cols = 2, rows = 1, progress = 1 } = {}) {
   return lines.join("\n");
 }
 
-/** Draws the mark into pre, once per element. reveal: the cells come in Bayer order over
- *  MARK_REVEAL_MS (the way a 1-bit screen fades in), easing out, and not at all when the
- *  system asks for less motion. Every frame has the same number of lines, so nothing
- *  around the mark moves while it appears. */
+/** Draws the mark into pre, once per element. reveal: cells come in Bayer order over
+ *  MARK_REVEAL_MS, not at all if the system asks for less motion. Line count never changes. */
 function showMark(pre, { cols = 2, rows = 1, reveal = false } = {}) {
   if (!pre || pre.dataset.drawn) return;
   pre.dataset.drawn = "1";

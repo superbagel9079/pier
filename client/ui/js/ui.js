@@ -1,7 +1,5 @@
-// What the panels build their lists with, written once: a button that reads as a link,
-// the two-line row of a list (a name and its actions, then its details), the notice line
-// of a page, a path of the VM shortened to ~. (el, visibleText, the dialogs: core.js and
-// resources.js.)
+// What the panels build lists with: a link-like button, the two-line list row, a notice line,
+// a VM path shortened to ~. (el, visibleText and the dialogs: core.js and resources.js.)
 
 /** A button in the look of a link: "open", "copy link", "stop". */
 function linkButton(text, title, run) {
@@ -10,9 +8,8 @@ function linkButton(text, title, run) {
   return b;
 }
 
-/** A row of a list (.resource-items): the name, then its actions on the right, then each
- *  detail on a line of its own (a string, or a list of them; empty ones left out). title:
- *  the whole row's tooltip. */
+/** A row of a list (.resource-items): name and actions, then each detail on its own line
+ *  (a string or a list; empty ones left out). title: the row's tooltip. */
 function itemLine(name, details, title, ...actions) {
   return el("li", { className: "two-lines", title: title || "" },
     el("div", { className: "line" }, el("span", { className: "name", textContent: name }), el("span", { className: "dim" }), ...actions),
@@ -24,9 +21,8 @@ function noticeSetter(node) {
   return (text) => { node.hidden = !text; node.textContent = text || ""; };
 }
 
-/** container's list drawn again by rebuild(), without losing the user's place: the
- *  focused control (found again in its row by data-key, then by its text) and the
- *  scroll. A list redrawn every few seconds no longer throws the focus away. */
+/** container's list drawn again by rebuild() keeping the user's place: the focused control
+ *  (found by data-key, then by text) and the scroll. */
 function keepPlace(container, rebuild) {
   const active = document.activeElement;
   const row = container.contains(active) ? active.closest("[data-key]") : null;
@@ -54,9 +50,8 @@ function pressable(node) {
   return node;
 }
 
-/** A path where its end matters, in a narrow place: the folder (cut short if need be)
- *  then the name, always whole; "rapport-…-long.txt.exe" no longer shows as "rapport-…".
- *  The whole path in the title. */
+/** A path where its end matters, in a narrow place: the folder (cut if need be), then the
+ *  whole name. The whole path in the title. */
 function splitPath(path, className = "path") {
   const text = visibleText(path);
   const cut = text.lastIndexOf("/");

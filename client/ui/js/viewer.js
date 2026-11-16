@@ -1,9 +1,7 @@
 // File tabs: a project file read from the VM, with its line numbers and its syntax in
 // the theme's colors; Markdown also shown as a page.
 
-// ============================================================================
 // Viewer: one file of a project, read only
-// ============================================================================
 
 /** Opens (or shows) a project file next to the main terminal. */
 function openFile(rel, project) {

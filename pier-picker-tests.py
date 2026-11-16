@@ -6,21 +6,18 @@
 # Run: python3 -B pier-picker-tests.py
 # Exit 0 when everything passes, 1 when an assertion fails, 2 when tmux is absent.
 #
-# tmux is the ground truth, not a hand-written parser. A first version replayed the
-# pty byte stream into a grid; curses redraws incrementally and the replay invented
-# stale rows that a real terminal never shows. tmux IS a terminal, so its pane content
-# settles the question. tmux is a test-only dependency.
+# tmux is the ground truth, not a hand-written parser: replaying the pty stream into a grid
+# invented stale rows a real terminal never shows. tmux is a test-only dependency.
 #
-# Note for whoever edits this later: curses calls keypad(True), which emits smkx and
-# puts the terminal in application cursor mode. tmux send-keys names keys directly, so
-# the suite does not care about SS3 against CSI, which is exactly the fragility removed.
+# curses keypad(True) sets application cursor mode; send-keys names keys directly, so SS3
+# against CSI does not matter here.
 #
-# Isolation: every session gets its own HOME, no XDG_* overrides, no PI_BIN, and its
-# own tmux socket for Pi sessions. Every test that presses p, P or c installs a fake pi
-# first: on the Pi VM the real one is on PATH and must never be started by the suite.
+# Isolation: every session gets its own HOME, no XDG_* overrides, no PI_BIN, its own tmux
+# socket for Pi sessions. Tests that press p, P or c install a fake pi first: the real one is
+# on PATH on the Pi VM and must never be started by the suite.
 #
-# The picker runs inside the suite's tmux, so it sees $TMUX and starts Pi directly.
-# The tmux-mode test unsets TMUX to exercise the persistent sessions.
+# The picker runs inside the suite's tmux, so it sees $TMUX and starts Pi directly. The
+# tmux-mode test unsets TMUX for persistent sessions.
 
 import importlib.util
 import json

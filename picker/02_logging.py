@@ -1,14 +1,10 @@
 # --- logging -------------------------------------------------------------------------
 #
-# One line per event, in ~/.local/state/pier-picker/picker.log, readable by its owner
-# only:
+# One line per event in picker.log (~/.local/state/pier-picker/), owner-readable only:
 #   2026-10-12T14:32:01.123Z INFO  api.paste-image pid=4242 req=7f3a-12 ms=41 saved=...
-# Times are UTC, like Pier's own log, so the two read side by side; req is the id
-# Pier gave the call. A crash adds its traceback on the lines below, indented. The
-# reads Pier makes every few seconds are debug lines, written only with
-# DEVBOX_LOG=debug. Logging never breaks anything: when the disk is full or the home is
-# read-only, lines are lost and that is all. Passwords never come here, and what is
-# typed into Pi is logged as its length only.
+# UTC times like Pier's log; req is the id Pier gave the call. A crash adds its indented
+# traceback. Periodic reads are debug lines (DEVBOX_LOG=debug). Logging never breaks
+# anything: lines are lost on a full disk. No passwords; typed text is logged as length.
 
 LOG_MAX_BYTES = 1024 * 1024
 LOG_KEEP = 3  # picker.log, picker.log.1, picker.log.2

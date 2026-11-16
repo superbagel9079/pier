@@ -4,11 +4,8 @@ use crate::*;
 
 // --- terminals ----------------------------------------------------------------------
 
-/// The command line of a "pi" terminal: the picker's --attach-control, which opens
-/// the Pi (see open_pi there) and attaches to it in tmux's control mode (term.rs).
-/// Only what Pier itself asks is accepted: the Pi used last or a new one (nothing),
-/// a new Pi (--new), an orchestrator (--orchestrator), a running one (--slot NAME), or a conversation (--continue,
-/// --session FILE): its Pi if one runs it, else a new Pi on it.
+/// The command line of a "pi" terminal: the picker's --attach-control (see open_pi there).
+/// Only Pier's forms: nothing, --new, --orchestrator, --slot NAME, --continue, --session FILE.
 pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
     let slot_name = |name: &str| name.starts_with("pi-") && name.len() < 100 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     let allowed = match args {
@@ -80,9 +77,8 @@ pub(crate) fn lab_name(name: &str) -> bool {
     chars.next().is_some_and(|c| c.is_ascii_lowercase()) && name.len() <= 40 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// kind "picker" runs the picker, "shell" the login shell, "pi" Pi itself in `project`
-/// (with `args`: nothing, --continue, or --session FILE), "update" `pi update` (see
-/// update_command).
+/// kind "picker" runs the picker, "shell" the login shell, "pi" Pi in `project` (with `args`),
+/// "update" `pi update` (see update_command).
 #[tauri::command]
 pub(crate) async fn term_open(
     app: AppHandle,
@@ -202,9 +198,8 @@ pub(crate) async fn session_mark(app: AppHandle, state: State<'_, AppState>, pro
 
 // --- the watch -------------------------------------------------------------------------
 
-/// Opens the watch (closing one already open) and says what to follow. What it sends
-/// comes as "vm-update" events; "watch-ended" when it stops (the connection dropped):
-/// the interface opens it again.
+/// Opens the watch (closing one already open); events come as "vm-update", and "watch-ended"
+/// when the connection drops, so the interface opens it again.
 #[tauri::command]
 pub(crate) async fn watch_start(app: AppHandle, state: State<'_, AppState>, want: Value) -> Result<u32, String> {
     let settings = settings(&state)?;

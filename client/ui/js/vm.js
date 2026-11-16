@@ -1,7 +1,5 @@
-// What the VM tells as it changes. One watch (see api_watch in the picker) feeds every
-// tab: a tab says what it follows (vm.follow) and listens (vm.on). Nothing is asked
-// again and again: the picker sends a part only when it changed. While the watch is
-// being reopened (the connection dropped), tabs keep what they last showed.
+// What the VM tells as it changes. One watch (api_watch in the picker) feeds every tab: a tab
+// says what it follows (vm.follow) and listens (vm.on).
 
 /** JSON with sorted keys: the same value always gives the same text. */
 function canon(value) {
@@ -21,9 +19,8 @@ const vm = (() => {
   let retry = null;
   let watchId = null; // the id of the watch this side started last
 
-  // While the window is hidden (in the tray, minimized), only the projects are followed:
-  // they bring the "Pi finished" notifications. The panels' parts come back when the
-  // window does, rebuilt fresh; nothing is computed on the VM for a window nobody sees.
+  // Window hidden: only projects are followed (for "Pi finished" notices);
+  // the panels' parts come back, rebuilt, with the window.
   const quiet = () => (document.hidden ? { ...Object.fromEntries(Object.keys(want).map((k) => [k, null])), projects: want.projects, approvals: want.approvals, team: want.team } : want);
   // A message to the watch that fails is said in the log, not dropped in silence.
   const sent = (what) => (error) => uiLog("warn", "watch-set-failed", { what, msg: String(error) });

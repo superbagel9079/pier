@@ -1,14 +1,8 @@
 // The Project panel: a project's instructions, what Pi reads at startup, its system prompt
 // (skills, extensions and packages: Settings > Extensions & skills).
 
-// ============================================================================
 // Setup: what a project's Pi starts with, and its sessions
-// ============================================================================
-//
-// Pi has no project settings of its own beyond files: a project is a folder, and
-// every session started in it reads the same context. This tab writes those files
-// (AGENTS.md, .pi/APPEND_SYSTEM.md, .pi/SYSTEM.md, with a history), shows exactly
-// what Pi loads at startup, and starts or continues sessions.
+// Writes AGENTS.md, .pi/APPEND_SYSTEM.md, .pi/SYSTEM.md; shows what Pi loads; starts sessions.
 
 const INSTRUCTION_SNIPPETS = [
   ["About the project", "## Project\n<What it is, who it is for, what matters most.>\n"],

@@ -1,9 +1,7 @@
 // Logging in: the VM's address, the password, its fingerprint, the picker on the VM;
 // then the Pi in use, followed.
 
-// ============================================================================
 // Connection screens
-// ============================================================================
 
 function showConnect(view) {
   $("#workspace").hidden = true;
@@ -300,9 +298,7 @@ backend.onConnectionLost((message) => {
   toLogin(message);
 });
 
-// ============================================================================
 // Target: the project of the Pi in use, followed automatically
-// ============================================================================
 
 /** The projects, asked once even when several tabs want them at the same moment. */
 let projectsAsked = null;
@@ -365,9 +361,8 @@ function noticeFinishedWork(runningProjects) {
   for (const key of [...wasWorking.keys()]) if (!seen.has(key)) wasWorking.delete(key);
 }
 
-// What happens to what was given to a project when its Pi ends: live shares stop
-// (and are forgotten) unless that setting is off; images, files and copies stay,
-// unless "clear on end" is on. Either way, the × removes them one by one.
+// When a project's Pi ends: live shares stop (and are forgotten) unless that setting is off;
+// images, files and copies stay unless "clear on end" is on. The × removes them one by one.
 let wasRunning = null;
 
 // A project counts as ended after two answers in a row without its Pi: one odd answer
@@ -427,9 +422,7 @@ async function resumeShares() {
   givenToPi()?.refresh?.();
 }
 
-// ============================================================================
 // The top bar: the session of the tab in use
-// ============================================================================
 //
 // Only when that tab is a Pi: its project, which Pi (#2...), whether it works. Which Pis
 // run and which conversation they hold is in Setup; the bar does not repeat it.

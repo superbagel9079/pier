@@ -1,8 +1,6 @@
 // The Logs tab.
 
-// ============================================================================
 // Logs: Pier's own, and the picker's on the VM, as they happen
-// ============================================================================
 
 const LOG_LEVELS = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
 const LOG_KEPT = 5000;

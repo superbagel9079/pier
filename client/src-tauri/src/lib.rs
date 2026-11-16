@@ -1,9 +1,5 @@
-//! Pier: desktop companion for a development VM.
-//!
-//! It talks to the VM over one SSH connection: terminals are channels of it, and the
-//! picker's API ("pi-pick --api ...", JSON replies) does the rest. No port is opened
-//! on the VM. The picker itself is built into Pier and installed by it (picker.rs).
-//! Everything that happens is logged (journal.rs), next to the picker's own log.
+//! Pier: desktop companion for a development VM. One SSH connection carries terminals and the
+//! picker's API ("pi-pick --api ...", JSON); no port is opened on the VM. See journal.rs.
 
 #[macro_use]
 mod journal;
@@ -51,9 +47,8 @@ use store::{Settings, Store};
 const API_VERSION: u64 = 22;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
-/// API commands the interface may call directly: they only read, or type into Pi.
-/// Everything that changes on its own (projects, activity, setup, contexts, restore
-/// points, the VM's log) comes through the watch instead (watch.rs).
+/// API commands the interface may call directly: they only read, or type into Pi. Everything
+/// that changes on its own comes through the watch instead (watch.rs).
 const PASSTHROUGH: &[&str] = &[
     "projects",
     "ls",
@@ -102,9 +97,8 @@ struct Share {
 }
 
 impl Share {
-    /// Nothing more is served: called whenever the share leaves the list (stopped, handed
-    /// off, the connection lost), as the VM's lazy unmount leaves a way in to whoever
-    /// is still inside it.
+    /// Nothing more is served once the share leaves the list (stopped, handed off, connection
+    /// lost): the VM's lazy unmount leaves a way in to whoever is still inside it.
     fn revoke(&self) {
         self.revoked.store(true, Ordering::Relaxed);
     }
@@ -147,9 +141,8 @@ struct AppState {
     grants: grants::Grants,
 }
 
-/// Yes or no, asked by Rust in a window of the system: what lets Pi do more than it
-/// could is confirmed there, where a script in the page could neither answer nor skip
-/// it (S13 of the audit of 2026-10-26).
+/// Yes or no, asked by Rust in a system window: what lets Pi do more is confirmed where a
+/// script in the page could neither answer nor skip it.
 pub(crate) async fn confirmed(app: &AppHandle, text: &str) -> bool {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -230,11 +223,8 @@ fn settings(state: &AppState) -> Result<Settings, String> {
     state.store.settings().ok_or_else(|| "No VM configured yet.".to_string())
 }
 
-/// The live connection, reopened silently if it dropped. The lock is held only while
-/// checking or reconnecting, never while a channel opens. A refused password or a
-/// changed key sends the interface back to the login screen at once; a network that
-/// is not back yet (the laptop just woke up) is tried again at the next call, for
-/// RECONNECT_FOR, while the interface says it is reconnecting.
+/// The live connection, reopened silently if dropped; no lock is held while a channel opens.
+/// Bad password or changed key: back to login at once. No network: retried for RECONNECT_FOR.
 async fn connected(app: &AppHandle, state: &AppState, settings: &Settings) -> Result<Arc<Connection>, String> {
     let mut connection = state.connection.lock().await;
     if let Some(live) = connection.as_ref().filter(|c| !c.is_closed()) {
@@ -271,9 +261,8 @@ async fn connected(app: &AppHandle, state: &AppState, settings: &Settings) -> Re
     }
 }
 
-/// After a silent reconnection: the shares ran over the old connection and are gone
-/// with it. They are forgotten here (the VM's dead mounts cleaned) and the interface is
-/// told, to start them again.
+/// After a silent reconnection the shares are gone with the old connection: forgotten here
+/// (the VM's dead mounts cleaned) and the interface told to start them again.
 async fn reconnected(app: &AppHandle, state: &AppState) {
     let dropped: Vec<Share> = state.shares.lock().await.drain().map(|(_, s)| s).collect();
     dropped.iter().for_each(Share::revoke);
@@ -295,9 +284,8 @@ async fn shares_cleanup(app: AppHandle, state: State<'_, AppState>) -> Result<()
 }
 
 /// Runs a command on the VM through the connection (reopened if it dropped).
-/// The longest a command of the picker may take before Pier stops waiting for it (a
-/// picker stuck on a stalled sshfs would hold the interface's promise, and a channel
-/// counted in MaxSessions, for good). Not for what sends a lot (an upload, a hand off).
+/// The longest a picker command may run before Pier stops waiting (a stalled sshfs would hold
+/// a MaxSessions channel for good). Not for uploads or hand offs.
 const VM_EXEC_TIMEOUT: Duration = Duration::from_secs(300);
 const VM_EXEC_UNTIMED_FROM: usize = 1024 * 1024;
 
@@ -317,10 +305,8 @@ async fn vm_exec_from(app: &AppHandle, state: &AppState, command: &str, stdin: i
     }
 }
 
-/// A new channel for a command, a terminal, a share or the watch. Every one of them
-/// is a channel of an SSH connection, and OpenSSH allows a limited number per
-/// connection (MaxSessions, 10 by default): past it, the VM refuses. Pier then opens
-/// another connection, with the password kept in memory, and goes on there.
+/// A new channel for a command, terminal, share or the watch. OpenSSH allows few per link
+/// (MaxSessions, 10): past it Pier opens another connection, password kept in memory.
 async fn vm_channel(app: &AppHandle, state: &AppState) -> Result<russh::Channel<russh::client::Msg>, String> {
     let settings = settings(state)?;
     let mut tries = 0;
@@ -849,10 +835,8 @@ fn set_tooltip(app: &AppHandle, text: &str) {
 
 // --- updating Pier itself -------------------------------------------------------------
 //
-// Pier reads latest.json in the project's latest GitHub release (tauri.conf.json, plugins >
-// updater). An update is installed only if it was signed with the project's key, whose
-// public half is in tauri.conf.json: a file changed on the way, or from elsewhere, is
-// refused.
+// Updates come from latest.json in the latest GitHub release (tauri.conf.json); installed only
+// if signed with the project's key (public half in tauri.conf.json), else refused.
 
 /// Whether a newer Pier is out: {current, version?, notes?, date?}.
 #[tauri::command]

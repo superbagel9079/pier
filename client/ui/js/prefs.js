@@ -1,13 +1,10 @@
 // Settings: the whole window, categories on the left, a search over all of them;
 // layout, themes, behavior, the picker, diagnostics (Agents and Network: settings.js).
 
-// ============================================================================
 // Preferences dialog
-// ============================================================================
 
-// Given to Pi is a view of Activity (no tab of its own). Labs is always listed, hidden
-// and not to be placed while labs are off: turning them on puts the tab on the panels'
-// side, turning them off hides it (labs.js).
+// Given to Pi is a view of Activity (no tab). Labs is listed but hidden while labs are off;
+// turning them on puts the tab on the panels' side (labs.js).
 const PLACEABLE = [
   ["main", "picker (main terminal)", false],
   ["conversations", "Conversations", true],
@@ -93,9 +90,8 @@ function closePrefs() {
 
 /** One category of the settings at a time; the one last shown comes back next time. */
 let prefsPage = "agents";
-// A category shows its pages one under the other: Appearance its own and Layout,
-// Connection the VM and the picker. A page asked by its own name ("picker", "layout"),
-// or by an older one ("general"), opens its category.
+// A category shows its pages one under the other. A page asked by its own name or an older
+// one ("picker", "layout", "general") opens its category.
 const PREFS_GROUPS = { appearance: ["appearance", "layout"], connection: ["connection", "picker"] };
 const PREFS_OLD = { general: "connection" };
 const prefsTabOf = (page) => PREFS_OLD[page] || Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;

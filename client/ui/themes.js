@@ -1,9 +1,5 @@
-// Color themes for Pier: the built-in ones, and readers for VS Code and Zed theme
-// files, so their thousands of themes can be used as they are.
-//
-// A theme has the interface's colors (ui) and the terminal's (terminal: background,
-// foreground, cursor, selection and the 16 ANSI colors). Missing colors are derived
-// from the others, so a partial theme still looks whole.
+// Color themes: the built-in ones, and readers for VS Code and Zed theme files.
+// A theme has the interface's colors (ui) and the terminal's; missing ones are derived.
 
 const UI_KEYS = ["bg", "panel", "fg", "dim", "line", "field", "hover", "accent", "green", "red", "edge"];
 const ANSI_KEYS = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
@@ -165,11 +161,8 @@ function completeTheme(theme) {
   // The theme's own text 4.5:1 too, the diff's tints included (Solarized's falls short).
   ui.fg = readable(ui.fg, luminance(ui.bg) < 0.5 ? "#ffffff" : "#000000",
     [ui.bg, ui.panel, ui.field, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.green, 0.18), mix(ui.bg, ui.red, 0.18)], 4.5);
-  // WCAG AA: dim text 4.5:1 wherever it is drawn: the background, the panels and the
-  // surfaces style.css mixes from bg and fg (--surface 5%, --raise 10%, --strong 16%), a
-  // field, a row under the pointer, and a removed line of a diff (--del-bg: the red at
-  // 18%). The edge of a field and the accent (focus rings, the active tab) 3:1, so they
-  // are seen (1.4.11).
+  // WCAG AA: dim text 4.5:1 on the bg, panels, style.css surfaces (--surface 5%, --raise 10%,
+  // --strong 16%), fields, hovered rows, removed diff lines (--del-bg, 18%). Edge, accent 3:1.
   const surfaces = [ui.bg, ui.panel, ui.field, ui.hover, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.fg, 0.10), mix(ui.bg, ui.fg, 0.16), mix(ui.bg, ui.red, 0.18)];
   ui.dim = readable(ui.dim, ui.fg, surfaces, 4.5);
   ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);

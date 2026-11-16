@@ -1,23 +1,18 @@
 # --- labs: machines where Pi may do anything -------------------------------------------
 #
-# An option, off until the user turns it on (Settings > Labs): Pi's sandbox stays as it
-# is, and Pi gets tools to use machines of its own besides.
-#   - lab hosts: where labs are made, each with Incus. None until the user adds one: a VM
-#     reached over SSH (the picker runs `incus` there), or Pi's own VM ("pi-vm", only if
-#     the user chooses it). One is the default; a lab may name another.
-#   - labs: disposable Incus containers (or virtual machines when the host has /dev/kvm)
-#     on a lab host, made by Pi or the user. Root inside, nothing of the host or of home
-#     inside, only what Pi copies in. Limits on CPU, memory and disk, a lifetime after
-#     which they go, a "clean" snapshot to go back to, the networks chosen.
-#   - machines: computers the user adds, reached over SSH with a key the picker makes and
-#     keeps (Pi never sees it). Each has a rule: Pi's commands run freely, or each waits
-#     for the user's approval in Pier.
-# Pi reaches both through the broker socket (lab_* operations), never directly: its
-# sandbox has no network to them. Every command is written to the labs journal.
+# An option, off until the user turns it on (Settings > Labs): Pi's sandbox stays as it is,
+# and Pi gets tools for machines of its own besides.
+#   - lab hosts: where labs are made, each with Incus: a VM over SSH, or Pi's own VM
+#     ("pi-vm", only if chosen). One is the default; a lab may name another.
+#   - labs: disposable Incus containers (VMs with /dev/kvm): root inside, nothing of the host
+#     or home, CPU/memory/disk limits, a lifetime, a "clean" snapshot, chosen networks.
+#   - machines: computers the user adds over SSH with a key the picker keeps (Pi never sees
+#     it). Each rule: Pi's commands run freely, or each waits for approval in Pier.
+# Pi reaches both through the broker socket (lab_* operations), never directly: its sandbox
+# has no network to them. Every command is written to the labs journal.
 
-# network: "open" (Incus's own NAT, the default), "none" (cut), or "vlan": the labs on an
-# Incus network the admin made once on a second card of the VM (vlan_network), a VLAN of
-# the firewall (pfSense...) that gives them their addresses and rules.
+# network: "open" (Incus's NAT, default), "none" (cut), or "vlan": an Incus network the admin
+# made on a second card of the VM (vlan_network), a firewall VLAN giving addresses and rules.
 LABS_DEFAULTS = {"enabled": False, "max": 3, "ttl_hours": 24, "network": "open", "cpu": 2, "memory_gib": 4,
                  "disk_gib": 20, "image": "debian/13", "vlan_network": "pier-labs", "default_host": ""}
 LOCAL_HOST = "pi-vm"  # Pi's own VM, as a lab host: only when the user adds it
@@ -119,9 +114,8 @@ def incus_state(at=None, timeout=20):
         return False, f"Incus does not answer ({str(exc)[:200]}): installed, and the user in the incus group?", False
     drivers = str((info.get("environment") or {}).get("driver") or "")
     kvm = "qemu" in drivers and (not local or os.path.exists("/dev/kvm"))
-    # Labs are safe on a host only through a restricted Incus project (incus-user gives
-    # one to each account of the incus group): there, no lab can be privileged nor
-    # reach the host's files. An unrestricted one (incus-admin, root) is refused.
+    # Labs are safe on a host only through a restricted Incus project (incus-user gives one
+    # per incus-group account): no privileged lab, no host files. incus-admin/root is refused.
     project = str((info.get("environment") or {}).get("project") or info.get("project") or "default")
     try:
         config = json.loads(incus("query", f"/1.0/projects/{project}", timeout=timeout, at=at) or b"{}").get("config")
@@ -419,13 +413,11 @@ def api_labs(home):
             "public_key": public_key, "vlan": vlan, "networks": networks, "default_networks": default_networks(data["settings"])}
 
 
-# The networks a lab may be plugged into: those Incus lets this account use (a restricted
-# project lists only them). Three kinds, told apart by their settings:
-#   nat       a bridge with NAT (Incus's own, incusbr-*): the internet through the VM,
-#             unseen by the firewall and the LAN;
-#   vlan      a macvlan on a card of the VM (often with vlan=N on a trunk): a machine of its
-#             own on a VLAN of the firewall, which gives its address and applies its rules;
-#   internal  a bridge without NAT: between the labs on it only, for routers, DMZs, VPNs.
+# The networks a lab may use: those Incus lets this account use, told apart by settings:
+#   nat       a bridge with NAT (incusbr-*): the internet through the VM, unseen by the LAN;
+#   vlan      a macvlan on a card of the VM (often vlan=N): a machine on a firewall VLAN that
+#             gives its address and rules;
+#   internal  a bridge without NAT: between its labs only, for routers, DMZs, VPNs.
 LAB_NETWORK_KINDS = {"nat": "the internet through the host (NAT)", "vlan": "a VLAN of your firewall",
                      "internal": "between labs only", "other": "an Incus network"}
 
@@ -505,9 +497,8 @@ LAB_NO_SNAPSHOTS = ("snapshots are not allowed in this Incus project: lab_reset 
                     "To allow them (an admin, once): sudo incus project set user-$(id -u) restricted.snapshots=allow")
 
 
-# A lab plugged into more than one network gets one interface per network: eth0, eth1...
-# Images configure DHCP on eth0 only; the others are given it here (systemd-networkd on
-# Debian, netplan on Ubuntu), so each interface gets its address from its network.
+# A lab on several networks gets one interface each: images configure DHCP on eth0 only, so
+# the others get it here (systemd-networkd on Debian, netplan on Ubuntu).
 LAB_EXTRA_DHCP = r"""for nic in "$@"; do
   if command -v netplan >/dev/null 2>&1; then
     printf 'network:\n  version: 2\n  ethernets:\n    %s:\n      dhcp4: true\n' "$nic" > "/etc/netplan/60-pier-$nic.yaml"

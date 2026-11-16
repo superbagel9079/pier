@@ -1,10 +1,6 @@
-//! A folder of this computer packed as a tar archive, to be copied into a project, or
-//! handed off (it then stays on the VM in place of the share).
-//!
-//! Symbolic links are left out rather than followed: following one could pack files
-//! from outside the folder. A copy skips build output and dependency folders wherever
-//! they are: they are large, and rebuilt on the VM anyway. A hand off keeps all of the
-//! folder, git included (Pi goes on alone with it), but the rebuilt folders at its top.
+//! A folder packed as tar, to copy into a project or hand off. Symlinks are left out, not
+//! followed (they could pack outside files); a copy also skips build and dependency folders.
+//! A hand off keeps everything, git included, except the rebuilt folders at its top.
 
 use std::fs;
 use std::path::{Path, PathBuf};

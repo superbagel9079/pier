@@ -91,9 +91,8 @@ pub(crate) async fn host_test(app: AppHandle, state: State<'_, AppState>, name: 
     api(&app, &state, &["host-test", &name], &[]).await
 }
 
-/// Before the first connection to a lab host or machine: the key it shows, confirmed by
-/// the user in a dialog of Pier's own (the page cannot answer it), then trusted. Already
-/// trusted: nothing asked. {"known": fingerprint} or {"refused": true}.
+/// Confirms an unknown host key in a dialog of Pier's own (the page cannot answer it), then
+/// trusts it. Already trusted: nothing asked. {"known": fingerprint} or {"refused": true}.
 #[tauri::command]
 pub(crate) async fn host_trust(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<Value, String> {
     let key = api(&app, &state, &["host-key", &name], &[]).await?;

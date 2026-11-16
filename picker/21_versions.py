@@ -147,10 +147,9 @@ def forget_versions(home):
 
 PI_UPDATE_TARGET = re.compile(r"(npm:|git:|https://)[A-Za-z0-9@/._:+~-]{1,200}")
 
-# When Pi was installed by root (`sudo npm install -g`, in /usr/local), updating it needs
-# sudo. Only a command of this shape (npm, a system prefix, install -g, Pi's own package
-# at a version) is run with sudo, once the user says yes; sudo asks for the password in
-# this terminal.
+# When root installed Pi (`sudo npm install -g`, in /usr/local), updating needs sudo: only a
+# command of this shape (npm, system prefix, install -g, Pi's package at a version) runs with
+# sudo, once the user says yes; sudo asks for the password in this terminal.
 NPM_SELF_UPDATE = re.compile(
     r"npm --prefix (/usr|/usr/local|/opt/[\w.-]+) install -g " + re.escape(PI_NPM) + r"@\d+\.\d+\.\d+(?:-[\w.]+)?")
 

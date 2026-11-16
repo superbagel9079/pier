@@ -1,12 +1,7 @@
 # --- worktrees: several Pis in one git project ---------------------------------------------
 #
-# Two Pis in the same folder step on each other's files. In a git project, the first Pi
-# works in the folder itself, and every other one in a worktree of its own,
-# .pi-worktrees/<its tmux session>, on a branch pi/agent-N-...: they come together by
-# merges or pull requests, as a team does. The worktree has links to the project's
-# .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
-# removed when its Pi ends without having changed or committed anything; otherwise it
-# stays, listed in Repository > Git, until the user removes it.
+# Two Pis in one folder step on each other's files: the first works in the project, the
+# others in .pi-worktrees/<tmux session> on a pi/agent-N-... branch; removed when unchanged.
 
 WORKTREE_DIR = ".pi-worktrees"
 

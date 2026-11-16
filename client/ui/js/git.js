@@ -1,12 +1,7 @@
 // The Git page of Repository, and Pi's requests waiting for the user.
 
-// ============================================================================
-// A project connected to a forge (GitHub, GitLab, Gitea / Forgejo): Pi pushes its pi/…
-// branches and opens pull requests by itself, through the picker, which holds the
-// token. What Pi may do alone is chosen per repository (work locally, ask to merge, merge
-// once the checks pass); creating a repository always waits for the user here. See
-// "git forges" in the picker.
-// ============================================================================
+// A project on a forge (GitHub, GitLab, Gitea / Forgejo): Pi pushes its pi/ branches and opens
+// pull requests through the picker, which holds the token. Creating a repository always waits.
 
 const FORGE_LABELS = { github: "GitHub", gitlab: "GitLab", gitea: "Gitea / Forgejo" };
 const FORGE_HINTS = {

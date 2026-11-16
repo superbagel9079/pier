@@ -8,10 +8,8 @@ def within(path, root):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
-# Pi writes in the project and in ~/.pi, so whatever the picker (outside the sandbox)
-# reads or deletes there is reached through file descriptors, folder by folder, without
-# following links: a link or a folder swapped in between a check and its use cannot
-# send it elsewhere. Not on Windows (the simulated tests), which has no dir_fd.
+# Pi writes in the project and ~/.pi: what the picker (outside the sandbox) reads or
+# deletes there goes through descriptors, never following links. Not on Windows (no dir_fd).
 DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 # os.replace takes src_dir_fd/dst_dir_fd wherever os.rename does (both are renameat),
 # but only os.rename is listed in supports_dir_fd.
@@ -229,9 +227,8 @@ def git_branch(path):
     return head[:7] or None
 
 
-# Where Incus and LXD keep their sockets, outside /run: a member of the incus group (a
-# VM that is also a lab host) would drive Incus from the sandbox, and make itself
-# machines with the whole internet, out of Pier's sight.
+# Where Incus and LXD keep their sockets, outside /run: a member of the incus group
+# would drive Incus from the sandbox and make itself machines with the whole internet.
 SOCKET_FOLDERS = ("/var/lib/incus", "/var/lib/lxd", "/var/snap/lxd/common/lxd")
 
 
@@ -254,10 +251,8 @@ def run_hidden():
     return args
 
 
-# ioctls that push characters into a terminal's input, as if typed: TIOCSTI, and
-# TIOCLINUX (its paste, on a console). Pi in its sandbox must not type into the
-# terminal it runs in (without tmux, the user's own). --new-session would stop it too,
-# but it takes the terminal away from Pi, which then misses window size changes.
+# ioctls that push characters into a terminal's input (TIOCSTI, TIOCLINUX paste): Pi must
+# not type into its terminal. --new-session would stop it too but starves Pi of resizes.
 TIOCSTI, TIOCLINUX = 0x5412, 0x541C
 # machine -> (its AUDIT_ARCH, ioctl's number, the lowest number that is not native)
 SECCOMP_ARCHES = {"x86_64": (0xC000003E, 16, 0x40000000), "aarch64": (0xC00000B7, 29, 0xFFFFFFFF)}

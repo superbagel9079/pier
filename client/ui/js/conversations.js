@@ -1,7 +1,5 @@
 // Conversations: every conversation of every project, grouped by project, with the Pis
-// running them; pinned ones first, then each category as a folder, searchable, archived
-// ones out of the way. The one place for conversations (Setup is a project's
-// configuration).
+// running them; pinned first, categories as folders, searchable, archived out of the way.
 
 /** A conversation's title: the name given in Pier, else in Pi, else its first question. */
 const conversationTitle = (s) => s?.title || s?.name || s?.prompt || "(a conversation not started yet)";

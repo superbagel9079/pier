@@ -1,13 +1,10 @@
 // Starting up: loaded last, once every part is defined.
 
-// ============================================================================
 // Start
-// ============================================================================
 
 applyTheme();
-// Right click: Pier's own menu where it has one (terminals, tabs), the system's in a text
-// field or on selected text (copy, paste), and nothing elsewhere: never the browser's
-// (Back, Refresh, Print…), which only makes sense in a browser.
+// Right click: Pier's own menu where it has one (terminals, tabs), the system's in text
+// fields and on selected text, nothing elsewhere: never the browser's (Back, Print).
 document.addEventListener("contextmenu", (event) => {
   if (event.defaultPrevented) return;
   const field = event.target.closest?.("input:not([type=checkbox]):not([type=radio]):not([type=button]), textarea, [contenteditable]");

@@ -1,11 +1,5 @@
-//! One SSH connection to the VM, direct or through a bastion, kept open while Pier runs.
-//!
-//! Authentication is by password (keyboard-interactive as a fallback, for PAM setups):
-//! Windows' OpenSSH cannot share a connection between commands, so the system ssh would
-//! ask for the password on every image. The server's key is checked against the
-//! fingerprints the user accepted before, like ssh's known_hosts: an unknown key is
-//! reported for confirmation, a changed key refuses the connection, and in both cases
-//! the password is never sent.
+//! One SSH connection to the VM, direct or via a bastion, kept open. Password auth only.
+//! Host key checked against known ones: unknown reported, changed refused, no password sent.
 
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -81,12 +75,8 @@ pub fn fingerprint(key: &PublicKeyOrCertificate) -> String {
     }
 }
 
-/// What Pier accepts to negotiate: modern algorithms only, the post-quantum hybrid
-/// key exchange first (OpenSSH 9.9 and later, so Debian 13, offer it). Left out from
-/// russh's defaults: RSA signatures with SHA-1, the NIST curves and the smaller DH
-/// groups for the key exchange, AES-CTR and the MACs that are not encrypt-then-MAC.
-/// "kex-strict" (the Terrapin fix) stays on. A server that offers nothing of this is
-/// refused before any password is sent.
+/// Modern algorithms only, post-quantum hybrid kex first, "kex-strict" (Terrapin fix) on. Left
+/// out: SHA-1 RSA, NIST curves, small DH groups, AES-CTR, non-EtM MACs. No match: refused.
 const KEX: &[kex::Name] = &[
     kex::MLKEM768X25519_SHA256,
     kex::CURVE25519,
@@ -126,9 +116,8 @@ fn config() -> Arc<client::Config> {
         keepalive_interval: Some(Duration::from_secs(30)),
         keepalive_max: 3,
         inactivity_timeout: None,
-        // Nagle off, as OpenSSH does for interactive sessions: a keystroke (or a scroll
-        // of the mouse wheel, sent as arrow keys) leaves at once instead of waiting
-        // for the previous packet to be acknowledged.
+        // Nagle off, as OpenSSH does for interactive sessions: a keystroke leaves at once
+        // instead of waiting for the previous packet's acknowledgement.
         nodelay: true,
         preferred: preferred(),
         ..Default::default()
@@ -337,10 +326,8 @@ pub async fn run_into(
     Ok((status, stderr))
 }
 
-/// A POSIX shell command line made safe for whatever login shell the user has (sshd
-/// runs every command through it, and fish reads backslashes inside single quotes):
-/// the line travels in base64, which every shell passes through untouched, and /bin/sh
-/// runs it.
+/// A POSIX shell command line made safe for any login shell (sshd runs it through one, and
+/// fish reads backslashes in single quotes): sent as base64, run by /bin/sh.
 pub fn posix_line(line: &str) -> String {
     format!("/bin/sh -c 'eval \"$(printf %s {} | base64 -d)\"'", base64(line.as_bytes()))
 }

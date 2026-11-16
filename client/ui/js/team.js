@@ -1,13 +1,8 @@
 // The Team page of Repository, giving a conversation to a colleague, and what waits for this
 // account's Pis wherever the user is.
 
-// ============================================================================
-// Colleagues each have their Pier, their VM and their Pis; they meet in the repository
-// (see "the team" in the picker): tasks are issues labelled pi-task, a Pi asks another
-// account's Pis for a review, a conversation is handed to a colleague on a pi-handoff/
-// branch. Pier starts a Pi on a task or a review with a fixed prompt the picker writes
-// (--agent-task): never with what a colleague wrote.
-// ============================================================================
+// Colleagues meet in the repository ("the team" in the picker): tasks are issues labelled
+// pi-task, handoffs a pi-handoff/ branch. Pi gets a fixed picker prompt, never colleague text.
 
 const AGENT_WAKE_LABELS = {
   off: ["Do nothing", "Tasks, reviews and conversations for you are listed here; nothing else happens."],
@@ -230,10 +225,8 @@ async function giveDialog(project, session) {
   });
 }
 
-// What waits for this account's Pis, wherever the user is: a notification for each new
-// one, and with the repository set to "Start a Pi by itself", a Pi on it (one per round,
-// AUTO_PER_HOUR an hour and AUTO_PER_DAY a day at most, never on a task a Pi wrote:
-// Pis asking each other would otherwise start Pis without end).
+// What waits for this account's Pis: a notification per new one and, with "Start a Pi by itself",
+// a Pi (AUTO_PER_HOUR / AUTO_PER_DAY at most; never on a task a Pi wrote: Pis would loop).
 const AUTO_PER_HOUR = 3;
 const AUTO_PER_DAY = 10;
 const AUTO_KEY = "pier.team.autoStarted";

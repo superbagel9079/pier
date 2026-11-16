@@ -1,8 +1,5 @@
-//! Lines out of a stream that arrives in pieces (tmux's control mode, the watch's JSON).
-//!
-//! Linear in the data, however it is cut: each byte is looked at once, the lines
-//! consumed are dropped once per piece, and a line longer than the limit is dropped
-//! whole, up to its end, rather than read on from its middle as if it were a new line.
+//! Lines out of a stream that arrives in pieces (tmux control mode, watch JSON). Linear in the
+//! data; a line over the limit is dropped whole to its end, not read on from its middle.
 
 pub struct Lines {
     pending: Vec<u8>,
@@ -18,9 +15,8 @@ impl Lines {
         Lines { pending: Vec::new(), scanned: 0, skipping: false, max }
     }
 
-    /// Calls `each` with every whole line in `data` (without its "\n"); an incomplete
-    /// last one waits for the rest. Returns true when a line went past the limit (it is
-    /// then dropped).
+    /// Calls `each` with every whole line in `data` (without its "\n"); an incomplete last one
+    /// waits for the rest. Returns true when a line went past the limit (dropped).
     pub fn feed(&mut self, mut data: &[u8], mut each: impl FnMut(&[u8])) -> bool {
         let mut too_long = false;
         if self.skipping {

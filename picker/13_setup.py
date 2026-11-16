@@ -1,10 +1,9 @@
 # --- project setup ---------------------------------------------------------------------
 #
-# Mirrors Pi's resource loader: a global context file in the agent dir, then the first
-# of AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD in every directory from / down to the
-# project. .pi/SYSTEM.md and .pi/APPEND_SYSTEM.md only count once the project is
-# trusted (~/.pi/agent/trust.json, nearest entry wins); otherwise Pi uses the global
-# ones in the agent dir.
+# Mirrors Pi's resource loader: a global context file in the agent dir, then the first of
+# AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD in every directory from / to the project.
+# .pi/SYSTEM.md and .pi/APPEND_SYSTEM.md count only once the project is trusted
+# (~/.pi/agent/trust.json, nearest entry wins); else the global ones.
 
 CONTEXT_NAMES = ("AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD")
 TEXT_MAX_BYTES = 256 * 1024
@@ -500,9 +499,8 @@ def pi_resources(project, home):
     return out
 
 
-# Every conversation of every project, for the Conversations tab: Pi's sessions folder
-# holds one folder per project; the project is the "cwd" of a session's first line.
-# Light on purpose: no token counts (Setup has them, project by project).
+# Every conversation of every project, for the Conversations tab: the project is the
+# "cwd" of a session's first line. Light on purpose: no token counts (Setup has them).
 
 _FOLDER_PROJECT = {}  # sessions folder -> project path (a folder never changes project)
 # The most recent conversations, over all projects, come with their token use (the
@@ -621,9 +619,8 @@ def api_conversations(home):
     return {"projects": projects, "truncated": cut is not None}
 
 
-# Pi's version and the newest one, and the newest version of each npm package. Asked to
-# npm's registry from the VM, at most every 6 hours (an hour after a failure); the
-# answer is kept in ~/.local/state/pier-picker/versions.json.
+# Pi's version and the newest, and the newest of each npm package: asked of npm's registry
+# at most every 6 hours (1 hour after a failure), cached in the state dir's versions.json.
 
 PI_NPM = "@earendil-works/pi-coding-agent"
 VERSIONS_FRESH = 6 * 3600

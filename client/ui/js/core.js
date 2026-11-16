@@ -1,6 +1,5 @@
-// Pier interface. Plain script, no bundler: Tauri injects window.__TAURI__
-// (app.withGlobalTauri), xterm.js comes from vendor/. Outside Tauri, a mock backend
-// stands in, so the page can be checked in a browser.
+// Pier interface. Plain script, no bundler: Tauri injects window.__TAURI__; xterm.js: vendor/.
+// Outside Tauri a mock backend stands in, so the page can be checked in a browser.
 
 const tauri = window.__TAURI__ || null;
 const backend = tauri ? realBackend() : mockBackend();
@@ -16,9 +15,8 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-/** A cost in dollars, or "" for none: two significant digits, at least two decimals
- *  ($0.00027, $0.0034, $0.042, $0.42, $1.23). Cheap models spend fractions of a cent
- *  a request, which a fixed $0.000 would show as nothing. */
+/** A cost in dollars, or "" for none: two significant digits, at least two decimals ($0.0034).
+ *  Cheap models spend fractions of a cent a request; a fixed $0.000 would show nothing. */
 function dollars(cost) {
   if (!(cost > 0)) return "";
   if (cost < 0.00001) return "<$0.00001";
@@ -32,9 +30,8 @@ function isGlyph(text) {
   return value.length > 0 && value.length <= 3 && !/[\p{L}\p{N}]/u.test(value);
 }
 
-/** Pier's dialogs, made modal for the keyboard and for screen readers: named by their
- *  title, focus kept inside (Tab and Shift+Tab go round), Escape closes, and the focus
- *  goes back where it was. Returns what undoes it. */
+/** Pier's dialogs made modal: named by their title, focus kept inside, Escape closes,
+ *  focus goes back where it was. Returns what undoes it. */
 function trapDialog(box, close) {
   const before = document.activeElement;
   box.setAttribute("role", "dialog");
@@ -64,9 +61,8 @@ function trapDialog(box, close) {
   };
 }
 
-/** Text from the VM or a forge as it really is, for what the user decides on: characters
- *  that do not show (control, invisible, direction-changing, unusual spaces) appear as
- *  ⟨U+202E⟩. lines: newlines and tabs kept (a command, a review), else shown as ⏎ and ⇥. */
+/** Text from the VM or a forge as it is, for what the user decides on: hidden characters show
+ *  as ⟨U+202E⟩. lines: keep newlines and tabs (a command, a review), else show ⏎ and ⇥. */
 function visibleText(text, { lines = false } = {}) {
   let value = String(text ?? "");
   if (lines) value = value.replace(/\r\n/g, "\n");
@@ -86,9 +82,7 @@ let target = null;          // the Pi in use: {path, label, slot, n} or null
 let running = new Set();    // projects where a Pi runs
 let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
-// ============================================================================
 // Preferences (this computer only)
-// ============================================================================
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
@@ -142,13 +136,10 @@ function savePrefs() {
   try { localStorage.setItem("devbox.prefs", JSON.stringify(prefs)); } catch { /* storage off */ }
 }
 
-// ============================================================================
 // Logging: the interface writes into Pier's log (see journal.rs)
-// ============================================================================
 //
-// What goes there: the interface's own errors (exceptions, failed promises), every
-// error it shows the user, and the main steps (connecting, installing the picker,
-// restoring). Never a password or what is typed.
+// What goes there: its own errors, every error shown to the user, the main steps (connecting,
+// installing the picker, restoring). Never a password or what is typed.
 
 function uiLog(level, event, fields = {}) {
   try { backend.log(level, event, fields)?.catch?.(() => {}); } catch { /* the log is best effort */ }
@@ -172,9 +163,7 @@ function whereOf(node) {
   return node.id || node.closest("[id]")?.id || node.className || "?";
 }
 
-// ============================================================================
 // Themes (see themes.js): built-in, imported from VS Code or Zed, or customized
-// ============================================================================
 
 function allThemes() {
   return [...BUILTIN_THEMES, ...prefs.customThemes];

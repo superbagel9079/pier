@@ -1,24 +1,11 @@
 # --- restore points ----------------------------------------------------------------------
 #
-# The project is saved when Pi starts, when it is given a prompt, and when it stops
-# working: a restore point. Going back to one puts every file as it was then, files
-# created since included (they are removed), or only the files chosen.
-#
-# They live outside the project, in a git repository of their own per project under
-# ~/.local/state/pier-picker/checkpoints. The project's own git, if any, is never
-# touched, and Pi cannot reach them: its sandbox hides that folder. git stores each
-# version of a file once, so a restore point costs only what changed. That repository
-# reads no configuration but its own: no hook, filter or fsmonitor of yours runs.
-#
-# Saved is what git would see: files your .gitignore leaves out (build output,
-# node_modules, .env) are not, nor what Pier gave the project (.pi-images, .pi-files,
-# .pi-shared), nor any file over 50 MB.
-#
-# When a prompt arrives, Pi has written it to its session file before asking its model,
-# which leaves the second or more the model takes to save. The first prompt of a new
-# session is the exception: Pi creates the file with its first answer, as its tools
-# start. That prompt is attached to the point saved just before (when Pi started, or
-# finished its previous work), which holds the files as they were.
+# Restore points: saved when Pi starts, gets a prompt and stops working; going back puts back
+# every file (created ones removed) or only those chosen. Kept outside the project, in a git
+# repository per project under ~/.local/state/pier-picker/checkpoints, hidden from Pi's
+# sandbox: the project's own git is untouched, no hook or filter runs. Saved is what git
+# would see (.gitignore respected), minus files over 50 MB. A prompt is in Pi's session file
+# before its model answers; a new session's first prompt attaches to the point saved before.
 
 CHECKPOINT_DIR = "checkpoints"
 CHECKPOINT_KEEP = 50
@@ -93,9 +80,8 @@ def checkpoint_git(project, *args, stdin=None, unreadable_ok=False):
     root-owned one): those are skipped, the rest is saved."""
     argv = ["git", "-c", "core.fsmonitor=false", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
             "-c", f"core.hooksPath={os.devnull}", "-c", "gc.auto=0", "-c", "core.quotepath=false",
-            # The untracked cache: the private GIT_DIR is the picker's alone, so nothing else
-            # reads or rewrites it, and a point of an unchanged big tree no longer walks
-            # all of it twice (ls-files, then add).
+            # Untracked cache: the private GIT_DIR is the picker's alone, so a point of an
+            # unchanged big tree skips walking it twice (ls-files, then add).
             "-c", "core.untrackedCache=true", "-c", "core.longpaths=true", *args]
     try:
         result = subprocess.run(argv, cwd=project, input=stdin if stdin is not None else b"",
@@ -149,9 +135,8 @@ def checkpoint_init(project):
         os.makedirs(store, mode=0o700, exist_ok=True)
         checkpoint_git(project, "init", "-q")
         log("info", "checkpoint.init", project=project, store=store)
-    # A lock left by a git that was killed would block every later point. Every git
-    # that writes here runs under CheckpointLock, held now: one found is stale, at once
-    # (without flock, only after 10 minutes).
+    # A lock left by a killed git would block every later point; under the held
+    # CheckpointLock one found is stale at once (without flock, after 10 minutes).
     lock = os.path.join(store, "index.lock")
     try:
         if fcntl or time.time() - os.stat(lock).st_mtime > 600:

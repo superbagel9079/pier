@@ -1,8 +1,6 @@
 // The Rust side, through Tauri's invoke and events.
 
-// ============================================================================
 // Backends
-// ============================================================================
 
 function realBackend() {
   const { invoke, Channel } = tauri.core;

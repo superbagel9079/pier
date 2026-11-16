@@ -1,12 +1,5 @@
-//! The paths of this computer the user handed to Pier, and only those.
-//!
-//! Commands that read or lend a local folder or file take its path from the page. A
-//! script injected there (the CSP stops them today: this is the next wall) could
-//! otherwise name any file of the PC: read ~/.ssh by a take back's diff, share C:\ for
-//! writing with the VM. So a path is accepted only when the user gave it: picked in a
-//! dialog Pier itself opens, dropped on the window, copied in the file manager and
-//! pasted, or a folder already shared (remembered). A folder given covers what is in
-//! it. Nothing else.
+//! The paths of this computer the user handed to Pier, and only those: picked in its dialog,
+//! dropped, pasted or already shared. A script in the page could else name any file (~/.ssh).
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

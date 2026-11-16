@@ -103,9 +103,8 @@ pub(crate) async fn skill_import(app: AppHandle, state: State<'_, AppState>, sco
     api(&app, &state, &["skill-import", &scope, &project, &name], &packed.0).await
 }
 
-/// Saves one of the project's texts for Pi: "instructions" (AGENTS.md), "append"
-/// (.pi/APPEND_SYSTEM.md) or "system" (.pi/SYSTEM.md). The picker keeps the previous
-/// version in the project's history.
+/// Saves a project text for Pi: "instructions" (AGENTS.md), "append" (.pi/APPEND_SYSTEM.md)
+/// or "system" (.pi/SYSTEM.md). The picker keeps the previous version in the history.
 #[tauri::command]
 pub(crate) async fn write_text(app: AppHandle, state: State<'_, AppState>, project: String, which: String, text: String) -> Result<Value, String> {
     api(&app, &state, &["write-text", &project, &which], text.as_bytes()).await

@@ -292,9 +292,8 @@ class Picker:
             self.message = "a pi already runs that conversation: attached to it"
         tmux_server_options(env, self.config)
         if os.environ.get("DEVBOX_REQUEST"):
-            # Inside Pier: Pi opens in a Pier tab, which shows it through tmux's
-            # control mode, history included. The request is an OSC sequence that only
-            # Pier's picker tab acts on; the picker stays here.
+            # Inside Pier: Pi opens in a Pier tab through tmux's control mode. The request is
+            # an OSC sequence only Pier's picker tab acts on; the picker stays here.
             n = slot_number(name, path, self.home)
             request = json.dumps({"project": path, "label": self.pretty(path), "slot": name, "n": n})
             os.write(sys.stdout.fileno(), f"\x1b]7770;open-pi;{request}\x07".encode())
@@ -336,9 +335,8 @@ class Picker:
         error to read), "error" when it fails at all, "always" in every case, "never" never.
         """
         if curses.isendwin():
-            # Two children in a row with nothing drawn between them (tmux installed,
-            # then Pi): curses still counts the terminal as handed over, and endwin
-            # fails when called twice. A refresh takes it back first.
+            # Two children with nothing drawn between: curses still counts the terminal as
+            # handed over and endwin fails when called twice. A refresh takes it back first.
             self.scr.refresh()
         curses.def_prog_mode()
         curses.endwin()
@@ -957,9 +955,8 @@ def entry():
     if len(sys.argv) > 1 and sys.argv[1] == "--version":
         print(VERSION)
         sys.exit(0)
-    # ncurses waits ESCDELAY after a lone Escape before delivering it, one second by
-    # default: Escape to quit feels broken. 100 ms still reassembles an arrow sequence
-    # that arrives split, and quits promptly.
+    # ncurses waits ESCDELAY (1 s by default) after a lone Escape: quitting feels broken.
+    # 100 ms still reassembles an arrow sequence that arrives split.
     os.environ.setdefault("ESCDELAY", "100")
     loaded, problem = load_config(home_dir())
     try:

@@ -1,9 +1,7 @@
 // Take back tabs.
 
-// ============================================================================
 // Take back, file by file: what Pi changed in a handed-off copy, brought back into the
 // original folder only for the files chosen (see takeback.rs)
-// ============================================================================
 
 /** Opens (or shows) the review of a handed-off copy against its original folder. */
 function openTakeBack(share) {

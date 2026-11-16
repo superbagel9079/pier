@@ -1,6 +1,5 @@
-// The Repository panel: the project's repository (Git) and the colleagues met there
-// (Team), for the Pi in use. Git and Team were pages of Setup, the project's
-// configuration; they are a subject of their own.
+// The Repository panel: the project's repository (Git) and the colleagues met there (Team),
+// for the Pi in use.
 
 function makeRepository(tab) {
   tab.pane.append($("#tpl-repository").content.cloneNode(true));

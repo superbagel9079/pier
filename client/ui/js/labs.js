@@ -1,12 +1,8 @@
 // Labs: machines where Pi may do anything. Settings > Labs turns them on and sets their
 // limits and the machines; the Labs tab shows them, with a terminal in each.
 
-// ============================================================================
-// An option, off until turned on: Pi's sandbox does not change. Labs are made on lab
-// hosts the user adds (another VM with Incus, reached over SSH, or Pi's own VM when
-// chosen): none, no lab. A lab is a disposable Incus container (or a VM), made by Pi or
-// by you; a machine is a computer Pi drives directly over SSH. See "labs" in the picker.
-// ============================================================================
+// Off until turned on; Pi's sandbox does not change. Labs are disposable Incus containers or
+// VMs on lab hosts the user adds; a machine is a computer Pi drives over SSH.
 
 let labsStatus = null; // the last answer of the picker: settings, labs, machines
 

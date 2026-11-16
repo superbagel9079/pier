@@ -1,11 +1,7 @@
 // Skills, extensions and prompts, and packages, in the Project panel.
 
-// ============================================================================
-// What Pi loads, managed: each skill, extension and prompt turned on or off (as
-// `pi config` does), local skills made, edited, imported from this computer or put in
-// the bin, and packages installed from the gallery or a source (pi install, run in
-// Pi's sandbox on the VM). See "managing what Pi loads" in the picker.
-// ============================================================================
+// What Pi loads, managed: skills, extensions, prompts on or off (as `pi config`), local skills
+// made, edited, imported; packages installed (pi install, in Pi's sandbox on the VM).
 
 const KIND_LABELS = { skills: "Skills", extensions: "Extensions (they run code)", prompts: "Prompt templates" };
 const PACKAGE_WARNING = "A package's extensions run code with your rights when Pi starts, and its skills can tell Pi to do anything. "

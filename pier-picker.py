@@ -83,9 +83,8 @@ DEFAULTS = {
     "helper_model": "",                # the read-only helpers' model by default (see consult); "" Pi's default
 }
 
-# Where Pi may connect, in its sandbox, when network_limit is on (see NetProxy): its
-# model providers, npm and GitHub (packages, git over https). The rest is refused and
-# logged (net.blocked): add what you need to network_allow in config.toml.
+# Where Pi may connect in its sandbox when network_limit is on: model providers, npm,
+# GitHub. The rest is refused and logged (net.blocked): add hosts to network_allow.
 NETWORK_ALLOW = (
     ".anthropic.com", "claude.ai",          # Claude, Claude Max sign-in
     "openrouter.ai", ".openrouter.ai",
@@ -104,24 +103,19 @@ NAME_MAX_BYTES = 255
 # refused on top of the "--" given to git clone.
 CLONE_URL_RE = re.compile(r"(?:https?|ssh|git|file)://\S+|[\w.-]+@[\w.-]+:\S+")
 
-# A repository's own config can name a program that git status runs: core.fsmonitor.
-# It is switched off here. Clean filters declared in .git/config can still run; see
-# git_status.
+# A repository's own config can name a program git status runs (core.fsmonitor): off here.
+# Clean filters in .git/config can still run; see git_status.
 GIT_OPTIONS = ["--no-optional-locks", "-c", "core.fsmonitor=false"]
 GIT_TIMEOUT = 5
 
-# Under an SSH RemoteCommand the PATH is the bare system one. These are appended,
-# never prepended, so the user's own PATH wins.
-# Where a user's own programs live, first: what you installed for yourself wins over a
-# copy installed for everyone, as your ~/.profile would order it (an SSH command does not
-# read it). /usr/local/bin last, for systems whose PATH lacks it.
+# Under an SSH RemoteCommand PATH is the bare system one: these are appended, never
+# prepended, so the user's PATH wins. User bins first; /usr/local/bin last.
 USER_PATH = ("~/.npm-global/bin", "~/.local/bin", "~/bin", "~/.bun/bin")
 SYSTEM_PATH = ("/usr/local/bin",)
 EXTRA_PATH = USER_PATH + SYSTEM_PATH
 
-# The picker was called pi-dir-picker. Its folders are moved to the new name the first
-# time it runs (see migrate_old_name); its tmux server keeps the old name for as long
-# as it runs, so that the Pis started before are still found.
+# Renamed from pi-dir-picker: folders move on first run (see migrate_old_name); the tmux
+# server keeps the old name while it runs, so earlier Pis are still found.
 OLD_NAME = "pi-dir-picker"
 
 
@@ -429,15 +423,11 @@ def api_config(home):
             "network_builtin": list(NETWORK_ALLOW), "writable": tomllib is not None}
 # --- logging -------------------------------------------------------------------------
 #
-# One line per event, in ~/.local/state/pier-picker/picker.log, readable by its owner
-# only:
+# One line per event in picker.log (~/.local/state/pier-picker/), owner-readable only:
 #   2026-10-12T14:32:01.123Z INFO  api.paste-image pid=4242 req=7f3a-12 ms=41 saved=...
-# Times are UTC, like Pier's own log, so the two read side by side; req is the id
-# Pier gave the call. A crash adds its traceback on the lines below, indented. The
-# reads Pier makes every few seconds are debug lines, written only with
-# DEVBOX_LOG=debug. Logging never breaks anything: when the disk is full or the home is
-# read-only, lines are lost and that is all. Passwords never come here, and what is
-# typed into Pi is logged as its length only.
+# UTC times like Pier's log; req is the id Pier gave the call. A crash adds its indented
+# traceback. Periodic reads are debug lines (DEVBOX_LOG=debug). Logging never breaks
+# anything: lines are lost on a full disk. No passwords; typed text is logged as length.
 
 LOG_MAX_BYTES = 1024 * 1024
 LOG_KEEP = 3  # picker.log, picker.log.1, picker.log.2
@@ -545,10 +535,8 @@ def within(path, root):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
-# Pi writes in the project and in ~/.pi, so whatever the picker (outside the sandbox)
-# reads or deletes there is reached through file descriptors, folder by folder, without
-# following links: a link or a folder swapped in between a check and its use cannot
-# send it elsewhere. Not on Windows (the simulated tests), which has no dir_fd.
+# Pi writes in the project and ~/.pi: what the picker (outside the sandbox) reads or
+# deletes there goes through descriptors, never following links. Not on Windows (no dir_fd).
 DIR_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 # os.replace takes src_dir_fd/dst_dir_fd wherever os.rename does (both are renameat),
 # but only os.rename is listed in supports_dir_fd.
@@ -766,9 +754,8 @@ def git_branch(path):
     return head[:7] or None
 
 
-# Where Incus and LXD keep their sockets, outside /run: a member of the incus group (a
-# VM that is also a lab host) would drive Incus from the sandbox, and make itself
-# machines with the whole internet, out of Pier's sight.
+# Where Incus and LXD keep their sockets, outside /run: a member of the incus group
+# would drive Incus from the sandbox and make itself machines with the whole internet.
 SOCKET_FOLDERS = ("/var/lib/incus", "/var/lib/lxd", "/var/snap/lxd/common/lxd")
 
 
@@ -791,10 +778,8 @@ def run_hidden():
     return args
 
 
-# ioctls that push characters into a terminal's input, as if typed: TIOCSTI, and
-# TIOCLINUX (its paste, on a console). Pi in its sandbox must not type into the
-# terminal it runs in (without tmux, the user's own). --new-session would stop it too,
-# but it takes the terminal away from Pi, which then misses window size changes.
+# ioctls that push characters into a terminal's input (TIOCSTI, TIOCLINUX paste): Pi must
+# not type into its terminal. --new-session would stop it too but starves Pi of resizes.
 TIOCSTI, TIOCLINUX = 0x5412, 0x541C
 # machine -> (its AUDIT_ARCH, ioctl's number, the lowest number that is not native)
 SECCOMP_ARCHES = {"x86_64": (0xC000003E, 16, 0x40000000), "aarch64": (0xC00000B7, 29, 0xFFFFFFFF)}
@@ -1272,9 +1257,8 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
         mounts.setdefault(os.path.realpath(os.path.expanduser(path)), "ro")
     for path in [project, os.path.join(home, ".pi"), *config["sandbox_write"]]:
         mounts[os.path.realpath(os.path.expanduser(path))] = "rw"
-    # --dev: a /dev of its own (the user's other terminals, /dev/pts, stay out of
-    # reach); /run/user: the user's session bus and systemd would start programs
-    # outside the sandbox.
+    # --dev: a /dev of its own (other terminals, /dev/pts, stay out); /run/user hidden:
+    # the session bus would start programs outside the sandbox.
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
             "--tmpfs", "/tmp", "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
@@ -1285,19 +1269,16 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
     for path in sorted(mounts, key=lambda m: (m.count(os.sep), m)):
         if os.path.exists(path):
             args += ["--bind" if mounts[path] == "rw" else "--ro-bind", path, path]
-    # The conversations of every project are in ~/.pi/agent/sessions: a Pi would read
-    # what was said in the others, and write in them an order it finds there when the
-    # user goes on with one. Only this project's folders come back, by descriptor (a
-    # link put there by another Pi cannot give a folder elsewhere).
+    # ~/.pi/agent/sessions holds every project's conversations: only this project's
+    # folders come back, by descriptor (a link from another Pi cannot point elsewhere).
     pi_home = os.path.realpath(os.path.join(home, ".pi"))
     every = os.path.realpath(os.path.join(agent_dir(), "sessions"))
     if within(every, pi_home) and every != pi_home and os.path.isdir(every):
         args += ["--tmpfs", every]
         for fd, folder in sessions:
             args += ["--bind-fd", str(fd), folder] if bwrap_takes("--bind-fd") else ["--bind", folder, folder]
-    # What Pier gives each Pi (see pier_dir) is the picker's, out of reach: its
-    # extensions read-only, and the folder its own state goes to. ~/.pi/pier, where an
-    # older picker kept them, is hidden.
+    # What Pier gives each Pi (see pier_dir) is the picker's: extensions read-only, its
+    # state folder writable. ~/.pi/pier, where an older picker kept them, is hidden.
     legacy = os.path.join(pi_home, "pier")
     if os.path.isdir(legacy) and not os.path.islink(legacy):
         args += ["--tmpfs", legacy]
@@ -1366,15 +1347,9 @@ def session_folders(home, *folders):
 
 # --- the network Pi may reach -----------------------------------------------------------
 #
-# With network_limit, Pi's sandbox has a network of its own with nothing in it
-# (--unshare-net): Pi cannot connect anywhere by itself. Inside, a small relay of this
-# file (--net-bridge) listens on 127.0.0.1:3128 and passes each connection, through a
-# Unix socket bound into the sandbox, to NetProxy, which runs out here and accepts only
-# HTTP CONNECT to the places allowed. Pi, npm, git and curl use it through the usual
-# HTTPS_PROXY variables (NODE_USE_ENV_PROXY for Node's own fetch). Refused attempts are
-# logged as net.blocked, with the host: add it to network_allow if Pi needs it.
-# An address on the VM itself ("127.0.0.1:8080", a local gateway) is relayed too: the
-# relay listens on that port inside, and NetProxy connects to it out here.
+# With network_limit the sandbox has an empty network (--unshare-net); a relay (--net-bridge)
+# on 127.0.0.1:3128 reaches NetProxy, out here, by a Unix socket: HTTP CONNECT to allowed
+# hosts only. Refusals are logged as net.blocked (add to network_allow). VM addresses work.
 
 NET_DIR = "/tmp/.pier-net"
 NET_PROXY_PORT = 3128
@@ -1951,10 +1926,8 @@ def exec_pi(path, extra):
     project = os.path.realpath(path)
     watcher = None
     if config["checkpoints"]:
-        # Saved before Pi starts, so that whatever it does first can be undone.
-        # A Pi in a worktree of its own changes that folder, not the project (whose points
-        # leave .pi-worktrees out), and writes its conversations as that folder's: its
-        # points are the worktree's, in a store of their own.
+        # Saved before Pi starts, so whatever it does first can be undone. A worktree Pi
+        # has its own store: its points are the worktree's, not the project's.
         saved = os.path.realpath(workdir)
         if not os.path.isdir(checkpoint_store(saved)):
             print("Pier: saving the project's first restore point (only the first one takes a while)...", flush=True)
@@ -2225,13 +2198,8 @@ def open_pi(project, extra, env, home, width, height):
 
 # --- worktrees: several Pis in one git project ---------------------------------------------
 #
-# Two Pis in the same folder step on each other's files. In a git project, the first Pi
-# works in the folder itself, and every other one in a worktree of its own,
-# .pi-worktrees/<its tmux session>, on a branch pi/agent-N-...: they come together by
-# merges or pull requests, as a team does. The worktree has links to the project's
-# .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
-# removed when its Pi ends without having changed or committed anything; otherwise it
-# stays, listed in Repository > Git, until the user removes it.
+# Two Pis in one folder step on each other's files: the first works in the project, the
+# others in .pi-worktrees/<tmux session> on a pi/agent-N-... branch; removed when unchanged.
 
 WORKTREE_DIR = ".pi-worktrees"
 
@@ -2504,13 +2472,9 @@ def set_pi_file(slot, file):
 
 # --- what each Pi says about itself -------------------------------------------------------
 #
-# Pi switches conversations by itself (/new, /resume, /fork), and the file of a new one
-# only appears at its first answer: from outside, which conversation a Pi holds can only
-# be guessed. So the Pis started here get a small extension (--extension, nothing is
-# installed in Pi's settings) that writes, at every change, which conversation it holds
-# and whether it works, to <the picker's state>/pi/pis/<tmux session>/state.json. That
-# folder is the picker's: the sandbox gives each Pi its own folder there and nothing else
-# of it, so a Pi cannot write what another says, nor change the extensions they load.
+# Pi switches conversations itself and a new one's file appears only at its first answer, so
+# the Pis started here get an extension writing which conversation each holds, and whether it
+# works, to <state>/pi/pis/<tmux session>/state.json: a folder only that Pi can write.
 
 PIER_EXTENSION = """// Written by Pier (pier-picker): tells Pier which conversation this Pi holds and
 // whether it is working. Loaded with --extension by the picker only; it writes one small
@@ -2615,25 +2579,12 @@ def said_file_ok(file):
 
 # --- restore points ----------------------------------------------------------------------
 #
-# The project is saved when Pi starts, when it is given a prompt, and when it stops
-# working: a restore point. Going back to one puts every file as it was then, files
-# created since included (they are removed), or only the files chosen.
-#
-# They live outside the project, in a git repository of their own per project under
-# ~/.local/state/pier-picker/checkpoints. The project's own git, if any, is never
-# touched, and Pi cannot reach them: its sandbox hides that folder. git stores each
-# version of a file once, so a restore point costs only what changed. That repository
-# reads no configuration but its own: no hook, filter or fsmonitor of yours runs.
-#
-# Saved is what git would see: files your .gitignore leaves out (build output,
-# node_modules, .env) are not, nor what Pier gave the project (.pi-images, .pi-files,
-# .pi-shared), nor any file over 50 MB.
-#
-# When a prompt arrives, Pi has written it to its session file before asking its model,
-# which leaves the second or more the model takes to save. The first prompt of a new
-# session is the exception: Pi creates the file with its first answer, as its tools
-# start. That prompt is attached to the point saved just before (when Pi started, or
-# finished its previous work), which holds the files as they were.
+# Restore points: saved when Pi starts, gets a prompt and stops working; going back puts back
+# every file (created ones removed) or only those chosen. Kept outside the project, in a git
+# repository per project under ~/.local/state/pier-picker/checkpoints, hidden from Pi's
+# sandbox: the project's own git is untouched, no hook or filter runs. Saved is what git
+# would see (.gitignore respected), minus files over 50 MB. A prompt is in Pi's session file
+# before its model answers; a new session's first prompt attaches to the point saved before.
 
 CHECKPOINT_DIR = "checkpoints"
 CHECKPOINT_KEEP = 50
@@ -2708,9 +2659,8 @@ def checkpoint_git(project, *args, stdin=None, unreadable_ok=False):
     root-owned one): those are skipped, the rest is saved."""
     argv = ["git", "-c", "core.fsmonitor=false", "-c", "core.autocrlf=false", "-c", "core.safecrlf=false",
             "-c", f"core.hooksPath={os.devnull}", "-c", "gc.auto=0", "-c", "core.quotepath=false",
-            # The untracked cache: the private GIT_DIR is the picker's alone, so nothing else
-            # reads or rewrites it, and a point of an unchanged big tree no longer walks
-            # all of it twice (ls-files, then add).
+            # Untracked cache: the private GIT_DIR is the picker's alone, so a point of an
+            # unchanged big tree skips walking it twice (ls-files, then add).
             "-c", "core.untrackedCache=true", "-c", "core.longpaths=true", *args]
     try:
         result = subprocess.run(argv, cwd=project, input=stdin if stdin is not None else b"",
@@ -2764,9 +2714,8 @@ def checkpoint_init(project):
         os.makedirs(store, mode=0o700, exist_ok=True)
         checkpoint_git(project, "init", "-q")
         log("info", "checkpoint.init", project=project, store=store)
-    # A lock left by a git that was killed would block every later point. Every git
-    # that writes here runs under CheckpointLock, held now: one found is stale, at once
-    # (without flock, only after 10 minutes).
+    # A lock left by a killed git would block every later point; under the held
+    # CheckpointLock one found is stale at once (without flock, after 10 minutes).
     lock = os.path.join(store, "index.lock")
     try:
         if fcntl or time.time() - os.stat(lock).st_mtime > 600:
@@ -3413,9 +3362,8 @@ def ignored_dir(project, name):
 def type_into_pi(pi, text):
     """Type text into the prompt of a running Pi. Never presses Enter."""
     text = "".join(ch for ch in text if ch.isprintable())
-    # send-keys takes a pane: "=name:" is the session's active pane, "=" makes the
-    # match exact. Without the colon, tmux reads the target as a window name.
-    # "--": a text starting with "-" is text, not an option of send-keys.
+    # send-keys target "=name:" is the session's active pane ("=" exact match; without the
+    # colon tmux reads a window name). "--": text starting with "-" is text, not an option.
     return run_quiet(tmux_cmd("send-keys", "-t", f"={pi['name']}:", "-l", "--", text))
 
 
@@ -3671,9 +3619,8 @@ def share_serve(mount, mode):
 
 # --- agent activity --------------------------------------------------------------------
 #
-# Pi appends every message of a session to a JSONL file as it happens: an assistant
-# message lists its tool calls (name, arguments), and each call's result follows when
-# the tool is done. A call without a result yet is therefore running right now.
+# Pi appends each message of a session to a JSONL file as it happens: an assistant message
+# lists its tool calls, each result follows when done, so a call without one is running now.
 
 # Tools that touch one file, given as arguments["path"].
 FILE_TOOLS = {"read": "read", "edit": "modify", "write": "modify"}
@@ -3729,12 +3676,9 @@ def mtime_of(path):
         return 0  # gone between listdir and here: as old as can be
 
 
-# Sub-agents are Pis of their own, writing in the project's sessions folder: Pier's
-# read-only helpers (the consult tool of an orchestrator or a worker, see workers), each
-# named "pier-helper <role>: <title>", and pi-multiagent's (pi install npm:pi-multiagent),
-# "agent_team <run>/<step> <agent>". They are the parent Pi's work, not the user's
-# conversations: never taken as the latest one or as a Pi's own, and listed apart (see
-# api_conversations).
+# Sub-agents are Pis of their own in the project's sessions folder: Pier's helpers
+# ("pier-helper <role>: <title>") and pi-multiagent's ("agent_team <run>/<step> <agent>").
+# The parent's work: never the latest conversation, listed apart (see api_conversations).
 SUBAGENT_PREFIX = ("pier-helper ", "agent_team ")
 
 
@@ -4425,15 +4369,12 @@ def api_handoff(home, mount, mode, stream):
 
 # --- take back, file by file -------------------------------------------------------------
 #
-# Pier compares a handed-off copy with the original folder on the PC: the picker lists
-# the copy's files with their SHA-256 (copy-manifest), shows one file's difference
-# (copy-diff, the PC's version on stdin), and sends the files chosen (--download-files).
-# The copy is Pi's to write: it is walked through file descriptors (os.fwalk), links are
-# listed but never followed, and only plain files are read.
+# Pier compares a handed-off copy with the PC's folder: copy-manifest (SHA-256 list),
+# copy-diff (PC version on stdin), --download-files. The copy is Pi's to write: walked by
+# descriptor (os.fwalk), links listed never followed, only plain files read.
 
-# Left out of the comparison, as Pier leaves them out of a hand off (copy.rs,
-# take_back_skips): the rebuilt folders at the top only, the systems' files everywhere,
-# and git's own files (never brought back).
+# Left out, as in a hand off (copy.rs, take_back_skips): rebuilt folders at the top only,
+# the systems' files everywhere, and git's own files (never brought back).
 COPY_REBUILT = {"node_modules", "target", "__pycache__", ".venv", "venv"}
 COPY_JUNK = {".git", ".DS_Store", "Thumbs.db"}
 
@@ -4680,11 +4621,10 @@ def api_upload_dir(home, name, target, stream):
 
 # --- project setup ---------------------------------------------------------------------
 #
-# Mirrors Pi's resource loader: a global context file in the agent dir, then the first
-# of AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD in every directory from / down to the
-# project. .pi/SYSTEM.md and .pi/APPEND_SYSTEM.md only count once the project is
-# trusted (~/.pi/agent/trust.json, nearest entry wins); otherwise Pi uses the global
-# ones in the agent dir.
+# Mirrors Pi's resource loader: a global context file in the agent dir, then the first of
+# AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD in every directory from / to the project.
+# .pi/SYSTEM.md and .pi/APPEND_SYSTEM.md count only once the project is trusted
+# (~/.pi/agent/trust.json, nearest entry wins); else the global ones.
 
 CONTEXT_NAMES = ("AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD")
 TEXT_MAX_BYTES = 256 * 1024
@@ -5180,9 +5120,8 @@ def pi_resources(project, home):
     return out
 
 
-# Every conversation of every project, for the Conversations tab: Pi's sessions folder
-# holds one folder per project; the project is the "cwd" of a session's first line.
-# Light on purpose: no token counts (Setup has them, project by project).
+# Every conversation of every project, for the Conversations tab: the project is the
+# "cwd" of a session's first line. Light on purpose: no token counts (Setup has them).
 
 _FOLDER_PROJECT = {}  # sessions folder -> project path (a folder never changes project)
 # The most recent conversations, over all projects, come with their token use (the
@@ -5301,9 +5240,8 @@ def api_conversations(home):
     return {"projects": projects, "truncated": cut is not None}
 
 
-# Pi's version and the newest one, and the newest version of each npm package. Asked to
-# npm's registry from the VM, at most every 6 hours (an hour after a failure); the
-# answer is kept in ~/.local/state/pier-picker/versions.json.
+# Pi's version and the newest, and the newest of each npm package: asked of npm's registry
+# at most every 6 hours (1 hour after a failure), cached in the state dir's versions.json.
 
 PI_NPM = "@earendil-works/pi-coding-agent"
 VERSIONS_FRESH = 6 * 3600
@@ -5312,13 +5250,9 @@ VERSIONS_RETRY = 3600
 
 # --- managing what Pi loads: skills, extensions, prompts, packages ------------------------
 #
-# Setup lists each resource with whether Pi loads it, and turns one on or off the way
-# `pi config` does (Pi's own package-manager.js): a "+path" or "-path" entry, path
-# relative to its base, in the "skills" / "extensions" / "prompts" list of
-# settings.json, or of the package's entry there (then relative to the package root).
-# Local skills can be made, edited, imported from the PC and put in a bin; packages are
-# installed and removed by `pi install` / `pi remove`, run in Pi's sandbox (see
-# pi_package). Pi reads what changed when it next starts.
+# Setup lists each resource and turns one on or off like `pi config`: a "+path" or "-path"
+# entry in the skills / extensions / prompts list of settings.json (or the package's entry).
+# Packages go through `pi install` / `pi remove` in Pi's sandbox (see pi_package).
 
 MANAGED_KINDS = ("skills", "extensions", "prompts")
 SKILL_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # Pi's rule: 1-64, lowercase, hyphens
@@ -5940,22 +5874,17 @@ def api_pi_default(home, value):
     return {"default": pi_default_model(home)}
 # --- git forges: GitHub, GitLab, Gitea / Forgejo ------------------------------------------
 #
-# Pi works in git as it likes inside its sandbox (commit, branch, merge, all local). What
-# talks to a forge goes through the picker, out of the sandbox, with a token Pi never
-# sees: Pi's tools (PIER_GIT_EXTENSION) ask the broker (GitBroker) over a Unix socket,
-# and the broker checks each request against the rules before doing it.
-#   - push: only branches under "pi/" (the default branch only while the remote repository
-#     is empty), never forced. The commits are first fetched, in git's jail (no network,
-#     the project read-only), into a bare mirror of the picker's own; the mirror then
-#     pushes with the token. No hook, filter or setting of the project runs with it.
-#   - pull: the forge into the mirror, then the mirror into the project's
-#     refs/remotes/origin/*, in the jail: Pi merges or rebases itself.
+# Pi works in git freely in its sandbox; whatever talks to a forge goes through the picker,
+# outside it, with a token Pi never sees: Pi's tools (PIER_GIT_EXTENSION) ask the broker
+# (GitBroker) over a Unix socket, which checks each request against the rules.
+#   - push: only "pi/" branches (the default branch only while the remote is empty), never
+#     forced. Fetched first in git's jail (no network, project read-only) into a bare mirror,
+#     which pushes with the token. No hook, filter or setting of the project runs.
+#   - pull: forge into the mirror, then into refs/remotes/origin/* in the jail; Pi merges.
 #   - pull requests: opened, listed and read freely.
-#   - merging, and creating a repository: never by Pi alone. Its request waits in
-#     approvals.json until the user approves it in Pier, which then does it.
-# Tokens live in ~/.config/pier-picker/forges.json (mode 600), out of the sandbox's
-# sight; they are never logged, nor put on a command line (git gets them in its
-# environment, GIT_CONFIG_*).
+#   - merging, creating a repository: never by Pi alone; the request waits in approvals.json.
+# Tokens live in ~/.config/pier-picker/forges.json (mode 600), out of the sandbox's sight;
+# never logged, nor on a command line (git gets them in GIT_CONFIG_*).
 
 FORGE_KINDS = ("github", "gitlab", "gitea")
 PI_BRANCH_RE = re.compile(r"pi/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")
@@ -6067,9 +5996,8 @@ def forge_open(request, timeout):
     return urllib.request.build_opener(KeepToken).open(request, timeout=timeout)
 
 
-# Answers to GET, with their ETag: asked again, the forge says "304 not modified",
-# which GitHub does not count against the token's 5,000 requests an hour. Kept for the
-# watch's life (the team part asks the same pages every five minutes).
+# Answers to GET, with their ETag: asked again, the forge says "304 not modified", which
+# GitHub does not count against the 5,000 requests an hour. Kept for the watch's life.
 _FORGE_ETAGS = {}
 FORGE_ETAGS_KEPT = 300
 
@@ -6583,11 +6511,9 @@ def merge_pr(home, project, link, number, method=None, sha=None):
     return {"merged": int(number)}
 
 
-# Pi's requests waiting for the user, in approvals.json. Several processes write it at
-# once (each Pi's broker asks, Pier answers): every change is made under its lock, on
-# what the file holds then. A request holds exactly what is done once approved (the
-# command, the pull request and the commit it is at), and leaves "pending" before
-# anything is done: a second click finds it taken.
+# Pi's requests waiting for the user, in approvals.json. Several processes write it, so every
+# change is made under its lock. A request holds exactly what is done once approved and leaves
+# "pending" before anything is done: a second click finds it taken.
 APPROVALS_KEPT = 200        # answered requests kept for the record; waiting ones always stay
 APPROVALS_WAITING_MAX = 20  # per project: past that, Pi waits for the user's answers
 
@@ -6730,20 +6656,15 @@ def api_pr_merge(home, path, number, method):
 
 # --- the team: tasks, reviews between Pis, handoffs ---------------------------------------
 #
-# Colleagues each have their Pier, their VM and their Pis; they meet in the repository.
-#   - tasks: open issues labelled pi-task. A Pi takes one (claim_task: label pi-doing, the
+# Colleagues each have their Pier, VM and Pis; they meet in the repository.
+#   - tasks: open issues labelled pi-task. A Pi takes one (claim_task: label pi-doing,
 #     account assigned, a comment), works on pi/task-N, opens a pull request.
-#   - reviews: a Pi asks another account's Pi for a review (request_review: the label
-#     pi-review, the account asked as reviewer); that Pi reads the diff and posts its
-#     review. At most REVIEW_ROUNDS reviews by one account on one pull request: then a
-#     human decides. With the repository set to ask, a review waits for the user's
-#     approval in Pier like a merge.
-#   - handoffs: the user gives a conversation to a colleague. The picker pushes an orphan
-#     branch pi-handoff/<colleague>/<from>-<stamp> holding handoff.json and the session;
-#     the colleague's Pier lists it, takes it (the session copied into their own Pi's
-#     sessions, the branch deleted) and resumes it.
-# What colleagues and their Pis wrote (issues, pull requests, reviews, notes) reaches Pi
-# marked as written by others: data to read, never orders.
+#   - reviews: a Pi asks another account's Pi for a review (request_review: label pi-review,
+#     the account as reviewer). At most REVIEW_ROUNDS per account per pull request, then a
+#     human decides; with the repository set to ask, it waits for approval like a merge.
+#   - handoffs: an orphan branch pi-handoff/<colleague>/<from>-<stamp> holds handoff.json and
+#     the session; the colleague's Pier takes it (session copied, branch deleted), resumes.
+# What colleagues and their Pis wrote reaches Pi marked as others' words: data, never orders.
 
 TASK_LABEL, DOING_LABEL, REVIEW_LABEL = "pi-task", "pi-doing", "pi-review"
 HANDOFF_PREFIX = "pi-handoff/"
@@ -6868,9 +6789,8 @@ def gitlab_user_id(forge, login):
     return users[0].get("id")
 
 
-# Put at the end of a task a Pi writes: Pier never starts a Pi by itself on one (Pis
-# would otherwise feed each other tasks without end). A colleague could leave it out:
-# the limits on Pis started by themselves (team.js) hold anyway.
+# Put at the end of a task a Pi writes: Pier never starts a Pi on one by itself (Pis would
+# feed each other tasks). If a colleague omits it, team.js limits on self-started Pis hold.
 PI_WROTE = "<!-- written by a Pi (Pier) -->"
 
 
@@ -7359,24 +7279,19 @@ TEAM_WRITES = ("create_task", "claim_task", "release_task", "review_pr", "reques
 
 # --- labs: machines where Pi may do anything -------------------------------------------
 #
-# An option, off until the user turns it on (Settings > Labs): Pi's sandbox stays as it
-# is, and Pi gets tools to use machines of its own besides.
-#   - lab hosts: where labs are made, each with Incus. None until the user adds one: a VM
-#     reached over SSH (the picker runs `incus` there), or Pi's own VM ("pi-vm", only if
-#     the user chooses it). One is the default; a lab may name another.
-#   - labs: disposable Incus containers (or virtual machines when the host has /dev/kvm)
-#     on a lab host, made by Pi or the user. Root inside, nothing of the host or of home
-#     inside, only what Pi copies in. Limits on CPU, memory and disk, a lifetime after
-#     which they go, a "clean" snapshot to go back to, the networks chosen.
-#   - machines: computers the user adds, reached over SSH with a key the picker makes and
-#     keeps (Pi never sees it). Each has a rule: Pi's commands run freely, or each waits
-#     for the user's approval in Pier.
-# Pi reaches both through the broker socket (lab_* operations), never directly: its
-# sandbox has no network to them. Every command is written to the labs journal.
+# An option, off until the user turns it on (Settings > Labs): Pi's sandbox stays as it is,
+# and Pi gets tools for machines of its own besides.
+#   - lab hosts: where labs are made, each with Incus: a VM over SSH, or Pi's own VM
+#     ("pi-vm", only if chosen). One is the default; a lab may name another.
+#   - labs: disposable Incus containers (VMs with /dev/kvm): root inside, nothing of the host
+#     or home, CPU/memory/disk limits, a lifetime, a "clean" snapshot, chosen networks.
+#   - machines: computers the user adds over SSH with a key the picker keeps (Pi never sees
+#     it). Each rule: Pi's commands run freely, or each waits for approval in Pier.
+# Pi reaches both through the broker socket (lab_* operations), never directly: its sandbox
+# has no network to them. Every command is written to the labs journal.
 
-# network: "open" (Incus's own NAT, the default), "none" (cut), or "vlan": the labs on an
-# Incus network the admin made once on a second card of the VM (vlan_network), a VLAN of
-# the firewall (pfSense...) that gives them their addresses and rules.
+# network: "open" (Incus's NAT, default), "none" (cut), or "vlan": an Incus network the admin
+# made on a second card of the VM (vlan_network), a firewall VLAN giving addresses and rules.
 LABS_DEFAULTS = {"enabled": False, "max": 3, "ttl_hours": 24, "network": "open", "cpu": 2, "memory_gib": 4,
                  "disk_gib": 20, "image": "debian/13", "vlan_network": "pier-labs", "default_host": ""}
 LOCAL_HOST = "pi-vm"  # Pi's own VM, as a lab host: only when the user adds it
@@ -7478,9 +7393,8 @@ def incus_state(at=None, timeout=20):
         return False, f"Incus does not answer ({str(exc)[:200]}): installed, and the user in the incus group?", False
     drivers = str((info.get("environment") or {}).get("driver") or "")
     kvm = "qemu" in drivers and (not local or os.path.exists("/dev/kvm"))
-    # Labs are safe on a host only through a restricted Incus project (incus-user gives
-    # one to each account of the incus group): there, no lab can be privileged nor
-    # reach the host's files. An unrestricted one (incus-admin, root) is refused.
+    # Labs are safe on a host only through a restricted Incus project (incus-user gives one
+    # per incus-group account): no privileged lab, no host files. incus-admin/root is refused.
     project = str((info.get("environment") or {}).get("project") or info.get("project") or "default")
     try:
         config = json.loads(incus("query", f"/1.0/projects/{project}", timeout=timeout, at=at) or b"{}").get("config")
@@ -7778,13 +7692,11 @@ def api_labs(home):
             "public_key": public_key, "vlan": vlan, "networks": networks, "default_networks": default_networks(data["settings"])}
 
 
-# The networks a lab may be plugged into: those Incus lets this account use (a restricted
-# project lists only them). Three kinds, told apart by their settings:
-#   nat       a bridge with NAT (Incus's own, incusbr-*): the internet through the VM,
-#             unseen by the firewall and the LAN;
-#   vlan      a macvlan on a card of the VM (often with vlan=N on a trunk): a machine of its
-#             own on a VLAN of the firewall, which gives its address and applies its rules;
-#   internal  a bridge without NAT: between the labs on it only, for routers, DMZs, VPNs.
+# The networks a lab may use: those Incus lets this account use, told apart by settings:
+#   nat       a bridge with NAT (incusbr-*): the internet through the VM, unseen by the LAN;
+#   vlan      a macvlan on a card of the VM (often vlan=N): a machine on a firewall VLAN that
+#             gives its address and rules;
+#   internal  a bridge without NAT: between its labs only, for routers, DMZs, VPNs.
 LAB_NETWORK_KINDS = {"nat": "the internet through the host (NAT)", "vlan": "a VLAN of your firewall",
                      "internal": "between labs only", "other": "an Incus network"}
 
@@ -7864,9 +7776,8 @@ LAB_NO_SNAPSHOTS = ("snapshots are not allowed in this Incus project: lab_reset 
                     "To allow them (an admin, once): sudo incus project set user-$(id -u) restricted.snapshots=allow")
 
 
-# A lab plugged into more than one network gets one interface per network: eth0, eth1...
-# Images configure DHCP on eth0 only; the others are given it here (systemd-networkd on
-# Debian, netplan on Ubuntu), so each interface gets its address from its network.
+# A lab on several networks gets one interface each: images configure DHCP on eth0 only, so
+# the others get it here (systemd-networkd on Debian, netplan on Ubuntu).
 LAB_EXTRA_DHCP = r"""for nic in "$@"; do
   if command -v netplan >/dev/null 2>&1; then
     printf 'network:\n  version: 2\n  ethernets:\n    %s:\n      dhcp4: true\n' "$nic" > "/etc/netplan/60-pier-$nic.yaml"
@@ -8911,21 +8822,17 @@ def pier_git_extension():
 
 # --- workers: an orchestrator Pi and the Pis it starts -------------------------------------
 #
-# A Pi started as an orchestrator (Pier: "new orchestrator") gets tools to start worker
-# Pis (start_worker), follow them (list_workers, wait_workers), message them and stop
-# them. Each worker is a Pi of its own, as visible in Pier as any other, in a git
-# worktree of its own on its own branch; it gets a fixed prompt and the orchestrator's
-# task, works, and says what it did with report. The orchestrator then merges the
-# workers' branches itself, in its own folder: they share the repository.
+# A Pi started as an orchestrator (Pier: "new orchestrator") gets tools to start worker Pis
+# (start_worker), follow them (list_workers, wait_workers), message and stop them. Each worker
+# is a Pi of its own in a git worktree and branch of its own, with a fixed prompt and the
+# orchestrator's task; it says what it did with report. The orchestrator merges the branches.
 #
-#   - The first worker of a team waits for the user's approval in Pier, which shows how
-#     many workers at most and which models; then up to that many run at once, for as
-#     long as the orchestrator runs (workers_max in the config is the ceiling).
-#   - One level only: a worker starts nobody. A worker of a git project only: without
-#     worktrees, workers would write over each other.
-#   - Roles come from the picker's own environment (tmux sets it when it starts the Pi:
-#     PIER_ROLE, PIER_PARENT, PIER_TASK), never from what Pi sends over the socket.
-#   - What a worker reports is the work of a Pi: the orchestrator reads it as data.
+#   - The first worker of a team waits for the user's approval in Pier (max workers, models);
+#     then up to that many run at once (workers_max in the config is the ceiling).
+#   - One level only: a worker starts nobody. Git projects only: worktrees keep workers apart.
+#   - Roles come from the picker's environment (tmux sets PIER_ROLE, PIER_PARENT, PIER_TASK),
+#     never from what Pi sends over the socket.
+#   - What a worker reports is a Pi's work: the orchestrator reads it as data.
 #
 # teams.json, the picker's own (Pi never reaches it), holds each orchestrator's team:
 # {orchestrator slot: {"project", "approved": {"max", "models"} | None, "workers": [...]}}.
@@ -9684,10 +9591,9 @@ def forget_versions(home):
 
 PI_UPDATE_TARGET = re.compile(r"(npm:|git:|https://)[A-Za-z0-9@/._:+~-]{1,200}")
 
-# When Pi was installed by root (`sudo npm install -g`, in /usr/local), updating it needs
-# sudo. Only a command of this shape (npm, a system prefix, install -g, Pi's own package
-# at a version) is run with sudo, once the user says yes; sudo asks for the password in
-# this terminal.
+# When root installed Pi (`sudo npm install -g`, in /usr/local), updating needs sudo: only a
+# command of this shape (npm, system prefix, install -g, Pi's package at a version) runs with
+# sudo, once the user says yes; sudo asks for the password in this terminal.
 NPM_SELF_UPDATE = re.compile(
     r"npm --prefix (/usr|/usr/local|/opt/[\w.-]+) install -g " + re.escape(PI_NPM) + r"@\d+\.\d+\.\d+(?:-[\w.]+)?")
 
@@ -10012,8 +9918,8 @@ def run_api(args):
 
 # --- watch: one connection that tells what changes ---------------------------------------
 #
-# --api watch stays open for as long as Pier is connected. Pier writes on its stdin
-# what it wants to follow, one JSON object per line, for example
+# --api watch stays open while Pier is connected. Pier writes on stdin what to follow, one
+# JSON object per line, for example
 #   {"projects": true, "activity": {"project": "/home/leo/work", "file": null},
 #    "setup": "/home/leo/work", "checkpoints": null, "contexts": true, "log": false}
 # (a key left out keeps its value; {"poke": true} refreshes everything now). The picker
@@ -10021,31 +9927,21 @@ def run_api(args):
 #   {"kind": "activity", "for": {...}, "data": {...the same reply as --api activity...}}
 #   {"kind": "log", "lines": [...]}            new lines of this program's log
 #   {"kind": "setup", "for": "...", "error": "..."}
-# It replaces Pier asking every few seconds, each time over a new SSH command: a
-# running Pi is seen within a second, and nothing is sent while nothing changes. It
-# ends when its stdin closes, that is, when Pier disconnects.
+# It replaces Pier asking every few seconds over a new SSH command. It ends when stdin closes.
 
 WATCH_TICK = 1.0
-# The longest a part goes without being looked at again; most also look at what they
-# read (file sizes and times) and refresh as soon as that moves.
-# projects and activity watch what they read (see watch_signature), so the period only
-# catches what leaves no trace there: a Pi started without Pier's extension, a file
-# changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
-# tmux, each one of activity runs git status in its jail: not every second for nothing.
-# team asks the forges (3 requests a repository, against an hourly quota), labs every lab
-# host (over SSH): both follow what changes here at once (their signatures), and the rest
-# at a slow pace.
+# The longest a part goes without a new look; most refresh sooner when what they read moves.
+# This catches what leaves no trace (a Pi without Pier's extension, a command editing files).
+# team (forge quota) and labs (SSH) go slowly.
 WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
                "conversations": 10, "approvals": 30, "team": 300, "labs": 60}
-# Parts built on a thread of their own, as they wait on the network or read much: a lab
-# host off, a forge not answering or 2000 conversations to read no longer hold the others
-# (Pi done, Activity) for as long. Each sends its last result when it has it.
+# Parts on a thread of their own, as they wait on the network or read much: a dead lab host,
+# a silent forge or 2000 conversations no longer hold the others. Each sends its last result.
 WATCH_APART = {"team", "labs", "conversations"}
 # What a "poke" (an action of the user) does not hurry: they ask other machines.
 WATCH_NOT_POKED = {"team", "labs"}
-# Pier says something at least this often (a "ping" when it has nothing else): a watch
-# that hears nothing for WATCH_SILENCE seconds was left by a connection that died
-# without closing, and ends, instead of asking the forges and lab hosts for hours.
+# Pier says something at least this often (a "ping" when idle): a watch silent for
+# WATCH_SILENCE seconds was left by a dead connection and ends, not polling forges for hours.
 WATCH_SILENCE = 150
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
@@ -10269,9 +10165,9 @@ def api_watch(home, config, stdin=None, stdout=None):
     return 0
 
 
-# Parts sent, after the first time, as what changed only: Conversations is one block of
-# every project's conversations (a megabyte with 2000 of them), and a working Pi changes
-# one of them at each turn. Pier puts the whole back together (vm.js).
+# Parts sent after the first time as what changed only: Conversations is one block of every
+# project's conversations (a megabyte with 2000), and a working Pi changes one each turn.
+# Pier puts the whole back together (vm.js).
 WATCH_PATCHED = {"conversations"}
 
 
@@ -10778,9 +10674,8 @@ class Picker:
             self.message = "a pi already runs that conversation: attached to it"
         tmux_server_options(env, self.config)
         if os.environ.get("DEVBOX_REQUEST"):
-            # Inside Pier: Pi opens in a Pier tab, which shows it through tmux's
-            # control mode, history included. The request is an OSC sequence that only
-            # Pier's picker tab acts on; the picker stays here.
+            # Inside Pier: Pi opens in a Pier tab through tmux's control mode. The request is
+            # an OSC sequence only Pier's picker tab acts on; the picker stays here.
             n = slot_number(name, path, self.home)
             request = json.dumps({"project": path, "label": self.pretty(path), "slot": name, "n": n})
             os.write(sys.stdout.fileno(), f"\x1b]7770;open-pi;{request}\x07".encode())
@@ -10822,9 +10717,8 @@ class Picker:
         error to read), "error" when it fails at all, "always" in every case, "never" never.
         """
         if curses.isendwin():
-            # Two children in a row with nothing drawn between them (tmux installed,
-            # then Pi): curses still counts the terminal as handed over, and endwin
-            # fails when called twice. A refresh takes it back first.
+            # Two children with nothing drawn between: curses still counts the terminal as
+            # handed over and endwin fails when called twice. A refresh takes it back first.
             self.scr.refresh()
         curses.def_prog_mode()
         curses.endwin()
@@ -11443,9 +11337,8 @@ def entry():
     if len(sys.argv) > 1 and sys.argv[1] == "--version":
         print(VERSION)
         sys.exit(0)
-    # ncurses waits ESCDELAY after a lone Escape before delivering it, one second by
-    # default: Escape to quit feels broken. 100 ms still reassembles an arrow sequence
-    # that arrives split, and quits promptly.
+    # ncurses waits ESCDELAY (1 s by default) after a lone Escape: quitting feels broken.
+    # 100 ms still reassembles an arrow sequence that arrives split.
     os.environ.setdefault("ESCDELAY", "100")
     loaded, problem = load_config(home_dir())
     try:

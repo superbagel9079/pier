@@ -1,11 +1,5 @@
-//! Take back, file by file: a handed-off copy on the VM compared with its original
-//! folder on this computer, and the files chosen brought back into the original.
-//!
-//! The picker lists the copy's files with their SHA-256 (copy-manifest); the original is
-//! listed the same way here, and the two compared. What is brought back replaces the
-//! original's file only after that file was moved to a backup folder next to the
-//! original: nothing is lost. A file deleted by Pi is deleted here only when chosen, and
-//! goes to the backup folder too.
+//! Take back: a handed-off copy on the VM compared (SHA-256) with its original folder here,
+//! chosen files brought back. Replaced or deleted files go to a backup folder first.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -129,9 +123,8 @@ pub fn invisible(c: char) -> bool {
         | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
 }
 
-/// The components of a relative path from the VM, or None when it could leave the
-/// folder, mean something else on Windows (C:x, a:b streams, \, device names) or not
-/// read as what it is (invisible or direction-changing characters).
+/// The components of a relative path from the VM, or None if it could leave the folder, mean
+/// something else on Windows (C:x, a:b streams, \, device names) or hide invisible characters.
 pub fn safe_parts(rel: &str) -> Option<Vec<&str>> {
     if rel.is_empty() || rel.len() > 4096 || rel.starts_with('/') {
         return None;
@@ -159,9 +152,8 @@ pub fn safe_parts(rel: &str) -> Option<Vec<&str>> {
     Some(parts)
 }
 
-/// Whether `path`, when it is there, is really named as asked from `real_root` down:
-/// on Windows "MOCKUP~1.TXT" opens "mockup-final.txt" and "readme.md" opens "README.md",
-/// so a file the comparison called new could replace another one, never listed.
+/// Whether `path`, if there, is named as asked under `real_root`: on Windows "MOCKUP~1.TXT"
+/// opens "mockup-final.txt", so a new-looking file could replace another.
 fn named_as_asked(real_root: &Path, path: &Path, rel: &str) -> bool {
     let Ok(real) = path.canonicalize() else { return true }; // not there: made with that name
     let Some(parts) = safe_parts(rel) else { return false };
@@ -201,10 +193,8 @@ pub struct Applied {
     pub backup: Option<String>,
 }
 
-/// Brings the files of `archive` (a tar of the copy's files, from the picker) named in
-/// `take` into `root`, and deletes `delete` there. Every file replaced or deleted is
-/// first moved to `backup` (created only if needed). Files are marked as coming from
-/// elsewhere (Mark of the Web), as a take-back is.
+/// Brings the files of `archive` named in `take` into `root` and deletes `delete` there; each
+/// replaced or deleted file first moves to `backup`. Files get the Mark of the Web.
 pub fn apply(root: &Path, backup: &Path, archive: Option<&Path>, take: &HashSet<String>, delete: &[String]) -> Result<Applied> {
     let real_root = root.canonicalize().with_context(|| root.display().to_string())?;
     let mut applied = Applied::default();

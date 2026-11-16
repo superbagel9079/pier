@@ -1,8 +1,6 @@
-# Pi's requests waiting for the user, in approvals.json. Several processes write it at
-# once (each Pi's broker asks, Pier answers): every change is made under its lock, on
-# what the file holds then. A request holds exactly what is done once approved (the
-# command, the pull request and the commit it is at), and leaves "pending" before
-# anything is done: a second click finds it taken.
+# Pi's requests waiting for the user, in approvals.json. Several processes write it, so every
+# change is made under its lock. A request holds exactly what is done once approved and leaves
+# "pending" before anything is done: a second click finds it taken.
 APPROVALS_KEPT = 200        # answered requests kept for the record; waiting ones always stay
 APPROVALS_WAITING_MAX = 20  # per project: past that, Pi waits for the user's answers
 

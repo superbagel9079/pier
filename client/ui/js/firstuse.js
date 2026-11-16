@@ -1,10 +1,5 @@
-// What a newcomer needs first, and what waits for the user, in one place each:
-// - "Is the VM ready?": what Pier needs on the VM, checked by the picker (vm_checks),
-//   each missing thing with the command that puts it right. Shown after a connection
-//   when something is missing, and from the palette at any time.
-// - "Open a folder…": a folder of the VM chosen from a list (the ls API), then a Pi in it.
-// - "Waiting for you": every request of Pi in one list, from the top bar, wherever it
-//   comes from (a merge, a review, a repository, a command on a machine, a lab).
+// What a newcomer needs first: "Is the VM ready?" (vm_checks, each gap with its fix),
+// "Open a folder" (a VM folder from the ls API), "Waiting for you" (every Pi request).
 
 const READY_SEEN = "pier.vmReady.seen";
 

@@ -1,8 +1,6 @@
 // The three docks and their tabs: placing, dragging, renaming, saving the layout.
 
-// ============================================================================
 // Workspace: three docks, any tab in any of them
-// ============================================================================
 
 const KINDS = {
   picker: { title: "picker", terminal: true },
@@ -23,8 +21,7 @@ const KINDS = {
 const DOCKS = ["left", "center", "right"];
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
 // The terminals in the middle, every panel on one side (Settings > Appearance chooses which):
-// Conversations first, then what the Pi in use does (and what it was given), the
-// project's setup. Repository comes when the project has one; Logs and Labs on demand.
+// Conversations, Pi's activity, setup; Repository if the project has one; Logs, Labs on demand
 function defaultLayout(side = prefs.panelSide) {
   const panels = side === "left" ? "left" : "right";
   const other = panels === "left" ? "right" : "left";
@@ -91,9 +88,8 @@ const workspace = (() => {
       if (tab.shown !== !tab.pane.hidden) {
         tab.shown = !tab.pane.hidden;
         tab.onVisible?.(tab.shown);
-        // Only a terminal just shown is fitted here; the others follow their size on
-        // their own (a ResizeObserver in terminal.js). Fitting every terminal at every
-        // redraw reflowed all their histories.
+        // Only a terminal just shown is fitted here; the others follow their ResizeObserver
+        // (terminal.js). Fitting all at every redraw reflowed all their histories.
         if (tab.shown) tab.refit?.();
       }
     }
@@ -335,10 +331,8 @@ const workspace = (() => {
     setCurrentTab(tab);
   }
 
-  /** A click on a tab shows it. Collapsing a side is its own button (‹ ›) or the
-   *  tab's right-click menu: a click meant to look at a tab never hides the panel.
-   *  On a collapsed side, the click unfolds it for a look ("peek"): it folds back once
-   *  you are back on the terminals (see foldPeeks), unless you keep it open (the pin button). */
+  /** A click on a tab shows it, never hides the panel (collapse: ‹ › or the right-click menu).
+   *  On a collapsed side it unfolds for a look ("peek"), folding back on the terminals. */
   function clickTab(tab) {
     const dock = docks[tab.dock];
     if (dock.side && dock.collapsed) dock.peek = true;
@@ -369,9 +363,8 @@ const workspace = (() => {
 
   let dragging = null;
 
-  // Listeners go on the window, not the tab: starting a drag redraws the tab bars,
-  // which replaces the tab's element, and a listener on it would never hear the
-  // release (the ghost stayed on screen).
+  // Listeners go on the window, not the tab: a drag redraws the bars and replaces the tab's
+  // element, which would never hear the release.
   function dragSource(node, tab) {
     node.addEventListener("pointerdown", (down) => {
       if (down.button !== 0) return;
@@ -490,9 +483,8 @@ const workspace = (() => {
       if (!dock.collapsed) dock.active?.onShow?.();
       save();
     });
-    // Dragging the divider changes one width per frame, at most. The terminals are not
-    // fitted here: their ResizeObserver does it once the size rests (terminal.js), so a
-    // drag no longer reflows every history at every pixel.
+    // Dragging changes one width per frame at most. Terminals are not fitted here: their
+    // ResizeObserver does it once the size rests (terminal.js).
     let resizing = false;
     let frame = 0;
     let lastX = 0;
@@ -649,10 +641,8 @@ const workspace = (() => {
   return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
 })();
 
-// Focus follows the mouse (a setting), as on many Linux desktops: the tab under the
-// pointer gets the keyboard. Each tab keeps the element that had the focus last (the
-// terminal, an editor, a field) and gets it back; nothing moves while a button is held,
-// a dialog or a menu is open, or a name is being typed in a tab.
+// Focus follows the mouse (a setting): the tab under the pointer gets the keyboard, on its
+// last element. Nothing moves while a button is held, a dialog or menu is open, or a rename.
 function focusFollows(tab) {
   tab.pane.tabIndex = -1;
   tab.pane.addEventListener("focusin", (e) => {

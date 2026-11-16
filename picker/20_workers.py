@@ -1,20 +1,16 @@
 # --- workers: an orchestrator Pi and the Pis it starts -------------------------------------
 #
-# A Pi started as an orchestrator (Pier: "new orchestrator") gets tools to start worker
-# Pis (start_worker), follow them (list_workers, wait_workers), message them and stop
-# them. Each worker is a Pi of its own, as visible in Pier as any other, in a git
-# worktree of its own on its own branch; it gets a fixed prompt and the orchestrator's
-# task, works, and says what it did with report. The orchestrator then merges the
-# workers' branches itself, in its own folder: they share the repository.
+# A Pi started as an orchestrator (Pier: "new orchestrator") gets tools to start worker Pis
+# (start_worker), follow them (list_workers, wait_workers), message and stop them. Each worker
+# is a Pi of its own in a git worktree and branch of its own, with a fixed prompt and the
+# orchestrator's task; it says what it did with report. The orchestrator merges the branches.
 #
-#   - The first worker of a team waits for the user's approval in Pier, which shows how
-#     many workers at most and which models; then up to that many run at once, for as
-#     long as the orchestrator runs (workers_max in the config is the ceiling).
-#   - One level only: a worker starts nobody. A worker of a git project only: without
-#     worktrees, workers would write over each other.
-#   - Roles come from the picker's own environment (tmux sets it when it starts the Pi:
-#     PIER_ROLE, PIER_PARENT, PIER_TASK), never from what Pi sends over the socket.
-#   - What a worker reports is the work of a Pi: the orchestrator reads it as data.
+#   - The first worker of a team waits for the user's approval in Pier (max workers, models);
+#     then up to that many run at once (workers_max in the config is the ceiling).
+#   - One level only: a worker starts nobody. Git projects only: worktrees keep workers apart.
+#   - Roles come from the picker's environment (tmux sets PIER_ROLE, PIER_PARENT, PIER_TASK),
+#     never from what Pi sends over the socket.
+#   - What a worker reports is a Pi's work: the orchestrator reads it as data.
 #
 # teams.json, the picker's own (Pi never reaches it), holds each orchestrator's team:
 # {orchestrator slot: {"project", "approved": {"max", "models"} | None, "workers": [...]}}.

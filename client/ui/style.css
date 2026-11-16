@@ -6,7 +6,7 @@
    Contents: tokens · base · controls · workspace (docks, tabs) · lists and sections ·
    dialogs · each panel · scrollbars. */
 
-/* ---------------------------------------------------------------- tokens */
+/* tokens */
 
 /* The theme's colours (themes.js sets them on :root); the rest is derived from them,
    so every theme gets the same surfaces. */
@@ -54,7 +54,7 @@
   --del-bg: color-mix(in srgb, var(--red, #f85149) 18%, var(--bg));
 }
 
-/* ---------------------------------------------------------------- base */
+/* base */
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -102,7 +102,7 @@ pre { background: var(--chip); padding: var(--s2); overflow-x: auto; margin: var
 .dialog .net-choice { margin: 4px 0; }
 .dialog .net-choice span { font-size: var(--t-small); }
 
-/* ---------------------------------------------------------------- controls */
+/* controls */
 
 input, select, textarea {
   font: inherit;
@@ -146,9 +146,7 @@ a[href], button, summary, select, label[for], label.check, [role="button"], [rol
 input[type="checkbox"], input[type="radio"], input[type="color"] { cursor: pointer; }
 :is(button, select, input, textarea):disabled, label.check:has(> input:disabled) { cursor: not-allowed; }
 
-/* Checkboxes: a square box, an X when checked. The X is drawn (two diagonals), not a
-   character: a glyph's size and place change with the font, and it ends up small and
-   off centre. */
+/* Checkboxes: a square box, an X drawn as two diagonals (a glyph's place varies by font). */
 input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
@@ -227,16 +225,15 @@ details label { margin-top: var(--s2); }
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 180px); gap: var(--s2) var(--s4); align-items: center; }
 .grid label { display: block; }
 .grid select, .grid input { width: 100%; min-width: 0; }
-/* Settings: room for a select's longest built-in text ("follow the system (Pier dark /
-   light)"). On a narrow window each label goes over its field instead, so neither the
-   labels nor that text pay for two columns. */
+/* Settings: room for a select's longest text ("follow the system (Pier dark / light)"); on a
+   narrow window each label goes over its field. */
 #prefs .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 340px); }
 @media (max-width: 900px) {
   #prefs .grid { grid-template-columns: minmax(0, 1fr); row-gap: var(--s1); }
   #prefs .grid > label:not(:first-child) { margin-top: var(--s2); }
 }
 
-/* ---------------------------------------------------------------- top bar */
+/* top bar */
 
 #topbar {
   display: flex;
@@ -247,9 +244,8 @@ details label { margin-top: var(--s2); }
   background: var(--bg);
 }
 .logo { font-weight: 700; }
-/* Windows: the top bar is the title bar (main.js). The buttons fill its height, against
-   the window's edge, as the system's do; drawn in the text's colour, close in red when
-   pointed at, as everywhere on Windows. */
+/* Windows: the top bar is the title bar (main.js). Buttons fill its height, in the text's
+   colour, close red when pointed at. */
 body.own-titlebar #topbar { padding-right: 0; user-select: none; }
 /* Above the overlays (settings, palette: z-index 20), as the system's buttons would be. */
 #window-buttons { display: flex; align-self: stretch; margin: calc(-1 * var(--s2)) 0 calc(-1 * var(--s2)) calc(var(--s4) * -1 + var(--s2)); position: relative; z-index: 21; }
@@ -274,21 +270,20 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 #btn-palette kbd { font-size: var(--t-label); padding: 0 var(--s1); margin-left: 2px; }
 @media (max-width: 900px) { #status { display: none; } }
 
-/* ---------------------------------------------------------------- connection screens */
+/* connection screens */
 
 #connect { flex: 1; overflow: auto; padding: 32px var(--s5); background: var(--surface); }
 #connect > div { max-width: 520px; margin: 0 auto; }
 
-/* The Pier mark, drawn in text by dither.js: the icon's own cells, shaded the way a 1-bit
-   screen shows tone (docs/design.md, the one motif). Decorative: hidden from screen readers and
-   never caught by a selection. Its line count is fixed, so nothing moves as it appears. */
+/* The Pier mark, drawn in text by dither.js. Decorative: hidden from screen readers and
+   selection. Its line count is fixed, so nothing moves as it appears. */
 .mark { margin: 0; padding: 0; background: none; overflow: hidden; font-size: 7px; line-height: 1.2; color: var(--fg); user-select: none; }
 #connect > .mark { max-width: 520px; margin: 0 auto var(--s5); }
 /* A short window keeps its height for the form. */
 @media (max-height: 640px) { #connect > .mark { display: none; } }
 .empty .mark { margin-bottom: var(--s2); color: var(--dim); }
 
-/* ---------------------------------------------------------------- workspace: three docks */
+/* workspace: three docks */
 
 #workspace { flex: 1; display: flex; min-height: 0; position: relative; }
 .dock { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
@@ -319,9 +314,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
   white-space: nowrap;
   user-select: none;
   touch-action: none;
-  /* Tabs share the bar: they shrink (their name cut) before the bar scrolls, never
-     below their name's 7 characters and padding, and what does not fit is cut inside
-     the tab: a name never runs over the next tab. */
+/* Tabs shrink (their name cut) before the bar scrolls, never below 7 characters and padding;
+   a name never runs over the next tab. */
   flex: 0 1 auto;
   min-width: calc(7ch + 2 * var(--s3));
   overflow: hidden;
@@ -360,11 +354,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .pane:focus { outline: none; }
 /* Side panels never scroll sideways: their content wraps or is cut with an ellipsis. */
 .pane:has(> .pane-setup), .pane:has(> .pane-conversations), .pane:has(> .pane-project) { overflow-x: hidden; }
-/* The terminal's padding is its own (Settings > Appearance): xterm.js's fit takes it off
-   the size it gives the program. None on the right: there the scrollbar's own width is
-   the margin, and the scrollbar stays inside the area xterm.js watches. Moved into the
-   padding, it was out of it: reached without passing over the text, it stayed hidden
-   and a click went through it, so it could not be dragged. */
+/* The terminal's padding is its own (Settings > Appearance). None on the right: the scrollbar's
+   width is the margin, and it must stay inside the area xterm.js watches to be draggable. */
 .pane.terminal { padding: 0; overflow: hidden; }
 .pane.terminal .xterm { height: 100%; padding: var(--term-pad, 8px); padding-right: 0; }
 /* The usual arrow over terminals, not a text cursor; selecting text still works. */
@@ -418,7 +409,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .copy-note > span { overflow-wrap: anywhere; }
 .toast { position: fixed; top: 36px; right: 14px; z-index: 40; max-width: 50vw; background: var(--fg); color: var(--bg); padding: var(--s1) var(--s3); pointer-events: none; }
 
-/* ---------------------------------------------------------------- lists and sections */
+/* lists and sections */
 
 .toolbar { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s2); flex-wrap: wrap; }
 .toolbar .root { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -459,10 +450,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .resource-items li > .row-actions { flex: 0 0 auto; display: flex; gap: var(--s2); }
 .resource-items li > .more { visibility: hidden; padding: 0 var(--s1); }
 .resource-items li:hover > .more, .resource-items li > .more:focus-visible { visibility: visible; }
-/* Pi's requests: what will be done, whole (never cut to a line or two), what Pi says, then
-   Refuse and Approve as real buttons. A command is never in a box of its own to scroll:
-   Approve comes after all of it. It keeps the order it runs in, whatever its letters:
-   nothing is reordered right to left. */
+/* Pi's requests: what will be done, whole (never cut), what Pi says, then Refuse and Approve.
+   A command is never in its own scroll box: Approve comes after all of it. */
 .resource-items li.approval { display: block; padding: var(--s2); }
 .resource-items li.approval:hover { background: none; }
 .resource-items li.approval > .dim { text-align: left; }
@@ -480,7 +469,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .resource-lists .group { margin: var(--s2) 0 2px; }
 .gallery .line > .dim { text-align: left; }
 
-/* ---------------------------------------------------------------- dialogs */
+/* dialogs */
 
 /* The page behind steps back into the theme's own background: dark over a dark theme,
    light over a light one, never a black veil over white. */
@@ -603,7 +592,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .handoff-list li { display: flex; flex-direction: column; gap: 2px; background: var(--chip); padding: var(--s2) var(--s2); }
 .handoff-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---------------------------------------------------------------- Context */
+/* Context */
 
 .drop {
   border: 1px dashed var(--strong);
@@ -633,7 +622,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .items .kind { flex: 0 0 44px; text-align: center; font-size: var(--t-label); color: var(--dim); background: var(--chip); padding: 1px 0; }
 .items .row-actions { display: flex; gap: var(--s2); align-items: center; flex: 0 0 auto; }
 
-/* ---------------------------------------------------------------- Activity: files, restore */
+/* Activity: files, restore */
 
 .usage { color: var(--dim); font-size: var(--t-small); margin: calc(-1 * var(--s1)) 0 var(--s2); }
 .which-pi { padding: 1px var(--s1); font-size: var(--t-small); }
@@ -686,7 +675,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .takeback-diff { flex-basis: 100%; }
 .takeback-diff .diff { content-visibility: auto; }
 
-/* ---------------------------------------------------------------- Setup */
+/* Setup */
 
 .pane-setup h2 { margin: var(--s4) 0 var(--s2); }
 .pane-setup .actions { flex-wrap: wrap; }
@@ -717,7 +706,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .startup-box { margin-top: var(--s3); }
 .startup-box > summary { cursor: pointer; color: var(--dim); }
 
-/* ---------------------------------------------------------------- Conversations */
+/* Conversations */
 
 .pane-conversations { overflow-x: hidden; }
 .pane-conversations .toolbar { display: flex; gap: var(--s2); align-items: center; margin-bottom: 0; }
@@ -735,9 +724,8 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions .meta .title.fresh { font-style: italic; color: var(--dim); }
 .sessions .meta .facts { line-height: 1.4; margin-top: 1px; font-size: var(--t-small); }
 .sessions .row-actions { display: flex; gap: var(--s2); flex: 0 0 auto; line-height: 1.35; }
-/* A running Pi: a bar on its left, grey while it waits, bright while it works. Still: a
-   pulse that never stops is motion past 5 s with no way to pause it (WCAG 2.2.2), and the
-   facts line says "working" already. */
+/* A running Pi: a bar on its left, grey while waiting, bright while working. Still: a pulse
+   that never stops is motion past 5 s with no pause (WCAG 2.2.2). */
 .sessions li.running { box-shadow: inset 2px 0 0 var(--dim); padding-left: var(--s2); }
 .sessions li.running.working { box-shadow: inset 2px 0 0 var(--fg); }
 .sessions li.archived .ellipsis, .sessions li.archived .title { color: var(--dim); }
@@ -768,7 +756,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .sessions li.label-editor input { width: 100%; min-width: 0; }
 .sessions li.label-editor .row-actions { justify-content: flex-start; }
 
-/* ---------------------------------------------------------------- Logs */
+/* Logs */
 
 .pane-logs { display: flex; flex-direction: column; }
 .pane-logs .search { flex: 1 1 120px; min-width: 0; }
@@ -788,11 +776,10 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
    took their details under 3.6:1. */
 .log-lines .entry.DEBUG { color: var(--dim); }
 
-/* ---------------------------------------------------------------- motion */
+/* motion */
 
-/* What opens over the work (menus, lists, the palette, dialogs, notes) grows from 95 % in
-   150 to 200 ms, from where it comes, so the eye follows it into place. Closing is
-   instant: nothing stands between a choice and the work. None if the system asks. */
+/* What opens over the work (menus, palette, dialogs, notes) grows from 95 % in 150 to 200 ms;
+   closing is instant. None if the system asks. */
 @keyframes open-in { from { opacity: 0; transform: scale(.95); } }
 .menu { animation: open-in .15s ease-out; transform-origin: top left; }
 .combo-list { animation: open-in .15s ease-out; transform-origin: top center; }
@@ -805,7 +792,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
   button:active:not(:disabled) { transform: none; }
 }
 
-/* ---------------------------------------------------------------- scrollbars */
+/* scrollbars */
 
 /* Thin, square, the text colour barely there, a little more under the pointer; no
    arrows, no track. */
@@ -816,7 +803,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 ::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--fg) 40%, transparent); }
 ::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 
-/* ---------------------------------------------------------------- File viewer */
+/* File viewer */
 
 /* The syntax in the theme's terminal colors when it has them (see applyTheme). */
 :root {

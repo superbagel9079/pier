@@ -1,12 +1,8 @@
 # --- managing what Pi loads: skills, extensions, prompts, packages ------------------------
 #
-# Setup lists each resource with whether Pi loads it, and turns one on or off the way
-# `pi config` does (Pi's own package-manager.js): a "+path" or "-path" entry, path
-# relative to its base, in the "skills" / "extensions" / "prompts" list of
-# settings.json, or of the package's entry there (then relative to the package root).
-# Local skills can be made, edited, imported from the PC and put in a bin; packages are
-# installed and removed by `pi install` / `pi remove`, run in Pi's sandbox (see
-# pi_package). Pi reads what changed when it next starts.
+# Setup lists each resource and turns one on or off like `pi config`: a "+path" or "-path"
+# entry in the skills / extensions / prompts list of settings.json (or the package's entry).
+# Packages go through `pi install` / `pi remove` in Pi's sandbox (see pi_package).
 
 MANAGED_KINDS = ("skills", "extensions", "prompts")
 SKILL_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # Pi's rule: 1-64, lowercase, hyphens
