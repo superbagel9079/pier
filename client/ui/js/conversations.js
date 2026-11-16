@@ -19,8 +19,9 @@ function conversationMatches(s, query) {
   return !query || [conversationTitle(s), s.prompt, s.name, s.category].some((t) => t && t.toLowerCase().includes(query));
 }
 
-/** The ⋯ menu of a conversation: name and category, pin, archive, delete. */
-function conversationMenu(anchor, project, session, { edit, changed, failed }) {
+/** The menu of a conversation (⋯, a right click): the row's own actions first, then name
+ *  and category, pin, archive, give, delete. */
+function conversationMenu(anchor, project, session, { edit, changed, failed }, first = [], at = null) {
   const mark = async (what, on) => {
     try {
       await backend.sessionMark(project, session.path, what, on);
@@ -31,6 +32,7 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }) {
     } catch (e) { failed(String(e)); }
   };
   showMenu(anchor, [
+    ...first, ...(first.length ? [null] : []),
     ["Name and category…", edit],
     [session.pinned ? "Unpin" : "Pin to the top", () => mark("pinned", !session.pinned), session.archived],
     [session.archived ? "Bring back from the archive" : "Archive (hide, keep searchable)", () => mark("archived", !session.archived)],
@@ -38,7 +40,117 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }) {
     null,
     // Disabled while a Pi runs it: the picker refuses, Pi would write it again.
     ["Delete…", () => deleteConversation(project, session, { changed, failed }), Boolean(session.slot)],
-  ]);
+  ], at);
+}
+
+/** A row of the list: its mark, its title, a detail on the right, all one button that does
+ *  the row's main thing (none for a row that only informs); its other actions under ⋯,
+ *  shown under the pointer, and on a right click or the menu key. */
+function listRow({ key, className = "", mark = null, title, fresh = false, meta = "", tip = "", run = null, menu = null }) {
+  const main = el(run ? "button" : "div", { className: "row-main", title: tip });
+  main.append(el("span", { className: "mark" }, ...(mark ? [mark] : [])),
+    el("span", { className: fresh ? "title fresh" : "title", textContent: title }),
+    el("span", { className: "row-meta", textContent: meta }));
+  if (run) main.addEventListener("click", run);
+  const li = keyed(key, el("li", { className }, main));
+  if (menu) {
+    const more = el("button", { className: "row-more", title: "More" });
+    more.setAttribute("aria-label", `More: ${title}`);
+    more.setAttribute("aria-haspopup", "menu");
+    more.append(svgIcon("ellipsis"));
+    more.addEventListener("click", () => menu(more, null, li));
+    li.append(more);
+    li.addEventListener("contextmenu", (e) => { e.preventDefault(); menu(null, { x: e.clientX, y: e.clientY }, li); });
+    main.addEventListener("keydown", (e) => {
+      if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+      e.preventDefault();
+      const box = main.getBoundingClientRect();
+      menu(null, { x: box.left + 24, y: box.bottom }, li);
+    });
+  }
+  return li;
+}
+
+/** A project's mark: a square of its colour with its first letter, an icon or a picture,
+ *  chosen per viewer (kept with the folded projects). */
+const PROJECT_COLORS = ["#5b62b8", "#2f7aa8", "#2e7d5b", "#7a5ab0", "#2c7d7d", "#a0612a", "#a8414f", "#6b6b6b"];
+const PROJECT_GLYPHS = ["folder", "terminal", "file-code", "message-square", "git-branch", "flask-conical"];
+const projectLetter = (path) => (String(path).split("/").filter(Boolean).pop() || "?").charAt(0).toUpperCase();
+function defaultColor(path) {
+  let n = 0;
+  for (const c of String(path)) n = (n * 31 + c.charCodeAt(0)) >>> 0;
+  return PROJECT_COLORS[n % PROJECT_COLORS.length];
+}
+function projectBadge(path, look = {}) {
+  const badge = el("span", { className: "pbadge" });
+  badge.setAttribute("aria-hidden", "true");
+  if (look.image) badge.style.background = `center / cover no-repeat url(${JSON.stringify(look.image)})`;
+  else {
+    badge.style.background = look.color || defaultColor(path);
+    badge.append(look.glyph ? svgIcon(look.glyph) : projectLetter(path));
+  }
+  return badge;
+}
+
+/** Any picture as a 64 × 64 square, cut to its centre: sharp at 16 px on any screen, small to keep. */
+const PICTURE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/svg+xml", "image/gif"];
+async function squarePicture(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const side = Math.min(img.naturalWidth, img.naturalHeight) || 64;
+    const canvas = el("canvas", { width: 64, height: 64 });
+    canvas.getContext("2d").drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 64, 64);
+    return canvas.toDataURL("image/png");
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/** Change a project's mark: its colour, a letter or an icon, or a picture from this PC. */
+function projectLookDialog(project, label, look, save) {
+  const next = { ...look };
+  const preview = el("span", { className: "look-preview" });
+  const draw = () => preview.replaceChildren(projectBadge(project, next), el("span", { textContent: label }));
+  const choice = (node, name, pressed, pick) => {
+    const b = el("button", { className: "look-choice" });
+    b.setAttribute("aria-label", name);
+    b.title = name;
+    b.setAttribute("aria-pressed", String(pressed));
+    b.append(node);
+    b.addEventListener("click", () => {
+      pick();
+      b.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      draw();
+    });
+    return b;
+  };
+  const colors = el("div", { className: "look-row" }, ...PROJECT_COLORS.map((c) => {
+    const swatch = el("span", { className: "look-swatch" });
+    swatch.style.background = c;
+    return choice(swatch, `Colour ${c}`, (next.color || defaultColor(project)) === c, () => { next.color = c; });
+  }));
+  const glyphs = el("div", { className: "look-row" }, choice(document.createTextNode(projectLetter(project)), "First letter", !next.glyph && !next.image, () => { next.glyph = null; next.image = null; }),
+    ...PROJECT_GLYPHS.map((g) => choice(svgIcon(g), `Icon: ${g}`, next.glyph === g && !next.image, () => { next.glyph = g; next.image = null; })));
+  const note = el("p", { className: "hint", textContent: "A square picture, 64 × 64 px or larger: PNG, JPG, WebP, SVG or GIF, up to 1 MB. Another shape is cut to its centre." });
+  const file = el("input", { type: "file", accept: PICTURE_TYPES.join(","), hidden: true });
+  const fail = (text) => { note.textContent = text; note.classList.add("error"); };
+  file.addEventListener("change", async () => {
+    const f = file.files[0];
+    if (!f) return;
+    if (!PICTURE_TYPES.includes(f.type)) return fail("Not a picture Pier shows: PNG, JPG, WebP, SVG or GIF.");
+    if (f.size > 1048576) return fail(`Too big: ${(f.size / 1048576).toFixed(1)} MB, 1 MB at most.`);
+    try { next.image = await squarePicture(f); draw(); } catch { fail("This picture could not be read. A PNG or a JPG?"); }
+  });
+  const pick = el("button", { className: "secondary", textContent: "Choose a picture…" });
+  pick.addEventListener("click", () => file.click());
+  const drop = el("button", { className: "link", textContent: "no picture" });
+  drop.addEventListener("click", () => { next.image = null; draw(); });
+  const ok = el("button", { textContent: "Save" });
+  const dialog = resourceDialog("Project mark", [preview, el("h3", { textContent: "Colour" }), colors, el("h3", { textContent: "Letter or icon" }), glyphs,
+    el("h3", { textContent: "Or a picture" }), el("div", { className: "actions" }, pick, drop, file), note], [ok]);
+  ok.addEventListener("click", () => { save(next); dialog.close(); });
+  draw();
 }
 
 /** Deletes a conversation for good, once the user said so. */
@@ -130,9 +242,10 @@ function makeConversations(tab) {
   const list = $$(".all-conversations");
   const error = $$(".error");
   const STORE = "devbox.conversations.v1"; // per viewer: which projects are folded or opened
-  let view = { folded: {}, expanded: {}, openFolders: {} };
+  let view = { folded: {}, expanded: {}, openFolders: {}, looks: {} };
   try { view = { ...view, ...JSON.parse(localStorage.getItem(STORE)) }; } catch { /* defaults */ }
   view.openFolders ||= {};
+  view.looks ||= {};
   const keep = () => { try { localStorage.setItem(STORE, JSON.stringify(view)); } catch { /* storage off */ } };
   let data = null;
   let query = "";
@@ -151,22 +264,19 @@ function makeConversations(tab) {
     } catch (e) { showError(error, String(e)); }
   }
 
-  function more(p, s) {
-    return linkButton("⋯", "Name, category, pin, archive", (event) => {
-      const at = event.currentTarget.closest("li");
-      conversationMenu(event.currentTarget, p.project, s, {
-        edit: () => {
-          editing = true;
-          conversationEditor(at, p.project, s, categories, {
-            done: () => { editing = false; redraw(); vm.poke(); },
-            failed: (e) => showError(error, e),
-          });
-        },
-        changed: () => { render(); vm.poke(); },
+  /** A conversation's menu, with the row's own actions (`first`) on top. */
+  const menuOf = (p, s, first = []) => (anchor, at, li) => conversationMenu(anchor, p.project, s, {
+    edit: () => {
+      editing = true;
+      conversationEditor(li, p.project, s, categories, {
+        done: () => { editing = false; redraw(); vm.poke(); },
         failed: (e) => showError(error, e),
       });
-    });
-  }
+    },
+    changed: () => { render(); vm.poke(); },
+    failed: (e) => showError(error, e),
+  }, first, at);
+  const ago = (secs) => relTime(secs).replace(/ ago$/, "");
 
   const facts = (s) => {
     const u = s.usage;
@@ -181,64 +291,53 @@ function makeConversations(tab) {
    *  conversation goes to the sub-agents folder once it is done. */
   function helperRow(pi, h, i) {
     const since = Math.max(0, Math.round(Date.now() / 1000 - (h.since || 0)));
-    return keyed(`helper:${pi.slot}:${i}`, el("li", { className: "running working helper in-team" },
-      el("span", { className: "dim", textContent: " " }),
-      el("div", { className: "meta" },
-        el("span", { className: "title", textContent: `${h.role} · ${h.title}`, title: "A read-only helper: it reads the project and answers its Pi" }),
-        el("span", { className: "dim small facts", textContent: `helper of Pi #${pi.n}, reading · ${since < 60 ? `${since} s` : `${Math.round(since / 60)} min`}` }))));
+    return listRow({ key: `helper:${pi.slot}:${i}`, className: "running working helper in-team", mark: svgIcon("search"),
+      title: `${h.role} · ${h.title}`, meta: since < 60 ? `${since} s` : `${Math.round(since / 60)} min`,
+      tip: `A read-only helper of Pi #${pi.n}: it reads the project and answers its Pi` });
   }
 
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
+  /** A running Pi with its conversation (or a new one, nothing said yet): a click opens its
+   *  terminal. Its mark says what it does: working, waiting for you, or done (reported). */
   function piRow(p, pi, s) {
-    // Its bar on the left says it runs: bright and breathing while Pi works, grey
-    // while it waits. The column of the mark stays, as on the other rows (pinned: ★).
-    return keyed(`pi:${pi.slot}`, el("li", { className: pi.working ? "running working" : "running" },
-      el("span", { className: "dim", textContent: s?.pinned ? "★" : " " }),
-      el("div", { className: "meta" },
-        el("span", { className: s ? "title" : "title fresh", textContent: s ? conversationTitle(s) : "New conversation", title: s?.prompt || "Pi writes it at its first answer" }),
-        el("span", { className: "dim small facts", textContent: factLine([`${piRole(pi)} ${pi.working ? "working" : pi.reported ? "reported" : "waiting"}`, ...(s ? facts(s) : ["nothing said yet"])]) })),
-      el("span", { className: "row-actions" },
-        linkButton("open", "Open its terminal", () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n)),
-        linkButton("stop", "Stop this Pi; its conversation stays saved", () => stop(p, pi)),
-        s ? more(p, s) : null)));
+    const state = pi.working ? "working" : pi.reported ? "reported" : "waiting";
+    const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
+    const own = [["Open its terminal", open], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi)]];
+    return listRow({ key: `pi:${pi.slot}`, className: `running ${state}`,
+      mark: svgIcon({ working: "clock", reported: "check", waiting: "circle-alert" }[state]),
+      title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta: state,
+      tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
+      run: open, menu: s ? menuOf(p, s, own) : (anchor, at) => showMenu(anchor, own, at) });
   }
 
+  /** A conversation no Pi runs: a click starts a Pi on it. Pinned ones carry a pin. */
   function row(p, s, inFolder = false) {
-    return keyed(s.path, el("li", { className: [s.archived ? "archived" : "", inFolder ? "in-folder" : ""].filter(Boolean).join(" ") },
-      el("span", { className: "dim", textContent: s.pinned ? "★" : " " }),
-      el("div", { className: "meta" },
-        el("span", { className: "title", textContent: conversationTitle(s), title: s.prompt || "" }),
-        // In its folder, its category goes without saying.
-        el("span", { className: "dim small facts", textContent: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) })),
-      el("span", { className: "row-actions" },
-        linkButton("continue", "Start a Pi on this conversation", () => openPiTerminal(p.project, p.label, ["--session", s.path])),
-        more(p, s))));
+    const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
+    return listRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : ""].filter(Boolean).join(" "),
+      mark: s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
+      // In its folder, its category goes without saying.
+      tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
+      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume]]) });
   }
 
   /** A folder: a category of the project (or its sub-agents), with how many it holds;
    *  ⋯ renames or deletes the category (its conversations stay). */
   function folderHead(p, folder, open, key) {
-    const count = folder.sessions.length;
-    const li = el("li", { className: "folder-head" + (folder.subagents ? " subagents" : "") },
-      el("button", { className: "fold", textContent: open ? "▾" : "▸", title: open ? "Fold" : "Show its conversations" }),
-      el("div", { className: "meta" },
-        el("span", { className: "title folder-name", textContent: folder.name,
-          title: folder.subagents ? "Conversations of sub-agents (the helpers an orchestrator or a worker consults, pi-multiagent's agent_team): a Pi's work, not yours" : "" }),
-        el("span", { className: "dim small facts", textContent: `${count} conv.` })),
-      el("span", { className: "row-actions" },
-        folder.subagents ? null : linkButton("⋯", "Rename or delete this category", (event) => {
-          showMenu(event.currentTarget, [
-            ["Rename…", () => renameFolder(li, p, folder.name, key)],
-            ["Delete the category (its conversations stay)", () => removeFolder(p, folder.name)],
-          ]);
-        })));
     const toggle = () => {
       if (view.openFolders[key]) delete view.openFolders[key]; else view.openFolders[key] = true;
       keep();
       render();
     };
-    li.querySelector(".fold").addEventListener("click", toggle);
-    li.querySelector(".folder-name").addEventListener("click", toggle);
+    const li = listRow({ key: `folder:${key}`, className: "folder-head" + (folder.subagents ? " subagents" : ""),
+      mark: svgIcon("folder"), title: folder.name, meta: String(folder.sessions.length),
+      tip: folder.subagents ? "Conversations of sub-agents (the helpers an orchestrator or a worker consults, pi-multiagent's agent_team): a Pi's work, not yours" : "",
+      run: toggle, menu: folder.subagents ? null : (anchor, at, row) => showMenu(anchor, [
+        ["Rename…", () => renameFolder(row, p, folder.name, key)],
+        ["Delete the category (its conversations stay)", () => removeFolder(p, folder.name)],
+      ], at) });
+    const main = $(".row-main", li);
+    main.setAttribute("aria-expanded", String(open));
+    main.prepend(el("span", { className: "fold-arrow" }, svgIcon("chevron-right")));
     return li;
   }
 
@@ -286,27 +385,35 @@ function makeConversations(tab) {
     vm.poke();
   }
 
+  /** A project: its arrow, its mark, its name (its facts on hover); + starts a new Pi in it,
+   *  ⋯ and a right click hold the rest. */
   function head(p, folded, inUse) {
     const pis = p.pis || [];
-    const li = el("li", { className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : "") },
-      el("button", { className: "fold", textContent: folded ? "▸" : "▾", title: folded ? "Show its conversations" : "Fold" }),
-      el("div", { className: "meta" },
-        el("span", { className: "ellipsis project-name", textContent: p.label, title: p.project }),
-        el("span", { className: "dim small facts", textContent: factLine([
-          pis.length ? `${pis.length} running` : "",
-          `${p.sessions.length} conv.`,
-        ]), title: inUse ? "The project of the Pi in use" : "" }),
-        projectTotals(p.sessions) ? el("span", { className: "dim small facts", textContent: projectTotals(p.sessions), title: "Tokens (or dollars, when the model has a price in Pi) today and over 7 days" }) : null),
-      el("span", { className: "row-actions" },
-        linkButton("new", "A new Pi in this project, in a new conversation", () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : [])),
-        p.sessions.length ? linkButton("last", "Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"])) : null,
-        linkButton("orchestrate", "A new orchestrator Pi: it splits the work and starts worker Pis, each in a git worktree of its own, once you approve its workers; it and its workers may consult read-only helpers (scout, reviewer, critic, checker)", () => openPiTerminal(p.project, p.label, ["--orchestrator"])),
-        linkButton("setup", "Instructions and what Pi loads in this project", () => workspace.find("setup")?.openProject?.(p.project))));
-    li.querySelector(".fold").addEventListener("click", () => {
-      view.folded[p.project] = !folded;
-      keep();
-      render();
-    });
+    const fresh = () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : []);
+    const items = [
+      ["New conversation (a new Pi)", fresh],
+      ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length],
+      ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"])],
+      null,
+      ["Instructions and what Pi loads here", () => workspace.find("setup")?.openProject?.(p.project)],
+      ["Change its mark…", () => projectLookDialog(p.project, p.label, view.looks[p.project] || {}, (look) => { view.looks[p.project] = look; keep(); redraw(); })],
+      ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e)))],
+      ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null)]] : []),
+    ];
+    const li = listRow({ key: `project:${p.project}`, className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : ""),
+      mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(p.sessions.length) : pis.length ? `${pis.length} running` : "",
+      tip: [p.project, factLine([pis.length ? `${pis.length} running` : "", `${p.sessions.length} conv.`]), projectTotals(p.sessions),
+        inUse ? "the project of the Pi in use" : ""].filter(Boolean).join("\n"),
+      run: () => { view.folded[p.project] = !folded; keep(); render(); },
+      menu: (anchor, at) => showMenu(anchor, items, at) });
+    const main = $(".row-main", li);
+    main.setAttribute("aria-expanded", String(!folded));
+    main.prepend(el("span", { className: "fold-arrow" }, svgIcon("chevron-right")));
+    const plus = el("button", { className: "row-more row-add", title: "New conversation here (a new Pi)" });
+    plus.setAttribute("aria-label", `New conversation in ${p.label}`);
+    plus.append(svgIcon("plus"));
+    plus.addEventListener("click", fresh);
+    $(".row-more", li).before(plus);
     return li;
   }
 
@@ -384,7 +491,6 @@ function makeConversations(tab) {
       } else if (view.expanded[p.project] && !query && rest.length > room) {
         tools.append(linkButton("show fewer", "", () => { delete view.expanded[p.project]; keep(); render(); }));
       }
-      if (pis.length > 1 && !query) tools.append(linkButton("stop them all", "", () => stop(p, null)));
       if (tools.children.length) list.append(tools);
       // Each category, a folder (folded until opened); the sub-agents of pi-multiagent in
       // one of their own, last.
@@ -422,7 +528,7 @@ function makeConversations(tab) {
     keep();
     workspace.show(tab);
     render();
-    [...list.querySelectorAll(".project-head .project-name")].find((n) => n.title === path)?.scrollIntoView({ block: "start" });
+    list.querySelector(`[data-key="${CSS.escape(`project:${path}`)}"]`)?.scrollIntoView({ block: "start" });
   };
   tab.onTargetChange = () => render();
 
