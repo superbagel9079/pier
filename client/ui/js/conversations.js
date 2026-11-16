@@ -445,3 +445,10 @@ function makeConversations(tab) {
   tab.onClose = () => { unlisten(); vm.follow({ conversations: false }); };
   vm.follow({ conversations: tab.shown !== false });
 }
+
+// The rail's speech bubble: Conversations shown, opened on the left if it was closed.
+$("#btn-conversations").addEventListener("click", () => {
+  const tab = workspace.find("conversations");
+  if (tab) workspace.show(tab);
+  else workspace.add("conversations", "left");
+});

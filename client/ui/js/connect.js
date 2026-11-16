@@ -4,6 +4,7 @@
 // Connection screens
 
 function showConnect(view) {
+  document.body.classList.remove("in-workspace");
   $("#workspace").hidden = true;
   $("#prefs").hidden = true;
   $("#status").disabled = true;
@@ -20,6 +21,7 @@ function showConnect(view) {
 }
 
 function showWorkspace() {
+  document.body.classList.add("in-workspace");
   $("#connect").hidden = true;
   $("#workspace").hidden = false;
   $("#status").disabled = false;
@@ -44,10 +46,19 @@ function describe(s) {
   return s.bastion ? `${vm} via ${s.bastion.user}@${s.bastion.host}:${s.bastion.port}` : vm;
 }
 
+/** The connection's words: in the top bar before connecting, then at the foot of the left
+ *  side (or the rail's, the left side closed) with the signal bars; a click opens
+ *  Settings > Connection. */
 function setStatus(text) {
-  $("#status").textContent = text; // once connected, a click opens Settings > Connection
+  $("#status").textContent = text;
+  const state = /^connected/.test(text) ? (/attention/.test(text) ? "slow" : "ok")
+    : /^(connecting|installing)/.test(text) ? "slow" : "lost";
+  for (const node of [$("#rail-status"), $("#status-foot")]) node.dataset.state = state;
+  $("#status-foot span").textContent = text;
+  $("#rail-status").title = text;
+  $("#rail-status").setAttribute("aria-label", `${text}: Settings > Connection`);
 }
-$("#status").addEventListener("click", () => { openPrefs(); showPrefsPage("connection"); });
+for (const id of ["#status", "#rail-status", "#status-foot"]) $(id).addEventListener("click", () => { openPrefs(); showPrefsPage("connection"); });
 
 function fillSetup(s) {
   const form = $("#setup-form");

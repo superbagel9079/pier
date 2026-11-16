@@ -54,8 +54,11 @@ document.addEventListener("mousemove", (event) => {
   $("#win-min").addEventListener("click", () => win.minimize());
   max.addEventListener("click", () => win.toggleMaximize());
   $("#win-close").addEventListener("click", () => win.close());
-  $("#topbar").addEventListener("mousedown", (event) => {
-    if (event.button !== 0 || event.target.closest("button, a, input, select, textarea")) return;
+  // The top bar while not connected; then the rail and the docks' bars, where nothing is
+  // (not on a tab: a tab is dragged to another dock).
+  document.addEventListener("mousedown", (event) => {
+    if (event.button !== 0 || !event.target.closest("#topbar, #rail, .dock-head, .settings-nav")) return;
+    if (event.target.closest("button, a, input, select, textarea, [role=tab], .tab, .menu")) return;
     if (event.detail === 2) win.toggleMaximize();
     else win.startDragging();
   });

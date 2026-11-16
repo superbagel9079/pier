@@ -8,25 +8,24 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Icons: Lucide (ISC licence, lucide.dev), stroke 1.5. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-activity" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol><symbol id="i-circle-arrow-up" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m16 12l-4-4l-4 4m4 4V8"/></g></symbol><symbol id="i-flask-conical" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2M6.453 15h11.094M8.5 2h7"/></symbol><symbol id="i-folder-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M10.3 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.98a2 2 0 0 1 1.69.9l.66 1.2A2 2 0 0 0 12 6h8a2 2 0 0 1 2 2v3.3m-7.695 8.23l.923-.382m0-2.296l-.923-.383m2.547-1.241l-.383-.923m.383 6.467l-.383.924m2.679-6.468l.383-.923m-.001 7.391l-.382-.924m1.624-3.92l.924-.383m-.924 2.679l.924.383"/><circle cx="18" cy="18" r="3"/></g></symbol><symbol id="i-git-branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></g></symbol><symbol id="i-inbox" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/></g></symbol><symbol id="i-message-square" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></symbol><symbol id="i-plane-takeoff" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2 22h20M6.36 17.4L4 17l-2-4l1.1-.55a2 2 0 0 1 1.8 0l.17.1a2 2 0 0 0 1.8 0L8 12L5 6l.9-.45a2 2 0 0 1 2.09.2l4.02 3a2 2 0 0 0 2.1.2l4.19-2.06a2.4 2.4 0 0 1 1.73-.17L21 7a1.4 1.4 0 0 1 .87 1.99l-.38.76c-.23.46-.6.84-1.07 1.08L7.58 17.2a2 2 0 0 1-1.22.18Z"/></symbol><symbol id="i-scroll-text" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 12h-5m5-4h-5m9 9V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></g></symbol><symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="m21 21l-4.34-4.34"/><circle cx="11" cy="11" r="8"/></g></symbol><symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0a2.34 2.34 0 0 0 3.319 1.915a2.34 2.34 0 0 1 2.33 4.033a2.34 2.34 0 0 0 0 3.831a2.34 2.34 0 0 1-2.33 4.033a2.34 2.34 0 0 0-3.319 1.915a2.34 2.34 0 0 1-4.659 0a2.34 2.34 0 0 0-3.32-1.915a2.34 2.34 0 0 1-2.33-4.033a2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></g></symbol><symbol id="i-unplug" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m19 5l3-3M2 22l3-3m1.3 1.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6l-2.3 2.3a2.4 2.4 0 0 0 0 3.4Zm1.2-6.8L10 11m.5 5.5L13 14m-1-8l6 6l2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/></symbol></svg>
+  <!-- Not connected: the name, the connection, an update. Once connected, the rail and the
+       docks' own bars take over (and the window moves by them). -->
   <header id="topbar">
     <span class="logo">Pier</span>
     <button id="status" class="link dim" aria-live="polite" title="The connection, the picker on the VM: Settings > Connection" disabled>not connected</button>
-    <span id="target" class="dim" hidden></span>
     <nav>
-      <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
-      <button id="btn-palette" class="link" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)">search <kbd>Ctrl Shift K</kbd></button>
-      <button id="btn-waiting" class="link" hidden title="Pi's requests waiting for your approval, all in one list"></button>
-      <button id="btn-handoff" class="link" hidden title="Hand off: your shares become copies on the VM, so Pi keeps working with this computer off">keep working without this PC…</button>
-      <button id="btn-prefs" class="link" hidden>settings</button>
-      <button id="btn-disconnect" class="link" hidden>disconnect</button>
+      <button id="btn-update" class="link" data-update hidden title="A new Pier is out: see what changed and install it"></button>
     </nav>
-    <!-- Windows: Pier draws its own title bar (tauri.windows.conf.json); see main.js. -->
-    <div id="window-buttons" hidden>
-      <button id="win-min" title="Minimize" aria-label="Minimize"></button>
-      <button id="win-max" title="Maximize" aria-label="Maximize"></button>
-      <button id="win-close" title="Close" aria-label="Close"></button>
-    </div>
   </header>
+  <!-- Windows: Pier draws its own title bar (tauri.windows.conf.json), in the top right corner
+       over whatever bar is there; see main.js. -->
+  <div id="window-buttons" hidden>
+    <button id="win-min" title="Minimize" aria-label="Minimize"></button>
+    <button id="win-max" title="Maximize" aria-label="Maximize"></button>
+    <button id="win-close" title="Close" aria-label="Close"></button>
+  </div>
 
   <!-- The palette (Ctrl+Shift+K): anything, by a few letters. -->
   <div id="palette" class="overlay palette" hidden>
@@ -39,6 +38,19 @@
 
   <!-- Connected: three docks; any tab can live in any of them. -->
   <main id="workspace" hidden>
+    <!-- The rail: what the top bar held, as icons; the connection at its foot when the left
+         side is closed (otherwise at the foot of the left side). -->
+    <nav id="rail" aria-label="Pier">
+      <button id="btn-conversations" class="rail-btn" title="Conversations" aria-label="Conversations"><svg class="i" aria-hidden="true"><use href="#i-message-square"/></svg></button>
+      <button id="btn-palette" class="rail-btn" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)" aria-label="Go anywhere, Ctrl+Shift+K"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg></button>
+      <button id="btn-waiting" class="rail-btn" hidden title="Pi's requests waiting for your approval, all in one list"><svg class="i" aria-hidden="true"><use href="#i-inbox"/></svg><span class="badge" aria-hidden="true"></span></button>
+      <span class="rail-gap"></span>
+      <button id="rail-update" class="rail-btn" data-update hidden><svg class="i" aria-hidden="true"><use href="#i-circle-arrow-up"/></svg></button>
+      <button id="btn-handoff" class="rail-btn" hidden title="Hand off: your shares become copies on the VM, so Pi keeps working with this computer off" aria-label="Keep working without this PC"><svg class="i" aria-hidden="true"><use href="#i-plane-takeoff"/></svg></button>
+      <button id="btn-prefs" class="rail-btn" hidden title="Settings" aria-label="Settings"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg></button>
+      <button id="btn-disconnect" class="rail-btn" hidden title="Disconnect" aria-label="Disconnect"><svg class="i" aria-hidden="true"><use href="#i-unplug"/></svg></button>
+      <button id="rail-status" class="rail-btn" data-state="lost"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span></button>
+    </nav>
     <aside class="dock side" id="dock-left" data-dock="left">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
@@ -46,11 +58,13 @@
         <button class="icon collapse" title="Collapse"></button>
       </div>
       <div class="panes"></div>
+      <div class="dock-foot"><button id="status-foot" class="status-line" data-state="lost"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span><span></span></button></div>
     </aside>
     <div class="splitter" data-dock="left" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
     <section class="dock" id="dock-center" data-dock="center">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
+        <span id="target" class="dim" hidden></span>
         <button class="icon add" title="Add a tab" aria-label="Add a tab">+</button>
       </div>
       <div class="panes"></div>
@@ -227,7 +241,7 @@
       <section class="prefs-page" data-page="layout" data-title="Layout" role="tabpanel" hidden>
       <h2>Where the panels go</h2>
       <div class="grid">
-        <label for="prefs-side">Panels (Conversations, Activity, Project, Repository)</label>
+        <label for="prefs-side">Panels (Activity, Project, Repository; Conversations stay on the left)</label>
         <select id="prefs-side"><option value="right">on the right</option><option value="left">on the left</option></select>
       </div>
       <p class="hint">The terminals stay in the middle. Each tab can still go anywhere: drag it onto another bar, right-click it, or choose here.</p>

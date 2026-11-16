@@ -5,29 +5,32 @@
 const KINDS = {
   picker: { title: "picker", terminal: true },
   shell: { title: "shell", terminal: true },
-  project: { title: "Activity", single: true, make: (tab) => makeProject(tab) },
-  setup: { title: "Project", single: true, make: (tab) => makeSetup(tab) },
-  repository: { title: "Repository", single: true, make: (tab) => makeRepository(tab) },
-  conversations: { title: "Conversations", single: true, make: (tab) => makeConversations(tab) },
+  project: { title: "Activity", single: true, icon: "activity", make: (tab) => makeProject(tab) },
+  setup: { title: "Project", single: true, icon: "folder-cog", make: (tab) => makeSetup(tab) },
+  repository: { title: "Repository", single: true, icon: "git-branch", make: (tab) => makeRepository(tab) },
+  conversations: { title: "Conversations", single: true, icon: "message-square", make: (tab) => makeConversations(tab) },
   pi: { title: "pi", terminal: true },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
   file: { title: "file", make: (tab) => makeFile(tab) },
   takeback: { title: "Pi's work", make: (tab) => makeTakeBack(tab) },
-  logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
-  labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },
+  logs: { title: "Logs", single: true, icon: "scroll-text", make: (tab) => makeLogs(tab) },
+  labs: { title: "Labs", single: true, icon: "flask-conical", make: (tab) => makeLabs(tab) },
   lab: { title: "lab", terminal: true },
 };
 const DOCKS = ["left", "center", "right"];
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
-// The terminals in the middle, every panel on one side (Settings > Appearance chooses which):
-// Conversations, Pi's activity, setup; Repository if the project has one; Logs, Labs on demand
+// The terminals in the middle, Conversations on the left, the other panels on one side
+// (Settings > Appearance chooses which): Pi's activity, setup; Repository if the project has
+// one; Logs, Labs on demand
 function defaultLayout(side = prefs.panelSide) {
-  const panels = side === "left" ? "left" : "right";
-  const other = panels === "left" ? "right" : "left";
+  if (side === "left") {
+    return { left: { tabs: ["conversations", "project", "setup", "repository"], active: "conversations", collapsed: false, width: 400 },
+      right: { tabs: [], collapsed: false, width: 360 }, center: { tabs: ["main"] }, layout: 6 };
+  }
   return {
-    [panels]: { tabs: ["conversations", "project", "setup", "repository"], active: "conversations", collapsed: false, width: 400 },
-    [other]: { tabs: [], collapsed: false, width: 320 },
+    left: { tabs: ["conversations"], active: "conversations", collapsed: false, width: 360 },
+    right: { tabs: ["project", "setup", "repository"], active: "project", collapsed: false, width: 360 },
     center: { tabs: ["main"] },
     layout: 6,
   };
@@ -96,10 +99,20 @@ const workspace = (() => {
     const panes = $(".panes", dock.el);
     $(":scope > .empty", panes)?.remove();
     if (!dock.tabs.length) panes.append(emptyDock(name));
+    underButtons();
   }
 
   function renderAll() {
     for (const name of DOCKS) render(name);
+  }
+
+  /** On Windows the window's buttons sit in the top right corner: the bar there leaves them
+   *  room; beside a folded right side (30 px), the middle's bar does too. */
+  function underButtons() {
+    const right = docks.right, rightShown = !right.el.hidden;
+    $(".dock-head", right.el).classList.toggle("under-buttons", rightShown);
+    $(".dock-head", docks.center.el).classList.toggle("under-buttons", !rightShown);
+    $(".dock-head", docks.center.el).classList.toggle("beside-buttons", rightShown && right.collapsed);
   }
 
   function tabElement(tab, dock) {
@@ -129,7 +142,12 @@ const workspace = (() => {
       requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
     });
     node.title = tab.pinned ? "picker: the main terminal (cannot be closed)" : tab.title;
-    node.append(el("span", { textContent: tab.title }));
+    const icon = dock.side && KINDS[tab.kind].icon;
+    if (icon) {
+      node.classList.add("icon-tab");
+      node.setAttribute("aria-label", tab.title);
+      node.append(svgIcon(icon));
+    } else node.append(el("span", { textContent: tab.title }));
     const actions = el("span");
     actions.className = "tab-actions";
     // Only ×: moving, renaming and the rest are in the tab's right-click menu.

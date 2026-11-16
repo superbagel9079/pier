@@ -6,6 +6,17 @@ const backend = tauri ? realBackend() : mockBackend();
 const $ = (selector, root = document) => root.querySelector(selector);
 
 /** A new element: el("span", { className: "x", textContent: "y" }, child, "text"). */
+/** An icon from the sprite in index.html (Lucide), in the text's colour, hidden from readers. */
+function svgIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "i");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
 function el(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
   for (const child of children) if (child !== null && child !== undefined && child !== false) node.append(child);

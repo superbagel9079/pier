@@ -238,7 +238,13 @@ details label { margin-top: var(--s2); }
   #prefs .grid > label:not(:first-child) { margin-top: var(--s2); }
 }
 
-/* top bar */
+/* icons */
+
+.i { width: 16px; height: 16px; flex: none; }
+
+/* top bar: only while not connected */
+
+body.in-workspace #topbar { display: none; }
 
 #topbar {
   display: flex;
@@ -251,9 +257,10 @@ details label { margin-top: var(--s2); }
 .logo { font-weight: 600; }
 /* Windows: the top bar is the title bar (main.js). Buttons fill its height, in the text's
    colour, close red when pointed at. */
-body.own-titlebar #topbar { padding-right: 0; user-select: none; }
-/* Above the overlays (settings, palette: z-index 20), as the system's buttons would be. */
-#window-buttons { display: flex; align-self: stretch; margin: calc(-1 * var(--s2)) 0 calc(-1 * var(--s2)) calc(var(--s4) * -1 + var(--s2)); position: relative; z-index: 21; }
+body.own-titlebar #topbar { padding-right: 154px; user-select: none; }
+/* In the top right corner, over the bar there, above the overlays (settings, palette: z-index
+   20), as the system's buttons would be. The bar under them leaves them its room (main.js). */
+#window-buttons { display: flex; position: fixed; top: 0; right: 0; height: 40px; z-index: 21; }
 #window-buttons[hidden] { display: none; }
 #window-buttons button { width: 46px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--fg); display: grid; place-content: center; cursor: pointer; }
 #window-buttons button:hover { background: color-mix(in srgb, var(--fg) 12%, transparent); }
@@ -270,10 +277,32 @@ body.own-titlebar #topbar { padding-right: 0; user-select: none; }
 nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 1; min-width: 0; }
 nav > button { flex-shrink: 0; white-space: nowrap; }
 nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
-#topbar { overflow: hidden; }
-#window-buttons { flex-shrink: 0; }
-#btn-palette kbd { font-size: var(--t-label); padding: 0 var(--s1); margin-left: 2px; }
+#topbar { overflow: hidden; min-height: 40px; }
 @media (max-width: 900px) { #status { display: none; } }
+body.own-titlebar .dock-head.under-buttons { padding-right: 138px; }
+body.own-titlebar .side.collapsed .dock-head.under-buttons { padding-right: 0; padding-top: 40px; }
+body.own-titlebar .dock-head.beside-buttons { padding-right: 108px; }
+
+/* The rail: 44 px of icons on the left edge. */
+#rail { flex: 0 0 44px; display: flex; flex-direction: column; align-items: center; gap: var(--s1); padding: var(--s1) 0; background: var(--bg); border-right: 1px solid var(--line); user-select: none; }
+.rail-gap { flex: 1; }
+.rail-btn { position: relative; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; background: none; color: var(--dim); }
+.rail-btn:hover { background: var(--hover); color: var(--fg); }
+.rail-btn .badge { position: absolute; right: 1px; top: 1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 10px; line-height: 14px; font-weight: 600; text-align: center; background: var(--fg); color: var(--bg); border-radius: min(var(--r), 7px); }
+/* The connection as signal bars on the text's baseline: three connected, two while it
+   connects or the picker needs a look, none when lost. The words always go with them. */
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 9px; flex: none; }
+.bars i { width: 3px; background: var(--dim); }
+.bars i:nth-child(1) { height: 3px; } .bars i:nth-child(2) { height: 6px; } .bars i:nth-child(3) { height: 9px; }
+[data-state="slow"] .bars i:nth-child(3), [data-state="lost"] .bars i { background: var(--line); }
+/* In the rail only while the left side is closed; otherwise at that side's foot, with its words. */
+#workspace:has(#dock-left:not([hidden]):not(.collapsed)) #rail-status { display: none; }
+.dock-foot { flex: 0 0 40px; display: flex; align-items: center; padding: 0 var(--s2); border-top: 1px solid var(--line); background: var(--bg); }
+.side.collapsed .dock-foot { display: none; }
+.status-line { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; height: 32px; line-height: 32px; padding: 0 var(--s3); background: none; color: var(--dim); font-size: var(--t-small); }
+.status-line:hover { background: var(--hover); color: var(--fg); }
+.status-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#target { align-self: center; padding: 0 var(--s3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: var(--t-small); }
 
 /* connection screens */
 
@@ -291,6 +320,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 /* workspace: three docks */
 
 #workspace { flex: 1; display: flex; min-height: 0; position: relative; }
+body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: none; }
 .dock { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
 #dock-center { flex: 1; min-width: 160px; }
 /* A side never takes more than 45% of the window, however wide it was dragged. */
@@ -306,7 +336,7 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .drop-over > .dock-head { background: var(--raise); }
 
 /* The tab bar: on the background; the active tab takes its panel's tone. */
-.dock-head { display: flex; align-items: stretch; min-height: 32px; background: var(--bg); }
+.dock-head { display: flex; align-items: stretch; min-height: 40px; background: var(--bg); }
 .tabs { display: flex; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
@@ -338,6 +368,11 @@ nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-over
 .tab:hover .tab-actions, .tab.active .tab-actions { display: flex; }
 .tab:not(.active):not(:hover) { padding-right: var(--s3); }
 .tab-rename { padding: 0 var(--s1); min-width: 4em; max-width: 16em; }
+/* A panel's tab on a side: its icon alone, named by its title (closed from its right-click menu). */
+.tab.icon-tab, .tab.icon-tab:not(.active):not(:hover) { min-width: 0; padding: 0 var(--s3); }
+.tab.icon-tab .tab-actions { display: none; }
+.side.collapsed .tab.icon-tab { padding: var(--s2) 0; justify-content: center; }
+#dock-left.collapsed .tab.icon-tab { transform: none; }
 /* The bar's buttons, apart from the tabs. */
 .dock-head > button.icon { flex: 0 0 auto; padding: 0 var(--s2); }
 .dock-head > button.icon + button.icon { padding-left: var(--s1); }

@@ -7,9 +7,11 @@ let updateTimer = null;
 
 function showUpdate(info) {
   updateFound = info?.version ? info : null;
-  const button = $("#btn-update");
-  button.hidden = !updateFound;
+  const button = $("#btn-update"), rail = $("#rail-update");
+  button.hidden = rail.hidden = !updateFound;
   button.textContent = updateFound ? `update to ${updateFound.version}` : "";
+  rail.title = updateFound ? `Pier ${updateFound.version} is out: see what changed and install it` : "";
+  rail.setAttribute("aria-label", updateFound ? `Update to ${updateFound.version}` : "Update");
   $("#update-state").textContent = updateFound
     ? `Pier ${updateFound.current} · version ${updateFound.version} is out${updateFound.date ? ` (${updateFound.date.slice(0, 10)})` : ""}.`
     : info ? `Pier ${info.current} · up to date.` : "";
@@ -55,7 +57,7 @@ $("#prefs-updatecheck").addEventListener("change", (e) => {
   savePrefs();
   scheduleUpdateChecks();
 });
-$("#btn-update").addEventListener("click", () => {
+for (const button of document.querySelectorAll("[data-update]")) button.addEventListener("click", () => {
   openPrefs();
   showPrefsPage("updates");
 });
