@@ -237,6 +237,19 @@
           <label class="accent-any" title="Any colour, from the full palette"><input id="prefs-accent-pick" type="color" aria-label="Any colour"><span>Any colour…</span></label>
         </div>
       </div>
+      <h2>Gradient</h2>
+      <div id="grad-gallery" class="grad-gallery" role="radiogroup" aria-label="Gradient style"></div>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-grad-intensity"><span>Intensity</span><span>From a hint of colour to vivid.</span></label><input id="prefs-grad-intensity" type="range" min="5" max="60" step="1"></div>
+        <div class="set"><div class="what"><span id="prefs-grad-colors-label">Colours</span><span>The accent's, or two of yours.</span></div>
+          <div id="prefs-grad-colors" class="seg" role="radiogroup" aria-labelledby="prefs-grad-colors-label"><button role="radio" data-v="accent">Accent</button><button role="radio" data-v="custom">Custom</button></div>
+          <span id="prefs-grad-own" class="grad-own" hidden><input id="prefs-grad-c1" type="color" aria-label="First colour"><input id="prefs-grad-c2" type="color" aria-label="Second colour"></span></div>
+        <div class="set"><label class="what" for="prefs-grad-grain"><span>Grain</span><span>A fine texture over it, as on paper.</span></label><input id="prefs-grad-grain" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-newtab"><span>New tab and the quick start</span></label><input id="prefs-grad-newtab" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-working"><span>While Pi works</span><span>The frame of the message field.</span></label><input id="prefs-grad-working" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-empty"><span>Empty screens</span><span>A conversation not started, Details with nothing open.</span></label><input id="prefs-grad-empty" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-buttons"><span>Main buttons</span><span>Approve, Connect, Send, a window's main action.</span></label><input id="prefs-grad-buttons" type="checkbox"></div>
+      </div>
       <h2>Fonts, corners and menus</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-uifont"><span>Pier's font</span><span>Panels, menus, the conversation, the settings.</span></label><select id="prefs-uifont"></select></div>

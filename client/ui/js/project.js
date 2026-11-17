@@ -162,37 +162,6 @@ function makeProject(tab) {
 
   const openAsks = new Set(); // the requests unfolded by a click: they stay so on redraws
 
-  /** A request waiting in this project, as a line of the Waiting card: its dot, what it
-   *  asks, where and when, ✕ (refuse) and ✓ (approve); its detail under it when open. */
-  function waitRow(a, open) {
-    const answer = async (yes) => {
-      try {
-        await backend.approvalAnswer(a.id, yes);
-        flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
-        vm.poke();
-      } catch (e) { flashStatus(String(e)); }
-    };
-    const full = approvalItem(a, answer);
-    const [refuse, approve] = $(".approval-actions", full).children;
-    for (const sel of [".approval-what", ".approval-actions", ".approval-asked"]) $(sel, full)?.remove();
-    const icon = (b, name, label) => { b.className = "icon-btn wait-answer"; b.replaceChildren(svgIcon(name)); b.setAttribute("aria-label", label); b.title = label; return b; };
-    const said = approvalSentence(a).replace(/^Pi asks(?: to|:) /, "").replace(/\.$/, "");
-    const when = a.at ? new Date(a.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
-    const head = el("button", { type: "button", className: "wait-head" },
-      el("span", { className: "wait-dot", "aria-hidden": "true" }),
-      el("span", { className: "what" }, el("span", { textContent: said[0].toUpperCase() + said.slice(1) }), el("span", { textContent: [projectLabel(a.project), when].filter(Boolean).join(" · ") })));
-    head.setAttribute("aria-expanded", String(open));
-    const detail = el("div", { className: "wait-detail", hidden: !open }, ...full.childNodes);
-    head.addEventListener("click", () => {
-      const now = detail.hidden;
-      detail.hidden = !now;
-      head.setAttribute("aria-expanded", String(now));
-      if (now) openAsks.add(a.id); else openAsks.delete(a.id);
-    });
-    return el("div", { className: "wait-row" },
-      el("div", { className: "wait-line" }, head, icon(refuse, "x", "Refuse"), icon(approve, "check", "Approve")), detail);
-  }
-
   /** Details, as the mock-up: what waits for you, what Pi changed (and Undo), the
    *  session's tokens and cost; then what Pi read and its last steps. */
   function drawActivity() {
@@ -205,7 +174,7 @@ function makeProject(tab) {
       // Every request in a line (the proposals' 1C): what it asks in a few words, where and
       // when, ✕ and ✓; a click unfolds exactly what will be done. The oldest is open.
       const shown = asks.slice(0, 5);
-      const rows = shown.map((a, i) => waitRow(a, i === 0 || openAsks.has(a.id)));
+      const rows = shown.map((a, i) => waitRow(a, i === 0 || openAsks.has(a.id), openAsks));
       activityView.append(card("Waiting for you", asks.length > 1 ? String(asks.length) : "", el("div", { className: "wait-list" }, ...rows),
         asks.length > shown.length ? el("p", { className: "small" }, linkButton(`See all ${asks.length}`, "Every request waiting for you", () => waiting.show())) : null));
     }

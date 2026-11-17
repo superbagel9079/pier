@@ -1346,11 +1346,8 @@ button.row-main:hover { background: none; }
 .dialog.give .actions button .i { width: 14px; height: 14px; }
 .menu.no-icons .menu-icon { display: none; }
 /* The gradient (the notification preview's): the New tab page, the quick start (1A, 1D) */
-.empty.launcher { background: radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 55%), radial-gradient(circle at 8% 100%, color-mix(in srgb, var(--link) 16%, transparent), transparent 55%), var(--bg); }
 /* The composer while Pi works: its frame in the gradient, slowly moving (1C) */
-.composer.working { border-color: transparent; background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(90deg, var(--accent), var(--link), var(--accent)) border-box; background-size: 100% 100%, 200% 100%; animation: composer-work 3s linear infinite; }
 @keyframes composer-work { to { background-position: 0 0, -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .composer.working { animation: none; } }
 
 /* The connection: a window over the app (2C) */
 body.in-workspace #connect:not([hidden]) { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: var(--s5); overflow: auto; background: color-mix(in srgb, var(--bg) 70%, transparent); }
@@ -1389,8 +1386,56 @@ html.mica #workspace :is(#rail, #dock-left) { background: var(--mica-side); }
 html.mica #workspace :is(#dock-center, #dock-right) { background: var(--mica-mid); }
 html.mica .settings-nav { background: var(--mica-side); }
 html.mica .settings { background: var(--mica-mid); }
-html.mica #workspace .empty.launcher { background: radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 55%), transparent; }
 /* The browser preview has no Mica: a wallpaper behind the page shows what it does. */
 html.mica-preview body { background: linear-gradient(135deg, #2d4a7a, #6b3d6e 55%, #1f5a52); }
 /* Mica: the surfaces made of the page's colour (buttons, chips) become tints of the text */
-html.mica { --chip: color-mix(in srgb, var(--fg) 7%, transparent); --surface: color-mix(in srgb, var(--fg) 5%, transparent); --strong: color-mix(in srgb, var(--fg) 16%, transparent); }
+html.mica { --chip: color-mix(in srgb, var(--fg) 7%, transparent); --strong: color-mix(in srgb, var(--fg) 16%, transparent); } /* --surface stays solid: windows are drawn with it */
+/* The Waiting window: the list of Details' card, in a window */
+.dialog.waiting-dialog { width: min(520px, 100%); }
+.dialog.waiting-dialog .wait-list { margin: 0 calc(-1 * var(--s5)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.dialog.waiting-dialog .wait-line { padding-left: var(--s5); padding-right: var(--s4); }
+.dialog.waiting-dialog .wait-detail { padding-right: var(--s5); }
+.wait-none { padding: var(--s3) var(--s5); }
+/* The gradient (Appearance): one drawing per style, from --g1 and --g2 (the accent and the
+   link colour, or two chosen) at --gi; the same rule draws its thumbnail (.s-<style>). */
+:root { --g1: var(--accent); --g2: var(--link); --gi: 22%; --grain-layer: none; --grad: none;
+  --grad-ink: #0b0b0b; }
+:root[data-theme="light"] { --grad-ink: #ffffff; }
+:is(.grad-aurora, .s-aurora) { --grad: radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 55%), radial-gradient(circle at 8% 100%, color-mix(in srgb, var(--g2) calc(var(--gi) * .8), transparent), transparent 55%); }
+:is(.grad-mesh, .s-mesh) { --grad: radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--g2) var(--gi), transparent), transparent 45%), radial-gradient(circle at 85% 25%, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 45%), radial-gradient(circle at 60% 95%, color-mix(in srgb, #2dd4bf calc(var(--gi) * .9), transparent), transparent 50%); }
+:is(.grad-linear, .s-linear) { --grad: linear-gradient(135deg, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 55%, color-mix(in srgb, var(--g2) calc(var(--gi) * .7), transparent)); }
+:is(.grad-glow, .s-glow) { --grad: radial-gradient(ellipse 70% 55% at 50% -10%, color-mix(in srgb, var(--g1) calc(var(--gi) * 1.4), transparent), transparent 70%); }
+:is(.grad-dusk, .s-dusk) { --grad: linear-gradient(180deg, transparent 40%, color-mix(in srgb, #f97316 calc(var(--gi) * .8), transparent) 85%, color-mix(in srgb, #ec4899 var(--gi), transparent)); }
+:is(.grad-off, .s-off) { --grad: none; }
+.grad-grain { --grain-layer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"); }
+/* Where it goes */
+.grad-in-newtab .empty.launcher { background: var(--grain-layer), var(--grad), var(--bg); }
+html.mica.grad-in-newtab #workspace .empty.launcher { background: var(--grain-layer), var(--grad), transparent; }
+.grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); }
+.grad-in-working .composer.working { border-color: transparent; background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(90deg, var(--g1), var(--g2), var(--g1)) border-box; background-size: 100% 100%, 200% 100%; animation: composer-work 3s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .grad-in-working .composer.working { animation: none; } }
+.grad-in-buttons :is(.set > button.primary, .qs-step button, #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop), .wait-answer:last-child) {
+  background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); border-color: transparent; }
+/* The thumbnails (Appearance) */
+.grad-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--s2); margin-bottom: var(--s3); }
+.grad-thumb { position: relative; height: 64px; display: flex; align-items: flex-end; padding: var(--s2); border: 1px solid var(--line); border-radius: var(--r); color: var(--fg); font-size: 12px; text-align: left;
+  background: var(--grain-layer), var(--grad), var(--bg); }
+.grad-thumb:hover { border-color: var(--dim); background: var(--grain-layer), var(--grad), var(--bg); }
+.grad-thumb.on { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.grad-own { display: inline-flex; gap: var(--s2); }
+.grad-own input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 50%; overflow: hidden; background: none; cursor: pointer; }
+.grad-own input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.grad-own input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+/* The intensity: a thin track and a round handle */
+.set > input[type="range"] { -webkit-appearance: none; appearance: none; width: 184px; height: 4px; padding: 0; border: 0; border-radius: 2px; background: var(--strong); cursor: pointer; }
+.set > input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--fg); border: 0; }
+.set > input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+/* A thumbnail shows its style clearly; the intensity is for the real thing. */
+.grad-thumb { --gi: 42%; }
+/* A side over the middle (a narrow window) is read on its own: nearly solid, what is behind
+   blurred (with Mica too), and the middle dimmed behind it; a click there closes it. */
+html.mica #workspace #dock-left.over { background: color-mix(in srgb, var(--panel) 94%, transparent); }
+html.mica #workspace #dock-right.over { background: color-mix(in srgb, var(--bg) 94%, transparent); }
+.dock.side.over { -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+#dock-center { position: relative; }
+#workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-center::after { content: ""; position: absolute; inset: 0; z-index: 15; background: rgba(0, 0, 0, .4); pointer-events: none; }

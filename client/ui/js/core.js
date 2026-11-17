@@ -97,7 +97,9 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false };
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false,
+  gradStyle: "aurora", gradIntensity: 22, gradCustom: false, gradC1: "#4c8dff", gradC2: "#a371f7", gradGrain: false,
+  gradNewTab: true, gradWorking: true, gradEmpty: false, gradButtons: false };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -161,6 +163,31 @@ function applyMica() {
   if (!win?.setEffects) return;
   (on ? win.setEffects({ effects: ["mica"] }) : win.clearEffects()).catch((error) => uiLog("warn", "mica-failed", { msg: String(error) }));
 }
+
+/** The gradient (Appearance): its style, its strength, its colours (the accent's or two
+ *  chosen), its grain, and where it goes, as classes and variables on the root
+ *  (style.css draws it). */
+const GRAD_STYLES = ["off", "aurora", "mesh", "linear", "glow", "dusk"];
+function applyGradient() {
+  const root = document.documentElement;
+  const style = GRAD_STYLES.includes(prefs.gradStyle) ? prefs.gradStyle : "aurora";
+  for (const s of GRAD_STYLES) root.classList.toggle(`grad-${s}`, s === style);
+  root.classList.toggle("grad-grain", Boolean(prefs.gradGrain) && style !== "off");
+  const on = style !== "off";
+  root.classList.toggle("grad-in-newtab", on && prefs.gradNewTab);
+  root.classList.toggle("grad-in-working", on && prefs.gradWorking);
+  root.classList.toggle("grad-in-empty", on && prefs.gradEmpty);
+  root.classList.toggle("grad-in-buttons", on && prefs.gradButtons);
+  root.style.setProperty("--gi", `${Math.min(60, Math.max(5, Number(prefs.gradIntensity) || 22))}%`);
+  if (prefs.gradCustom) {
+    root.style.setProperty("--g1", prefs.gradC1);
+    root.style.setProperty("--g2", prefs.gradC2);
+  } else {
+    root.style.removeProperty("--g1");
+    root.style.removeProperty("--g2");
+  }
+}
+applyGradient();
 
 /** Translucent menus (Appearance): what is behind them shows through, blurred. */
 function applyMenuBlur() {

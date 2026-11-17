@@ -86,17 +86,15 @@ const waiting = (() => {
   const button = $("#btn-waiting");
   let pending = [];
   let open = null; // the list in the dialog, while it is open
+  const unfolded = new Set(); // the requests unfolded by a click
 
+  // The list of Details' card, in a window (the proposals' 3A): a line each, ✕ and ✓, a
+  // click unfolds exactly what will be done; the oldest is open.
   function render() {
     if (!open) return;
-    open.replaceChildren(...pending.map((a) => approvalItem(a, async (yes) => {
-      try {
-        await backend.approvalAnswer(a.id, yes);
-        flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
-        vm.poke();
-      } catch (e) { flashStatus(String(e)); }
-    })));
-    if (!pending.length) open.append(el("li", { className: "dim small note", textContent: "Nothing waits for you." }));
+    const sorted = [...pending].sort((x, y) => (x.at || 0) - (y.at || 0));
+    open.replaceChildren(...sorted.map((a, i) => waitRow(a, i === 0 || unfolded.has(a.id), unfolded)));
+    if (!pending.length) open.append(el("p", { className: "dim small wait-none", textContent: "Nothing waits for you." }));
   }
 
   vm.on("approvals", (message) => {
@@ -108,9 +106,11 @@ const waiting = (() => {
   });
 
   function show() {
-    open = el("ul", { className: "resource-items" });
+    open = el("div", { className: "wait-list" });
     const dialog = resourceDialog("Waiting for you", [
-      el("p", { className: "hint", textContent: "What Pi asks, shown exactly as it will be done. Nothing happens until you approve it." }), open], [], true);
+      el("p", { className: "hint", textContent: "Shown exactly as it will be done. Nothing happens until you approve it." }), open], []);
+    dialog.box.classList.add("waiting-dialog");
+    $(".actions .secondary", dialog.box).textContent = "Close"; // a list: nothing to cancel
     const close = dialog.close;
     dialog.close = () => { open = null; close(); };
     render();

@@ -117,3 +117,35 @@ function approvalItem(a, answer) {
     el("div", { className: "approval-asked dim small", textContent: `${projectLabel(a.project)} · asked ${new Date(a.at * 1000).toLocaleString()}` }),
     el("div", { className: "approval-actions" }, refuse, approve));
 }
+
+/** A request waiting, as a line (Details' card, the Waiting window): its dot, what it
+ *  asks, where and when, ✕ (refuse) and ✓ (approve); its detail under it when open.
+ *  openSet: the ids unfolded by a click, kept so on redraws. */
+function waitRow(a, open, openSet = null) {
+  const answer = async (yes) => {
+    try {
+      await backend.approvalAnswer(a.id, yes);
+      flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
+      vm.poke();
+    } catch (e) { flashStatus(String(e)); }
+  };
+  const full = approvalItem(a, answer);
+  const [refuse, approve] = $(".approval-actions", full).children;
+  for (const sel of [".approval-what", ".approval-actions", ".approval-asked"]) $(sel, full)?.remove();
+  const icon = (b, name, label) => { b.className = "icon-btn wait-answer"; b.replaceChildren(svgIcon(name)); b.setAttribute("aria-label", label); b.title = label; return b; };
+  const said = approvalSentence(a).replace(/^Pi asks(?: to|:) /, "").replace(/\.$/, "");
+  const when = a.at ? new Date(a.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const head = el("button", { type: "button", className: "wait-head" },
+    el("span", { className: "wait-dot", "aria-hidden": "true" }),
+    el("span", { className: "what" }, el("span", { textContent: said[0].toUpperCase() + said.slice(1) }), el("span", { textContent: [projectLabel(a.project), when].filter(Boolean).join(" · ") })));
+  head.setAttribute("aria-expanded", String(open));
+  const detail = el("div", { className: "wait-detail", hidden: !open }, ...full.childNodes);
+  head.addEventListener("click", () => {
+    const now = detail.hidden;
+    detail.hidden = !now;
+    head.setAttribute("aria-expanded", String(now));
+    if (now) openSet?.add(a.id); else openSet?.delete(a.id);
+  });
+  return el("div", { className: "wait-row" },
+    el("div", { className: "wait-line" }, head, icon(refuse, "x", "Refuse"), icon(approve, "check", "Approve")), detail);
+}

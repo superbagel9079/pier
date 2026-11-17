@@ -11,6 +11,7 @@ function openPrefs() {
   fillUiFonts();
   showCorners();
   showAccent();
+  showGradient();
   $("#prefs-menublur").checked = prefs.menuBlur;
   $("#prefs-mica").checked = prefs.mica;
   $("#prefs-shortcut").checked = prefs.shortcut;
@@ -364,6 +365,38 @@ function showAccent() {
 }
 for (const b of $("#prefs-accent-mode").children) b.addEventListener("click", () => setAccent(b.dataset.v === "custom" ? (prefs.accent || accentLast) : ""));
 $("#prefs-accent-pick").addEventListener("input", (e) => setAccent(e.target.value.toLowerCase()));
+
+/** The gradient's settings: the styles as thumbnails (each drawn by its own rule), then
+ *  intensity, colours, grain, and where it goes. */
+const GRAD_NAMES = { off: "Off", aurora: "Aurora", mesh: "Mesh", linear: "Linear", glow: "Glow", dusk: "Dusk" };
+const GRAD_FLAGS = { "prefs-grad-grain": "gradGrain", "prefs-grad-newtab": "gradNewTab", "prefs-grad-working": "gradWorking", "prefs-grad-empty": "gradEmpty", "prefs-grad-buttons": "gradButtons" };
+function setGradient(changes) {
+  Object.assign(prefs, changes);
+  savePrefs();
+  applyGradient();
+  showGradient();
+}
+function showGradient() {
+  $("#grad-gallery").replaceChildren(...Object.entries(GRAD_NAMES).map(([key, name]) => {
+    const on = (prefs.gradStyle || "aurora") === key;
+    const b = el("button", { type: "button", className: `grad-thumb s-${key}${on ? " on" : ""}`, title: name }, el("span", { textContent: name }));
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(on));
+    b.addEventListener("click", () => setGradient({ gradStyle: key }));
+    return b;
+  }));
+  $("#prefs-grad-intensity").value = prefs.gradIntensity;
+  for (const b of $("#prefs-grad-colors").children) b.setAttribute("aria-checked", String((b.dataset.v === "custom") === Boolean(prefs.gradCustom)));
+  $("#prefs-grad-own").hidden = !prefs.gradCustom;
+  $("#prefs-grad-c1").value = prefs.gradC1;
+  $("#prefs-grad-c2").value = prefs.gradC2;
+  for (const [id, key] of Object.entries(GRAD_FLAGS)) $(`#${id}`).checked = Boolean(prefs[key]);
+}
+$("#prefs-grad-intensity").addEventListener("input", (e) => setGradient({ gradIntensity: Number(e.target.value) }));
+for (const b of $("#prefs-grad-colors").children) b.addEventListener("click", () => setGradient({ gradCustom: b.dataset.v === "custom" }));
+$("#prefs-grad-c1").addEventListener("input", (e) => setGradient({ gradC1: e.target.value }));
+$("#prefs-grad-c2").addEventListener("input", (e) => setGradient({ gradC2: e.target.value }));
+for (const [id, key] of Object.entries(GRAD_FLAGS)) $(`#${id}`).addEventListener("change", (e) => setGradient({ [key]: e.target.checked }));
 
 /** Corners: Square, Slight, Round; the one in use pressed. */
 function showCorners() {
