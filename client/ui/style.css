@@ -1634,3 +1634,29 @@ html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .c
 .lc-links { display: flex; justify-content: center; gap: var(--s4); }
 .lc-links .link { font-size: 12px; color: var(--dim); }
 .grad-in-buttons .login-card button[type="submit"], .grad-in-buttons .qs-form button[type="submit"] { background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); border-color: transparent; }
+/* First contact (the proposals' D): the VM's icon, a question, its key in words; the
+   fingerprint and the command to check it folded under a link. */
+#view-trust { display: flex; flex-direction: column; gap: var(--s3); }
+.trust-head { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; margin-bottom: var(--s1); }
+.trust-head h1 { margin: var(--s2) 0 0; font-size: 18px; line-height: 24px; }
+.trust-head p { margin: 0; font-size: 12px; color: var(--dim); }
+.trust-words { margin: 0; padding: var(--s3) var(--s4); text-align: center; font-size: 16px; line-height: 24px; font-weight: 600; white-space: pre-line; border: 1px solid var(--line); border-radius: var(--r); background: color-mix(in srgb, var(--bg) 40%, transparent); }
+.trust-words-note { margin: 0; font-size: 12px; line-height: 16px; color: var(--dim); text-align: center; }
+.trust-more > summary { font-size: 12px; text-align: center; list-style: none; text-decoration: underline; text-underline-offset: 3px; }
+.trust-more > summary::-webkit-details-marker { display: none; }
+.trust-more[open] > summary { margin-bottom: var(--s2); }
+.trust-actions { display: flex; gap: var(--s2); margin-top: var(--s2); }
+.trust-actions button { flex: 1; height: 34px; }
+/* The conversations, calm (the proposals' 2A): titles in their plain weight, a Pi's state
+   as a mark (a ring while it works, a yellow dot when it waits for you or stopped), the
+   age only under the pointer, beside ⋯. */
+.sessions li.unread > .row-main .title { font-weight: 400; }
+.sessions li.unread > .row-main .row-meta { color: var(--dim); }
+.sessions li:not(.project-head):not(.folder-head) > .row-main .row-meta { display: none; }
+.sessions li:not(.project-head):not(.folder-head):is(:hover, :focus-within) > .row-main .row-meta:not(:empty) { display: block; }
+.sessions li:has(.row-more):hover .row-meta, .sessions li:has(.row-more):focus-within .row-meta { display: block; }
+.row-main .mark .state { display: block; width: 7px; height: 7px; border-radius: 50%; }
+.row-main .mark .state.need { background: var(--yellow, #d29922); }
+.row-main .mark .state.working { width: 10px; height: 10px; border: 1.5px solid var(--dim); border-top-color: transparent; background: none; animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .row-main .mark .state.working { animation: none; border-top-color: var(--dim); } }
+.sessions li.more .link { color: var(--dim); }

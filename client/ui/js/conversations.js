@@ -263,7 +263,7 @@ function makeConversations(tab) {
   let editing = false;
   let openConv = {}; // the conversation of the tab shown in the middle: its row is marked
   let categories = [];
-  const PER_PROJECT = 5;
+  const PER_PROJECT = 3; // calm (the proposals' 2A): three a project, the rest behind "more"
   // A narrow window: the project whose square in the rail was clicked, alone in the list.
   let only = null;
   const alone = () => (workspace.docks.left.over ? only : null);
@@ -377,11 +377,13 @@ function makeConversations(tab) {
    *  terminal. Its mark says what it does: working, waiting for you, or done (reported). */
   function piRow(p, pi, s) {
     const state = pi.working ? "working" : pi.reported ? "reported" : "waiting";
-    const meta = { working: "working", reported: s ? ago(s.modified) : "done", waiting: "needs you" }[state];
+    // Its state as a mark, not in words (the proposals' 2A): a ring while it works, a dot
+    // when it waits for you; its age, under the pointer.
+    const meta = state === "reported" && s ? ago(s.modified) : "";
     const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
     const own = [["Open its terminal", open, false, { icon: "terminal" }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
     return conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${state === "working" ? "" : " unread"}${openConv.slot === pi.slot ? " current" : ""}`,
-      mark: svgIcon({ working: "clock", reported: "check", waiting: "circle-alert" }[state]),
+      mark: state === "reported" ? null : el("span", { className: `state ${state === "working" ? "working" : "need"}`, title: state === "working" ? "Working" : "Waiting for you" }),
       title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta,
       tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
       run: open, menu: s ? menuOf(p, s, own) : (anchor, at) => showMenu(anchor, own, at) });
@@ -392,7 +394,7 @@ function makeConversations(tab) {
     const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
     const stopped = s.path === p.interrupted; // Pi stopped mid-work (the VM restarted?)
     return conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : "", stopped ? "unread" : "", openConv.file === s.path ? "current" : ""].filter(Boolean).join(" "),
-      mark: stopped ? svgIcon("circle-alert") : s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: stopped ? "stopped" : ago(s.modified),
+      mark: stopped ? el("span", { className: "state need", title: "Stopped mid-work" }) : s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
       run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) });
@@ -565,7 +567,7 @@ function makeConversations(tab) {
       }
       const tools = el("li", { className: "small more" });
       if (visible.length < rest.length) {
-        tools.append(linkButton(`Show ${rest.length - visible.length} more`, "", () => { view.expanded[p.project] = true; keep(); render(); }));
+        tools.append(linkButton(`${rest.length - visible.length} more`, "", () => { view.expanded[p.project] = true; keep(); render(); }));
       } else if (view.expanded[p.project] && !query && rest.length > room) {
         tools.append(linkButton("Show fewer", "", () => { delete view.expanded[p.project]; keep(); render(); }));
       }

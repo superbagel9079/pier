@@ -181,8 +181,11 @@ async function connect() {
       await pickerOutcome(outcome);
     } else if (outcome.status === "unknown_host") {
       pendingTrust = outcome;
-      $("#trust-title").textContent = "First contact";
-      $("#trust-text").textContent = `Pier has never connected to ${outcome.host} (${outcome.which === "bastion" ? "the bastion" : "the VM"}). Before trusting it, check that it shows the same fingerprint.`;
+      $("#trust-title").textContent = outcome.which === "bastion" ? "Is this your bastion?" : "Is this your VM?";
+      $("#trust-text").textContent = `${outcome.host}, a first connection`;
+      $("#trust-words").textContent = keyWords(outcome.fingerprint);
+      $("#trust-words-note").hidden = false;
+      $("#trust-more").open = false;
       const [algo, print] = String(outcome.fingerprint).includes(":") ? String(outcome.fingerprint).split(/:(.*)/s) : ["", outcome.fingerprint];
       $("#trust-algo").textContent = algo;
       $("#trust-fingerprint").textContent = print;
@@ -192,8 +195,11 @@ async function connect() {
     } else if (outcome.status === "changed_host") {
       pendingTrust = null;
       forgetPasswords();
-      $("#trust-title").textContent = "Different fingerprint: connection refused";
-      $("#trust-text").textContent = `The fingerprint of ${outcome.host} changed since the last connection. Unless the machine was reinstalled, someone may be impersonating it. Nothing was sent, not even the password.`;
+      $("#trust-title").textContent = "Its key changed: connection refused";
+      $("#trust-text").textContent = `The key of ${outcome.host} changed since the last connection. Unless the machine was reinstalled, someone may be impersonating it. Nothing was sent, not even the password.`;
+      $("#trust-words").textContent = `before: ${keyWords(outcome.known)}\nnow: ${keyWords(outcome.fingerprint)}`;
+      $("#trust-words-note").hidden = true;
+      $("#trust-more").open = true;
       $("#trust-algo").textContent = "";
       $("#trust-fingerprint").textContent = `known     ${outcome.known}\npresented ${outcome.fingerprint}`;
       $("#btn-trust").hidden = true;
@@ -585,3 +591,25 @@ for (const [button, source] of [["#trust-copy", () => [$("#trust-algo").textCont
     setTimeout(() => use.setAttribute("href", "#i-copy"), 1200);
   });
 }
+
+// A key in four words (the proposals' D): easier to remember and compare than its letters.
+// From the fingerprint's first bytes, 6 bits a word: the same key, the same words.
+const KEY_WORDS = ["amber", "anchor", "apple", "arrow", "autumn", "badger", "bamboo", "banjo", "beacon", "birch", "blossom", "breeze",
+  "cactus", "canyon", "cedar", "cherry", "cobalt", "comet", "copper", "coral", "cricket", "dawn", "delta", "desert", "dolphin", "ember",
+  "falcon", "fern", "fjord", "forest", "galaxy", "garnet", "glacier", "granite", "harbor", "hazel", "heron", "island", "ivory", "jasmine",
+  "juniper", "kayak", "lagoon", "lantern", "lemon", "lily", "lotus", "maple", "meadow", "meteor", "mint", "nectar", "oasis", "olive",
+  "orbit", "otter", "pebble", "pepper", "pine", "planet", "quartz", "raven", "river", "saffron"];
+function keyWords(fingerprint) {
+  const b64 = String(fingerprint || "").replace(/^[A-Z0-9]+:/i, "").replace(/-/g, "+").replace(/_/g, "/");
+  let bytes;
+  try { bytes = [...atob(b64 + "===".slice((b64.length + 3) % 4))].map((c) => c.charCodeAt(0)); } catch { bytes = [...b64].map((c) => c.charCodeAt(0)); }
+  let bits = 0, n = 0;
+  const words = [];
+  for (const byte of bytes) {
+    bits = (bits << 8) | byte; n += 8;
+    while (n >= 6 && words.length < 4) { n -= 6; words.push(KEY_WORDS[(bits >> n) & 63]); }
+    if (words.length === 4) break;
+  }
+  return words.join(" · ");
+}
+console.assert(KEY_WORDS.length === 64 && new Set(KEY_WORDS).size === 64, "KEY_WORDS: 64 different words");
