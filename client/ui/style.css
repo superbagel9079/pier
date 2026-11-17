@@ -62,7 +62,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 /* Corners: every box that has an edge or a fill of its own. :where() keeps it weaker than any rule. */
-:where(.menu, .dialog, .notice, fieldset, code, kbd, pre, .toast, .palette-box, .combo-list, .switch .mode, .drop, .theme-editor) { border-radius: var(--r); }
+:where(.menu, .dialog, .notice, fieldset, code, kbd, pre, .toast, .palette-box, .switch .mode, .drop, .theme-editor) { border-radius: var(--r); }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
@@ -454,7 +454,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
   box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 }
 .menu button { display: flex; align-items: center; gap: var(--s2); min-height: 24px; background: none; border: none; color: var(--fg); text-align: left; padding: 0 var(--s2); font-size: 13px; border-radius: max(0px, calc(var(--r) - 4px)); }
-.menu button:hover, .menu button:focus-visible { background: var(--strong); outline: none; }
+.menu button:hover, .menu button:focus-visible { background: var(--strong); outline: none; }  /* overridden below (4D) */
 .menu button:disabled { color: var(--dim); }
 .menu button.danger, .menu button.danger .menu-icon { color: var(--red, #f85149); }
 .menu-icon { width: 16px; flex: none; display: grid; place-items: center; color: var(--dim); }
@@ -655,19 +655,8 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 :not(.setting-row) + .setting-row:not(:has(+ .setting-row)) { border-radius: var(--r); }
 .setting-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .setting-head > label, .setting-head > span:first-child { flex: 1 1 200px; font-weight: 600; }
-.setting-head > input:not([type="checkbox"]), .setting-head > select, .setting-head > .combo { flex: 0 1 360px; min-width: 0; }
 /* Pier's own list for a field (the models): under it, in the theme; the browser's
    would be drawn by the system. */
-.combo { position: relative; display: inline-flex; min-width: 0; }
-.combo .model-input { flex: 1; min-width: 0; padding-right: var(--s5); }
-.combo .combo-toggle { position: absolute; right: 0; top: 0; bottom: 0; padding: 0 var(--s2); color: var(--dim); }
-.combo-list { position: absolute; z-index: 30; top: 100%; left: 0; right: 0; max-height: 280px; overflow-y: auto;
-  margin: 0; padding: var(--s1) 0; list-style: none; background: var(--field); border: 1px solid var(--edge, var(--line));
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .35); font-size: 13px; }
-.combo-list li { padding: var(--s1) var(--s2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.combo-list li:hover { background: var(--hover); }
-.combo-list li[aria-selected="true"] { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
-.setting-add .combo { flex: 1; max-width: 360px; }
 .setting-list li.off .name { color: var(--dim); text-decoration: line-through; }
 .setting-list li > input[type="checkbox"] { flex: none; margin: 0; }
 .setting-row.inactive .setting-list { opacity: .6; }
@@ -686,8 +675,6 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 .pick > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick::after { content: "▾"; color: var(--dim); font-size: 12px; }
 /* A model field: typed into, so a field, drawn as a pick. */
-.combo .model-input { height: 32px; padding-left: var(--s3); background: var(--bg); border: 1px solid var(--line); font-family: var(--ui); }
-.combo .model-input:hover { border-color: var(--dim); }
 /* Theme settings */
 .swatches { display: flex; gap: var(--s1); margin: var(--s2) 0 2px; flex-wrap: wrap; }
 .swatches span { width: 22px; height: 14px; border: 1px solid var(--line); }
@@ -1005,12 +992,11 @@ button.row-main:hover { background: none; }
    closing is instant. None if the system asks. */
 @keyframes open-in { from { opacity: 0; transform: scale(.95); } }
 .menu { animation: open-in .15s ease-out; transform-origin: top left; }
-.combo-list { animation: open-in .15s ease-out; transform-origin: top center; }
 .palette-box { animation: open-in .18s ease-out; transform-origin: top center; }
 .dialog { animation: open-in .2s ease-out; }
 .toast { animation: open-in .15s ease-out; transform-origin: top right; }
 @media (prefers-reduced-motion: reduce) {
-  .menu, .combo-list, .palette-box, .dialog, .toast { animation: none; }
+  .menu, .palette-box, .dialog, .toast { animation: none; }
   button { transition: none; }
   button:active:not(:disabled) { transform: none; }
 }
@@ -1110,8 +1096,8 @@ button.row-main:hover { background: none; }
 .set .what > * + * { font-size: 12px; line-height: 16px; color: var(--dim); overflow-wrap: anywhere; }
 .set > select, .set > input:not([type="checkbox"]) { flex: none; width: 184px; height: 32px; padding-left: var(--s3); background-color: var(--bg); border: 1px solid var(--line); }
 .set > select:hover, .set > input:not([type="checkbox"]):hover { border-color: var(--dim); }
-.set > button:not(.icon-btn):not(.pick), .set .btns button { flex: none; height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); color: var(--fg); }
-.set > button:not(.icon-btn):not(.pick):hover, .set .btns button:hover { background: var(--hover); }
+.set > button:not(.icon-btn):not(.pick):not(.primary), .set .btns button { flex: none; height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); color: var(--fg); }
+.set > button:not(.icon-btn):not(.pick):not(.primary):hover, .set .btns button:hover { background: var(--hover); }
 .set .btns { display: flex; gap: var(--s2); flex: none; }
 .seg { display: flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r); }
 .seg button { height: 26px; padding: 0 var(--s3); background: none; border: 0; color: var(--dim); border-radius: max(0px, calc(var(--r) - 2px)); }
@@ -1138,16 +1124,11 @@ button.row-main:hover { background: none; }
 .setting-row .setting-head > label, .setting-row .setting-head > span:first-child { grid-column: 1; grid-row: 1; font-weight: 600; }
 .setting-row .setting-head > :not(label):not(span:first-child):not(.link) { grid-column: 2; grid-row: 1 / span 2; justify-self: end; }
 .setting-row .setting-head > input:not([type="checkbox"]), .setting-row .setting-head > select { width: 184px; }
-.setting-row .setting-head > .combo { width: 240px; } /* model names are long */
 .setting-row > .hint { grid-column: 1; grid-row: 2; margin: 0; font-size: 12px; line-height: 16px; color: var(--dim); }
 .setting-row > :not(.setting-head):not(.hint) { grid-column: 1 / -1; }
 .setting-row .setting-key { display: none; }
 .prefs-page .actions button.secondary { height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); }
 .prefs-page .actions button.secondary:hover { background: var(--hover); }
-#prefs-logs .log-lines { height: 360px; flex: none; background: var(--field); border: 1px solid var(--line); border-radius: var(--r); }
-.combo .combo-toggle { font-size: 12px; color: var(--dim); background: none; padding: 0 var(--s3); }
-.combo-list { background: var(--raise); border: 0; }
-.combo-list li:hover, .combo-list li[aria-selected="true"] { background: var(--strong, var(--hover)); box-shadow: none; }
 /* A side over the middle (a narrow window, workspace.js layoutSides), as the mock-up. */
 .dock.side.over { position: absolute; top: 0; bottom: 0; z-index: 20; width: min(var(--width, 360px), 85vw); max-width: none; }
 #dock-left.over { left: 44px; box-shadow: 1px 0 0 var(--line), 8px 0 32px rgb(0 0 0 / .35); }
@@ -1201,3 +1182,87 @@ button.row-main:hover { background: none; }
 /* The middle's +: the icon, level with the header's toggle above when no tab is open. */
 #dock-center > .dock-head .tabs:empty { display: none; }
 #dock-center > .dock-head > button.add .i { width: 16px; height: 16px; }
+/* The palette (ui.js pickPalette): a menu with its own search on top. */
+.menu.palette { position: fixed; z-index: 30; max-height: min(420px, calc(100vh - 16px)); padding: 0; overflow: hidden; }
+.palette-search { display: flex; flex-direction: row; align-items: center; gap: var(--s2); height: 40px; padding: 0 var(--s3); border-bottom: 1px solid var(--line); color: var(--dim); }
+.palette-search .i { width: 14px; height: 14px; }
+.palette-search input { flex: 1; min-width: 0; height: 100%; padding: 0; background: none; border: 0; outline: none; }
+.palette-list { overflow-y: auto; padding: var(--s1); display: flex; flex-direction: column; }
+.palette-list button { min-height: 28px; }
+.palette-list button .label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-list button .k { margin-left: auto; padding-left: var(--s4); font-size: 12px; color: var(--dim); white-space: nowrap; }
+.palette-none { padding: var(--s2) var(--s3); color: var(--dim); font-size: 12px; }
+.setting-head > .pick.model-pick { width: 240px; }
+/* The workers' other models: a line each, inside their row */
+.setting-row > .sub-rows { grid-column: 1 / -1; margin: var(--s3) calc(-1 * var(--s4)) calc(-1 * var(--s3)); border-top: 1px solid var(--line); }
+.sub-row { display: flex; align-items: center; gap: var(--s3); min-height: 40px; padding: 0 var(--s3) 0 var(--s4); }
+.sub-row + .sub-row { border-top: 1px solid var(--line); }
+.sub-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sub-row .from { font-size: 12px; color: var(--dim); }
+.add-model { display: inline-flex; align-items: center; gap: 6px; }
+.add-model .i { width: 14px; height: 14px; }
+.set > .icon-room { width: 28px; flex: none; }
+/* Menus, as the proposals' 4D (without the translucency, a later Appearance option): a fine
+   border of the text's colour, rows of 28, the line pointed at lit with a bar on its left. */
+.menu { border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
+.menu button { min-height: 28px; border-radius: max(0px, calc(var(--r) - 2px)); }
+.menu button:hover, .menu button:focus-visible, .palette-list button.on { background: color-mix(in srgb, var(--fg) 10%, transparent); box-shadow: inset 2px 0 0 var(--fg); outline: none; }
+.menu button.danger:hover, .menu button.danger:focus-visible { box-shadow: inset 2px 0 0 var(--red, #f85149); }
+.menu button:disabled:hover { background: none; box-shadow: none; }
+.menu hr { border-top-color: color-mix(in srgb, var(--fg) 12%, transparent); }
+/* The theme gallery (Appearance, the proposals' 5A) */
+.theme-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); margin-bottom: var(--s2); }
+.theme-cell { position: relative; min-width: 0; }
+.theme-card { width: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); color: var(--fg); text-align: left; }
+.theme-card:hover { background: var(--field); border-color: var(--dim); }
+.theme-card.on { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.theme-card .name { font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-preview { display: flex; height: 36px; overflow: hidden; border-radius: max(0px, calc(var(--r) - 2px)); border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent); }
+.theme-preview i { flex: 1; }
+.theme-preview i:first-child { flex: 2; }
+.theme-preview.system i { flex: 1; }
+.theme-card.import { height: 100%; min-height: 72px; align-items: center; justify-content: center; border-style: dashed; color: var(--dim); text-align: center; }
+.theme-card.import .name { white-space: normal; }
+.theme-card.import .i { width: 16px; height: 16px; }
+.theme-actions { position: absolute; top: var(--s1); right: var(--s1); display: flex; gap: 2px; }
+.theme-actions .icon-btn { width: 24px; height: 24px; background: var(--raise); }
+.theme-actions .icon-btn .i { width: 14px; height: 14px; }
+/* Behavior: the notification as it will show (the proposals' 6B) */
+.set.notify-preview { justify-content: center; background: var(--bg); }
+.toast-preview { width: 320px; display: flex; gap: var(--s3); padding: var(--s3); background: var(--raise); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); font-size: 13px; }
+.toast-preview .i { color: var(--green, #3fb950); margin-top: 2px; }
+.toast-preview .t { font-weight: 600; }
+.toast-preview .b { color: var(--dim); font-size: 12px; }
+/* Updates: a status row (the proposals' 7B) */
+.update-status .update-icon { color: var(--dim); }
+.update-status.new .update-icon { color: var(--accent); }
+.set > button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.set > button.primary:hover { background: color-mix(in srgb, var(--fg) 85%, var(--bg)); }
+.update-notes-row { background: var(--bg); }
+.update-notes { white-space: pre-line; font-size: 13px; color: var(--dim); padding-left: 32px; }
+.set > button.primary { flex: none; height: 32px; padding: 0 var(--s3); }
+/* The live logs as a table (Diagnostics, the proposals' 8B): time, level as a tag,
+   event, details cut to a line; a click unfolds a row. */
+#prefs-logs .log-bar { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
+#prefs-logs .log-bar .search { flex: 1; min-width: 0; height: 32px; padding: 0 var(--s3); background: var(--bg); border: 1px solid var(--line); }
+#prefs-logs .log-bar .pick { width: 180px; }
+.seg .mode { height: 26px; padding: 0 var(--s3); background: none; border: 0; color: var(--dim); border-radius: max(0px, calc(var(--r) - 2px)); }
+.seg .mode:hover { background: none; color: var(--fg); }
+.seg .mode.active { background: var(--raise); color: var(--fg); }
+.log-table { border: 1px solid var(--line); background: var(--field); border-radius: var(--r); overflow: hidden; }
+.log-head, #prefs-logs .log-lines .entry { display: grid; grid-template-columns: 96px 64px minmax(120px, 220px) minmax(0, 1fr); gap: var(--s3); align-items: baseline; padding: 0 var(--s3); }
+.log-head { height: 32px; align-items: center; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+#prefs-logs .log-lines { height: 360px; flex: none; background: none; padding: 0; font: 12px/20px var(--ui); }
+#prefs-logs .log-lines .entry { padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); white-space: nowrap; cursor: pointer; box-shadow: none; }
+#prefs-logs .log-lines .entry:hover { background: var(--hover); }
+#prefs-logs .log-lines .time { font-family: var(--code); color: var(--dim); }
+#prefs-logs .log-lines .lvl { width: auto; justify-self: start; padding: 0 6px; line-height: 18px; font-size: 11px; font-weight: 400; text-transform: lowercase; border-radius: var(--r); background: var(--hover); color: var(--dim); }
+#prefs-logs .log-lines .entry.WARN .lvl { font-weight: 400; background: color-mix(in srgb, var(--yellow, #d29922) 22%, transparent); color: var(--yellow, #d29922); }
+#prefs-logs .log-lines .entry.ERROR .lvl { font-weight: 400; background: color-mix(in srgb, var(--red, #f85149) 22%, transparent); color: var(--red, #f85149); }
+#prefs-logs .log-lines .event { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+#prefs-logs .log-lines .fields { font-family: var(--code); color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+#prefs-logs .log-lines .trace { grid-column: 1 / -1; display: none; padding: var(--s1) 0 0; font-family: var(--code); }
+#prefs-logs .log-lines .entry.open { white-space: normal; }
+#prefs-logs .log-lines .entry.open .fields { white-space: pre-wrap; word-break: break-word; }
+#prefs-logs .log-lines .entry.open .trace { display: block; }
+#prefs-logs .log-lines .entry.dim { display: block; cursor: default; }

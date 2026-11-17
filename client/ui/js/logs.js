@@ -80,9 +80,11 @@ function makeLogs(tab) {
       el("span", { className: "time", textContent: `${time} `, title: entry.at || "" }),
       el("span", { className: "lvl", textContent: entry.level }),
       el("span", { className: "event", textContent: entry.event }),
-      el("span", { className: "fields", textContent: entry.fields ? ` ${entry.fields}` : "" }),
+      el("span", { className: "fields", textContent: entry.fields || "" }),
     );
     if (entry.trace) div.append(el("div", { className: "trace", textContent: entry.trace.join("\n") }));
+    // A click unfolds the row: the whole details and the trace, instead of one cut line.
+    div.addEventListener("click", () => { if (!getSelection().toString()) div.classList.toggle("open"); });
     rows.set(entry, div);
     return div;
   }
@@ -179,7 +181,7 @@ function makeLogs(tab) {
     b.addEventListener("click", () => {
       source = b.dataset.source;
       if (source !== "vm") vm.follow({ log: false });
-      for (const other of tab.pane.querySelectorAll(".mode[data-source]")) other.classList.toggle("active", other === b);
+      for (const other of tab.pane.querySelectorAll(".mode[data-source]")) { other.classList.toggle("active", other === b); other.setAttribute("aria-pressed", String(other === b)); }
       load();
     });
   }

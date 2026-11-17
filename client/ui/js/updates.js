@@ -12,10 +12,17 @@ function showUpdate(info) {
   button.textContent = updateFound ? `update to ${updateFound.version}` : "";
   rail.title = updateFound ? `Pier ${updateFound.version} is out: see what changed and install it` : "";
   rail.setAttribute("aria-label", updateFound ? `Update to ${updateFound.version}` : "Update");
+  // The status row: up to date, or the new one, what changed (folded) and Restart.
+  $("#update-title").textContent = updateFound ? `Pier ${updateFound.version} is out` : info ? "Pier is up to date" : "Pier";
   $("#update-state").textContent = updateFound
-    ? `Pier ${updateFound.current} · version ${updateFound.version} is out${updateFound.date ? ` (${updateFound.date.slice(0, 10)})` : ""}.`
-    : info ? `Pier ${info.current} · up to date.` : "";
-  $("#update-found").hidden = !updateFound;
+    ? `You have ${updateFound.current}${updateFound.date ? ` · ${updateFound.date.slice(0, 10)}` : ""} ·`
+    : info ? `Version ${info.current}.` : "Not checked yet.";
+  $("use", $(".update-icon")).setAttribute("href", updateFound ? "#i-circle-arrow-up" : "#i-circle-check");
+  $(".update-status").classList.toggle("new", Boolean(updateFound));
+  $("#update-whatsnew").hidden = !updateFound;
+  $("#update-install").hidden = !updateFound;
+  $("#update-check").hidden = Boolean(updateFound);
+  if (!updateFound) { $("#update-found").hidden = true; $("#update-whatsnew").setAttribute("aria-expanded", "false"); }
   $("#update-notes").textContent = updateFound?.notes || "No notes for this version.";
 }
 
@@ -52,6 +59,11 @@ function scheduleUpdateChecks() {
 }
 
 $("#update-check").addEventListener("click", () => checkForUpdate(false));
+$("#update-whatsnew").addEventListener("click", (e) => {
+  const open = $("#update-found").hidden;
+  $("#update-found").hidden = !open;
+  e.currentTarget.setAttribute("aria-expanded", String(open));
+});
 $("#prefs-updatecheck").addEventListener("change", (e) => {
   prefs.updateCheck = e.target.checked;
   savePrefs();

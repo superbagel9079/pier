@@ -1,6 +1,83 @@
 // What the panels build lists with: a link-like button, the two-line list row, a notice line,
 // a VM path shortened to ~. (el, visibleText and the dialogs: core.js and resources.js.)
 
+/** A list to choose from with its own search on top (the models, as the proposals' 1B):
+ *  each item's name on the left, where it comes from on the right, a check on the one in
+ *  use. ↑ ↓ choose, Enter takes, Esc or a click elsewhere closes, the anchor again too.
+ *  items: [{ value, label, detail }]. custom(text): a value for a text that matches
+ *  nothing (a model Pi does not list), or null. */
+function pickPalette(anchor, { items, current = null, placeholder, custom = null, onPick }) {
+  const open = document.querySelector(".menu.palette");
+  if (open) {
+    open.close();
+    if (open.anchor === anchor) return;
+  }
+  closeMenu(false);
+  const search = el("input", { type: "search", placeholder, spellcheck: false, autocomplete: "off" });
+  search.setAttribute("aria-label", placeholder);
+  const list = el("div", { className: "palette-list" });
+  list.setAttribute("role", "listbox");
+  const box = el("div", { className: "menu palette" }, el("label", { className: "palette-search" }, svgIcon("search"), search), list);
+  box.anchor = anchor;
+  let shown = [];
+  let at = 0;
+  const mark = (i) => {
+    at = i;
+    [...list.children].forEach((b, j) => b.classList.toggle("on", j === i));
+    list.children[i]?.scrollIntoView({ block: "nearest" });
+  };
+  const draw = () => {
+    const typed = search.value.trim();
+    const q = typed.toLowerCase();
+    shown = items.filter((it) => !q || `${it.label} ${it.detail || ""} ${it.value}`.toLowerCase().includes(q));
+    const own = typed && custom ? custom(typed) : null;
+    if (own && !items.some((it) => it.value === own)) shown.push({ value: own, label: `Use “${typed}”`, detail: "as typed" });
+    list.replaceChildren(...shown.map((it) => {
+      const b = el("button", { type: "button", title: it.value || it.label },
+        el("span", { className: "menu-icon" }, ...(it.value === current ? [svgIcon("check")] : [])),
+        el("span", { className: "label", textContent: it.label }), el("span", { className: "k", textContent: it.detail || "" }));
+      b.setAttribute("role", "option");
+      b.addEventListener("pointerdown", (e) => e.preventDefault()); // the search keeps the keyboard
+      b.addEventListener("click", () => take(it));
+      return b;
+    }));
+    if (!shown.length) list.append(el("p", { className: "palette-none", textContent: "Nothing matches" }));
+  };
+  const outside = (e) => { if (!box.contains(e.target) && !anchor.contains(e.target)) close(); };
+  const close = () => {
+    box.remove();
+    anchor.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+  };
+  const take = (it) => { close(); anchor.focus(); onPick(it.value); };
+  box.close = close;
+  search.addEventListener("input", () => { draw(); mark(0); });
+  search.addEventListener("keydown", (e) => {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && shown.length) {
+      e.preventDefault();
+      mark((at + (e.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length);
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (shown[at]) take(shown[at]);
+    } else if (e.key === "Escape") {
+      e.preventDefault(); // the palette closes, the settings stay
+      e.stopPropagation();
+      close();
+      anchor.focus();
+    }
+  });
+  document.body.append(box);
+  draw();
+  const r = anchor.getBoundingClientRect();
+  box.style.width = `${Math.max(r.width, 340)}px`;
+  box.style.left = `${Math.max(8, Math.min(r.right - box.offsetWidth, innerWidth - box.offsetWidth - 8))}px`;
+  box.style.top = `${r.bottom + 4 + box.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - box.offsetHeight - 4) : r.bottom + 4}px`;
+  anchor.setAttribute("aria-expanded", "true");
+  document.addEventListener("pointerdown", outside, true);
+  mark(Math.max(0, shown.findIndex((it) => it.value === current)));
+  search.focus();
+}
+
 /** A select drawn as the mock-up's pick: a button with the chosen text and ▾ whose list is
  *  Pier's own menu. The select stays, hidden: it keeps the value, the change event, the
  *  code that sets it (its value and options followed here). */

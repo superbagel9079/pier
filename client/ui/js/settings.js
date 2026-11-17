@@ -38,7 +38,7 @@ async function setConfig(key, value, page, note) {
     await backend.configSet(key, value);
     uiLog("info", "config-set", { key, reset: value === null });
     await loadPickerConfig();
-    flashStatus(value === null ? `${key}: back to its default` : `${key} saved: for the Pis started from now on`);
+    flashStatus(value === null ? "Back to the default, for the Pis started from now on" : "Saved, for the Pis started from now on");
   } catch (error) {
     note?.(String(error));
     return false;
@@ -56,7 +56,7 @@ function settingRow(key, label, control, hint, page) {
   row.dataset.key = key;
   const id = `setting-${key}`;
   const field = control.input || control; // a model picker: its field
-  if (field.matches?.("input, select")) field.id = id;
+  if (field.matches?.("input, select, button")) field.id = id;
   const error = el("p", { className: "error", hidden: true });
   const head = el("div", { className: "setting-head" },
     el("label", { htmlFor: id, textContent: label }), control);
@@ -79,97 +79,36 @@ function toggleRow(key, label, hint, page, { confirmOff } = {}) {
   return row;
 }
 
-/** A model: typed, or chosen in Pier's own list of Pi's models (the browser's would be
- *  drawn by the system, out of the theme, and filtered by what the field holds). The
- *  whole list on opening; what is typed narrows it. ↑ ↓ choose, Enter takes, Esc closes.
- *  onCommit(value) once the value really changed. empty: the placeholder, and when
- *  emptyChoice, a first entry that clears the field (back to Pi's default). */
-let comboIds = 0;
+/** Pi's models as the palette's items: "claude-opus-5-5", and "bifrost · anthropic". */
+function modelItems() {
+  return (piModels?.models || []).map((m) => {
+    const parts = m.split("/");
+    const label = parts.pop();
+    return { value: m, label, detail: parts.join(" · ") };
+  });
+}
+const MODEL_SEARCH = "Search, or type provider/id";
+const typedModel = (text) => (/^[\w.-]+\/\S+$/.test(text) ? text : null);
+
+/** A model: a pick showing its name, opening the palette of Pi's models (ui.js); a model
+ *  Pi does not list is typed there as provider/id. onCommit(value) once it changed.
+ *  empty: what no model says, and when emptyChoice, the first item (back to Pi's default). */
 function modelPicker(value, empty, onCommit, { emptyChoice = false } = {}) {
-  const n = ++comboIds;
-  const input = el("input", { type: "text", value: value || "", placeholder: empty, spellcheck: false, autocomplete: "off", className: "model-input" });
-  const list = el("ul", { className: "combo-list", id: `combo-${n}`, hidden: true });
-  const toggle = el("button", { className: "icon combo-toggle", textContent: "▾", title: "Pi's models", tabIndex: -1 });
-  const box = el("span", { className: "combo" }, input, toggle, list);
-  box.input = input;
-  input.setAttribute("role", "combobox");
-  input.setAttribute("aria-expanded", "false");
-  input.setAttribute("aria-controls", list.id);
-  input.setAttribute("aria-autocomplete", "list");
-  list.setAttribute("role", "listbox");
-  let committed = input.value.trim();
-  let shown = [];
-  let at = -1;
-  let typed = false; // the list narrows only once something is typed
-
-  const commit = () => {
-    const v = input.value.trim();
-    if (v === committed) return;
-    committed = v;
-    onCommit(v);
-  };
-  const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); };
-  const mark = (i) => {
-    at = i;
-    [...list.children].forEach((li, j) => li.setAttribute("aria-selected", String(j === i)));
-    const li = list.children[i];
-    if (li) { input.setAttribute("aria-activedescendant", li.id); li.scrollIntoView({ block: "nearest" }); }
-  };
-  const draw = () => {
-    const query = typed ? input.value.trim().toLowerCase() : "";
-    const models = piModels?.models || [];
-    shown = [...(emptyChoice ? [""] : []), ...models.filter((m) => !query || m.toLowerCase().includes(query))];
-    list.replaceChildren(...shown.map((m, i) => {
-      const li = el("li", { id: `combo-${n}-${i}` });
-      li.setAttribute("role", "option");
-      if (!m) li.append(el("span", { className: "dim", textContent: empty }));
-      else {
-        const cut = m.indexOf("/");
-        li.append(el("span", { className: "dim", textContent: m.slice(0, cut + 1) }), m.slice(cut + 1));
-        li.title = m;
-      }
-      // pointerdown, not click: the field keeps the focus, so its blur does not commit first.
-      li.addEventListener("pointerdown", (e) => { e.preventDefault(); input.value = m; close(); commit(); });
-      return li;
-    }));
-    if (!shown.length) {
-      list.append(el("li", { className: "dim", textContent: piModels ? (models.length ? "no model holds that: Enter keeps it as typed" : "Pi listed no model: type provider/id") : "asking Pi…" }));
-    }
-    mark(Math.max(0, shown.indexOf(input.value.trim())));
-  };
-  const open = () => {
-    typed = false;
-    draw();
-    list.hidden = false;
-    input.setAttribute("aria-expanded", "true");
-    if (!piModels) loadPiModels().then(() => { if (!list.hidden) draw(); });
-  };
-
-  input.addEventListener("focus", open);
-  input.addEventListener("input", () => { typed = true; if (list.hidden) { list.hidden = false; input.setAttribute("aria-expanded", "true"); } draw(); });
-  input.addEventListener("blur", () => { close(); commit(); });
-  toggle.addEventListener("pointerdown", (e) => {
-    e.preventDefault();
-    if (list.hidden) { input.focus(); open(); } else close();
+  const b = el("button", { type: "button", className: "pick model-pick" }, el("span"));
+  b.setAttribute("aria-haspopup", "listbox");
+  let current = value || "";
+  const label = () => { $("span", b).textContent = current ? current.split("/").pop() : empty; b.title = current || empty; };
+  label();
+  b.addEventListener("click", async () => {
+    if (!piModels) { $("span", b).textContent = "Asking Pi…"; await loadPiModels(); label(); }
+    pickPalette(b, {
+      items: [...(emptyChoice ? [{ value: "", label: empty }] : []), ...modelItems()],
+      current, placeholder: MODEL_SEARCH, custom: typedModel,
+      onPick: (v) => { if (v === current) return; current = v; label(); onCommit(v); },
+    });
   });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      if (list.hidden) { open(); return; }
-      if (shown.length) mark((at + (e.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length);
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (!list.hidden && at >= 0 && shown[at] !== undefined && (typed || shown[at] !== input.value.trim())) input.value = shown[at];
-      close();
-      commit();
-    } else if (e.key === "Escape" && !list.hidden) {
-      e.preventDefault(); // the list closes; the settings stay
-      e.stopPropagation();
-      input.value = committed;
-      close();
-    }
-  });
-  return box;
+  b.input = b; // settingRow and drawAgents name the control by its .input
+  return b;
 }
 
 function modelRow(key, label, hint, empty) {
@@ -179,31 +118,33 @@ function modelRow(key, label, hint, empty) {
   return row;
 }
 
-/** A list of texts (models, hosts): each with ×, and a field to add one. */
-function listRow(key, label, hint, page, { placeholder, models = false } = {}) {
+/** The workers' other models, as the proposals' 2B: one line each (its name, where it
+ *  comes from, ⋯ to remove it), then Add a model, which opens the palette. */
+function workerModelsRow() {
+  const key = "worker_models";
   const items = [...(configValue(key) || [])];
-  const list = el("ul", { className: "setting-list" });
   let row;
-  const save = (next) => setConfig(key, next, page, row.say);
-  // A model chosen in the list is added at once.
-  const picker = models ? modelPicker("", placeholder, (v) => { if (v) save([...items, v]); }) : null;
-  const field = picker ? picker.input : el("input", { type: "text", placeholder, spellcheck: false, autocomplete: "off" });
-  const add = el("button", { className: "secondary", textContent: "Add" });
-  row = settingRow(key, label, el("span"), hint, page);
+  const save = (next) => setConfig(key, next, "agents", row.say);
+  row = settingRow(key, "Other models for workers", el("span"), "Those a Pi may choose for a given worker, besides the one above.", "agents");
+  const list = el("div", { className: "sub-rows" });
   for (const item of items) {
-    list.append(el("li", {},
-      el("span", { className: "name", textContent: item }),
-      el("button", { className: "icon", textContent: "×", title: `Remove ${item}`, onclick: () => save(items.filter((i) => i !== item)) })));
+    const parts = item.split("/");
+    const name = parts.pop();
+    const more = el("button", { className: "icon-btn", title: `${name}: remove` }, svgIcon("ellipsis"));
+    more.setAttribute("aria-label", more.title);
+    more.setAttribute("aria-haspopup", "menu");
+    more.addEventListener("click", () => showMenu(more, [["Remove", () => save(items.filter((i) => i !== item)), false, { icon: "trash", danger: true }]]));
+    list.append(el("div", { className: "sub-row" }, el("span", { className: "name", textContent: name, title: item }), el("span", { className: "from", textContent: parts.join(" · ") }), more));
   }
-  if (!items.length) list.append(el("li", { className: "dim", textContent: "none" }));
-  const adding = el("div", { className: "setting-add" }, picker || field, add);
-  field.id = `setting-${key}-new`;
-  field.setAttribute("aria-label", `Add to ${label}`);
-  const go = () => { const v = field.value.trim(); if (v) save([...items, v]); };
-  add.addEventListener("click", go);
-  if (!picker) field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-  row.querySelector(".setting-head > label").htmlFor = field.id;
-  row.querySelector(".setting-key").before(list, adding);
+  const add = el("button", { className: "link add-model", type: "button" }, svgIcon("plus"), el("span", { textContent: "Add a model" }));
+  add.setAttribute("aria-haspopup", "listbox");
+  add.addEventListener("click", async () => {
+    if (!piModels) await loadPiModels();
+    pickPalette(add, { items: modelItems().filter((it) => !items.includes(it.value)), placeholder: MODEL_SEARCH, custom: typedModel,
+      onPick: (v) => { if (v && !items.includes(v)) save([...items, v]); } });
+  });
+  list.append(el("div", { className: "sub-row" }, add));
+  row.querySelector(".setting-key").before(list);
   return row;
 }
 
@@ -274,7 +215,7 @@ function drawAgents(again) {
     out.push(el("h2", { textContent: "Models" }), knows, defRow,
       modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
       modelRow("worker_model", "Workers", "The model of the workers a Pi starts, when it names none. A cheaper model does.", "Pi's default"),
-      listRow("worker_models", "Other models for workers", "Those a Pi may choose for a given worker, besides the one above.", "agents", { placeholder: "provider/id", models: true }),
+      workerModelsRow(),
       modelRow("helper_model", "Helpers", "The model of the read-only helpers (scout, reviewer, critic, checker) any Pi consults. A fast, cheap model.", "Pi's default"));
     out.push(el("h2", { textContent: "Several Pis" }),
       toggleRow("workers", "Workers", "A Pi may start worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
@@ -330,13 +271,15 @@ function drawNetwork(again) {
       const row = el("div", { className: isOff(entry) ? "set tight off" : "set tight" },
         el("div", { className: "what" }, el("span", { className: "code", textContent: entry })),
         el("span", { className: "origin", textContent: mine ? "yours" : "built in" }));
-      if (mine) {
-        const x = el("button", { className: "icon-btn", title: `Take ${entry} out of the list` }, svgIcon("x"));
-        x.setAttribute("aria-label", x.title);
-        x.addEventListener("click", () => removeOwn(entry));
-        row.append(x);
-      }
+      // The switches stay in one column; yours have ⋯ after theirs (Remove), the others room.
       row.append(sw);
+      if (mine) {
+        const more = el("button", { className: "icon-btn", title: `${entry}: remove` }, svgIcon("ellipsis"));
+        more.setAttribute("aria-label", more.title);
+        more.setAttribute("aria-haspopup", "menu");
+        more.addEventListener("click", () => showMenu(more, [[`Remove ${entry}`, () => removeOwn(entry), false, { icon: "trash", danger: true }]]));
+        row.append(more);
+      } else row.append(el("span", { className: "icon-room", "aria-hidden": "true" }));
       row.dataset.host = entry.toLowerCase();
       return row;
     };

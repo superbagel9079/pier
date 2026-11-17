@@ -87,7 +87,7 @@ function showSettingsPage(page) {
 const prefsLogs = { pane: $("#prefs-logs") };
 
 // Every list of the settings as the mock-up's pick (ui.js), those drawn later too.
-const pickAll = (root) => root.querySelectorAll(".set > select, .setting-head > select, #ext-project").forEach(pickify);
+const pickAll = (root) => root.querySelectorAll(".set > select, .setting-head > select, #ext-project, #prefs-logs .level").forEach(pickify);
 pickAll($("#prefs"));
 new MutationObserver(() => pickAll($("#prefs"))).observe($("#prefs .prefs-pages"), { childList: true, subtree: true });
 /** A page asked for from elsewhere (Labs' settings link, the update button, the palette). */
@@ -190,6 +190,51 @@ function fillThemes() {
   const colors = [theme.ui.bg, theme.ui.panel, theme.ui.fg, theme.ui.dim, theme.ui.accent,
     ...ANSI_KEYS.slice(1, 7).map((k) => theme.terminal[k]).filter(Boolean)];
   for (const color of colors) box.append(el("span", { style: `background:${color}` }));
+  drawThemeGallery();
+}
+
+/** The themes as cards (the proposals' 5A): four colours of each (background, panel,
+ *  text, accent) and its name; the one in use has Customize, yours a bin; the last card
+ *  imports. Drives the hidden list, so the rest of the code keeps its one source. */
+function drawThemeGallery() {
+  const gallery = $("#theme-gallery");
+  const select = $("#prefs-theme");
+  const preview = (t) => {
+    const ui = completeTheme(t).ui;
+    return el("span", { className: "theme-preview", "aria-hidden": "true" }, ...[ui.bg, ui.panel, ui.fg, ui.accent].map((c) => el("i", { style: `background:${c}` })));
+  };
+  const card = (id, name, previewEl, own) => {
+    const on = select.value === id;
+    const b = el("button", { type: "button", className: on ? "theme-card on" : "theme-card", title: name }, previewEl, el("span", { className: "name", textContent: name }));
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(on));
+    b.addEventListener("click", () => { if (select.value === id) return; select.value = id; select.dispatchEvent(new Event("change")); });
+    const box = el("div", { className: "theme-cell" }, b);
+    if (on && id !== "system") {
+      const edit = el("button", { type: "button", className: "icon-btn", title: "Customize this theme" }, svgIcon("pencil"));
+      edit.setAttribute("aria-label", `Customize ${name}`);
+      edit.addEventListener("click", () => $("#theme-customize").click());
+      box.append(el("span", { className: "theme-actions" }, edit, ...(own ? [(() => {
+        const del = el("button", { type: "button", className: "icon-btn", title: "Delete this theme" }, svgIcon("trash"));
+        del.setAttribute("aria-label", `Delete ${name}`);
+        del.addEventListener("click", () => $("#theme-delete").click());
+        return del;
+      })()] : [])));
+    }
+    return box;
+  };
+  const dark = BUILTIN_THEMES.find((t) => t.id === "devbox-dark") || BUILTIN_THEMES[0];
+  const light = BUILTIN_THEMES.find((t) => t.id === "devbox-light") || BUILTIN_THEMES[1];
+  const half = el("span", { className: "theme-preview system", "aria-hidden": "true" },
+    el("i", { style: `background:${completeTheme(dark).ui.bg}` }), el("i", { style: `background:${completeTheme(light).ui.bg}` }));
+  const add = el("button", { type: "button", className: "theme-card import", title: "A VS Code theme's .json (its \"themes\" folder, on GitHub or in ~/.vscode/extensions), or a Zed theme .json (zed.dev/themes, ~/.config/zed/themes): every theme in it is added." },
+    svgIcon("upload"), el("span", { className: "name", textContent: "Import a VS Code or Zed theme…" }));
+  add.addEventListener("click", () => $("#theme-import").click());
+  gallery.replaceChildren(
+    card("system", "Follow the system", half, false),
+    ...BUILTIN_THEMES.map((t) => card(t.id, t.name, preview(t), false)),
+    ...prefs.customThemes.map((t) => card(t.id, t.imported ? `${t.name} (imported)` : t.name, preview(t), true)),
+    el("div", { className: "theme-cell" }, add));
 }
 
 $("#theme-import").addEventListener("click", () => $("#theme-file").click());
@@ -416,6 +461,10 @@ $("#prefs-shortcut").addEventListener("change", async (e) => {
 });
 $("#prefs-autostop").addEventListener("change", (e) => { prefs.autostop = e.target.checked; savePrefs(); });
 $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.checked; savePrefs(); });
+// A real one, as connect.js sends them, to see where and how it shows.
+$("#prefs-notify-test").addEventListener("click", () => backend.notify("Pi finished", "~/work is waiting for you (a test from Pier's settings)")
+  .then(() => flashStatus("Test notification sent"))
+  .catch((error) => flashStatus(`No notification: ${error}`)));
 $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.target.checked; savePrefs(); });
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
