@@ -4,10 +4,10 @@
 /** A select drawn as the mock-up's pick: a button with the chosen text and ▾ whose list is
  *  Pier's own menu. The select stays, hidden: it keeps the value, the change event, the
  *  code that sets it (its value and options followed here). */
-function pickify(select) {
+function pickify(select, variant = "") {
   if (select.dataset.pick) return;
   select.dataset.pick = "1";
-  const b = el("button", { type: "button", className: "pick" }, el("span"));
+  const b = el("button", { type: "button", className: `pick ${variant}`.trim(), title: select.title || "" }, el("span"));
   b.setAttribute("aria-haspopup", "menu");
   const label = () => {
     $("span", b).textContent = select.selectedOptions[0]?.text || "";

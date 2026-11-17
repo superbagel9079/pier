@@ -49,11 +49,10 @@ async function setConfig(key, value, page, note) {
   return true;
 }
 
-/** One setting: its label and control on a line, what it does under it; marked when
- *  config.toml sets it, with "reset" to drop it. */
+/** One setting: its label and control on a line, what it does under it. No "reset": the
+ *  control itself goes back (a switch, "Pi's default", a number typed again). */
 function settingRow(key, label, control, hint, page) {
-  const info = pickerConfig?.keys?.[key];
-  const row = el("div", { className: "setting-row" + (info?.set ? " modified" : "") });
+  const row = el("div", { className: "setting-row" });
   row.dataset.key = key;
   const id = `setting-${key}`;
   const field = control.input || control; // a model picker: its field
@@ -61,10 +60,6 @@ function settingRow(key, label, control, hint, page) {
   const error = el("p", { className: "error", hidden: true });
   const head = el("div", { className: "setting-head" },
     el("label", { htmlFor: id, textContent: label }), control);
-  if (info?.set) {
-    head.append(linkButton("reset", `Back to the default (${JSON.stringify(info.default)}): the line goes from config.toml`,
-      () => setConfig(key, null, page, noticeSetter(error))));
-  }
   row.append(head);
   if (hint) row.append(el("p", { className: "hint", textContent: hint }));
   row.append(el("p", { className: "dim small setting-key", textContent: key }), error);
@@ -179,7 +174,7 @@ function modelPicker(value, empty, onCommit, { emptyChoice = false } = {}) {
 
 function modelRow(key, label, hint, empty) {
   let row;
-  const picker = modelPicker(configValue(key), empty, (v) => setConfig(key, v, "agents", row.say), { emptyChoice: true });
+  const picker = modelPicker(configValue(key), empty, (v) => setConfig(key, v || null, "agents", row.say), { emptyChoice: true });
   row = settingRow(key, label, picker, hint, "agents");
   return row;
 }
@@ -215,7 +210,7 @@ function listRow(key, label, hint, page, { placeholder, models = false } = {}) {
 function pageIntro(page) {
   const box = el("div");
   if (!pickerConfig) return box;
-  box.append(el("div", { className: "banner", title: `Saved on the VM in ${pickerConfig.path}; a bar on a row's left: set there, reset drops it.` },
+  box.append(el("div", { className: "banner", title: `Saved on the VM in ${pickerConfig.path}.` },
     svgIcon("info"), el("span", { textContent: "For the Pis started from now on; running ones keep what they had." })));
   if (pickerConfig.warning) box.append(el("p", { className: "notice", textContent: pickerConfig.warning }));
   if (!pickerConfig.writable) box.append(el("p", { className: "notice", textContent: "The VM's Python is older than 3.11: config.toml can only be changed by hand." }));
@@ -375,6 +370,9 @@ function drawNetwork(again) {
 
 // --- Git & forges ------------------------------------------------------------------
 
+// Each forge's mark, monochrome as Pier's other icons (Gitea and Forgejo have none in Lucide).
+const FORGE_ICONS = { github: "github", gitlab: "gitlab" };
+
 /** The accounts on the forges: everyone's, each project's repository picks one
  *  (Repository > Git). Tokens stay on the VM. */
 async function drawForges() {
@@ -397,7 +395,7 @@ async function drawForges() {
       try { await backend.forgeRemove(f.id); drawForges(); } catch (e) { showError(error, String(e)); }
     });
     rows.append(el("div", { className: "set" },
-      el("span", { className: "avatar", textContent: (f.login || "?")[0].toUpperCase(), "aria-hidden": "true" }),
+      el("span", { className: "avatar", "aria-hidden": "true" }, svgIcon(FORGE_ICONS[f.kind] || "git-branch")),
       el("div", { className: "what" }, el("span", { textContent: f.login }), el("span", { textContent: `${FORGE_LABELS[f.kind] || f.kind} · ${f.url}` })),
       remove));
   }
@@ -406,7 +404,7 @@ async function drawForges() {
   add.addEventListener("click", () => showMenu(add, Object.entries(FORGE_LABELS).map(([kind, label]) => [label, () => forgeAccountDialog(kind, (forge) => {
     flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
     drawForges();
-  })])));
+  }), false, { icon: FORGE_ICONS[kind] || "git-branch" }])));
   rows.append(el("div", { className: "set" },
     el("div", { className: "what" }, el("span", { textContent: forges.length ? "Add an account" : "No account yet" }),
       el("span", { textContent: "Where Pi pushes its pi/… branches and opens pull requests; each project picks one in Repository. The token stays on the VM: Pi never sees it." })),

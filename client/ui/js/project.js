@@ -45,6 +45,7 @@ function makeProject(tab) {
   const tree = $(".tree", tab.pane);
   const showHidden = $(".show-hidden", tab.pane);
   const sortBy = $(".files-sort", tab.pane);
+  pickify(sortBy, "quiet"); // "Name ⌄", as the mock-up: a word and Pier's menu
   sortBy.value = FILE_ORDER[prefs.filesSort] ? prefs.filesSort : "name";
   const restoreView = $(".view-restore", tab.pane);
   const points = $(".points", restoreView);
