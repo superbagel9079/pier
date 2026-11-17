@@ -108,6 +108,23 @@ function pickify(select, variant = "") {
   label();
 }
 
+/** A number field with − and + on its sides (within its min and max); each step is a change. */
+function stepper(input) {
+  const step = (up) => {
+    if (up) input.stepUp(); else input.stepDown();
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  const button = (up) => {
+    const b = el("button", { type: "button", className: "step", tabIndex: -1, ariaLabel: up ? "More" : "Less" }, svgIcon(up ? "plus" : "minus"));
+    b.addEventListener("click", () => step(up));
+    return b;
+  };
+  const box = el("span", { className: "stepper" });
+  input.replaceWith(box);
+  box.append(button(false), input, button(true));
+  return box;
+}
+
 /** A button in the look of a link: "open", "copy link", "stop". */
 function linkButton(text, title, run) {
   const b = text === "×" ? el("button", { className: "link icon-link", title }, svgIcon("x")) : el("button", { className: "link", textContent: text, title });

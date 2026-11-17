@@ -24,8 +24,7 @@ function openPrefs() {
   $("#prefs-pi-terminal").checked = prefs.piTerminal;
   $("#prefs-term-more").hidden = !prefs.piTerminal;
   $("#prefs-gpu").checked = prefs.gpuTerminal;
-  $("#prefs-copykeys").value = prefs.copyKeys;
-  $("#prefs-copymode").value = prefs.copyMode;
+  showCopy();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
   $("#prefs-updatecheck").checked = prefs.updateCheck;
@@ -554,8 +553,17 @@ $("#prefs-pi-terminal").addEventListener("change", (e) => {
   backend.setShortcut(shortcutOn()).catch(() => {});
 });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
-$("#prefs-copykeys").addEventListener("change", (e) => { prefs.copyKeys = e.target.value; savePrefs(); });
-$("#prefs-copymode").addEventListener("change", (e) => { prefs.copyMode = e.target.value; savePrefs(); });
+/** Copy and paste: the keys and when copying happens, the ones in use pressed. */
+function showCopy() {
+  for (const b of $("#prefs-copykeys").children) b.setAttribute("aria-checked", String(b.dataset.v === prefs.copyKeys));
+  for (const b of $("#prefs-copymode").children) b.setAttribute("aria-checked", String(b.dataset.v === prefs.copyMode));
+}
+for (const [id, key] of [["prefs-copykeys", "copyKeys"], ["prefs-copymode", "copyMode"]]) {
+  for (const b of $(`#${id}`).children) b.addEventListener("click", () => { prefs[key] = b.dataset.v; savePrefs(); showCopy(); });
+}
+// Text: − and + beside the numbers.
+stepper($("#prefs-font"));
+stepper($("#prefs-padding"));
 
 async function fillPickerInfo() {
   try {

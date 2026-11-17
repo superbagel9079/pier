@@ -119,13 +119,13 @@ function makeResourceManager(box, currentProject, onChange) {
    *  that. */
   function pierRow(item) {
     const how = item.setting
-      ? `${item.setting} = ${item.enabled ? "false" : "true"} in the picker's config (~/.config/pier-picker/config.toml)`
+      ? `${item.setting} = ${item.enabled ? "false" : "true"} in ~/.config/pier-picker/config.toml, the picker's config on the VM`
       : "set up a lab host in Labs";
     const check = el("input", { type: "checkbox", checked: item.enabled, disabled: true }); // its state, not a control
     check.setAttribute("aria-label", item.name);
-    return el("div", { className: item.enabled ? "set" : "set off", title: `To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
+    return el("div", { className: item.enabled ? "set" : "set off" },
       el("div", { className: "what" }, el("span", { textContent: item.name }), el("span", { textContent: said(item.description, "Pier's, given to each Pi it starts") })),
-      check);
+      el("span", { className: "switch-hint", title: `To ${item.enabled ? "leave it out" : "have it"}: ${how}` }, check)); // a disabled switch gets no pointer events
   }
 
   function row(kind, item) {

@@ -121,7 +121,11 @@ function makeDiff(tab) {
       }
     }
     if (!body.childElementCount) {
-      body.append(el("p", { className: "dim", textContent: "Nothing to show: not a git repository, and Pi has not edited this file." }));
+      // Nothing to compare: said in the middle, as the empty panels, with the way to the file.
+      const open = el("button", { type: "button", className: "secondary", textContent: "Open the file" });
+      open.addEventListener("click", () => openFile(rel, project));
+      body.append(el("div", { className: "diff-empty" }, svgIcon("git-compare"), el("p", { textContent: "No change to show" }),
+        el("p", { textContent: "This folder is not a git repository, and Pi has not edited this file." }), open));
     }
   }
 

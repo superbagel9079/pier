@@ -2054,3 +2054,17 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .prompt-body .prompt-edit::placeholder { color: var(--dim); font-family: var(--ui); }
 .prompt-body .prompt-foot { display: flex; justify-content: flex-end; gap: var(--s2); padding: 6px var(--s4) var(--s3); border: 0; }
 .prompt-body > .error { margin: 0 var(--s4) var(--s2); }
+/* Number fields in the settings: the fields' tint (not the page's ground), − and + on their sides. */
+.stepper { display: inline-flex; align-items: stretch; flex: none; height: 32px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.stepper > input[type="number"] { width: 56px !important; height: 32px; padding: 0 !important; text-align: center; border: 0 !important; background: transparent !important; }
+.stepper > .step { width: 32px; display: grid; place-items: center; padding: 0; background: none; border: 0; color: var(--dim); }
+.stepper > .step:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); }
+.stepper > .step .i { width: 14px; height: 14px; }
+.set > input:not([type="checkbox"], [type="range"], [type="color"]) { background-color: color-mix(in srgb, var(--fg) 6%, transparent); border-color: transparent; }
+.set > .seg { flex: none; }
+.switch-hint { display: inline-flex; flex: none; }
+/* A diff with nothing to show: in the middle, as the empty panels. */
+.diff-empty { display: flex; flex-direction: column; align-items: center; gap: var(--s2); margin: 12vh auto 0; max-width: 360px; text-align: center; }
+.diff-empty > .i { width: 28px; height: 28px; color: var(--dim); margin-bottom: var(--s1); }
+.diff-empty > p:first-of-type { font-weight: 600; color: var(--fg); }
+.diff-empty > p:last-of-type { font-size: 13px; color: var(--dim); margin-bottom: var(--s2); }

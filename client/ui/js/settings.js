@@ -230,7 +230,7 @@ function drawAgents(again) {
       toggleRow("workers", "Workers", "A Pi may start worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
       (() => {
         const input = el("input", { type: "number", min: 1, max: 12, value: configValue("workers_max") ?? 4 });
-        const row = settingRow("workers_max", "At most, at once", input, "Workers one Pi may have running at the same time (1 to 12).", "agents");
+        const row = settingRow("workers_max", "At most, at once", Object.assign(stepper(input), { input }), "Workers one Pi may have running at the same time (1 to 12).", "agents");
         input.addEventListener("change", () => setConfig("workers_max", Math.round(Number(input.value)), "agents", row.say));
         return row;
       })(),
@@ -423,7 +423,7 @@ function drawProjects() {
  *  (the proposals' B), its text and Revert, Save. */
 let promptOpen = "instructions";
 function promptCards(project) {
-  const box = el("div", { className: "prompt-acc" }, el("p", { className: "dim", textContent: "Asking the VM…" }));
+  const box = el("div"); // drawn once the VM answers: no frame around a waiting line
   const WORDS = {
     instructions: ["Read first in every session", "Read by Pi at the start of every session in this project: what it is, the commands to run and test, the conventions, what to avoid."],
     append: ["Added to Pi's system prompt", "Read after Pi's own instructions, in every session of this project."],
@@ -475,6 +475,7 @@ function promptCards(project) {
       return part;
     });
     for (const x of parts) x.show();
+    box.className = "prompt-acc";
     box.replaceChildren(...parts);
   }).catch((e) => box.replaceChildren(el("p", { className: "error", textContent: String(e) })));
   return box;
@@ -546,11 +547,6 @@ function drawNetwork(again) {
     if (!limited) out.push(el("p", { className: "notice", textContent: "Limit where Pi may connect is off: Pi may connect anywhere, and this list does not apply." }));
     out.push(el("div", { className: "toolbar host-bar" }, field, add), error, box,
       el("p", { className: "hint", textContent: "Built in: model providers, npm, GitHub, PyPI. A gateway such as Bifrost carries every model: the providers' own hosts can then be turned off." }));
-    const provider = (piModels?.default || "").split("/")[0];
-    const known = ["anthropic", "openrouter", "deepseek"];
-    if (provider && !known.includes(provider)) {
-      out.push(el("p", { className: "notice", textContent: `Pi's default model goes through ${provider}: its host must be checked in Yours. If every model goes through it, the built-in model providers can be unchecked.` }));
-    }
     if (!piModels) loadPiModels().then(() => { if (!$("#prefs").hidden && prefsPage === "network") drawNetwork(false); });
     return out;
   });
