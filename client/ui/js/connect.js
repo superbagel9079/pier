@@ -15,6 +15,7 @@ function showOffline(note = "") {
   showWorkspace();
   $("#btn-disconnect").hidden = true;
   if (!workspace.tabs().length) workspace.restore();
+  if (!$("#prefs").hidden) $("#workspace").hidden = true; // Settings open: they keep the window
   setStatus("not connected");
   // The first page shows the VM itself (loginCard) when nothing is open in the middle.
   $("#connect-card").hidden = !settings || !workspace.docks.center.tabs.length;
@@ -446,6 +447,7 @@ backend.onConnectionBack(async () => {
 });
 
 backend.onConnectionLost((message) => {
+  if (!online) return; // never connected (Settings asked the VM, say): nothing was lost
   vm.stop();
   workspace.save();
   workspace.clear();

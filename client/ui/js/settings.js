@@ -170,7 +170,8 @@ async function drawSettingsPage(page, again, draw) {
     try {
       await loadPickerConfig();
     } catch (error) {
-      section.replaceChildren(el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}. An older picker? Settings > Connection updates it.` }));
+      section.replaceChildren(online ? el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}. An older picker? Settings > Connection updates it.` })
+        : el("p", { className: "dim", textContent: "These settings live on the VM: connect to it to see and change them." }));
       return;
     }
   }
@@ -331,7 +332,8 @@ async function drawForges() {
   try {
     forges = (await backend.api(["forges"])).forges || [];
   } catch (error) {
-    section.replaceChildren(el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}` }));
+    section.replaceChildren(online ? el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}` })
+      : el("p", { className: "dim", textContent: "These settings live on the VM: connect to it to see and change them." }));
     return;
   }
   const error = el("p", { className: "error", hidden: true });

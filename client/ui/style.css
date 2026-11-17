@@ -1693,3 +1693,11 @@ html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .c
 .qs-back { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; height: 28px; padding: 0 var(--s2); background: none; border: 0; color: var(--dim); font-size: 12px; flex: none; align-self: flex-start; }
 .qs-back:hover { color: var(--fg); background: var(--hover); }
 .qs-back .i { width: 14px; height: 14px; }
+/* "Around the window" (gradSides): the middle's frame carries it too, so nothing stands out
+   in the theme's plain colour: the middle under its bars and an empty page, and Details' bar
+   at the top (sticky: it takes the same fixed picture, the same pixels as behind it). */
+html.grad-in-sides #workspace #dock-center:not(.over) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+html.mica.grad-in-sides #workspace #dock-center:not(.over) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
+html.grad-in-sides #workspace #dock-center :is(.center-head, .dock-head, .panes, .panes > .empty.launcher) { background: transparent; }
+html.grad-in-sides:not(.mica) #workspace .pane-project > .toolbar .switch { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+html.grad-in-sides.mica #workspace .pane-project > .toolbar .switch { background: transparent; }

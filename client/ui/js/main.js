@@ -58,7 +58,7 @@ document.addEventListener("mousemove", (event) => {
   // The top bar while not connected; then the rail and the docks' bars, where nothing is
   // (not on a tab: a tab is dragged to another dock).
   document.addEventListener("mousedown", (event) => {
-    if (event.button !== 0 || !event.target.closest("#topbar, #rail, .dock-head, .settings-nav")) return;
+    if (event.button !== 0 || !event.target.closest("#topbar, #rail, .dock-head, .center-head, .pane-project > .toolbar .switch, .settings-nav")) return;
     if (event.target.closest("button, a, input, select, textarea, [role=tab], .tab, .menu, .prefs-tabs")) return;
     if (event.detail === 2) win.toggleMaximize();
     else win.startDragging();
