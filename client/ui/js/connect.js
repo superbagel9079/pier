@@ -184,6 +184,7 @@ async function connect() {
       $("#trust-title").textContent = outcome.which === "bastion" ? "Is this your bastion?" : "Is this your VM?";
       $("#trust-text").textContent = `${outcome.host}, a first connection`;
       $("#trust-words").textContent = keyWords(outcome.fingerprint);
+      $("#trust-art").replaceChildren(...keyArt(outcome.fingerprint));
       $("#trust-words-note").hidden = false;
       $("#trust-more").open = false;
       const [algo, print] = String(outcome.fingerprint).includes(":") ? String(outcome.fingerprint).split(/:(.*)/s) : ["", outcome.fingerprint];
@@ -198,6 +199,7 @@ async function connect() {
       $("#trust-title").textContent = "Its key changed: connection refused";
       $("#trust-text").textContent = `The key of ${outcome.host} changed since the last connection. Unless the machine was reinstalled, someone may be impersonating it. Nothing was sent, not even the password.`;
       $("#trust-words").textContent = `before: ${keyWords(outcome.known)}\nnow: ${keyWords(outcome.fingerprint)}`;
+      $("#trust-art").replaceChildren(...keyArt(outcome.fingerprint));
       $("#trust-words-note").hidden = true;
       $("#trust-more").open = true;
       $("#trust-algo").textContent = "";
@@ -221,6 +223,7 @@ async function connect() {
 // The first page, not connected (the proposals' G and D): the fields there, not in a window.
 let connecting = false; // a connection under way: the first page says so
 let loginNote = "";     // why the last one failed, shown on the first page
+let vmForm = null;      // the VM known: "edit" (its options) or "new" (another VM) shows the form
 
 /** A field with its name above it. */
 function lcField(label, input) {
@@ -228,16 +231,16 @@ function lcField(label, input) {
 }
 
 /** The VM known (D): the machine large, its password alone; "Another VM" and "Options"
- *  open the full form. */
+ *  put the form in its place, on the same page. */
 function loginCard() {
   const pw = el("input", { type: "password", name: "password", required: true, autocomplete: "current-password", disabled: connecting });
   const bpw = settings.bastion ? el("input", { type: "password", name: "bastion_password", required: true, autocomplete: "off", disabled: connecting }) : null;
   const note = el("p", { className: "lc-error", role: "alert", textContent: loginNote, hidden: !loginNote });
   const go = el("button", { type: "submit", textContent: connecting ? "Connecting…" : "Connect", disabled: connecting });
   const another = el("button", { type: "button", className: "link", textContent: "Another VM" });
-  another.addEventListener("click", () => { fillSetup(null); showConnect("setup"); });
+  another.addEventListener("click", () => { vmForm = "new"; workspace.redrawEmpty(); });
   const options = el("button", { type: "button", className: "link", textContent: "Options" });
-  options.addEventListener("click", () => { fillSetup(settings); showConnect("setup"); });
+  options.addEventListener("click", () => { vmForm = "edit"; workspace.redrawEmpty(); });
   const form = el("form", { className: "login-card" },
     el("div", { className: "lc-head" }, el("span", { className: "lc-icon" }, svgIcon("server")), el("b", { textContent: "Your VM" }),
       el("small", { textContent: describe(settings).replace(/:22(?= via|$)/g, "") })),
@@ -253,29 +256,63 @@ function loginCard() {
   return form;
 }
 
-/** No VM yet (G): the user, the address, the password, in the quick start's first step;
- *  the port, a bastion and the picker's path under "Options" (the full form). */
-function firstVmForm() {
-  const user = el("input", { name: "user", required: true, autocomplete: "username", spellcheck: false });
-  const host = el("input", { name: "host", required: true, placeholder: "192.168.1.20 or vm.example.org", spellcheck: false });
-  const pw = el("input", { type: "password", name: "password", required: true, autocomplete: "current-password" });
+/** The VM's form in the quick start's first step (G): the user, the address, the password;
+ *  under "Options", opened in place: the port, a bastion, the picker's path. from: the VM
+ *  known (its options open), or none. */
+function firstVmForm(from = null) {
+  const input = (props) => el("input", { spellcheck: false, ...props });
+  const user = input({ name: "user", required: true, autocomplete: "username", value: from?.user || "" });
+  const host = input({ name: "host", required: true, placeholder: "192.168.1.20 or vm.example.org", value: from?.host || "" });
+  const pw = input({ type: "password", name: "password", required: true, autocomplete: "current-password" });
+  const port = input({ type: "number", name: "port", min: 1, max: 65535, required: true, value: from?.port || 22 });
+  const picker = input({ name: "remote_command", placeholder: "~/bin/pi-pick", value: from?.remote_command || "~/bin/pi-pick" });
+  const viaBastion = el("input", { type: "checkbox", checked: Boolean(from?.bastion) });
+  const bHost = input({ name: "bastion_host", placeholder: "bastion.example.org", value: from?.bastion?.host || "" });
+  const bPort = input({ type: "number", name: "bastion_port", min: 1, max: 65535, value: from?.bastion?.port || 22 });
+  const bUser = input({ name: "bastion_user", value: from?.bastion?.user || "" });
+  const bPw = input({ type: "password", name: "bastion_password", autocomplete: "off" });
+  const bastion = el("div", { className: "qs-bastion" },
+    el("div", { className: "lc-row" }, lcField("Bastion user", bUser), lcField("Bastion address", bHost), lcField("Port", bPort)),
+    lcField("Bastion password", bPw));
+  const showBastion = () => {
+    bastion.hidden = !viaBastion.checked;
+    for (const f of [bHost, bUser, bPw]) f.required = viaBastion.checked;
+  };
+  viaBastion.addEventListener("change", showBastion);
+  showBastion();
+  const opts = el("div", { className: "qs-options", hidden: !from },
+    el("div", { className: "lc-row" }, lcField("Port", port), lcField("Pier's picker on the VM", picker)),
+    el("label", { className: "check" }, viaBastion, el("span", { textContent: "Go through a bastion (jump host)" })), bastion);
+  const toggle = el("button", { type: "button", className: "link qs-more" });
+  const label = () => {
+    toggle.textContent = opts.hidden ? "Options: port, bastion, picker" : "Fewer options";
+    toggle.setAttribute("aria-expanded", String(!opts.hidden));
+  };
+  toggle.addEventListener("click", () => { opts.hidden = !opts.hidden; label(); if (!opts.hidden) port.focus(); });
+  label();
   const note = el("p", { className: "lc-error", role: "alert", hidden: true });
   const go = el("button", { type: "submit", textContent: "Connect" });
-  const options = el("button", { type: "button", className: "link", textContent: "Options: port, bastion, picker" });
-  const typed = () => ({ host: host.value.trim(), port: 22, user: user.value.trim(), bastion: null, remote_command: "~/bin/pi-pick" });
-  options.addEventListener("click", () => { fillSetup(typed()); showConnect("setup"); });
+  const back = settings ? el("button", { type: "button", className: "link", textContent: "Back" }) : null;
+  back?.addEventListener("click", () => { vmForm = null; workspace.redrawEmpty(); });
   const form = el("form", { className: "qs-form" },
     el("div", { className: "lc-row" }, lcField("User", user), lcField("Address", host)),
-    el("div", { className: "lc-row end" }, lcField("Password", pw), go), note, options);
+    el("div", { className: "qs-links" }, toggle, back), opts,
+    el("div", { className: "lc-row end" }, lcField("Password", pw), go), note);
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    const next = typed();
+    const next = {
+      host: host.value.trim(), port: Number(port.value) || 22, user: user.value.trim(),
+      bastion: viaBastion.checked ? { host: bHost.value.trim(), port: Number(bPort.value) || 22, user: bUser.value.trim() } : null,
+      remote_command: picker.value.trim() || "~/bin/pi-pick",
+    };
     try { await backend.saveSettings(next); settings = next; } catch (error) { showError(note, String(error)); return; }
     password = pw.value;
-    bastionPassword = "";
+    bastionPassword = viaBastion.checked ? bPw.value : "";
+    vmForm = null;
     toLogin();
     await connect();
   });
+  requestAnimationFrame(() => { if (form.isConnected && !document.querySelector("#connect:not([hidden]), .overlay")) (from ? pw : user).focus(); });
   return form;
 }
 
@@ -599,10 +636,22 @@ const KEY_WORDS = ["amber", "anchor", "apple", "arrow", "autumn", "badger", "bam
   "falcon", "fern", "fjord", "forest", "galaxy", "garnet", "glacier", "granite", "harbor", "hazel", "heron", "island", "ivory", "jasmine",
   "juniper", "kayak", "lagoon", "lantern", "lemon", "lily", "lotus", "maple", "meadow", "meteor", "mint", "nectar", "oasis", "olive",
   "orbit", "otter", "pebble", "pepper", "pine", "planet", "quartz", "raven", "river", "saffron"];
-function keyWords(fingerprint) {
+/** A fingerprint's bytes (SHA256:<base64>, as ssh prints it). */
+function keyBytes(fingerprint) {
   const b64 = String(fingerprint || "").replace(/^[A-Z0-9]+:/i, "").replace(/-/g, "+").replace(/_/g, "/");
-  let bytes;
-  try { bytes = [...atob(b64 + "===".slice((b64.length + 3) % 4))].map((c) => c.charCodeAt(0)); } catch { bytes = [...b64].map((c) => c.charCodeAt(0)); }
+  try { return [...atob(b64 + "===".slice((b64.length + 3) % 4))].map((c) => c.charCodeAt(0)); } catch { return [...b64].map((c) => c.charCodeAt(0)); }
+}
+/** The key as a picture: 8 × 4 squares, a colour each from its bytes (some left empty); the
+ *  same key, the same picture, to be known again at a glance. */
+function keyArt(fingerprint) {
+  return keyBytes(fingerprint).slice(0, 32).map((b) => {
+    const cell = el("i");
+    if (b % 5) cell.style.background = `hsl(${Math.round((b * 360) / 256)} 55% ${42 + (b % 3) * 8}%)`;
+    return cell;
+  });
+}
+function keyWords(fingerprint) {
+  const bytes = keyBytes(fingerprint);
   let bits = 0, n = 0;
   const words = [];
   for (const byte of bytes) {

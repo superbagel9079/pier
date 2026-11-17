@@ -1660,3 +1660,18 @@ html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .c
 .row-main .mark .state.working { width: 10px; height: 10px; border: 1.5px solid var(--dim); border-top-color: transparent; background: none; animation: spin 1s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .row-main .mark .state.working { animation: none; border-top-color: var(--dim); } }
 .sessions li.more .link { color: var(--dim); }
+/* The first step's options, opened in place (not a window over it). */
+.qs-links { display: flex; gap: var(--s4); }
+.qs-links .link { font-size: 12px; color: var(--dim); }
+.qs-options { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.qs-options[hidden], .qs-bastion[hidden] { display: none; }
+.qs-options .lc-row > .lc-field:first-child { flex: 0 0 88px; }
+.qs-options .lc-row > .lc-field + .lc-field { flex: 1; }
+.qs-bastion { display: flex; flex-direction: column; gap: var(--s3); }
+.qs-bastion .lc-row > .lc-field:last-child { flex: 0 0 88px; }
+.qs-options label.check { font-size: 13px; color: var(--fg); }
+/* The key, drawn and said: its picture beside its four words. */
+.trust-key { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r); background: color-mix(in srgb, var(--bg) 40%, transparent); }
+.trust-art { display: grid; grid-template-columns: repeat(8, 12px); grid-auto-rows: 12px; gap: 2px; flex: none; }
+.trust-art i { display: block; border-radius: min(var(--r), 2px); background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.trust-key .trust-words { flex: 1; padding: 0; border: 0; background: none; text-align: left; }

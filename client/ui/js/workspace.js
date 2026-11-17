@@ -265,7 +265,7 @@ const workspace = (() => {
   /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
    *  latest conversations. */
   function emptyDock(name) {
-    if (!settings) return quickStart(); // no VM yet: how to begin (the proposals' 3A)
+    if (!settings || (!online && vmForm)) return quickStart(); // no VM yet, or its form asked for: how to begin (3A)
     if (!online) return el("div", { className: "empty launcher" }, loginCard()); // a VM known: its password (D)
     const line = (icon, label, detail, action) => {
       const b = el("button", { className: "lrow" }, svgIcon(icon), el("span", { textContent: label }), el("span", { className: "m", textContent: detail }));
@@ -294,7 +294,7 @@ const workspace = (() => {
     // The first step open in place, its fields in it (the proposals' G): no window.
     const first = step(1, false, true, "Add your VM", "Its address and your user on it.");
     first.classList.add("open");
-    first.append(firstVmForm());
+    first.append(firstVmForm(vmForm === "edit" ? settings : null));
     return el("div", { className: "empty launcher quick-start" }, el("div", { className: "qs" },
       el("h2", { textContent: "Run Pi on your Linux VM" }),
       el("p", { textContent: "Pier talks to it over SSH: Pi works there, you follow it from here." }),

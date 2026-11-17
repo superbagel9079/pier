@@ -149,8 +149,8 @@
     <div id="view-trust" hidden>
       <!-- The proposals' D: the key said in words, the fingerprint and its check folded. -->
       <div class="trust-head"><span class="lc-icon"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg></span><h1 id="trust-title">Is this your VM?</h1><p id="trust-text"></p></div>
-      <p id="trust-words" class="trust-words"></p>
-      <p id="trust-words-note" class="trust-words-note">Its key, in words: the same each time you connect to this VM. If they change, it is not the same machine.</p>
+      <div class="trust-key"><div id="trust-art" class="trust-art" aria-hidden="true"></div><p id="trust-words" class="trust-words"></p></div>
+      <p id="trust-words-note" class="trust-words-note">Its key, as a picture and in words: the same each time you connect to this VM. If they change, it is not the same machine.</p>
       <details id="trust-more" class="trust-more"><summary>Show the full fingerprint</summary>
       <div class="trust-print"><span id="trust-algo" class="trust-algo"></span><code id="trust-fingerprint"></code><button id="trust-copy" type="button" class="icon-btn" title="Copy the fingerprint" aria-label="Copy the fingerprint"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
       <p class="hint trust-how">To compare, run this on the machine itself:</p>
