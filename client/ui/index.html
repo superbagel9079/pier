@@ -297,7 +297,7 @@
       </div>
       </section>
 
-      <section class="prefs-page" data-page="terminals" data-title="Terminals" role="tabpanel" hidden>
+      <section class="prefs-page needs-vm" data-page="terminals" data-offline="Terminals run on your VM: connect to it, then choose how they behave." data-title="Terminals" role="tabpanel" hidden>
       <!-- Pi opens in Pier's conversation view: the terminals' settings matter only with tmux. -->
       <div class="rows">
         <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
@@ -334,7 +334,7 @@
       <h2>Logs</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-debug"><span>Detailed logs</span><span>Every call, here and on the VM. For tracking a problem down; the log grows faster.</span></label><input id="prefs-debug" type="checkbox"></div>
-        <div class="set"><div class="what"><span>Where they are</span><span>Pier's: <code id="prefs-logpath">?</code>. The picker's, on the VM: <code>~/.local/state/pier-picker/picker.log</code></span></div><button id="prefs-logfolder" class="secondary">Open the folder</button></div>
+        <div class="set"><div class="what"><span>Where they are</span><span>Pier's: <button type="button" id="prefs-logpath" class="path-link" title="Open its folder">?</button>. The picker's, on the VM: <button type="button" id="prefs-vmlogpath" class="path-link" title="Copy it">~/.local/state/pier-picker/picker.log</button></span></div><button id="prefs-logfolder" class="secondary">Open the folder</button></div>
         <div class="set"><div class="what"><span>A report</span><span>The versions, the connection (never a password), and the end of both logs.</span></div><div class="btns"><button id="prefs-report" class="secondary">Copy</button><button id="prefs-report-save" class="secondary">Save…</button></div></div>
       </div>
       <p id="prefs-diag-note" class="notice" hidden></p>
@@ -636,7 +636,6 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <option value="1">Warnings and errors</option>
           <option value="0">Errors only</option>
         </select>
-        <label class="check small"><input type="checkbox" class="follow" checked> Follow</label>
       </div>
       <p class="error" hidden></p>
       <p class="hint debug-hint" hidden>Detailed logs are off: debug lines are not written. Turn them on above.</p>

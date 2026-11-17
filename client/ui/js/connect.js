@@ -57,6 +57,7 @@ function showWorkspace() {
 }
 
 function showError(node, message) {
+  if (!online && /^(Error: )?Not connected: log in first/.test(String(message || ""))) message = "";
   node.setAttribute("role", "alert"); // read out as it appears, wherever the error is
   node.textContent = message || "";
   node.hidden = !message;

@@ -24,7 +24,6 @@ function makeLogs(tab) {
   const error = $(".error", tab.pane);
   const level = $(".level", tab.pane);
   const search = $(".search", tab.pane);
-  const follow = $(".follow", tab.pane);
   const debugHint = $(".debug-hint", tab.pane);
   const entries = { devbox: [], vm: [] };
   let source = "devbox";
@@ -96,7 +95,7 @@ function makeLogs(tab) {
     for (const entry of list) fragment.append(row(entry));
     view.append(fragment);
     if (!list.length) view.append(el("div", { className: "entry dim", textContent: entries[source].length ? "Nothing matches." : "Nothing logged yet." }));
-    if (follow.checked) view.scrollTop = 0;
+    if (view.scrollTop < 40) view.scrollTop = 0; // at the top: the newest stay in view
     debugHint.hidden = Number(level.value) < 3 || prefs.debugLogs;
   }
 
@@ -168,7 +167,7 @@ function makeLogs(tab) {
     for (let i = fresh.length - 1; i >= 0; i--) fragment.append(row(fresh[i])); // newest first
     view.prepend(fragment);
     while (view.childElementCount > 2000) view.lastChild.remove();
-    if (follow.checked) view.scrollTop = 0;
+    if (view.scrollTop < 40) view.scrollTop = 0; // at the top: the newest stay in view
   }
 
   const unlisten = backend.onLogLine((line) => {
@@ -191,9 +190,6 @@ function makeLogs(tab) {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(render, 150); // once typing pauses, not at every key
   });
-  // Newest at the top: "follow" keeps the top in view; scrolling down, into older lines, stops it.
-  follow.addEventListener("change", () => { if (follow.checked) view.scrollTop = 0; });
-  view.addEventListener("wheel", (e) => { if (e.deltaY > 0) follow.checked = false; }, { passive: true });
   tab.onShow = load;
   tab.onVisible = (shown) => { if (!shown) vm.follow({ log: false }); };
   tab.onLogLevel = render;
