@@ -1,6 +1,34 @@
 // What the panels build lists with: a link-like button, the two-line list row, a notice line,
 // a VM path shortened to ~. (el, visibleText and the dialogs: core.js and resources.js.)
 
+/** A select drawn as the mock-up's pick: a button with the chosen text and ▾ whose list is
+ *  Pier's own menu. The select stays, hidden: it keeps the value, the change event, the
+ *  code that sets it (its value and options followed here). */
+function pickify(select) {
+  if (select.dataset.pick) return;
+  select.dataset.pick = "1";
+  const b = el("button", { type: "button", className: "pick" }, el("span"));
+  b.setAttribute("aria-haspopup", "menu");
+  const label = () => {
+    $("span", b).textContent = select.selectedOptions[0]?.text || "";
+    b.disabled = select.disabled;
+  };
+  const name = select.labels?.[0]?.textContent.trim() || select.getAttribute("aria-label") || select.title;
+  if (name) b.setAttribute("aria-label", name);
+  b.addEventListener("click", () => showMenu(b, [...select.options].map((o) => [o.text, () => {
+    select.value = o.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    label();
+  }, o.disabled, { icon: o.value === select.value ? "check" : null }])));
+  // Set in code (prefs.js fills and sets them): the button follows.
+  const own = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  Object.defineProperty(select, "value", { get() { return own.get.call(this); }, set(v) { own.set.call(this, v); label(); } });
+  new MutationObserver(label).observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled"] });
+  select.hidden = true;
+  select.after(b);
+  label();
+}
+
 /** A button in the look of a link: "open", "copy link", "stop". */
 function linkButton(text, title, run) {
   const b = el("button", { className: "link", textContent: text, title });

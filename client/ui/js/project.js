@@ -108,6 +108,7 @@ function makeProject(tab) {
   }
 
   tab.onShownTab = () => {
+    drawContext();
     if (shownFile() === chosenFile) return;
     chosenFile = shownFile();
     follow();
@@ -200,14 +201,25 @@ function makeProject(tab) {
     activityView.append(card("Changes", "this session",
       ...(rows.length ? rows : [el("p", { className: "dim", textContent: activity.session ? "Pi has not touched a file yet." : "No Pi session for this project yet." })]),
       el("div", { className: "card-links" }, undo, restore)));
-    const u = activity.usage;
-    if (u) {
-      const title = `This session: ${tokens(u.input)} in · ${tokens(u.output)} out${u.cacheRead ? ` · ${tokens(u.cacheRead)} cached` : ""}${u.model ? ` · ${u.model}` : ""}`;
-      const box = card("Context", dollars(u.cost) || "cost unknown");
-      box.title = title;
-      activityView.append(box);
-    }
+    drawContext();
+    activityView.append(ctxSlot);
   }
+
+  /** Context, as the mock-up: how full the conversation shown in the middle is, and what
+   *  it cost. Only for one of this project: its ring knows the model's window (chat.js). */
+  const ctxSlot = el("div");
+  function drawContext() {
+    const c = currentTab?.params?.project === base ? currentTab.context : null;
+    if (!c) { ctxSlot.replaceChildren(); return; }
+    const meter = el("div", { className: "meter" }, el("i", { style: `width: ${c.pct}%` }));
+    meter.setAttribute("role", "meter");
+    meter.setAttribute("aria-label", "Context used");
+    meter.setAttribute("aria-valuenow", String(c.pct));
+    const box = card("Context", `${c.pct}% · ${dollars(c.spent) || "$0"}`, meter);
+    box.title = `${tokens(c.used)} of ${tokens(c.window)} tokens${c.model ? ` · ${c.model}` : ""}`;
+    ctxSlot.replaceChildren(box);
+  }
+  tab.onContext = drawContext;
 
   function group(title, rows) {
     const box = el("div", { className: "group" });
@@ -387,6 +399,10 @@ function makeProject(tab) {
 
   /** A new file or folder: a row at the top of its folder (opened first) to name it. */
   async function newEntry(kind, where = { li: null, rel: "" }) {
+    // One new entry at a time: the same one again is focused, another one replaces it.
+    const pending = $("li.new-entry", tree);
+    if (pending?.dataset.kind === kind && pending.dataset.at === where.rel) { $("input", pending)?.focus(); return; }
+    pending?.remove();
     const dir = where.rel ? `${base}/${where.rel}` : base;
     let list = tree;
     if (where.li) {
@@ -398,7 +414,9 @@ function makeProject(tab) {
         await fill(list, dir);
       }
     }
-    const li = el("li", { className: kind === "dir" ? "dir" : "file" });
+    const li = el("li", { className: `${kind === "dir" ? "dir" : "file"} new-entry` });
+    li.dataset.kind = kind;
+    li.dataset.at = where.rel;
     const row = el("div", { className: "node" },
       el("span", { className: "fold-arrow" }, ...(kind === "dir" ? [svgIcon("chevron-right")] : [])),
       el("span", { className: "kind" }, svgIcon(kind === "dir" ? "folder" : "file")), el("span", { className: "name" }));

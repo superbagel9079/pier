@@ -447,7 +447,8 @@ async function resumeShares() {
 let currentTab = null;
 
 function setCurrentTab(tab) {
-  if (currentTab === tab) return;
+  // The tab in use is the middle's: a click in a side panel (Details, the list) leaves it.
+  if (currentTab === tab || (tab && tab.dock !== "center")) return;
   currentTab = tab;
   renderSessionBadge();
   for (const t of workspace.tabs()) t.onShownTab?.();
