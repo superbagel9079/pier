@@ -1116,12 +1116,12 @@ button.row-main:hover { background: none; }
 .seg button[aria-checked="true"] { background: var(--raise); color: var(--fg); }
 /* A yes/no setting: a switch. */
 .set > input[type="checkbox"], .setting-row.toggle .setting-head > input[type="checkbox"] {
-  /* Square stays square; Slight and Round make it a pill, as switches are elsewhere. */
-  width: 36px; height: 20px; top: 0; border: 1px solid var(--dim); border-radius: min(10px, calc(var(--r) * 10)); display: block; position: relative; flex: none; order: 0;
+  /* Square stays square, Slight softly rounded, Round a pill: as every other box. */
+  width: 36px; height: 20px; top: 0; border: 1px solid var(--dim); border-radius: min(10px, calc(var(--r) * 1.25)); display: block; position: relative; flex: none; order: 0;
 }
 .set > input[type="checkbox"]::before, .setting-row.toggle .setting-head > input[type="checkbox"]::before {
   position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; visibility: visible; background: var(--dim);
-  border-radius: min(6px, calc(var(--r) * 10)); transition: left .12s ease-out;
+  border-radius: min(6px, calc(var(--r) * .75)); transition: left .12s ease-out;
 }
 .set > input[type="checkbox"]:checked, .setting-row.toggle .setting-head > input[type="checkbox"]:checked { background: var(--fg); border-color: var(--fg); }
 .set > input[type="checkbox"]:checked::before, .setting-row.toggle .setting-head > input[type="checkbox"]:checked::before { left: 19px; background: var(--bg); }
