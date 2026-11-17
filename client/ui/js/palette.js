@@ -13,7 +13,7 @@ const palette = (() => {
   /** Everything the palette can do now: [kind, label, detail, action]. */
   function collect() {
     const out = [];
-    const side = prefs.panelSide === "left" ? "left" : "right";
+    const side = "center"; // each panel opens in its own place (workspace.js, homeOf)
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
     for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() ? ["labs"] : [])]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind, side)]);
@@ -53,11 +53,6 @@ const palette = (() => {
     out.push(["action", "Keep working without this PC…", "hand off: your shares become copies on the VM", () => openHandOff()]);
     out.push(["page", "Activity: Given to Pi", "images, files, folders and shares given to Pi", () => contextTab({ reveal: true })]);
     out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
-    out.push(["action", `Panels on the ${side === "left" ? "right" : "left"}`, "layout", () => {
-      prefs.panelSide = side === "left" ? "right" : "left";
-      savePrefs();
-      placePanels();
-    }]);
     out.push(["action", "Reset layout", "layout", () => placePanels()]);
     out.push(["action", workspace.find("logs") ? "Close the Logs tab" : "Open the Logs tab", "diagnostics", () => {
       const logs = workspace.find("logs");

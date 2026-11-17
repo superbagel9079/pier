@@ -392,7 +392,7 @@ $("#handoff-cancel").addEventListener("click", closeHandOff);
 
 /** What was given to Pi: Activity's view (Activity opened if it was closed). */
 function contextTab({ reveal = false } = {}) {
-  const project = workspace.find("project") || workspace.add("project", prefs.panelSide === "left" ? "left" : "right");
+  const project = workspace.find("project") || workspace.add("project", "right");
   if (reveal) project.showGiven();
   return project.given;
 }

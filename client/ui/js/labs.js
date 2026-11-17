@@ -288,12 +288,11 @@ async function saveLabsSettings(changes) {
     // Turned off: it goes. Appearance's list of panels follows at once.
     const on = labsOn();
     if (changes.enabled === true && on && !workspace.find("labs")) {
-      workspace.add("labs", prefs.panelSide === "left" ? "left" : "right");
+      workspace.add("labs", "center");
       flashStatus("Labs on: the Labs tab is open (and in the + menu)");
     } else if (changes.enabled === false && workspace.find("labs")) {
       workspace.close(workspace.find("labs"));
     }
-    fillLayout();
   } catch (e) {
     showError($("#labs-error"), String(e));
     fillLabsPrefs();
@@ -335,7 +334,7 @@ $("#labs-host-add").addEventListener("click", () => {
 });
 $("#labs-open").addEventListener("click", () => {
   closePrefs();
-  workspace.add("labs", workspace.find("setup")?.dock || "right");
+  workspace.add("labs", "center");
 });
 $("#labs-key-copy").addEventListener("click", async () => {
   try { await backend.copyText(labsStatus?.public_key || ""); flashStatus("Pier's key copied"); } catch (e) { showError($("#labs-error"), String(e)); }

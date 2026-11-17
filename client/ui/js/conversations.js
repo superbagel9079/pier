@@ -543,6 +543,13 @@ function makeConversations(tab) {
     clearTimeout(filterTimer);
     filterTimer = setTimeout(() => { query = event.target.value.trim().toLowerCase(); render(); }, 150);
   });
+  $$(".search-toggle").addEventListener("click", (event) => {
+    const bar = $$(".toolbar"), on = bar.hidden;
+    bar.hidden = !on;
+    event.currentTarget.setAttribute("aria-pressed", String(on));
+    if (on) $$(".conversation-filter").focus();
+    else if (query) { $$(".conversation-filter").value = ""; query = ""; render(); }
+  });
   $$(".show-archived").addEventListener("click", (event) => {
     archived = !archived;
     const b = event.currentTarget;
@@ -565,6 +572,6 @@ function makeConversations(tab) {
 // The rail's speech bubble: Conversations shown, opened on the left if it was closed.
 $("#btn-conversations").addEventListener("click", () => {
   const tab = workspace.find("conversations");
-  if (tab) workspace.show(tab);
+  if (tab) workspace.show(tab); // shows its side too, if it was hidden
   else workspace.add("conversations", "left");
 });

@@ -20,19 +20,16 @@ const KINDS = {
 };
 const DOCKS = ["left", "center", "right"];
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
-// The terminals in the middle, Conversations on the left, the other panels on one side
-// (Settings > Appearance chooses which): Pi's activity, setup; Repository if the project has
-// one; Logs, Labs on demand
-function defaultLayout(side = prefs.panelSide) {
-  if (side === "left") {
-    return { left: { tabs: ["conversations", "project", "setup", "repository"], active: "conversations", collapsed: false, width: 400 },
-      right: { tabs: [], collapsed: false, width: 360 }, center: { tabs: ["main"] }, layout: 6 };
-  }
+// Fixed, as the mock-up: Conversations on the left, Activity on the right, everything else
+// (terminals, files, Project, Repository, Logs, Labs) as tabs in the middle.
+const HOME = { conversations: "left", project: "right" };
+const homeOf = (kind) => HOME[kind] || "center";
+function defaultLayout() {
   return {
-    left: { tabs: ["conversations"], active: "conversations", collapsed: false, width: 360 },
-    right: { tabs: ["project", "setup", "repository"], active: "project", collapsed: false, width: 360 },
+    left: { tabs: ["conversations"], active: "conversations", collapsed: false, width: 320 },
+    right: { tabs: ["project"], active: "project", collapsed: false, width: 360 },
     center: { tabs: ["main"] },
-    layout: 6,
+    layout: 7,
   };
 }
 
@@ -100,20 +97,37 @@ const workspace = (() => {
     const panes = $(".panes", dock.el);
     $(":scope > .empty", panes)?.remove();
     if (!dock.tabs.length) panes.append(emptyDock(name));
-    underButtons();
+    frame();
   }
 
   function renderAll() {
     for (const name of DOCKS) render(name);
   }
 
-  /** On Windows the window's buttons sit in the top right corner: the bar there leaves them
-   *  room; beside a folded right side (30 px), the middle's bar does too. */
-  function underButtons() {
-    const right = docks.right, rightShown = !right.el.hidden;
-    $(".dock-head", right.el).classList.toggle("under-buttons", rightShown);
-    $(".dock-head", docks.center.el).classList.toggle("under-buttons", !rightShown);
-    $(".dock-head", docks.center.el).classList.toggle("beside-buttons", rightShown && right.collapsed);
+  /** Which side is open (the window's buttons sit over the right one's header, else over
+   *  the middle's), and the middle's header: the tab shown, the toggles' state. */
+  function frame() {
+    const ws = $("#workspace");
+    for (const name of ["left", "right"]) {
+      const open = !docks[name].el.hidden && !docks[name].collapsed;
+      ws.classList.toggle(`${name}-open`, open);
+      const b = $(`#toggle-${name}`);
+      const what = name === "left" ? "the conversations" : "Activity";
+      b.setAttribute("aria-pressed", String(open));
+      b.title = `${open ? "Hide" : "Show"} ${what}`;
+      b.setAttribute("aria-label", b.title);
+      $("use", b).setAttribute("href", `#i-panel-${name}${open ? "-close" : ""}`);
+    }
+    $("#head-title").textContent = docks.center.active?.title || "";
+  }
+
+  /** The middle's toggles: a side hidden or shown again. */
+  function toggle(name) {
+    const dock = docks[name];
+    dock.collapsed = !dock.collapsed;
+    render(name);
+    if (!dock.collapsed) dock.active?.onShow?.();
+    save();
   }
 
   function tabElement(tab, dock) {
@@ -167,10 +181,7 @@ const workspace = (() => {
   /** Right click on a tab. */
   function contextMenu(tab, x, y) {
     const dock = docks[tab.dock];
-    const items = [["Rename…", () => rename(tab)], null];
-    for (const name of DOCKS) items.push([`Move to the ${name}`, () => move(tab, name), tab.dock === name]);
-    if (dock.side && dock.peek) items.push(["Keep this side open", () => keepOpen(tab.dock)]);
-    if (dock.side) items.push(["Collapse this side", () => { dock.peek = false; dock.collapsed = true; render(tab.dock); save(); }, dock.collapsed]);
+    const items = [["Rename…", () => rename(tab)]];
     if (KINDS[tab.kind].terminal) {
       items.push(null,
         [`New ${tab.kind} terminal`, () => add(tab.kind, tab.dock)],
@@ -250,15 +261,12 @@ const workspace = (() => {
       ["New shell", () => add("shell", name)],
       ["New picker", () => add("picker", name)],
     ];
-    const main = find("main");
-    if (main && main.dock !== name) items.push([`picker (main) · move here`, () => move(main, name)]);
-    // Every panel: the closed ones to open again, the others to bring here.
-    // Labs once they are on (Settings > Labs); Given to Pi is in Activity.
-    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() || find("labs") ? ["labs"] : [])]) {
+    // The panels of the middle, and the sides' two when closed. Labs once they are on
+    // (Settings > Labs); Given to Pi is in Activity.
+    for (const kind of ["setup", "repository", "logs", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
       const open = find(kind);
-      const title = KINDS[kind].title;
-      if (!open) items.push([title, () => add(kind, name)]);
-      else if (open.dock !== name) items.push([`${title} · move here`, () => move(open, name)]);
+      if (!open) items.push([KINDS[kind].title, () => add(kind, name)]);
+      else if (open.dock === "center") items.push([`${KINDS[kind].title} · show`, () => show(open)]);
     }
     return items;
   }
@@ -278,8 +286,10 @@ const workspace = (() => {
     return tab;
   }
 
-  /** Opens a tab in a dock; a single-instance panel already open is moved instead. */
+  /** Opens a tab where its kind lives (homeOf: the dock asked is only a wish kept for
+   *  callers); a single-instance panel already open is shown instead. */
   function add(kind, name, { reveal = true, pinned = false, params = null } = {}) {
+    name = homeOf(kind);
     const existing = KINDS[kind].single ? find(kind) : null;
     if (existing) return move(existing, name, { reveal });
     const tab = create(kind, { pinned, params });
@@ -288,6 +298,7 @@ const workspace = (() => {
   }
 
   function place(tab, name, { reveal = true, index = null } = {}) {
+    name = homeOf(tab.kind);
     const dock = docks[name];
     if (index === null || index > dock.tabs.length) dock.tabs.push(tab);
     else dock.tabs.splice(index, 0, tab);
@@ -315,6 +326,10 @@ const workspace = (() => {
   /** Moves a tab to a dock, at `index` in its bar (the end by default); within the
    *  same dock, an index reorders. */
   function move(tab, name, { reveal = true, index = null } = {}) {
+    if (homeOf(tab.kind) !== name) { // a panel stays in its home: shown, not moved
+      if (reveal) show(tab);
+      return tab;
+    }
     if (tab.dock !== name) {
       detach(tab);
       place(tab, name, { reveal, index });
@@ -591,7 +606,7 @@ const workspace = (() => {
     // An older layout gets the new arrangement once (Reset layout gives it again); the
     // names given to tabs stay.
     // Before 6, Context had a tab of its own: the default layout again (it is in Activity).
-    if ((saved.layout || 0) < 6) saved = { ...defaultLayout(), titles: saved.titles };
+    if ((saved.layout || 0) < 7) saved = { ...defaultLayout(), titles: saved.titles };
     clear();
     let mainPlaced = false;
     for (const name of DOCKS) {
@@ -658,7 +673,9 @@ const workspace = (() => {
     renderAll();
   }
 
-  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
+  $("#toggle-left").addEventListener("click", () => toggle("left"));
+  $("#toggle-right").addEventListener("click", () => toggle("right"));
+  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
 })();
 
 // Focus follows the mouse (a setting): the tab under the pointer gets the keyboard, on its

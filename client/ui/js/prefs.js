@@ -3,45 +3,7 @@
 
 // Preferences dialog
 
-// Given to Pi is a view of Activity (no tab). Labs is listed but hidden while labs are off;
-// turning them on puts the tab on the panels' side (labs.js).
-const PLACEABLE = [
-  ["main", "picker (main terminal)", false],
-  ["conversations", "Conversations", true],
-  ["project", "Activity (what Pi does, what it was given)", true],
-  ["setup", "Project (instructions, skills, packages)", true],
-  ["repository", "Repository (Git, Team)", true],
-  ["logs", "Logs", true],
-  ["labs", "Labs", true, () => labsOn()],
-];
-
-/** Where each panel is, in Appearance: drawn again whenever a panel comes or goes
- *  from elsewhere (labs turned on or off). */
-function fillLayout() {
-  const grid = $("#prefs-layout");
-  grid.replaceChildren();
-  for (const [key, label, hideable, usable] of PLACEABLE) {
-    const select = el("select");
-    select.id = `prefs-place-${key}`;
-    for (const name of DOCKS) select.add(new Option(name, name));
-    if (hideable) select.add(new Option("hidden", "hidden"));
-    select.value = workspace.find(key)?.dock || "hidden";
-    if (usable && !usable() && !workspace.find(key)) {
-      select.disabled = true;
-      select.title = "Turn labs on first (Settings > Labs)";
-    }
-    select.addEventListener("change", () => {
-      const tab = workspace.find(key);
-      if (select.value === "hidden") { if (tab) workspace.close(tab); }
-      else if (tab) workspace.move(tab, select.value);
-      else workspace.add(key, select.value);
-    });
-    grid.append(el("label", { htmlFor: select.id, textContent: label }), select);
-  }
-}
-
 function openPrefs() {
-  fillLayout();
   fillThemes();
   $("#prefs-font").value = prefs.fontSize;
   $("#prefs-padding").value = prefs.termPadding;
@@ -61,7 +23,6 @@ function openPrefs() {
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
   $("#prefs-updatecheck").checked = prefs.updateCheck;
   $("#prefs-debug").checked = prefs.debugLogs;
-  $("#prefs-side").value = prefs.panelSide === "left" ? "left" : "right";
   $("#prefs-picker-note").hidden = true;
   $("#prefs-diag-note").hidden = true;
   fillPickerInfo();
@@ -180,21 +141,11 @@ document.addEventListener("keydown", (e) => {
   closePrefs();
 });
 /** Every panel to the side chosen, the terminals in the middle. */
+/** Reset layout: both sides open at their usual widths. */
 function placePanels() {
   workspace.arrange(defaultLayout()); // moves tabs, never restarts a terminal
-  const logs = workspace.find("logs");
-  if (logs) workspace.move(logs, prefs.panelSide === "left" ? "left" : "right");
 }
-$("#prefs-reset").addEventListener("click", () => {
-  placePanels();
-  fillLayout();
-});
-$("#prefs-side").addEventListener("change", (e) => {
-  prefs.panelSide = e.target.value;
-  savePrefs();
-  placePanels();
-  fillLayout();
-});
+$("#prefs-reset").addEventListener("click", placePanels);
 $("#prefs-theme").addEventListener("change", (e) => {
   closeThemeEditor();
   prefs.theme = e.target.value;
