@@ -1556,3 +1556,11 @@ html:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var
 html:not(.grad-off) .settings-nav { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
 html.mica:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
 html.mica:not(.grad-off) .settings-nav { background: var(--grain-layer), var(--grad), var(--mica-side); background-attachment: fixed; }
+/* The middle showing the gradient (the new tab, an empty conversation): the whole middle
+   carries it, its bars at the top too, not the screen under them alone. */
+html.grad-in-newtab #workspace #dock-center:has(> .panes > .empty.launcher),
+html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+html.mica.grad-in-newtab #workspace #dock-center:has(> .panes > .empty.launcher),
+html.mica.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
+html.grad-in-newtab #workspace #dock-center:has(> .panes > .empty.launcher) :is(.center-head, .dock-head, .panes, .empty.launcher),
+html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) :is(.center-head, .dock-head, .panes, .pane:not([hidden]), .pane:not([hidden]) .chat) { background: transparent; }
