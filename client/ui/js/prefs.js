@@ -35,7 +35,7 @@ function openPrefs() {
   fillLabsPrefs();
   backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
   $("#prefs-shortcut-note").hidden = true;
-  backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !shortcutOn(); }).catch(() => {});
+  backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !shortcutOn() || !prefs.piTerminal; }).catch(() => {});
   showSettingsPage(prefsPage);
   if ($("#prefs").hidden) {
     // The workspace stays as it was behind (terminals run on), only out of sight.
@@ -550,6 +550,7 @@ $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
   $("#prefs-shortcut-row").hidden = !prefs.piTerminal; // the image key types into Pi in tmux
+  if (!prefs.piTerminal) $("#prefs-shortcut-note").hidden = true; // its notice goes with it
   backend.setShortcut(shortcutOn()).catch(() => {});
 });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
