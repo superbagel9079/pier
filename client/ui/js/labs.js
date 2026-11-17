@@ -398,26 +398,13 @@ $("#labs-machine-add").addEventListener("click", () => {
 function makeLabs(tab) {
   const error = el("p", { className: "error", hidden: true });
   const body = el("div");
-  const make = el("button", { className: "secondary", textContent: "New lab…" });
-  const settings = el("button", { className: "link", textContent: "settings", title: "Settings > Labs" });
-  const bar = el("div", { className: "toolbar" }, make, el("span", { className: "dim small", style: "flex:1" }), settings);
-  // Pi's requests on a machine set to ask (a command, a copy), answered here.
-  const waiting = el("div");
-  tab.pane.append(el("div", { className: "pane-labs" }, bar, error, waiting, body));
-  function renderWaiting(message) {
-    const asks = (message?.data?.approvals || []).filter((a) => a.kind === "lab");
-    waiting.replaceChildren();
-    if (!asks.length) return;
-    waiting.append(el("h2", { textContent: "Waiting for you" }));
-    const list = el("ul", { className: "resource-items" });
-    for (const a of asks) {
-      list.append(approvalItem(a, async (yes) => {
-        try { await backend.approvalAnswer(a.id, yes); flashStatus(yes ? "Approved: Pi goes on" : "Refused: Pi is told"); } catch (e) { showError(error, String(e)); }
-        vm.poke();
-      }));
-    }
-    waiting.append(list);
-  }
+  // As the proposals' 2B: a bar (how many, Settings, New lab), then tables. Pi's requests
+  // on a machine are answered in Details and the Waiting window, as every other request.
+  const make = el("button", { type: "button" }, svgIcon("plus"), el("span", { textContent: "New lab" }));
+  const settings = el("button", { className: "secondary", type: "button", textContent: "Settings" });
+  const count = el("span", { className: "labs-count" });
+  const bar = el("div", { className: "labs-bar" }, el("h2", { textContent: "Labs" }), count, el("span", { className: "head-gap" }), settings, make);
+  tab.pane.append(el("div", { className: "pane-labs" }, bar, error, body));
   settings.addEventListener("click", () => { openPrefs(); showPrefsPage("labs"); fillLabsPrefs(); });
   make.addEventListener("click", () => newLabDialog());
 
@@ -499,9 +486,24 @@ function makeLabs(tab) {
     description.focus();
   }
 
-  const action = linkButton;
-  // A name, its actions, then its description (if any) and its facts, each on its line.
-  const line = (name, detail, ...actions) => itemLine(name, detail, "", ...actions);
+  /** A table: its head, then its rows (arrays of cells: text or elements). */
+  const table = (heads, rows, empty) => el("div", { className: "labs-table" }, el("table", {},
+    el("thead", {}, el("tr", {}, ...heads.map((h) => el("th", { textContent: h })))),
+    el("tbody", {}, ...(rows.length ? rows : [el("tr", {}, el("td", { className: "dim", colSpan: heads.length, textContent: empty }))]))));
+  const cell = (...parts) => el("td", {}, ...parts);
+  const two = (main, sub) => el("div", { className: "two" }, el("span", { textContent: main }), sub ? el("span", { className: "sub", textContent: sub }) : null);
+  const tag = (text, kind = "") => el("span", { className: `tag ${kind}`.trim(), textContent: text });
+  /** A row's actions: a terminal, and ⋯ for the rest. */
+  const actions = (name, more) => {
+    const term = el("button", { className: "icon-btn", type: "button", title: "A shell there" }, svgIcon("terminal"));
+    term.setAttribute("aria-label", `A shell in ${name}`);
+    term.addEventListener("click", () => openLabTerminal(name));
+    const dots = el("button", { className: "icon-btn", type: "button", title: `${name}: more` }, svgIcon("ellipsis"));
+    dots.setAttribute("aria-label", dots.title);
+    dots.setAttribute("aria-haspopup", "menu");
+    dots.addEventListener("click", () => showMenu(dots, more));
+    return el("td", { className: "acts" }, term, dots);
+  };
 
   function render(message) {
     if (message.error) { showError(error, message.error); return; }
@@ -509,72 +511,63 @@ function makeLabs(tab) {
     const s = message.data;
     labsStatus = s;
     body.replaceChildren();
-    bar.hidden = !s.settings.enabled || !(s.hosts || []).some((h) => h.incus);
+    const ready = (s.hosts || []).some((h) => h.incus);
+    make.hidden = !s.settings.enabled || !ready;
+    count.textContent = s.settings.enabled ? `${s.labs.length} of ${s.settings.max}` : "";
     if (!s.settings.enabled) {
-      body.append(el("p", { className: "dim small", textContent: "Labs are off. They let Pi make disposable machines where it may do anything (install packages, run services, Docker) and use your machines over SSH, without changing its own sandbox." }));
       const on = el("button", { className: "secondary", textContent: "Turn them on in Settings…" });
       on.addEventListener("click", () => { openPrefs(); showPrefsPage("labs"); fillLabsPrefs(); });
-      body.append(on);
+      body.append(el("p", { className: "dim", textContent: "Labs are off. They let Pi make throwaway machines where it may do anything, and use your machines over SSH." }), on);
       return;
     }
     if (!(s.hosts || []).length) body.append(el("p", { className: "notice", textContent: "No lab host yet, so no lab can be made, by you or by Pi. Add one in Settings > Labs: another VM with Incus, or Pi's own VM." }));
-    else if (!(s.hosts || []).some((h) => h.incus)) body.append(el("p", { className: "notice", textContent: "No lab host is ready: see Settings > Labs > Lab hosts." }));
+    else if (!ready) body.append(el("p", { className: "notice", textContent: "No lab host is ready: see Settings > Labs > Hosts." }));
 
-    body.append(el("h2", { textContent: `Labs · ${s.labs.length} of ${s.settings.max}` }));
-    const labs = el("ul", { className: "resource-items" });
-    for (const lab of s.labs) {
+    body.append(table(["Lab", "Host", "Kind", "State", "Address", "Goes in", ""], s.labs.map((lab) => {
       const owner = lab.project ? projectLabel(lab.project) : "yours";
       const nets = lab.networks === undefined || lab.networks === null ? null : lab.networks;
-      const nics = (lab.interfaces || []).map((i, k) => `${i.name}${nets?.[k] ? ` ${nets[k]}` : ""} ${i.address || "(no address yet)"}`);
-      const facts = [owner, `on ${lab.host}`, lab.vm ? "VM" : "container", lab.image, lab.status?.toLowerCase(),
-        nets && !nets.length ? "no network" : nics.join(" · ") || (nets ? nets.join(", ") : lab.address),
-        lab.docker === false && !lab.vm ? "no Docker" : "", lab.snapshots === false ? "reset rebuilds it" : "", lab.expires ? labsAge(lab.expires) : ""].filter(Boolean);
-      labs.append(line(lab.name, [lab.description, facts.join(" · ")],
-        action("terminal", "A shell in the lab, as root", () => openLabTerminal(lab.name)),
-        action("edit", "Rename it, describe it", () => editDialog(lab, "lab")),
-        action("reset", "Back to how it was made", async () => {
-          if (!(await ask(`Put ${lab.name} back as it was made? What was done in it since is lost.`))) return;
-          try { await backend.labAction("reset", lab.name, ""); flashStatus(`${lab.name} is clean again`); vm.poke(); } catch (e) { showError(error, String(e)); }
-        }),
-        action("destroy", "Destroy it now", async () => {
-          if (!(await ask(`Destroy ${lab.name}? Everything in it goes.`))) return;
-          try { await backend.labAction("destroy", lab.name, ""); vm.poke(); } catch (e) { showError(error, String(e)); }
-        })));
-    }
-    if (!s.labs.length) labs.append(el("li", { className: "dim small note", textContent: "No lab. Pi makes one when it needs it (lab_create), or New lab… makes one for you." }));
-    body.append(labs);
+      const address = (lab.interfaces || []).map((i) => i.address).filter(Boolean).join(", ") || (nets && !nets.length ? "no network" : lab.address || "");
+      const state = (lab.status || "").toLowerCase();
+      return el("tr", {}, cell(two(lab.name, [lab.description, owner].filter(Boolean).join(" · "))), cell(lab.host || ""),
+        cell(two(lab.vm ? "VM" : "container", lab.image)), cell(tag(state || "?", state === "running" ? "ok" : "")),
+        el("td", { className: "code", textContent: address }), cell(lab.expires ? labsAge(lab.expires).replace(/^goes in /, "") : ""),
+        actions(lab.name, [
+          ["Edit…", () => editDialog(lab, "lab"), false, { icon: "pencil" }],
+          ["Reset: back to how it was made", async () => {
+            if (!(await ask(`Put ${lab.name} back as it was made? What was done in it since is lost.`))) return;
+            try { await backend.labAction("reset", lab.name, ""); flashStatus(`${lab.name} is clean again`); vm.poke(); } catch (e) { showError(error, String(e)); }
+          }, false, { icon: "history" }],
+          ["Destroy", async () => {
+            if (!(await ask(`Destroy ${lab.name}? Everything in it goes.`))) return;
+            try { await backend.labAction("destroy", lab.name, ""); vm.poke(); } catch (e) { showError(error, String(e)); }
+          }, false, { icon: "trash", danger: true }],
+        ]));
+    }), "No lab. Pi makes one when it needs it (lab_create), or New lab makes one for you."));
 
     if (s.machines.length) {
-      body.append(el("h2", { textContent: `Machines · ${s.machines.length}` }));
-      const machines = el("ul", { className: "resource-items" });
-      for (const m of s.machines) {
-        machines.append(line(m.name, [m.description, `${m.user}@${m.host} · ${m.policy === "auto" ? "Pi runs commands freely" : "each command waits for your approval"}`],
-          action("terminal", "A shell there", () => openLabTerminal(m.name)),
-          action("edit", "Rename it, describe it for Pi", () => editDialog(m, "machine"))));
-      }
-      body.append(machines);
+      body.append(el("h3", { textContent: "Machines" }), table(["Machine", "Address", "Commands", ""], s.machines.map((m) => el("tr", {},
+        cell(two(m.name, m.description)), el("td", { className: "code", textContent: `${m.user}@${m.host}` }),
+        cell(m.policy === "auto" ? "run freely" : tag("each one approved")),
+        actions(m.name, [["Edit…", () => editDialog(m, "machine"), false, { icon: "pencil" }]]))), ""));
     }
 
-    body.append(el("h2", { textContent: "What was done" }));
-    const journal = el("ul", { className: "resource-items" });
-    for (const j of (message.data.journal || []).slice(0, 40)) {
-      const when = new Date(j.at * 1000).toLocaleTimeString();
-      // The journal keeps a command whole: the row says how much it leaves out, the pointer shows it all.
-      const chars = [...String(j.command || "")];
-      const what = j.command ? `$ ${visibleText(chars.slice(0, 300).join(""))}${chars.length > 300 ? `… (${chars.length - 300} more characters)` : ""}` : j.what;
-      const result = j.command ? (j.exit === 0 ? "ok" : j.exit === null ? "stopped" : `exit ${j.exit}`) : "";
-      const row = line(`${j.lab} · ${what}`, [when, result, j.ms ? `${(j.ms / 1000).toFixed(1)} s` : "", j.project ? projectLabel(j.project) : ""].filter(Boolean).join(" · "));
-      if (j.command) row.title = visibleText(j.command, { lines: true });
-      journal.append(row);
-    }
-    if (!(message.data.journal || []).length) journal.append(el("li", { className: "dim small note", textContent: "Nothing yet. Every command Pi runs in a lab or on a machine is written here." }));
-    body.append(journal);
+    body.append(el("h3", { textContent: "What was done" }), table(["Time", "Lab", "What", "Result", ""],
+      (message.data.journal || []).slice(0, 40).map((j) => {
+        // The journal keeps a command whole: the cell shows its start, the pointer all of it.
+        const chars = [...String(j.command || "")];
+        const what = j.command ? `$ ${visibleText(chars.slice(0, 160).join(""))}${chars.length > 160 ? "…" : ""}` : j.what;
+        const result = j.command ? (j.exit === 0 ? tag("ok", "ok") : j.exit === null ? tag("stopped") : tag(`exit ${j.exit}`, "bad")) : "";
+        const row = el("tr", {}, el("td", { className: "code dim", textContent: new Date(j.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) }),
+          cell(j.lab), el("td", { className: j.command ? "code what" : "what", textContent: what }), cell(result),
+          el("td", { className: "dim", textContent: [j.ms ? `${(j.ms / 1000).toFixed(1)} s` : "", j.project ? projectLabel(j.project) : ""].filter(Boolean).join(" · ") }));
+        if (j.command) row.title = visibleText(j.command, { lines: true });
+        return row;
+      }), "Nothing yet. Every command Pi runs in a lab or on a machine is written here."));
   }
 
   vm.follow({ labs: true });
   const unlisten = vm.on("labs", render);
-  const unlistenApprovals = vm.on("approvals", renderWaiting);
-  tab.onClose = () => { unlisten(); unlistenApprovals(); vm.follow({ labs: false }); };
+  tab.onClose = () => { unlisten(); vm.follow({ labs: false }); };
   // Followed while shown only: each look asks every lab host over SSH.
   tab.onVisible = (shown) => vm.follow({ labs: shown });
 }
