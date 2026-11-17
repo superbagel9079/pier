@@ -1,23 +1,41 @@
 // Logging in: the VM's address, the password, its fingerprint, the picker on the VM;
 // then the Pi in use, followed.
 
-// Connection screens
+// Connection screens: a window over the app (the proposals' 2C). Pier opens on the app,
+// not connected: a card at the bottom left offers to connect; without a VM yet, the New
+// tab page is a quick start (workspace.js).
+
+let online = false; // connected, the picker answering
+
+/** The app, not connected: its panels as they were, the card to connect (when a VM is
+ *  known), no connection window. note: a word to show (after a hand-off, say). */
+function showOffline(note = "") {
+  online = false;
+  $("#connect").hidden = true;
+  showWorkspace();
+  $("#btn-disconnect").hidden = true;
+  if (!workspace.tabs().length) workspace.restore();
+  setStatus("not connected");
+  $("#connect-card").hidden = !settings;
+  if (settings) $("#connect-card-target").textContent = describe(settings);
+  workspace.redrawEmpty();
+  if (note) flashStatus(note);
+}
 
 function showConnect(view) {
-  document.body.classList.remove("in-workspace");
-  $("#workspace").hidden = true;
+  if (!online) showOffline();
   $("#prefs").hidden = true;
-  $("#status").disabled = true;
+  $("#connect-card").hidden = true;
   $("#connect").hidden = false;
   for (const name of ["setup", "login", "trust", "picker"]) $(`#view-${name}`).hidden = name !== view;
-  // The mark above the form: revealed once, the first time a connection screen shows.
-  showMark($("#connect-mark"), { cols: 4, rows: 2, reveal: true });
-  $("#btn-prefs").hidden = true;
-  $("#btn-palette").hidden = true;
-  $("#btn-waiting").hidden = true; // shown again by the next approvals (firstuse.js)
+  $(`#view-${view}`).prepend($("#connect-close"));
   $("#btn-disconnect").hidden = true;
-  $("#target").hidden = true;
 }
+// The window closed: back to the app, not connected (the card offers it again).
+$("#connect-close").addEventListener("click", () => showOffline());
+$("#connect").addEventListener("keydown", (e) => { if (e.key === "Escape" && !online) { e.preventDefault(); showOffline(); } });
+$("#connect-card-go").addEventListener("click", () => toLogin());
+$("#connect-card-edit").addEventListener("click", () => { fillSetup(settings); showConnect("setup"); });
 
 function showWorkspace() {
   document.body.classList.add("in-workspace");
@@ -179,6 +197,8 @@ async function connect() {
 }
 
 async function enterWorkspace(note = "", version = null) {
+  online = true;
+  $("#connect-card").hidden = true;
   setStatus(`connected · ${describe(settings)}`);
   if (note) flashStatus(note);
   showWorkspace();
@@ -243,7 +263,7 @@ async function installPicker(status) {
 $("#btn-picker-install").addEventListener("click", () => installPicker());
 $("#btn-picker-cancel").addEventListener("click", async () => {
   await leave();
-  toLogin();
+  showOffline();
 });
 
 function forgetPasswords() {
@@ -276,10 +296,11 @@ $("#btn-untrust").addEventListener("click", () => {
 $("#btn-disconnect").addEventListener("click", async () => {
   if ((await backend.shareList().catch(() => [])).length) { openHandOff(); return; }
   await leave();
-  toLogin();
+  showOffline();
 });
 
 async function leave() {
+  online = false;
   vm.stop();
   workspace.save();
   workspace.clear();

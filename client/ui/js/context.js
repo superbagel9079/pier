@@ -377,13 +377,13 @@ async function handOff() {
   }
   closeHandOff();
   await leave();
-  toLogin(`Copied to the VM. Pi keeps working there: you can turn this computer off. Log in again to see what it did.${leftOut}`);
+  showOffline(`Copied to the VM. Pi keeps working there: you can turn this computer off. Connect again to see what it did.${leftOut}`);
 }
 
 $("#handoff-leave").addEventListener("click", async () => {
   closeHandOff();
   await leave();
-  toLogin();
+  showOffline();
 });
 $("#handoff-go").addEventListener("click", handOff);
 $("#handoff-cancel").addEventListener("click", closeHandOff);

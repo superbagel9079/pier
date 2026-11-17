@@ -255,9 +255,10 @@ const workspace = (() => {
   /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
    *  latest conversations. */
   function emptyDock(name) {
+    if (!settings) return quickStart(); // no VM yet: how to begin (the proposals' 3A)
     const line = (icon, label, detail, action) => {
       const b = el("button", { className: "lrow" }, svgIcon(icon), el("span", { textContent: label }), el("span", { className: "m", textContent: detail }));
-      b.addEventListener("click", action);
+      b.addEventListener("click", () => (online ? action() : toLogin())); // not connected: connect first
       return b;
     };
     const project = target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
@@ -273,6 +274,24 @@ const workspace = (() => {
     }
     return el("div", { className: "empty launcher" }, group);
   }
+
+  /** No VM yet: three steps, the next one put forward (the proposals' 3A). */
+  function quickStart() {
+    const step = (n, done, on, title, detail, button) => el("div", { className: `qs-step${done ? " done" : ""}${on ? " on" : ""}` },
+      el("span", { className: "n", "aria-hidden": "true" }, ...(done ? [svgIcon("check")] : [String(n)])),
+      el("div", { className: "what" }, el("span", { textContent: title }), el("span", { textContent: detail })), button || null);
+    const add = el("button", { type: "button", textContent: "Add your VM" });
+    add.addEventListener("click", () => { fillSetup(null); showConnect("setup"); });
+    return el("div", { className: "empty launcher quick-start" }, el("div", { className: "qs" },
+      el("h2", { textContent: "Run Pi on your Linux VM" }),
+      el("p", { textContent: "Pier talks to it over SSH: Pi works there, you follow it from here." }),
+      step(1, false, true, "Add your VM", "Its address and your user on it.", add),
+      step(2, false, false, "Connect", "Pier installs its picker there if it is missing."),
+      step(3, false, false, "Start a conversation", "In a folder of the VM.")));
+  }
+
+  /** The New tab page drawn again (connected or not, a VM known or not). */
+  function redrawEmpty() { if (!docks.center.tabs.length) render("center"); }
 
   function addChoices(name) {
     const items = [
@@ -658,7 +677,7 @@ const workspace = (() => {
   $(".add", docks.center.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices("center")));
   $("#toggle-left").addEventListener("click", () => toggle("left"));
   $("#toggle-right").addEventListener("click", () => toggle("right"));
-  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
+  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, redrawEmpty, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
 })();
 
 // Focus follows the mouse (a setting): the tab under the pointer gets the keyboard, on its

@@ -82,7 +82,13 @@
   </main>
 
   <!-- Not connected: where the VM is, the password, the fingerprint. -->
-  <section id="connect">
+  <!-- Not connected, a VM known: a card at the bottom left (the proposals' 2C). -->
+  <div id="connect-card" class="connect-card" role="status" hidden>
+    <div><b>Not connected</b><span id="connect-card-target"></span></div>
+    <div class="btns"><button id="connect-card-go" type="button">Connect</button><button id="connect-card-edit" class="secondary" type="button">Change…</button></div>
+  </div>
+  <button id="connect-close" class="icon-btn connect-close" type="button" title="Close: Pier stays open, not connected" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+  <section id="connect" hidden>
     <pre id="connect-mark" class="mark" aria-hidden="true"></pre>
     <div id="view-setup" hidden>
       <h1>Connect to your VM</h1>

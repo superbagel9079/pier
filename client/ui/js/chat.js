@@ -101,6 +101,7 @@ function makeChat(tab) {
     send.title = on && !input.value.trim() ? "Stop" : on ? "Steer: tell Pi this now" : "Send";
     send.setAttribute("aria-label", send.title);
     send.classList.toggle("stop", on && !input.value.trim());
+    composer.classList.toggle("working", on); // its frame takes the gradient while Pi works
   }
 
   // --- a run: the request, the steps, the answers ------------------------------------

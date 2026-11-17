@@ -66,11 +66,8 @@ document.addEventListener("mousemove", (event) => {
 })();
 backend.setLogLevel(prefs.debugLogs).catch(() => {});
 backend.setShortcut(shortcutOn()).catch(() => {}); // Rust takes it at launch; only kept with tmux
+// Straight on the app: the card offers to connect, or the New tab page starts the setup.
 (async () => {
   settings = await backend.loadSettings();
-  if (settings) toLogin();
-  else {
-    fillSetup(null);
-    showConnect("setup");
-  }
+  showOffline();
 })();
