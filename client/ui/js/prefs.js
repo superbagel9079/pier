@@ -17,6 +17,7 @@ function openPrefs() {
   $("#prefs-resume").checked = prefs.resume;
   $("#prefs-focus").checked = prefs.focusFollowsMouse;
   $("#prefs-pi-terminal").checked = prefs.piTerminal;
+  $("#prefs-term-more").hidden = !prefs.piTerminal;
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   $("#prefs-copykeys").value = prefs.copyKeys;
   $("#prefs-copymode").value = prefs.copyMode;
@@ -418,7 +419,11 @@ $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.c
 $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.target.checked; savePrefs(); });
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
-$("#prefs-pi-terminal").addEventListener("change", (e) => { prefs.piTerminal = e.target.checked; savePrefs(); });
+$("#prefs-pi-terminal").addEventListener("change", (e) => {
+  prefs.piTerminal = e.target.checked;
+  savePrefs();
+  $("#prefs-term-more").hidden = !prefs.piTerminal; // the terminals' settings, only with tmux
+});
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
 $("#prefs-copykeys").addEventListener("change", (e) => { prefs.copyKeys = e.target.value; savePrefs(); });
 $("#prefs-copymode").addEventListener("change", (e) => { prefs.copyMode = e.target.value; savePrefs(); });

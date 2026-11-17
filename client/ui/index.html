@@ -257,6 +257,11 @@
       </section>
 
       <section class="prefs-page" data-page="terminals" data-title="Terminals" role="tabpanel" hidden>
+      <!-- Pi opens in Pier's conversation view: the terminals' settings matter only with tmux. -->
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
+      </div>
+      <div id="prefs-term-more" hidden>
       <h2>Text</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-font"><span>Font size</span><span>Ctrl+ and Ctrl- change it in a terminal, Ctrl+0 resets it.</span></label><input id="prefs-font" type="number" min="8" max="28"></div>
@@ -273,11 +278,11 @@
           <option value="select">as soon as text is selected</option>
         </select></div>
       </div>
-      <h2>Pi and the terminals</h2>
+      <h2>Behaviour</h2>
       <div class="rows">
-        <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
         <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The terminal or panel under the pointer gets the keyboard, without a click.</span></label><input id="prefs-focus" type="checkbox"></div>
         <div class="set"><label class="what" for="prefs-gpu"><span>Draw with the graphics card</span><span>Smooth scrolling. Turn it off if text looks wrong; terminals opened after the change use it.</span></label><input id="prefs-gpu" type="checkbox"></div>
+      </div>
       </div>
       </section>
 
