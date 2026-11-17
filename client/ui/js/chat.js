@@ -418,6 +418,7 @@ function makeChat(tab) {
     col.append(card);
   }
 
+  let saidOld = false; // the old-picker notice, once
   function onBytes(bytes) {
     lineBuf += decoder.decode(bytes, { stream: true });
     let at;
@@ -426,7 +427,15 @@ function makeChat(tab) {
       lineBuf = lineBuf.slice(at + 1);
       if (!line) continue;
       let e;
-      try { e = JSON.parse(line); } catch { notice(line, "dim"); continue; }
+      try { e = JSON.parse(line); } catch {
+        // Not JSON: a picker from before the conversation view started its own screen
+        // instead (its traceback, line by line). Said once, plainly, with the way out.
+        if (!saidOld) {
+          saidOld = true;
+          notice("The picker on the VM is too old for this view. Reconnect: Pier offers to update it (or Settings > Connection). Until then, Settings > Terminals > Pi in tmux works.", "error");
+        }
+        continue;
+      }
       onEvent(e);
     }
   }
