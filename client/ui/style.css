@@ -1538,3 +1538,5 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 :is(.dialog, #connect) .actions button.secondary { background: none; border: 1px solid var(--line); }
 :is(.dialog, #connect) .actions button.secondary:hover:not(:disabled) { background: var(--hover); }
 @media (max-width: 720px) { .prefs-tabs { cursor: grab; user-select: none; } .prefs-tabs.dragging, .prefs-tabs.dragging button { cursor: grabbing; } }
+.grad-where { margin: calc(-1 * var(--s1)) 0 var(--s3); }
+.grad-where:empty { display: none; }

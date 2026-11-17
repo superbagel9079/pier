@@ -370,6 +370,7 @@ $("#prefs-accent-pick").addEventListener("input", (e) => setAccent(e.target.valu
  *  intensity, colours, grain, and where it goes. */
 const GRAD_NAMES = { off: "Off", aurora: "Aurora", mesh: "Mesh", linear: "Linear", glow: "Glow", dusk: "Dusk" };
 const GRAD_FLAGS = { "prefs-grad-grain": "gradGrain", "prefs-grad-newtab": "gradNewTab", "prefs-grad-working": "gradWorking", "prefs-grad-empty": "gradEmpty", "prefs-grad-buttons": "gradButtons" };
+const GRAD_PLACES = [["gradNewTab", "the new tab"], ["gradWorking", "the message field while Pi works"], ["gradEmpty", "empty screens"], ["gradButtons", "the main buttons"]];
 function setGradient(changes) {
   Object.assign(prefs, changes);
   savePrefs();
@@ -382,7 +383,8 @@ function showGradient() {
     const b = el("button", { type: "button", className: `grad-thumb s-${key}${on ? " on" : ""}`, title: name }, el("span", { textContent: name }));
     b.setAttribute("role", "radio");
     b.setAttribute("aria-checked", String(on));
-    b.addEventListener("click", () => setGradient({ gradStyle: key }));
+    // A style chosen with no place ticked showed nowhere: the new tab and empty screens then.
+    b.addEventListener("click", () => setGradient({ gradStyle: key, ...(key !== "off" && !GRAD_PLACES.some(([k]) => prefs[k]) ? { gradNewTab: true, gradEmpty: true } : {}) }));
     return b;
   }));
   $("#prefs-grad-intensity").value = prefs.gradIntensity;
@@ -391,6 +393,10 @@ function showGradient() {
   $("#prefs-grad-c1").value = prefs.gradC1;
   $("#prefs-grad-c2").value = prefs.gradC2;
   for (const [id, key] of Object.entries(GRAD_FLAGS)) $(`#${id}`).checked = Boolean(prefs[key]);
+  // Where it shows, said under the styles: Settings covers the window, so it is not seen here.
+  const places = GRAD_PLACES.filter(([k]) => prefs[k]).map(([, words]) => words);
+  $("#grad-where").textContent = (prefs.gradStyle || "aurora") === "off" ? "" : places.length
+    ? `Shown on ${places.join(", ").replace(/, ([^,]*)$/, " and $1")}: close Settings to see it.` : "Shown nowhere yet: tick where, below.";
 }
 $("#prefs-grad-intensity").addEventListener("input", (e) => setGradient({ gradIntensity: Number(e.target.value) }));
 for (const b of $("#prefs-grad-colors").children) b.addEventListener("click", () => setGradient({ gradCustom: b.dataset.v === "custom" }));
