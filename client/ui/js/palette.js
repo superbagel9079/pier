@@ -13,7 +13,7 @@ const palette = (() => {
   /** Everything the palette can do now: [kind, label, detail, action]. */
   function collect() {
     const out = [];
-    for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
+    for (const tab of workspace.tabs()) out.push(["tab", tab.title, { left: "left side", right: "right side" }[tab.dock] || "", () => workspace.show(tab), tab]);
     for (const kind of ["conversations", "project", "setup", "repository", ...(labsOn() ? ["labs"] : [])]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind)]);
     }
@@ -72,28 +72,53 @@ const palette = (() => {
     return total;
   }
 
+  // As the proposals' A (Raycast): the results in groups, an icon on each line.
+  const GROUPS = { tab: "Tabs", panel: "Panels", project: "Projects", conversation: "Conversations", page: "Pages", action: "Actions", setting: "Settings", theme: "Themes" };
+  const ICONS = { panel: "panel-right", project: "folder", conversation: "message-square", page: "info", setting: "settings", theme: "palette" };
+  const ACTION_ICONS = { "Settings": "settings", "Waiting for you": "inbox", "Open a folder…": "folder-plus", "Is the VM ready?": "circle-check", "New shell": "terminal", "Reset layout": "panel-left", "Logs": "scroll-text" };
+  const iconOf = ([kind, label, , , tab]) => kind === "tab"
+    ? (tab?.kind === "chat" || tab?.kind === "conversations" ? "message-square" : KINDS[tab?.kind]?.terminal ? "terminal" : tab?.dock === "right" ? "panel-right" : "file")
+    : kind === "action" ? ACTION_ICONS[label] || "play" : ICONS[kind] || "chevron-right";
+  // In its group, a line needs no "Settings: " or "Theme: " before it.
+  const shortLabel = ([kind, label]) => kind === "setting" ? label.replace(/^Settings: /, "") : kind === "theme" ? label.replace(/^Theme: /, "") : label;
+
   function render() {
     const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    shown = words.length
+    let found = words.length
       ? items.map((item, i) => [score(item, words), i, item]).filter(([s]) => s >= 0).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , item]) => item)
       : items.filter(([kind]) => kind !== "theme" && kind !== "conversation").concat(items.filter(([kind]) => kind === "conversation").slice(0, 8));
-    shown = shown.slice(0, 60);
+    found = found.slice(0, 60);
+    // Grouped by kind, the groups in the order of their best line (the order above when
+    // nothing is typed); the arrows go down the lines as drawn.
+    const groups = new Map();
+    for (const item of found) {
+      if (!groups.has(item[0])) groups.set(item[0], []);
+      groups.get(item[0]).push(item);
+    }
+    shown = [...groups.values()].flat();
     selected = Math.min(selected, Math.max(0, shown.length - 1));
-    list.replaceChildren(...shown.map(([kind, label, detail], i) => {
-      const li = el("li", { className: i === selected ? "selected" : "" },
-        el("span", { className: "kind", textContent: kind }),
-        el("span", { className: "label", textContent: label }),
-        el("span", { className: "detail", textContent: detail }));
-      li.addEventListener("mousemove", () => { if (selected !== i) { selected = i; mark(); } });
-      li.addEventListener("click", () => run(i));
-      return li;
-    }));
+    const rows = [];
+    let i = 0;
+    for (const [kind, group] of groups) {
+      rows.push(el("li", { className: "group", textContent: GROUPS[kind] || kind, role: "presentation" }));
+      for (const item of group) {
+        const at = i++;
+        const li = el("li", { className: at === selected ? "selected" : "" }, svgIcon(iconOf(item)),
+          el("span", { className: "label", textContent: shortLabel(item) }),
+          el("span", { className: "detail", textContent: item[2] }));
+        li.dataset.i = at;
+        li.addEventListener("mousemove", () => { if (selected !== at) { selected = at; mark(); } });
+        li.addEventListener("click", () => run(at));
+        rows.push(li);
+      }
+    }
+    list.replaceChildren(...rows);
     if (!shown.length) list.append(el("li", { className: "empty", textContent: "Nothing matches." }));
   }
 
   function mark() {
-    [...list.children].forEach((li, i) => li.classList.toggle("selected", i === selected));
-    list.children[selected]?.scrollIntoView({ block: "nearest" });
+    for (const li of list.querySelectorAll("li[data-i]")) li.classList.toggle("selected", Number(li.dataset.i) === selected);
+    list.querySelector(`li[data-i="${selected}"]`)?.scrollIntoView({ block: "nearest" });
   }
 
   function run(i) {

@@ -46,16 +46,46 @@ function vmReadyAfterConnect(version) {
   openVmReady(version);
 }
 
-/** A folder of the VM, chosen by walking down from home, then a Pi started in it. */
+/** A folder of the VM, then a Pi started in it (the proposals' D): the folders Pi worked in
+ *  first, as the rail's squares; then the VM's folders, from home, by a clickable path. A
+ *  click chooses a folder, a double click (or →) goes in; the button says where Pi starts. */
 function openFolderPicker(start = null) {
   let home = lastProjects?.home || ""; // else learnt from the first answer (ls "" is home)
   let here = start || home;
-  const where = el("div", { className: "path small" });
-  const list = el("ul", { className: "resource-items folder-list" });
+  let chosen = null; // a folder chosen in the list or the recent ones; else here
   const problem = dialogError();
-  const go = el("button", { textContent: "Start Pi here" });
-  const up = el("button", { className: "secondary", textContent: "Up" });
-  const dialog = resourceDialog("Open a folder", [where, list, problem], [up, go], true);
+  const go = el("button", { type: "button" });
+  const crumbs = el("nav", { className: "folder-crumbs", "aria-label": "Where" });
+  const list = el("div", { className: "folder-box", role: "listbox", "aria-label": "Folders" });
+  const name = (path) => (path === home ? "~" : visibleText(String(path).replace(/\/+$/, "").split("/").pop() || "~"));
+  const label = () => { go.textContent = `Start Pi in ${name(chosen || here)}`; };
+  const mark = () => {
+    for (const n of document.querySelectorAll(".folder-dialog [data-path]")) n.setAttribute("aria-selected", String(n.dataset.path === chosen));
+    label();
+  };
+  const choose = (path) => { chosen = path; mark(); };
+
+  // The recent ones: the projects Pi ran in, the latest first, with their conversations' age.
+  const looks = (() => { try { return JSON.parse(localStorage.getItem("devbox.conversations.v1"))?.looks || {}; } catch { return {}; } })();
+  const latest = new Map();
+  for (const p of vm.latest("conversations")?.data?.projects || []) latest.set(p.project, Math.max(0, ...p.sessions.map((x) => x.modified || 0)));
+  const recentPaths = [...new Set([...(lastProjects?.running || []), ...(lastProjects?.recent || [])].map((x) => x.path).concat([...latest.keys()]))]
+    .sort((a, b) => (latest.get(b) || 0) - (latest.get(a) || 0)).slice(0, 4);
+  const recent = recentPaths.length ? el("div", { className: "folder-recent" }, ...recentPaths.map((path) => {
+    const when = latest.get(path);
+    const card = el("button", { type: "button", className: "folder-card", title: path },
+      projectBadge(path, looks[path]),
+      el("span", { className: "tx" }, el("span", { textContent: name(path) }), el("small", { textContent: [projectLabel(path), when ? relTime(when) : ""].filter(Boolean).join(" · ") })));
+    card.dataset.path = path;
+    card.addEventListener("click", () => choose(path));
+    card.addEventListener("dblclick", start_);
+    return card;
+  })) : null;
+
+  const dialog = resourceDialog("Open a folder", [
+    ...(recent ? [el("p", { className: "folder-label", textContent: "Recent" }), recent, el("p", { className: "folder-label", textContent: "Browse" })] : []),
+    crumbs, list, problem], [go]);
+  dialog.box.classList.add("folder-dialog");
 
   async function show(path) {
     showError(problem, "");
@@ -63,21 +93,41 @@ function openFolderPicker(start = null) {
     try { data = await backend.api(["ls", path]); } catch (e) { showError(problem, String(e)); return; }
     here = data.path || path;
     if (!home && !path) home = here;
-    where.textContent = visibleText(data.label || here);
-    up.disabled = !home || here === home;
+    if (!recentPaths.includes(chosen)) chosen = null;
+    // The path from home, each step a button back to it.
+    const steps = [{ label: "~", path: home }];
+    if (home && here.startsWith(home) && here !== home) {
+      let at = home;
+      for (const part of here.slice(home.length).split("/").filter(Boolean)) { at = `${at}/${part}`; steps.push({ label: part, path: at }); }
+    } else if (here !== home) steps.splice(0, 1, { label: visibleText(data.label || here), path: here });
+    crumbs.replaceChildren(svgIcon("folder"), ...steps.flatMap((st, i) => {
+      const b = el("button", { type: "button", className: i === steps.length - 1 ? "here" : "", textContent: st.label });
+      b.addEventListener("click", () => show(st.path));
+      return i ? [el("span", { className: "sep", textContent: "/", "aria-hidden": "true" }), b] : [b];
+    }));
     const dirs = (data.entries || []).filter((e) => e.kind === "dir" && !e.hidden);
     list.replaceChildren(...dirs.map((d) => {
-      const b = el("button", { className: "link", textContent: `▸︎ ${visibleText(d.name)}/`, title: "Open this folder" });
-      b.addEventListener("click", () => show(d.path || `${here}/${d.name}`));
-      return el("li", {}, b);
+      const path = d.path || `${here}/${d.name}`;
+      const row = el("button", { type: "button", className: "folder-row", role: "option", title: "Double click to go in" }, svgIcon("folder"), el("span", { textContent: visibleText(d.name) }));
+      row.dataset.path = path;
+      row.addEventListener("click", () => choose(path));
+      row.addEventListener("dblclick", () => show(path));
+      row.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") { e.preventDefault(); show(path); } });
+      return row;
     }));
-    if (!dirs.length) list.append(el("li", { className: "dim small note", textContent: "No folder inside: start Pi here, or go up." }));
+    if (!dirs.length) list.append(el("p", { className: "dim small folder-none", textContent: "No folder inside." }));
+    mark();
   }
-  up.addEventListener("click", () => { if (here !== home) show(here.replace(/\/[^/]+\/?$/, "") || home); });
-  go.addEventListener("click", () => {
+  function start_() {
     dialog.close();
-    openPiTerminal(here, projectLabel(here), []);
+    const path = chosen || here;
+    openPiTerminal(path, projectLabel(path), []);
+  }
+  list.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft" && here !== home) { e.preventDefault(); show(here.replace(/\/[^/]+\/?$/, "") || home); }
   });
+  go.addEventListener("click", start_);
+  label();
   show(here);
 }
 

@@ -18,7 +18,12 @@ function svgIcon(name) {
 }
 
 function el(tag, props = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
+  const node = document.createElement(tag);
+  // "aria-…" and "data-…" are attributes, not properties: assigned, they did nothing.
+  for (const [key, value] of Object.entries(props)) {
+    if (key.startsWith("aria-") || key.startsWith("data-")) node.setAttribute(key, value);
+    else node[key] = value;
+  }
   for (const child of children) if (child !== null && child !== undefined && child !== false) node.append(child);
   // A button that is a glyph (×, ⋯, ‹, ▸): a screen reader says its title, not
   // "multiplication sign".

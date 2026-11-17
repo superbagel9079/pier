@@ -30,9 +30,9 @@
   <!-- The palette (Ctrl+Shift+K): anything, by a few letters. -->
   <div id="palette" class="overlay palette" hidden>
     <div class="palette-box" role="dialog" aria-label="Go to">
-      <input id="palette-input" type="text" aria-label="Go to" placeholder="a tab, a project, a conversation, a setting…" spellcheck="false" autocomplete="off">
+      <label class="palette-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="palette-input" type="text" aria-label="Go to" placeholder="Search tabs, projects, conversations, settings" spellcheck="false" autocomplete="off"></label>
       <ul id="palette-list"></ul>
-      <p class="hint">↑ ↓ to choose, Enter to go, Esc to close. Ctrl+Shift+K, from anywhere.</p>
+      <p class="palette-keys" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span><span class="gap"></span><span><kbd>Ctrl+Shift+K</kbd> from anywhere</span></p>
     </div>
   </div>
 
