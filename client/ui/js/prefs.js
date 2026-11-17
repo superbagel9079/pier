@@ -626,3 +626,31 @@ $("#prefs-report-save").addEventListener("click", async () => {
     prefsNote($("#prefs-diag-note"), `No report: ${error}`);
   }
 });
+
+// A narrow window: the categories on one line, moved by dragging it sideways (held down) or
+// by the wheel; a drag does not open the category it started on.
+{
+  const strip = $("#prefs .prefs-tabs");
+  let start = null, moved = false;
+  strip.addEventListener("pointerdown", (e) => {
+    moved = false;
+    if (e.pointerType !== "mouse" || e.button !== 0 || strip.scrollWidth <= strip.clientWidth) return;
+    start = { x: e.clientX, left: strip.scrollLeft, id: e.pointerId };
+  });
+  strip.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dx = e.clientX - start.x;
+    if (!moved && Math.abs(dx) < 5) return;
+    if (!moved) { moved = true; strip.setPointerCapture(e.pointerId); strip.classList.add("dragging"); }
+    strip.scrollLeft = start.left - dx;
+  });
+  const end = () => { start = null; strip.classList.remove("dragging"); };
+  strip.addEventListener("pointerup", end);
+  strip.addEventListener("pointercancel", end);
+  strip.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  strip.addEventListener("wheel", (e) => {
+    if (strip.scrollWidth <= strip.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    strip.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+}

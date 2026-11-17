@@ -1534,3 +1534,4 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .dialog { border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
 :is(.dialog, #connect) .actions button.secondary { background: none; border: 1px solid var(--line); }
 :is(.dialog, #connect) .actions button.secondary:hover:not(:disabled) { background: var(--hover); }
+@media (max-width: 720px) { .prefs-tabs { cursor: grab; user-select: none; } .prefs-tabs.dragging, .prefs-tabs.dragging button { cursor: grabbing; } }
