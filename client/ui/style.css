@@ -960,7 +960,7 @@ button.row-main:hover { background: none; }
 .composer textarea:focus { outline: none; }
 .composer .bar { display: flex; align-items: center; gap: var(--s2); padding: var(--s2); color: var(--dim); }
 .composer .bar .icon-btn { width: 24px; height: 24px; }
-.composer .pickish { height: 24px; padding: 0 var(--s2); background: none; font-size: var(--t-small); color: var(--dim); }
+.composer .pickish { white-space: nowrap; height: 24px; padding: 0 var(--s2); background: none; font-size: var(--t-small); color: var(--dim); }
 .composer .pickish:hover { background: var(--hover); color: var(--fg); }
 .composer .send { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; }
 .composer .send.stop { background: var(--raise); color: var(--fg); }
