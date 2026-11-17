@@ -1859,3 +1859,14 @@ body:not(.online) .prefs-page.needs-vm[data-offline]::after { content: attr(data
    two together looked thicker than the lists' and buttons' borders beside it). */
 input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus, select:focus, textarea:focus, .drop:focus { outline: none; border-color: var(--accent); }
 .pick[aria-expanded="true"], .pick:focus-visible { outline: none; border-color: var(--accent); }
+/* Fields without borders, everywhere: their ground sets them apart from what is around them;
+   the one being typed in (or a list opened) a shade lighter. A field wrongly filled keeps a red
+   edge; a list reached by the keyboard, the accent's ring. */
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea, .pick) { border-color: transparent !important; }
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea):focus,
+.pick[aria-expanded="true"] { outline: none; background-color: color-mix(in srgb, var(--fg) 7%, var(--field)); }
+.pick:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+[aria-invalid="true"]:is(input, select, textarea) { border-color: var(--red, #f85149) !important; }
+/* Numbers: no spin arrows (the keyboard's arrows still count up and down). */
+input[type="number"] { -moz-appearance: textfield; }
+input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button, input[type="number"]:focus::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; opacity: 0; display: none; }
