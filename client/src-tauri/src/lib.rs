@@ -1139,9 +1139,13 @@ mod tests {
         assert_eq!(rpc_command("/x", &["--slot".into(), "pi-work-a1b2c3-r1".into()]).unwrap(), "--rpc-attach '/x' '--slot' 'pi-work-a1b2c3-r1'");
         assert!(rpc_command("/x", &["--session".into(), "/home/leo/.pi/agent/sessions/--x--/a.jsonl".into()]).is_ok());
         // An orchestrator or a task still goes through the terminal, for now.
-        for bad in [vec!["--orchestrator".to_string()], vec!["--agent-task".into(), "task".into(), "1".into()],
-                    vec!["--session".into(), "/etc/passwd".into()], vec!["--slot".into(), "pi-x; rm -rf ~".into()],
-                    vec!["--mode".into(), "json".into()]] {
+        for bad in [
+            vec!["--orchestrator".to_string()],
+            vec!["--agent-task".into(), "task".into(), "1".into()],
+            vec!["--session".into(), "/etc/passwd".into()],
+            vec!["--slot".into(), "pi-x; rm -rf ~".into()],
+            vec!["--mode".into(), "json".into()],
+        ] {
             assert!(rpc_command("/x", &bad).is_err(), "{bad:?}");
         }
         assert!(rpc_command("", &[]).is_err());
