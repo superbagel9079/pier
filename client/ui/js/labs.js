@@ -219,15 +219,28 @@ function renderLabHosts(s) {
         try { await (h.kind === "local" ? backend.hostLocal(false, "") : backend.hostRemove(h.name)); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }
       }),
     ].filter(Boolean);
-    const li = el("li", { className: "two-lines" },
-      el("div", { className: "line" }, el("span", { className: "name", textContent: `${h.name}${h.default ? " · default" : ""}` }), el("span", { className: "dim" }), ...actions),
-      h.description ? el("div", { className: "desc dim small", textContent: h.description }) : null,
-      el("div", { className: "desc dim small", textContent: `${h.where} · ${state}` }),
-      // The key it showed at the first contact, to compare with the host's own.
-      h.fingerprint ? el("div", { className: "desc dim small", textContent: `its key: ${h.fingerprint} (compare: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub)` }) : null);
-    if (!h.incus) {
-      li.append(el("div", { className: "desc small" }, linkButton("prepare it…", "The script that makes it ready, then Test", () => labHostPrepare(h))));
-    }
+    // A row: its state as a dot, its name (and "default"), what it is; Test, then ⋯ for the rest.
+    const [test, makeDefault, editIt, remove] = [actions[0], h.default ? null : actions[1], h.kind === "ssh" ? actions.at(-2) : null, actions.at(-1)];
+    const testBtn = el("button", { className: "secondary", type: "button", textContent: "Test", title: test.title });
+    testBtn.addEventListener("click", () => test.click());
+    const more = el("button", { className: "icon-btn", type: "button", title: `${h.name}: more` }, svgIcon("ellipsis"));
+    more.setAttribute("aria-label", more.title);
+    more.setAttribute("aria-haspopup", "menu");
+    more.addEventListener("click", () => showMenu(more, [
+      ...(makeDefault ? [["Make it the default", () => makeDefault.click(), false, { icon: "check" }]] : []),
+      ...(editIt ? [["Edit…", () => editIt.click(), false, { icon: "pencil" }]] : []),
+      ...(h.incus ? [] : [["Prepare it…", () => labHostPrepare(h), false, { icon: "terminal" }]]),
+      [h.kind === "local" ? "Stop making labs on Pi's VM" : "Remove", () => remove.click(), false, { icon: "trash", danger: true }],
+    ]));
+    const li = el("li", { className: "lab-host" },
+      el("span", { className: `host-dot${h.incus ? " ok" : ""}`, title: state, "aria-hidden": "true" }),
+      el("div", { className: "what" },
+        el("span", {}, h.name, ...(h.default ? [el("span", { className: "tag", textContent: "default" })] : [])),
+        h.description ? el("span", { textContent: h.description }) : null,
+        el("span", { textContent: `${h.where} · ${state}` }),
+        // The key it showed at the first contact, to compare with the host's own.
+        h.fingerprint ? el("span", { className: "fp", textContent: `its key: ${h.fingerprint}`, title: "Compare: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" }) : null),
+      testBtn, more);
     list.append(li);
   }
   if (!hosts.length) list.append(el("li", { className: "dim small note", textContent: "None. Labs are made on a lab host: another VM where Incus runs (Add a lab host…), or Pi's own VM if you choose it." }));
@@ -302,6 +315,13 @@ async function saveLabsSettings(changes) {
 
 $("#labs-enabled").addEventListener("change", (e) => saveLabsSettings({ enabled: e.target.checked }));
 $("#labs-turn-on").addEventListener("click", () => saveLabsSettings({ enabled: true }));
+// The settings' tabs: Hosts, Limits, Networks, Machines.
+function showLabsPane(pane) {
+  for (const b of $("#labs-tabs").children) b.setAttribute("aria-selected", String(b.dataset.pane === pane));
+  for (const p of document.querySelectorAll(".labs-pane")) p.hidden = p.dataset.pane !== pane;
+}
+for (const b of $("#labs-tabs").children) b.addEventListener("click", () => showLabsPane(b.dataset.pane));
+showLabsPane("hosts");
 $("#labs-host-local").addEventListener("click", async () => {
   if (!(await ask("Make labs on Pi's own VM too? They are Incus containers there, beside Pi, cut off from its files. Incus must be installed on it."))) return;
   try { await backend.hostLocal(true, ""); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }

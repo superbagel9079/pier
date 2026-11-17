@@ -1439,3 +1439,16 @@ html.mica #workspace #dock-right.over { background: color-mix(in srgb, var(--bg)
 .dock.side.over { -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
 #dock-center { position: relative; }
 #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-center::after { content: ""; position: absolute; inset: 0; z-index: 15; background: rgba(0, 0, 0, .4); pointer-events: none; }
+/* Labs' settings in tabs (the proposals' 1B) */
+.labs-tabs-bar { margin: var(--s5) 0 var(--s3); }
+.labs-pane > .hint:first-child { margin-top: 0; }
+.lab-host { gap: var(--s3); }
+.lab-host .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lab-host .what > :first-child { font-weight: 600; display: flex; align-items: center; gap: var(--s2); }
+.lab-host .what > * + * { font-size: 12px; line-height: 16px; color: var(--dim); overflow-wrap: anywhere; }
+.lab-host .fp { font-family: var(--code); }
+.lab-host .tag { font-size: 11px; line-height: 18px; padding: 0 6px; font-weight: 400; color: var(--dim); background: var(--hover); border-radius: var(--r); }
+.lab-host > button.secondary { height: 30px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); flex: none; }
+.lab-host > .icon-btn { flex: none; }
+.host-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--yellow, #d29922); }
+.host-dot.ok { background: var(--green, #3fb950); }
