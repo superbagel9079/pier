@@ -1492,7 +1492,7 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .labs-table .tag.bad { background: color-mix(in srgb, var(--red, #f85149) 18%, transparent); color: var(--red, #f85149); }
 /* A narrow window (option B): the rail stays, with a square per project under its buttons. */
 #workspace.left-over #rail { display: flex; }
-#workspace:not(.left-over) #rail-projects { display: none; }
+#workspace.left-open:not(.left-over) #rail-projects { display: none; }
 #rail-projects { display: flex; flex-direction: column; align-items: center; gap: var(--s1); align-self: stretch; min-height: 0; overflow-y: auto; scrollbar-width: none; }
 #rail-projects::before { content: ""; flex: none; width: 24px; height: 1px; margin: var(--s1) 0; background: var(--line); }
 #rail-projects:empty { display: none; }
@@ -1961,3 +1961,22 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .tab > .tab-icon { display: inline-flex; flex: none; color: var(--dim); }
 .tab.active > .tab-icon { color: var(--fg); }
 .tab > .tab-icon .i { width: 14px; height: 14px; }
+/* Glyphs become the sprite's icons: × links, restore points' marks. */
+.link.icon-link { display: inline-grid; place-items: center; padding: 2px; }
+.link.icon-link .i, button.icon > .i:only-child { width: 14px; height: 14px; }
+.point-head .mark { display: inline-grid; place-items: center; }
+.point-head .mark .i { width: 13px; height: 13px; }
+/* A file's head: its lines and weight on the left, its actions on the right. */
+.file-facts { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.file-acts .icon-btn[aria-pressed="true"] { color: var(--accent); }
+/* Long lines wrapped: the coloured text and the field over it wrap alike.
+   shortcut: line numbers hidden while wrapped (one gutter text cannot follow wrapped lines), per-line rows if missed. */
+.code-view.wrap .gutter { display: none; }
+.code-view.wrap .code-wrap { min-width: 0; }
+.code-view.wrap :is(.src, .code-edit) { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The numbers in their own column; the code alone scrolls sideways (never under them). */
+.code-view { overflow: hidden; }
+.code-view .gutter { position: static; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.code-scroll { flex: 1; min-width: 0; overflow-x: auto; }
+.code-scroll > .src { min-width: max-content; }
+.code-view.wrap .code-scroll > .src { min-width: 0; }

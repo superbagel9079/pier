@@ -452,7 +452,7 @@ function makeProject(tab) {
 
   // --- restore points ---
 
-  const POINT_MARKS = { start: "\u25B6\uFE0E", prompt: "›", idle: "■", manual: "★", "before-restore": "↺" };
+  const POINT_MARKS = { start: "play", prompt: "message-square", idle: "square", manual: "pin", "before-restore": "undo-2" };
   const CHANGE_MARKS = { created: ["+", "created since: going back removes it"], modified: ["~", "changed since"], deleted: ["−", "deleted since: going back brings it back"] };
   let pointsData = null;
   let openPoint = null;
@@ -520,7 +520,7 @@ function makeProject(tab) {
       const li = el("li");
       const head = el("div", { className: "point-head", title: point.prompts.length > 1 ? `Also before:\n${point.prompts.slice(1).join("\n")}` : "Click to see what changed since" });
       head.append(
-        el("span", { className: "mark", textContent: POINT_MARKS[point.reason] || "·" }),
+        el("span", { className: "mark" }, svgIcon(POINT_MARKS[point.reason] || "history")),
         el("span", { className: "when", textContent: pointWhen(point) }),
         el("span", { className: "what", textContent: pointTitle(point) }),
       );

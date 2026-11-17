@@ -390,7 +390,6 @@ function drawProjects() {
   };
   const toTab = (kind, then) => () => { closePrefs(); const t = workspace.find(kind) || workspace.add(kind, "center"); workspace.show(t); then?.(t); };
   const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
-  const mark = el("span", { className: "mark-preview" }, projectBadge(p.project, looks[p.project]));
   const change = action("Change…", () => projectLookDialog(p.project, p.label, looks[p.project] || {}, (look) => {
     try { saved.looks = { ...looks, [p.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
     workspace.find("conversations")?.reloadLooks?.();
@@ -402,7 +401,7 @@ function drawProjects() {
     el("div", { className: "rows" },
       row("Instructions", "AGENTS.md and the rest Pi reads first in this project.", action("Edit", toTab("setup", (t) => t.openProject?.(p.project)))),
       row("What Pi loads", "Its skills, extensions and prompt templates, the project's and yours.", action("Open", () => showPrefsPage("extensions"))),
-      row("Its mark", "A colour, a letter, an icon or a picture, in the lists and the rail.", el("span", { className: "btns" }, mark, change)),
+      row("Its mark", "A colour, a letter, an icon or a picture, in the lists and the rail.", change),
       row("Repository", "Its git repository and forge: branches, pull requests, what Pi pushed.", action("Open", toTab("repository", (t) => t.openProject?.(p.project)))),
       row("Its path", p.project, copy)));
 }

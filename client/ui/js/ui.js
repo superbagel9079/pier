@@ -110,7 +110,7 @@ function pickify(select, variant = "") {
 
 /** A button in the look of a link: "open", "copy link", "stop". */
 function linkButton(text, title, run) {
-  const b = el("button", { className: "link", textContent: text, title });
+  const b = text === "×" ? el("button", { className: "link icon-link", title }, svgIcon("x")) : el("button", { className: "link", textContent: text, title });
   b.addEventListener("click", run);
   return b;
 }

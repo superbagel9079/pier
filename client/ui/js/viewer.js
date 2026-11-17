@@ -220,21 +220,29 @@ function makeFile(tab) {
   const lang = languageOf(rel);
   const markdown = lang === "md";
   let asPage = markdown;
-  // Its name (its folder dim before it), what it weighs, then its actions as icons; "mention
-  // in Pi" types into Pi's prompt in tmux, so only with Pi in tmux.
+  // Its lines and weight (its name is the tab's), then its actions as icons; "mention in
+  // Pi" types into Pi's prompt in tmux, so only with Pi in tmux.
   const head = el("div", { className: "file-head" });
-  const slash = rel.lastIndexOf("/");
-  const path = el("span", { className: "file-path", title: `${project}/${rel}` },
-    slash >= 0 ? el("span", { className: "dir", textContent: rel.slice(0, slash + 1) }) : null, el("span", { textContent: rel.slice(slash + 1) }));
-  const facts = el("span", { className: "file-facts" });
+  const facts = el("span", { className: "file-facts", title: `${project}/${rel}` });
   const iconButton = (icon, title) => el("button", { type: "button", className: "icon-btn", title, ariaLabel: title }, svgIcon(icon));
   const view = el("button", { type: "button", className: "file-mode", textContent: "Source", hidden: !markdown });
   const copy = iconButton("copy", "Copy its text");
   const changes = iconButton("git-compare", "What changed in it: git, and Pi's edits");
   const refresh = iconButton("refresh-cw", "Read it again");
+  const wrapLines = iconButton("wrap-text", "Wrap long lines");
+  const applyWrap = () => {
+    wrapLines.setAttribute("aria-pressed", String(Boolean(prefs.wordWrap)));
+    $(".code-view", body)?.classList.toggle("wrap", Boolean(prefs.wordWrap));
+  };
+  wrapLines.addEventListener("click", () => {
+    prefs.wordWrap = !prefs.wordWrap;
+    savePrefs();
+    for (const t of workspace.tabs()) t.applyWrap?.();
+  });
+  tab.applyWrap = applyWrap;
   const mention = iconButton("at-sign", "Mention it in Pi's prompt");
   mention.hidden = !prefs.piTerminal;
-  head.append(path, facts, view, el("span", { className: "file-acts" }, copy, changes, refresh, mention));
+  head.append(facts, view, el("span", { className: "file-acts" }, wrapLines, copy, changes, refresh, mention));
   const error = el("p", { className: "error", hidden: true });
   const body = el("div", { className: "file-body" });
   const conflict = el("div", { className: "file-conflict", role: "alert", hidden: true });
@@ -293,12 +301,12 @@ function makeFile(tab) {
       highlight(src, text, markdown ? null : lang);
       if (last.truncated) {
         area = null;
-        code.append(gutter, src);
+        code.append(gutter, el("div", { className: "code-scroll" }, src));
       } else {
         // The text typed in a clear field laid exactly over the coloured one, which follows it.
         area = el("textarea", { className: "code-edit", spellcheck: false, value: text, ariaLabel: `${rel}: type to change it, saved by itself` });
         const wrap = el("div", { className: "code-wrap" }, src, area);
-        code.append(gutter, wrap);
+        code.append(gutter, el("div", { className: "code-scroll" }, wrap)); // only the code scrolls sideways, under no number
         let paint = 0;
         const repaint = () => {
           paint = 0;
@@ -325,6 +333,7 @@ function makeFile(tab) {
         area.addEventListener("blur", () => save());
       }
       body.append(code);
+      applyWrap();
     }
     if (last.truncated) {
       body.append(el("p", { className: "dim small", textContent: `Only the first ${humanSize(last.text.length)} are shown, of ${humanSize(last.size)}.` }));

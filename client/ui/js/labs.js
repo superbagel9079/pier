@@ -168,7 +168,7 @@ function renderLabsPrefs() {
         flashStatus(`${m.name}: ${answer.answer}`);
       } catch (e) { showError($("#labs-error"), `${m.name}: ${e}`); } finally { test.disabled = false; }
     });
-    const remove = el("button", { className: "link", textContent: "×", title: "Pi can no longer use it (remove the key on the machine too)" });
+    const remove = el("button", { className: "link icon-link", title: "Pi can no longer use it (remove the key on the machine too)" }, svgIcon("x"));
     remove.addEventListener("click", async () => {
       if (!(await ask(`Remove the machine ${m.name}? Pi can no longer use it. Remove Pier's key from its authorized_keys too.`))) return;
       try { await backend.machineRemove(m.name); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }

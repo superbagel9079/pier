@@ -210,7 +210,7 @@ function makeContext(tab) {
   }
 
   function iconLink(text, title, action) {
-    const b = el("button", { className: "icon", textContent: text, title });
+    const b = text === "×" ? el("button", { className: "icon", title }, svgIcon("x")) : el("button", { className: "icon", textContent: text, title });
     b.addEventListener("click", async () => { b.disabled = true; await busy(action); refresh(); });
     return b;
   }

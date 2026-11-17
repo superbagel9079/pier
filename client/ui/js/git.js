@@ -15,7 +15,7 @@ const REPO_MODES = {
   auto: ["Push and merge", "Pi pushes, opens pull requests and merges its own (pi/… branches of this repository) itself once their checks ran and passed. Its approvals of a review still wait for you."],
 };
 const MERGE_LABELS = { merge: "Merge commit", squash: "Squash", rebase: "Rebase" };
-const CHECK_MARKS = { success: ["✓", "checks passed"], failure: ["✗", "checks failed"], pending: ["…", "checks running"], none: ["", "no checks"] };
+const CHECK_MARKS = { success: ["checks passed"], failure: ["checks failed"], pending: ["checks running"], none: [""] };
 
 /** Connect an account of a forge: its token checked by the picker, kept on the VM, never
  *  seen by Pi. From Settings > Git & forges, and from a project not connected yet. */
@@ -209,7 +209,7 @@ function makeGitManager(box, currentProject) {
   }
 
   function prRow(pr) {
-    const [mark, label] = CHECK_MARKS[pr.checks || "none"] || CHECK_MARKS.none;
+    const [label] = CHECK_MARKS[pr.checks || "none"] || CHECK_MARKS.none;
     const merge = el("button", { className: "link", textContent: "merge ▾", title: "Merge it" });
     // The repository's method first.
     merge.addEventListener("click", () => {
@@ -221,7 +221,7 @@ function makeGitManager(box, currentProject) {
     const copy = action("copy link", "Its address, to open in a browser", async () => {
       try { await backend.copyText(pr.url || ""); say(`Copied: ${pr.url}`); } catch (e) { showError(error, String(e)); }
     });
-    return line(`#${pr.number} ${pr.title}`, [mark && `${mark} ${label}`, `${pr.head} → ${pr.base}`, pr.draft ? "draft" : "", pr.author].filter(Boolean).join(" · "),
+    return line(`#${pr.number} ${pr.title}`, [label, `${pr.head} → ${pr.base}`, pr.draft ? "draft" : "", pr.author].filter(Boolean).join(" · "),
       pr.url || "", copy, merge);
   }
 

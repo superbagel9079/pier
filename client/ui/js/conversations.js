@@ -654,7 +654,7 @@ function makeConversations(tab) {
   // Followed while the rail's squares show too (a narrow window), the list closed or not.
   // Followed also while the rail's squares show (a narrow window) or the New tab lists the
   // recent ones (nothing open in the middle), the list itself hidden or not.
-  tab.onVisible = (on) => { vm.follow({ conversations: on || Boolean(workspace.docks.left.over) || (online && !workspace.docks.center.tabs.length) }); render(); };
+  tab.onVisible = (on) => { vm.follow({ conversations: on || Boolean(workspace.docks.left.over) || prefs.railAlways !== false || (online && !workspace.docks.center.tabs.length) }); render(); };
   tab.onShownTab = render; // the open conversation's row is marked
   tab.onClose = () => { unlisten(); vm.follow({ conversations: false }); };
   vm.follow({ conversations: tab.shown !== false });
