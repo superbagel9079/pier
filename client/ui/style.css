@@ -1274,7 +1274,7 @@ button.row-main:hover { background: none; }
    is behind it show through, blurred; a fine light border keeps its edge. */
 /* Every floating surface: menus, the model palette, the context card, the command palette,
    Pier's notifications and their preview. */
-.menus-blur :is(.menu, .pop-card, .palette-box, .toast, .toast-preview) { background: color-mix(in srgb, var(--raise) 55%, transparent); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); border-color: color-mix(in srgb, var(--fg) 16%, transparent); }
+.menus-blur :is(.menu, .pop-card, .palette-box, .toast, .toast-preview) { background: color-mix(in srgb, var(--raise) 50%, transparent); -webkit-backdrop-filter: blur(12px) saturate(1.4); backdrop-filter: blur(12px) saturate(1.4); border-color: color-mix(in srgb, var(--fg) 16%, transparent); }
 /* Waiting for you, as a list (the proposals' 1C) */
 .wait-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--s4)); }
 .wait-row + .wait-row { border-top: 1px solid var(--line); }
@@ -1324,3 +1324,19 @@ button.row-main:hover { background: none; }
 .accent-any input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 .accent-any input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
 @media (prefers-reduced-motion: reduce) { .accent-swatch:hover { transform: none; } }
+/* Give to a colleague (the proposals' A) */
+.dialog.give { width: min(420px, 100%); display: flex; flex-direction: column; gap: var(--s4); border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); border-radius: var(--r); }
+.dialog.give h1 { margin: 0; font-size: 16px; line-height: 22px; }
+.dialog.give .give-sub { margin: calc(-1 * var(--s3)) 0 0; font-size: 12px; line-height: 16px; color: var(--dim); }
+.give-field { display: flex; flex-direction: column; gap: var(--s1); }
+.give-field > label { font-size: 12px; color: var(--dim); }
+.give-field .pick { width: 100%; height: 36px; }
+.give-field input, .give-field textarea { width: 100%; padding: var(--s2) var(--s3); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); resize: vertical; }
+.give-callout { display: flex; gap: var(--s3); padding: var(--s3); font-size: 12px; line-height: 17px; color: var(--dim); border-radius: var(--r);
+  background: color-mix(in srgb, var(--yellow, #d29922) 10%, transparent); border: 1px solid color-mix(in srgb, var(--yellow, #d29922) 35%, transparent); }
+.give-callout > .i { color: var(--yellow, #d29922); width: 16px; height: 16px; margin-top: 1px; }
+.give-callout .t { margin: 0 0 2px; color: var(--fg); font-weight: 600; }
+.give-callout ul { margin: 0; padding-left: 16px; }
+.dialog.give .actions { margin-top: 0; }
+.dialog.give .actions button:not(.secondary) { display: inline-flex; align-items: center; gap: 6px; }
+.dialog.give .actions button .i { width: 14px; height: 14px; }

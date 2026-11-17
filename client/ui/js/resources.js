@@ -28,8 +28,10 @@ function resourceDialog(title, body, actions, wide = false) {
   overlay.addEventListener("pointerdown", (e) => { if (e.target === overlay) close(); });
   document.body.append(overlay);
   release = trapDialog(box, close);
-  (box.querySelector("input, select, textarea") || actions[0] || cancel).focus();
-  return { close };
+  // Its lists as picks now (ui.js would do it a frame later, after the focus is placed).
+  for (const select of box.querySelectorAll("select")) pickify(select);
+  ([...box.querySelectorAll("input, textarea, button.pick")].find((e) => !e.hidden && e.offsetParent) || actions[0] || cancel).focus();
+  return { close, box };
 }
 
 /** "for you / for this project": where a new skill or a package goes. */

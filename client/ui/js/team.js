@@ -206,14 +206,26 @@ async function giveDialog(project, session) {
   const other = el("input", { placeholder: "their login on the forge", spellcheck: false, hidden: people.collaborators.length > 0 });
   if (!people.collaborators.length) who.value = OTHER;
   who.addEventListener("change", () => { other.hidden = who.value !== OTHER; if (!other.hidden) other.focus(); });
-  const note = el("textarea", { className: "editor", rows: 4, placeholder: "a word for them: where you stopped, what is left (optional)", spellcheck: false });
-  note.setAttribute("aria-label", "A word for them (optional)");
+  const note = el("textarea", { rows: 3, placeholder: "Where you stopped, what is left (optional)", spellcheck: true });
+  note.id = "give-note";
+  who.id = "give-to";
+  other.setAttribute("aria-label", "Their login on the forge");
   const problem = dialogError();
-  const go = el("button", { textContent: "Give it" });
-  const dialog = resourceDialog(`Give "${conversationTitle(session)}" to a colleague`, [
-    el("div", { className: "grid fields" }, el("label", { textContent: "To" }), el("div", {}, who, other)), note,
-    el("p", { className: "hint", textContent: "The whole conversation goes to the repository, on a branch for them: everything said in it, including what was pasted (a key, a password) and what Pi read. Everyone who can read this repository can read it too, and it stays readable by its commit after the branch is deleted: Pier refuses a public repository. Its branch, if it is a pi/… one, is pushed too. They take it from their Team page; the branch is then deleted." }),
-    problem], [go]);
+  const go = el("button", { type: "button" }, svgIcon("send"), el("span", { textContent: "Give it" }));
+  // As the proposals' A: who, a word, then what goes with it in three points (the whole of
+  // it on the callout's tooltip).
+  const callout = el("div", { className: "give-callout", title: "On a branch for them: everything said in it, what was pasted (a key, a password) and what Pi read. Everyone who can read this repository can read it, and it stays readable by its commit after the branch is deleted: Pier refuses a public repository. Its branch, if a pi/… one, is pushed too. They take it from their Team page; the branch is then deleted." },
+    svgIcon("circle-alert"),
+    el("div", {}, el("p", { className: "t", textContent: "The whole conversation goes to the repository" }),
+      el("ul", {}, el("li", { textContent: "Everything said in it, pasted keys and passwords included" }),
+        el("li", { textContent: "Readable by whoever reads the repository, even later" }),
+        el("li", { textContent: "Refused on a public repository" }))));
+  const dialog = resourceDialog("Give to a colleague", [
+    el("p", { className: "give-sub", textContent: `${conversationTitle(session)} · ${projectLabel(project)}` }),
+    el("div", { className: "give-field" }, el("label", { htmlFor: "give-to", textContent: "To" }), who, other),
+    el("div", { className: "give-field" }, el("label", { htmlFor: "give-note", textContent: "A word for them" }), note),
+    callout, problem], [go]);
+  dialog.box?.classList.add("give");
   go.addEventListener("click", async () => {
     const to = who.value === OTHER ? other.value.trim() : who.value;
     go.disabled = true;
