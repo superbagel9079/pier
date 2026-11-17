@@ -54,6 +54,8 @@ function makeChat(tab) {
   const thinkBtn = el("button", { className: "pickish", type: "button", textContent: "thinking ▾" });
   // The context ring: fills as the conversation grows; orange past 80 %, red past 95 %.
   const ring = el("button", { className: "icon-btn ring", type: "button", hidden: true });
+  ring.setAttribute("aria-haspopup", "dialog");
+  ring.setAttribute("aria-expanded", "false");
   ring.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="track" cx="8" cy="8" r="6"/><circle class="used" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="0 100"/></svg>';
   const composer = el("div", { className: "composer" }, input, el("div", { className: "bar" }, plus, modelBtn, thinkBtn, el("span", { className: "head-gap" }), ring, send));
   // Before the first message: what this tab is, where Pi starts.
@@ -530,10 +532,17 @@ function makeChat(tab) {
   attach();
 }
 
-/** A small card over an anchor (the context ring's): closed by Escape, a click elsewhere. */
+/** A small card over an anchor (the context ring's): closed by Escape, a click elsewhere,
+ *  or the anchor clicked again. */
 function popCard(anchor, card) {
-  document.querySelector(".pop-card")?.remove();
+  const open = document.querySelector(".pop-card");
+  if (open) {
+    open.close();
+    if (open.anchor === anchor) return;
+  }
   const box = el("div", { className: "pop-card", tabIndex: -1 }, card);
+  box.anchor = anchor;
+  anchor.setAttribute("aria-expanded", "true");
   box.setAttribute("role", "dialog");
   box.setAttribute("aria-label", anchor.getAttribute("aria-label") || "");
   document.body.append(box);
@@ -541,11 +550,16 @@ function popCard(anchor, card) {
   box.style.left = `${Math.max(8, Math.min(r.right - box.offsetWidth, innerWidth - box.offsetWidth - 8))}px`;
   box.style.top = `${Math.max(8, r.top - box.offsetHeight - 6)}px`;
   box.focus();
-  const close = (e) => {
-    if (e.type === "keydown" ? e.key !== "Escape" : box.contains(e.target) || anchor.contains(e.target)) return;
+  box.close = () => {
     box.remove();
+    anchor.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", close, true);
     document.removeEventListener("keydown", close, true);
+  };
+  // A click on the anchor is left to it: its own click closes the card (above).
+  const close = (e) => {
+    if (e.type === "keydown" ? e.key !== "Escape" : box.contains(e.target) || anchor.contains(e.target)) return;
+    box.close();
     if (e.type === "keydown") anchor.focus();
   };
   document.addEventListener("pointerdown", close, true);

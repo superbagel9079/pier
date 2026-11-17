@@ -524,7 +524,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .tree-root { margin: var(--s4) 0 var(--s1); padding: 0 var(--s3); font-size: var(--t-small); line-height: 16px; color: var(--dim); }
 .files-bar .files-sort { appearance: none; -webkit-appearance: none; background: none; border: 0; color: var(--dim); padding: 0 18px 0 var(--s2); background-position: right 8px center, right 4px center; }
 .files-bar .files-sort:hover { background-color: var(--hover); color: var(--fg); }
-.view-files .files-bar { height: 36px; margin: 0 calc(-1 * var(--s3)); padding: 0 var(--s2) 0 var(--s3); border-bottom: 1px solid var(--line); }
+.view-files .files-bar { height: 36px; margin: calc(-1 * var(--s3)) calc(-1 * var(--s3)) 0; /* right under the header, level with the middle's tab bar */ padding: 0 var(--s2) 0 var(--s3); border-bottom: 1px solid var(--line); }
 .card > ul { list-style: none; margin: 0 calc(-1 * var(--s2)); padding: 0; }
 .card > ul > li { display: flex; gap: var(--s2); padding: 2px var(--s2); white-space: nowrap; cursor: default; border-radius: var(--r); }
 .card > ul > li:hover { background: var(--hover); }
@@ -536,7 +536,6 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .card > ul.resource-items > li:hover { background: none; }
 .card > ul.resource-items > li + li { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
 .card p { margin: var(--s1) 0 0; }
-.card .undo-prompt { margin-top: var(--s2); }
 .group ul { list-style: none; margin: 0; padding: 0; }
 .group li { display: flex; gap: var(--s2); padding: 2px var(--s2); white-space: nowrap; cursor: default; }
 .group li:hover { background: var(--hover); }
@@ -1117,11 +1116,12 @@ button.row-main:hover { background: none; }
 .seg button[aria-checked="true"] { background: var(--raise); color: var(--fg); }
 /* A yes/no setting: a switch. */
 .set > input[type="checkbox"], .setting-row.toggle .setting-head > input[type="checkbox"] {
-  width: 36px; height: 20px; top: 0; border: 1px solid var(--dim); border-radius: var(--r); display: block; position: relative; flex: none; order: 0;
+  /* Square stays square; Slight and Round make it a pill, as switches are elsewhere. */
+  width: 36px; height: 20px; top: 0; border: 1px solid var(--dim); border-radius: min(10px, calc(var(--r) * 10)); display: block; position: relative; flex: none; order: 0;
 }
 .set > input[type="checkbox"]::before, .setting-row.toggle .setting-head > input[type="checkbox"]::before {
   position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; visibility: visible; background: var(--dim);
-  border-radius: max(0px, calc(var(--r) - 3px)); transition: left .12s ease-out;
+  border-radius: min(6px, calc(var(--r) * 10)); transition: left .12s ease-out;
 }
 .set > input[type="checkbox"]:checked, .setting-row.toggle .setting-head > input[type="checkbox"]:checked { background: var(--fg); border-color: var(--fg); }
 .set > input[type="checkbox"]:checked::before, .setting-row.toggle .setting-head > input[type="checkbox"]:checked::before { left: 19px; background: var(--bg); }
@@ -1148,3 +1148,10 @@ button.row-main:hover { background: none; }
 .combo .combo-toggle { font-size: 12px; color: var(--dim); background: none; padding: 0 var(--s3); }
 .combo-list { background: var(--raise); border: 0; }
 .combo-list li:hover, .combo-list li[aria-selected="true"] { background: var(--strong, var(--hover)); box-shadow: none; }
+/* A side over the middle (a narrow window, workspace.js layoutSides), as the mock-up. */
+.dock.side.over { position: absolute; top: 0; bottom: 0; z-index: 20; width: min(var(--width, 360px), 85vw); max-width: none; }
+#dock-left.over { left: 44px; box-shadow: 1px 0 0 var(--line), 8px 0 32px rgb(0 0 0 / .35); }
+#dock-right.over { right: 0; box-shadow: -1px 0 0 var(--line), -8px 0 32px rgb(0 0 0 / .35); }
+/* The composer on a narrow middle: the model and thinking names shrink, never Send. */
+.composer .pickish { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.composer .send, .composer .ring, .composer .bar > .icon-btn { flex: none; }

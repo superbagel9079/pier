@@ -48,6 +48,7 @@ function closePrefs() {
   $("#prefs").hidden = true;
   prefsLogs.onVisible?.(false);
   $("#workspace").hidden = false;
+  renderSessionBadge(); // hidden while the workspace was
   for (const tab of workspace.tabs()) tab.refit?.();
   workspace.find("main")?.onShow?.();
 }

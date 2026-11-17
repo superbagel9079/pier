@@ -50,13 +50,28 @@ const workspace = (() => {
 
   // --- rendering ---
 
+  // A narrow window, as the mock-up: a side the middle has no room for leaves the row and
+  // opens over the middle from its header button (closed again by a click in the middle).
+  const CENTRE_MIN = { left: 400, right: 480 };
+  function layoutSides() {
+    const room = $("#workspace").clientWidth - ($("#rail").offsetWidth || 44);
+    const { left, right } = docks;
+    left.over = room - left.width < CENTRE_MIN.left;
+    const leftIn = !left.over && !left.collapsed && left.tabs.length;
+    right.over = room - (leftIn ? left.width : 0) - right.width < CENTRE_MIN.right;
+  }
+  /** A side out of sight: hidden by its toggle, or over the middle and not opened. */
+  const folded = (dock) => dock.side && (dock.over ? !dock.overOpen : dock.collapsed);
+
   function render(name) {
     const dock = docks[name];
     if (dock.side) {
+      layoutSides();
       const empty = !dock.tabs.length;
       dock.el.hidden = empty;
-      dock.splitter.hidden = empty || dock.collapsed;
-      dock.el.classList.toggle("collapsed", dock.collapsed && !empty); // hidden by the header's toggle
+      dock.splitter.hidden = empty || folded(dock) || dock.over;
+      dock.el.classList.toggle("over", dock.over);
+      dock.el.classList.toggle("collapsed", folded(dock) && !empty); // hidden by the header's toggle
       dock.el.style.setProperty("--width", `${dock.width}px`);
       dock.splitter.setAttribute("aria-valuenow", String(dock.width));
     }
@@ -74,7 +89,7 @@ const workspace = (() => {
     }
     requestAnimationFrame(() => { more.hidden = bar.scrollWidth <= bar.clientWidth + 1; });
     for (const tab of dock.tabs) {
-      tab.pane.hidden = dock.collapsed || tab !== dock.active;
+      tab.pane.hidden = folded(dock) || tab !== dock.active;
       // Panels follow the VM only while shown (vm.js): nothing is computed there for a
       // tab nobody looks at.
       if (tab.shown !== !tab.pane.hidden) {
@@ -100,7 +115,7 @@ const workspace = (() => {
   function frame() {
     const ws = $("#workspace");
     for (const name of ["left", "right"]) {
-      const open = !docks[name].el.hidden && !docks[name].collapsed;
+      const open = !docks[name].el.hidden && !folded(docks[name]);
       ws.classList.toggle(`${name}-open`, open);
       const b = $(`#toggle-${name}`);
       const what = name === "left" ? "the conversations" : "Activity";
@@ -116,18 +131,19 @@ const workspace = (() => {
   /** The middle's toggles: a side hidden or shown again. */
   function toggle(name) {
     const dock = docks[name];
-    dock.collapsed = !dock.collapsed;
-    render(name);
-    if (!dock.collapsed) dock.active?.onShow?.();
+    if (dock.over) dock.overOpen = !dock.overOpen; // over the middle: for a look, not saved
+    else dock.collapsed = !dock.collapsed;
+    renderAll();
+    if (!folded(dock)) dock.active?.onShow?.();
     save();
   }
 
   function tabElement(tab, dock) {
     const node = el("div");
-    node.className = "tab" + (tab === dock.active && !dock.collapsed ? " active" : "") + (tab.pinned ? " pinned" : "");
+    node.className = "tab" + (tab === dock.active && !folded(dock) ? " active" : "") + (tab.pinned ? " pinned" : "");
     node.setAttribute("role", "tab");
     // The keyboard: the shown tab is the one Tab reaches, arrows go to its neighbours.
-    const shown = tab === dock.active && !dock.collapsed;
+    const shown = tab === dock.active && !folded(dock);
     node.setAttribute("aria-selected", shown ? "true" : "false");
     node.tabIndex = shown ? 0 : -1;
     node.addEventListener("keydown", (e) => {
@@ -249,15 +265,16 @@ const workspace = (() => {
 
   function addChoices(name) {
     const items = [
-      ["New shell", () => add("shell", name)],
-      ["New picker", () => add("picker", name)],
+      ["New shell", () => add("shell", name), false, { icon: "terminal" }],
+      ["New picker", () => add("picker", name), false, { icon: "folder" }],
     ];
+    const ICONS = { setup: "folder-cog", repository: "git-branch", labs: "flask-conical", conversations: "message-square", project: "activity" };
     // The panels of the middle, and the sides' two when closed. Labs once they are on
     // (Settings > Labs); Given to Pi is in Activity.
     for (const kind of ["setup", "repository", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
       const open = find(kind);
-      if (!open) items.push([KINDS[kind].title, () => add(kind, name)]);
-      else if (open.dock === "center") items.push([`${KINDS[kind].title} · show`, () => show(open)]);
+      if (!open) items.push([KINDS[kind].title, () => add(kind, name), false, { icon: ICONS[kind] }]);
+      else if (open.dock === "center") items.push([`${KINDS[kind].title} · show`, () => show(open), false, { icon: ICONS[kind] }]);
     }
     return items;
   }
@@ -296,7 +313,8 @@ const workspace = (() => {
     tab.dock = name;
     $(".panes", dock.el).append(tab.pane);
     if (reveal || !dock.active) dock.active = tab;
-    if (reveal) dock.collapsed = false;
+    if (reveal && dock.over) dock.overOpen = true;
+    else if (reveal) dock.collapsed = false;
     render(name);
     if (reveal) {
       tab.onShow?.();
@@ -351,7 +369,8 @@ const workspace = (() => {
   function show(tab) {
     const dock = docks[tab.dock];
     dock.active = tab;
-    dock.collapsed = false;
+    if (dock.over) dock.overOpen = true;
+    else dock.collapsed = false;
     render(tab.dock);
     tab.onShow?.();
     setCurrentTab(tab);
@@ -445,6 +464,17 @@ const workspace = (() => {
     }
     return null;
   }
+
+  // A click in the middle closes a side open over it; a resize may move a side in or out.
+  docks.center.el.addEventListener("pointerdown", () => {
+    for (const name of ["left", "right"]) {
+      if (docks[name].over && docks[name].overOpen) { docks[name].overOpen = false; render(name); }
+    }
+  }, true);
+  let resizeFrame = 0;
+  window.addEventListener("resize", () => {
+    if (!resizeFrame) resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; renderAll(); });
+  });
 
   // --- the sides' widths ---
 
