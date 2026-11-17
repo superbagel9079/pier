@@ -1769,3 +1769,27 @@ body { -webkit-user-select: none; user-select: none; }
    the Waiting list's dot); yellow stays for warnings (logs, the VM's banner, a host not ready). */
 .row-main .mark .state.need, .wait-dot { background: var(--accent); }
 .rail-proj .badge, .rail-btn .badge { background: var(--accent); color: var(--bg); }
+/* A side over the middle (a narrow window), the gradient around the window on: the window's
+   picture, cut where the side lies (the size of the window, moved by the side's place), so it
+   is the same as everywhere else; nearly solid, what is under it blurred away. */
+html.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background-image: var(--grain-layer), var(--grad); background-color: var(--bg);
+  background-size: auto, 100vw 100vh; background-repeat: repeat, no-repeat; -webkit-backdrop-filter: none; backdrop-filter: none; }
+html.grad-in-sides #workspace #dock-left.over { background-position: 0 0, -44px 0; }
+html.grad-in-sides #workspace #dock-right.over { background-position: 0 0, calc(min(var(--width, 360px), 85vw) - 100vw) 0; }
+/* With Mica: the window's tint, as the middle's, over a blur of what is under it. */
+html.mica #workspace :is(#dock-left, #dock-right).over,
+html.mica.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background-color: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(40px); backdrop-filter: blur(40px); }
+html.mica.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background-size: auto, 100vw 100vh; background-repeat: repeat, no-repeat; }
+html.mica.grad-in-sides #workspace #dock-left.over { background-position: 0 0, -44px 0; }
+html.mica.grad-in-sides #workspace #dock-right.over { background-position: 0 0, calc(min(var(--width, 360px), 85vw) - 100vw) 0; }
+/* The side over the middle needs no dimmed middle behind it: it is solid and in the window's
+   colours now; a line and a light shadow set it apart. */
+#workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-center::after { background: none !important; }
+#dock-left.over { box-shadow: 1px 0 0 var(--line), 6px 0 18px rgb(0 0 0 / .18); }
+#dock-right.over { box-shadow: -1px 0 0 var(--line), -6px 0 18px rgb(0 0 0 / .18); }
+/* (Over the middle) one size and one place for every layer of the gradient (a style may have
+   three), so none is cut elsewhere; no grain there. */
+html.grad-in-sides #workspace :is(#dock-left, #dock-right).over,
+html.mica.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background-image: var(--grad); background-size: 100vw 100vh; background-repeat: no-repeat; }
+html.grad-in-sides #workspace #dock-left.over, html.mica.grad-in-sides #workspace #dock-left.over { background-position: -44px 0; }
+html.grad-in-sides #workspace #dock-right.over, html.mica.grad-in-sides #workspace #dock-right.over { background-position: calc(min(var(--width, 360px), 85vw) - 100vw) 0; }
