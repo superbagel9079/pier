@@ -39,7 +39,8 @@ function realBackend() {
     checkpointRestore: (project, id, files) => invoke("checkpoint_restore", { project, id, files }),
     trustHost: (host, fingerprint) => invoke("trust_host", { host, fingerprint }),
     disconnect: () => invoke("disconnect"),
-    api: (args) => invoke("api_call", { args }),
+    // Not connected, nothing is asked of the VM: each call failed and logged three warnings.
+    api: (args) => (typeof online !== "undefined" && !online ? Promise.reject("Not connected: log in first.") : invoke("api_call", { args })),
     async pasteImage(file, project) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       // Raw body: no JSON encoding of the image. Header values must be ASCII.
