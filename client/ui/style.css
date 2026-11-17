@@ -1765,3 +1765,7 @@ body { -webkit-user-select: none; user-select: none; }
 /* The VM's address under "Your VM": in the interface's font, as the rest of the card (the
    terminals' font, chosen for code, looked out of place there). */
 .lc-head small { font-family: var(--ui); font-size: 13px; font-variant-numeric: tabular-nums; }
+/* "Waiting for you" in the theme's accent (the dot of a Pi waiting, the counts on the rail,
+   the Waiting list's dot); yellow stays for warnings (logs, the VM's banner, a host not ready). */
+.row-main .mark .state.need, .wait-dot { background: var(--accent); }
+.rail-proj .badge, .rail-btn .badge { background: var(--accent); color: var(--bg); }
