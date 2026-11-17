@@ -1855,3 +1855,7 @@ input[type="checkbox"]::before { background:
 .path-link:hover { text-decoration-color: var(--accent); }
 /* A page's own words when it needs the VM (data-offline), else the common one. */
 body:not(.online) .prefs-page.needs-vm[data-offline]::after { content: attr(data-offline); }
+/* A field with the keyboard: its own border in the accent, not an outline drawn over it (the
+   two together looked thicker than the lists' and buttons' borders beside it). */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):focus, select:focus, textarea:focus, .drop:focus { outline: none; border-color: var(--accent); }
+.pick[aria-expanded="true"], .pick:focus-visible { outline: none; border-color: var(--accent); }
