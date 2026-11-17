@@ -99,7 +99,7 @@ const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop:
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
   termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false,
   gradStyle: "aurora", gradIntensity: 22, gradCustom: false, gradC1: "#4c8dff", gradC2: "#a371f7", gradGrain: false,
-  gradNewTab: true, gradWorking: true, gradEmpty: false, gradButtons: false };
+  gradNewTab: true, gradWorking: true, gradEmpty: false, gradButtons: false, gradSides: true };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -178,6 +178,7 @@ function applyGradient() {
   root.classList.toggle("grad-in-working", on && prefs.gradWorking);
   root.classList.toggle("grad-in-empty", on && prefs.gradEmpty);
   root.classList.toggle("grad-in-buttons", on && prefs.gradButtons);
+  root.classList.toggle("grad-in-sides", on && prefs.gradSides);
   root.style.setProperty("--gi", `${Math.min(60, Math.max(5, Number(prefs.gradIntensity) || 22))}%`);
   if (prefs.gradCustom) {
     root.style.setProperty("--g1", prefs.gradC1);

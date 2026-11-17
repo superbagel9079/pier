@@ -1419,9 +1419,9 @@ html.mica { --chip: color-mix(in srgb, var(--fg) 7%, transparent); --strong: col
 :is(.grad-off, .s-off) { --grad: none; }
 .grad-grain { --grain-layer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"); }
 /* Where it goes */
-.grad-in-newtab .empty.launcher { background: var(--grain-layer), var(--grad), var(--bg); }
+.grad-in-newtab .empty.launcher { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
 html.mica.grad-in-newtab #workspace .empty.launcher { background: var(--grain-layer), var(--grad), transparent; }
-.grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); }
+.grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
 .grad-in-working .composer.working { border-color: transparent; background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(90deg, var(--g1), var(--g2), var(--g1)) border-box; background-size: 100% 100%, 200% 100%; animation: composer-work 3s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .grad-in-working .composer.working { animation: none; } }
 .grad-in-buttons :is(.set > button.primary, .qs-step button, #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop), .wait-answer:last-child) {
@@ -1542,3 +1542,17 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .grad-where:empty { display: none; }
 /* A setting's name: no hand over it, the control alone is clicked (ui.js). */
 .set > label.what, .setting-head > label { cursor: default; }
+/* The gradient is one picture fixed to the window (background-attachment: fixed): each
+   surface that shows it shows its own part, so the colours run on from one panel to the next.
+   Side panels: the rail, the conversations and Details carry it under their content. */
+html.grad-in-sides #workspace :is(#dock-left, #dock-right):not(.over) :is(.dock-head, .panes, .panel-head, .dock-foot),
+html.grad-in-sides #workspace .pane:has(> .pane-project) { background: transparent; }
+html.grad-in-sides #workspace :is(#rail, #dock-left:not(.over)) { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
+html.grad-in-sides #workspace #dock-right:not(.over) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+html.mica.grad-in-sides #workspace :is(#rail, #dock-left:not(.over)) { background: var(--grain-layer), var(--grad), var(--mica-side); background-attachment: fixed; }
+html.mica.grad-in-sides #workspace #dock-right:not(.over) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
+/* Settings show the style chosen at once: its column and its page, as the panels would. */
+html:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+html:not(.grad-off) .settings-nav { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
+html.mica:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
+html.mica:not(.grad-off) .settings-nav { background: var(--grain-layer), var(--grad), var(--mica-side); background-attachment: fixed; }
