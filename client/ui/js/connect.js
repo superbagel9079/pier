@@ -13,6 +13,7 @@ function showOffline(note = "") {
   online = false;
   document.body.classList.remove("online");
   $("#rail-new").title = "New conversation: connect to your VM first";
+  $("#btn-waiting").title = "Waiting for you: connect to your VM first";
   $("#connect").hidden = true;
   showWorkspace();
   $("#btn-disconnect").hidden = true;
@@ -325,6 +326,7 @@ async function enterWorkspace(note = "", version = null) {
   online = true;
   document.body.classList.add("online");
   $("#rail-new").title = "New conversation";
+  $("#btn-waiting").title = "Pi's requests waiting for your approval";
   $("#connect-card").hidden = true;
   setStatus(`connected · ${describe(settings)}`);
   if (note) flashStatus(note);

@@ -177,6 +177,7 @@ const waiting = (() => {
   });
 
   function show() {
+    if (!online) { bubbleBy(button, "Connect first: Pi's requests come from your VM"); return; }
     if (!pending.length) { bubbleBy(button, "Nothing waits for you"); return; }
     open = el("div", { className: "wait-list" });
     const dialog = resourceDialog("Waiting for you", [

@@ -1815,3 +1815,6 @@ html.rail-always #toggle-left { display: none; }
 body:not(.online) #rail-new { opacity: .4; }
 body:not(.online) #rail-new:hover { background: none; }
 .bubble-by { font-weight: 600; }
+/* Not connected: Waiting for you greyed as the pen (its requests come from the VM). */
+body:not(.online) #btn-waiting { opacity: .4; }
+body:not(.online) #btn-waiting:hover { background: none; }
