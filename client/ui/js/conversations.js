@@ -21,7 +21,7 @@ function conversationMatches(s, query) {
 
 /** The menu of a conversation (⋯, a right click): the row's own actions first, then name
  *  and category, pin, archive, give, delete. */
-function conversationMenu(anchor, project, session, { edit, changed, failed }, first = [], at = null) {
+function conversationMenu(anchor, project, session, { edit, changed, failed, move, renameCategory, removeCategory }, first = [], at = null) {
   const mark = async (what, on) => {
     try {
       await backend.sessionMark(project, session.path, what, on);
@@ -33,7 +33,14 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }, f
   };
   showMenu(anchor, [
     ...first, ...(first.length ? [null] : []),
-    ["Name and category…", edit, false, { icon: "pencil" }],
+    ["Rename…", edit, false, { icon: "pencil" }],
+    // Its category: moved to one (or a new one, typed), and the category itself.
+    ["Move to a category…", move, false, { icon: "folder" }],
+    ...(session.category ? [
+      [`Rename the category "${session.category}"…`, renameCategory, false, { icon: "folder-cog" }],
+      [`Delete the category "${session.category}" (its conversations stay)`, removeCategory, false, { icon: "x" }],
+    ] : []),
+    null,
     [session.pinned ? "Unpin" : "Pin to the top", () => mark("pinned", !session.pinned), session.archived, { icon: "pin" }],
     [session.archived ? "Bring back from the archive" : "Archive (hide, keep searchable)", () => mark("archived", !session.archived), false,
       { icon: session.archived ? "archive-restore" : "archive" }],
@@ -279,7 +286,44 @@ function makeConversations(tab) {
     },
     changed: () => { render(); vm.poke(); },
     failed: (e) => showError(error, e),
+    // The palette of categories (ui.js): one of the project's, none, or a new one typed.
+    move: () => pickPalette(li, {
+      items: [{ value: "", label: "No category" }, ...categories.map((c) => ({ value: c, label: c }))],
+      current: s.category || "", placeholder: "Search, or type a new category",
+      custom: (text) => text,
+      onPick: async (value) => {
+        try { await backend.sessionLabel(p.project, s.path, s.title || "", value); } catch (e) { showError(error, String(e)); return; }
+        s.category = value || null;
+        flashStatus(value ? `Moved to ${value}` : "Out of its category");
+        redraw();
+        vm.poke();
+      },
+    }),
+    renameCategory: () => renameCategoryDialog(p, s.category),
+    removeCategory: () => removeFolder(p, s.category),
   }, first, at);
+
+  /** A category renamed from a conversation's menu: a small dialog (the folder's own row
+   *  is renamed in place). */
+  function renameCategoryDialog(p, old) {
+    const name = el("input", { value: old, spellcheck: false, id: "category-name" });
+    const problem = dialogError();
+    const save = el("button", { type: "button", textContent: "Rename" });
+    const dialog = resourceDialog("Rename the category", [
+      el("div", { className: "give-field" }, el("label", { htmlFor: "category-name", textContent: "Name" }), name), problem], [save]);
+    const go = async () => {
+      const value = name.value.trim();
+      if (!value || value === old) { dialog.close(); return; }
+      try { await backend.categoryRename(p.project, old, value); } catch (e) { showError(problem, String(e)); return; }
+      for (const s of p.sessions) if (s.category === old) s.category = value;
+      dialog.close();
+      redraw();
+      vm.poke();
+    };
+    save.addEventListener("click", go);
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    name.select();
+  }
   const ago = (secs) => relTime(secs).replace(/ ago$/, "");
 
   const facts = (s) => {
