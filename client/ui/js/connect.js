@@ -12,8 +12,9 @@ let online = false; // connected, the picker answering
 function showOffline(note = "") {
   online = false;
   document.body.classList.remove("online");
-  $("#rail-new").title = "New conversation: connect to your VM first";
-  $("#btn-waiting").title = "Waiting for you: connect to your VM first";
+  // Their hints: the name (their label), then this (the words).
+  $("#rail-new").title = "Connect to your VM first";
+  $("#btn-waiting").title = "Connect to your VM first";
   $("#connect").hidden = true;
   showWorkspace();
   $("#btn-disconnect").hidden = true;

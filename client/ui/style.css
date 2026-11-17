@@ -1818,3 +1818,5 @@ body:not(.online) #rail-new:hover { background: none; }
 /* Not connected: Waiting for you greyed as the pen (its requests come from the VM). */
 body:not(.online) #btn-waiting { opacity: .4; }
 body:not(.online) #btn-waiting:hover { background: none; }
+/* The conversations' title the size of the middle's ("New tab"): the two bars read as one. */
+.panel-title { font-size: var(--t-text); line-height: 20px; }
