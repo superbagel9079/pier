@@ -56,7 +56,16 @@ function makeChat(tab) {
   const ring = el("button", { className: "icon-btn ring", type: "button", hidden: true });
   ring.setAttribute("aria-haspopup", "dialog");
   ring.setAttribute("aria-expanded", "false");
-  ring.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle class="track" cx="8" cy="8" r="6"/><circle class="used" cx="8" cy="8" r="6" pathLength="100" stroke-dasharray="0 100"/></svg>';
+  // Built node by node: Pier's CSP refuses innerHTML (trusted-types 'none').
+  const svgNode = (tag, attrs) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    return node;
+  };
+  const ringSvg = svgNode("svg", { viewBox: "0 0 16 16", "aria-hidden": "true" });
+  ringSvg.append(svgNode("circle", { class: "track", cx: 8, cy: 8, r: 6 }),
+    svgNode("circle", { class: "used", cx: 8, cy: 8, r: 6, pathLength: 100, "stroke-dasharray": "0 100" }));
+  ring.append(ringSvg);
   const composer = el("div", { className: "composer" }, input, el("div", { className: "bar" }, plus, modelBtn, thinkBtn, el("span", { className: "head-gap" }), ring, send));
   // Before the first message: what this tab is, where Pi starts.
   const empty = el("div", { className: "chat-empty" }, el("p", { textContent: `New conversation in ${label || projectLabel(project)}` }),
