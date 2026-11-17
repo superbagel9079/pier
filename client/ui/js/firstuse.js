@@ -3,47 +3,67 @@
 
 const READY_SEEN = "pier.vmReady.seen";
 
-/** The checks, in a dialog: what is there, what is missing and how to get it. */
-async function openVmReady(version = null) {
-  let checks = version?.checks;
-  if (!checks) {
-    try { checks = (await backend.api(["version"])).checks; } catch (e) { flashStatus(`could not ask the VM: ${e}`); return; }
+// What the VM lacks (the proposals' C): no window, a banner at the top of the middle, with
+// the command, Copy and Install (typed in a new shell); gone once there, or closed for that
+// set of missing things.
+let vmChecks = null; // the picker's checks: [{ name, ok, detail, fix }]
+
+function drawVmReady() {
+  let box = $("#vm-ready");
+  if (!box) {
+    box = el("div", { id: "vm-ready", className: "vm-ready", role: "status", hidden: true });
+    $(".panes", $("#dock-center")).before(box);
   }
-  if (!Array.isArray(checks)) { flashStatus("this picker does not say what the VM has: update it (Settings > General)"); return; }
-  const missing = checks.filter((c) => !c.ok);
-  const rows = el("ul", { className: "resource-items" });
-  for (const c of checks) {
-    const row = el("li", { className: "two-lines" },
-      el("div", { className: "line" },
-        el("span", { className: "name", textContent: `${c.ok ? "✓︎" : "✗︎"} ${c.name}` }),
-        el("span", { className: "dim small", textContent: c.ok ? "there" : "missing" })),
-      el("div", { className: "desc dim small", textContent: c.detail || "" }));
-    if (!c.ok && c.fix) {
-      const copy = el("button", { className: "link", textContent: "copy", title: "The command, to paste in a shell on the VM" });
-      copy.addEventListener("click", async () => {
-        try { await backend.copyText(c.fix); flashStatus("command copied"); } catch (e) { flashStatus(String(e)); }
-      });
-      row.append(el("div", { className: "line" }, el("code", { className: "small", textContent: c.fix }), copy));
-    }
-    rows.append(row);
-  }
-  const summary = missing.length
-    ? `${missing.length} thing${missing.length > 1 ? "s" : ""} missing on the VM: run the commands in a shell there (a "New shell" tab), then check again.`
-    : "Everything Pier needs is there.";
-  const again = el("button", { className: "secondary", textContent: "Check again" });
-  const dialog = resourceDialog("Is the VM ready?", [el("p", { className: "hint", textContent: summary }), rows], [again], true);
-  again.addEventListener("click", () => { dialog.close(); openVmReady(); });
+  const missing = (vmChecks || []).filter((c) => !c.ok);
+  const key = missing.map((c) => c.name).sort().join("|");
+  let seen = "";
+  try { seen = localStorage.getItem(READY_SEEN) || ""; } catch { /* shown each time then */ }
+  box.hidden = !online || !missing.length || seen === key;
+  if (box.hidden) { box.replaceChildren(); return; }
+  const fix = missing.map((c) => c.fix).filter(Boolean).join(" && ");
+  const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+  const title = missing.length === 1
+    ? (missing[0].detail ? `${cap(missing[0].detail)} needs ${missing[0].name} on the VM` : `${missing[0].name} is missing on the VM`)
+    : `${missing.length} things are missing on the VM: ${missing.map((c) => c.name).join(", ")}`;
+  const button = (icon, text, title, run, primary = false) => {
+    const b = el("button", { type: "button", className: primary ? "vr-go" : "vr-btn", title }, svgIcon(icon), text ? el("span", { textContent: text }) : null);
+    if (!text) b.setAttribute("aria-label", title);
+    b.addEventListener("click", run);
+    return b;
+  };
+  const copy = button("copy", "Copy", "The command, to paste in a shell on the VM", async () => {
+    try { await navigator.clipboard.writeText(fix); } catch (e) { flashStatus(`could not copy: ${e}`); return; }
+    $("use", copy).setAttribute("href", "#i-check");
+    setTimeout(() => $("use", copy)?.setAttribute("href", "#i-copy"), 1200);
+  });
+  const install = button("terminal", "Install", "Run it in a new shell on the VM (sudo asks your password there)", () => {
+    workspace.add("shell", "center", { params: { typeFirst: `${fix}\r` } });
+  }, true);
+  const again = button("refresh-cw", "", "Check again", () => checkVmReady());
+  const close = button("x", "", "Hide this until something else is missing", () => {
+    try { localStorage.setItem(READY_SEEN, key); } catch { /* hidden for this run only */ }
+    box.hidden = true;
+  });
+  box.replaceChildren(el("span", { className: "vr-dot", "aria-hidden": "true" }),
+    el("div", { className: "vr-text" }, el("span", { textContent: title }), fix ? el("code", { textContent: fix }) : null),
+    ...(fix ? [copy, install] : []), again, close);
 }
 
-/** After a connection: the checks shown once for each new set of missing things. */
+/** The checks asked again; on demand (the palette, the conversations' link) the banner comes
+ *  back even if it was closed, and "all there" is said. */
+async function checkVmReady(asked = false) {
+  try { vmChecks = (await backend.api(["version"])).checks; } catch (e) { flashStatus(`could not ask the VM: ${e}`); return; }
+  if (!Array.isArray(vmChecks)) { flashStatus("this picker does not say what the VM has: update it (Settings > Connection)"); return; }
+  if (asked) { try { localStorage.removeItem(READY_SEEN); } catch { /* fine */ } }
+  drawVmReady();
+  if (!vmChecks.some((c) => !c.ok)) flashStatus("Everything Pier needs is on the VM");
+}
+const openVmReady = () => checkVmReady(true);
+
+/** After a connection: the banner, if something is missing (once closed, until the missing set changes). */
 function vmReadyAfterConnect(version) {
-  const missing = (version?.checks || []).filter((c) => !c.ok).map((c) => c.name).sort().join("|");
-  if (!missing) return;
-  let seen = "";
-  try { seen = localStorage.getItem(READY_SEEN) || ""; } catch { /* asked each time then */ }
-  if (seen === missing) return;
-  try { localStorage.setItem(READY_SEEN, missing); } catch { /* the same */ }
-  openVmReady(version);
+  vmChecks = Array.isArray(version?.checks) ? version.checks : null;
+  drawVmReady();
 }
 
 /** A folder of the VM, then a Pi started in it (the proposals' D): the folders Pi worked in

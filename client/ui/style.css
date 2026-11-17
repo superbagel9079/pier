@@ -1710,3 +1710,16 @@ html:not(.grad-off) .settings-nav { background: transparent; }
 .code-view { border-radius: var(--r); overflow: auto; }
 .code-view pre { background: none; border-radius: 0; }
 .code-view .gutter { background: transparent; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+/* What the VM lacks (the proposals' C): a banner at the top of the middle, not a window. */
+.vm-ready { display: flex; align-items: center; gap: var(--s2); margin: var(--s2) var(--s3) 0; padding: var(--s2) var(--s2) var(--s2) var(--s3); border: 1px solid color-mix(in srgb, var(--yellow, #d29922) 45%, transparent); border-radius: var(--r);
+  background: color-mix(in srgb, var(--raise) 70%, transparent); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.vm-ready[hidden] { display: none; }
+.vr-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--yellow, #d29922); flex: none; }
+.vr-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.vr-text code { background: none; padding: 0; font-size: 12px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vr-btn, .vr-go { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 var(--s2); flex: none; font-size: 12px; }
+.vr-btn { background: none; border: 1px solid var(--line); color: var(--fg); }
+.vr-btn:hover { background: var(--hover); }
+.vr-btn:not(:has(span)) { border: 0; width: 28px; justify-content: center; padding: 0; color: var(--dim); }
+.vr-btn .i, .vr-go .i { width: 14px; height: 14px; }
+.grad-in-buttons .vr-go { background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); border-color: transparent; }

@@ -21,6 +21,7 @@ function showOffline(note = "") {
   $("#connect-card").hidden = !settings || !workspace.docks.center.tabs.length;
   if (settings) $("#connect-card-target").textContent = describe(settings);
   workspace.redrawEmpty();
+  drawVmReady(); // not connected: no banner about the VM
   if (note) flashStatus(note);
 }
 

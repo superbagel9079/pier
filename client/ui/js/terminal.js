@@ -313,6 +313,8 @@ function makeTerminal(tab, kind) {
       // A Pi tab joins a Pi whose modes were set elsewhere: bracketed paste is set here,
       // pasted line breaks do not send each line as a message. Local state only.
       if (kind === "pi") term.write("\x1b[?2004h");
+      // A shell opened to run something (Is the VM ready's Install): typed once, not kept.
+      if (tab.params?.typeFirst) { backend.termWrite(id, tab.params.typeFirst); delete tab.params.typeFirst; }
     } catch (error) {
       term.write(`\r\n\x1b[1m${String(error)}\x1b[0m\r\n\x1b[2m[press Enter to retry]\x1b[0m\r\n`);
       ended = true;
