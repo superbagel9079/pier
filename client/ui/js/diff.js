@@ -34,7 +34,7 @@ function openDiff(rel, project, point = null) {
     open.reload();
     return;
   }
-  workspace.add("diff", workspace.find("main")?.dock || "center", { params: { rel, project, point } });
+  workspace.add("diff", "center", { params: { rel, project, point }, replace: true });
 }
 
 function makeDiff(tab) {

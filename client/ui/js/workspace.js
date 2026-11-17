@@ -296,12 +296,17 @@ const workspace = (() => {
 
   /** Opens a tab where its kind lives (homeOf: the dock asked is only a wish kept for
    *  callers); a single-instance panel already open is shown instead. */
-  function add(kind, name, { reveal = true, pinned = false, params = null } = {}) {
+  function add(kind, name, { reveal = true, pinned = false, params = null, replace = false } = {}) {
     name = homeOf(kind);
     const existing = KINDS[kind].single ? find(kind) : null;
     if (existing) return move(existing, name, { reveal });
     const tab = create(kind, { pinned, params });
-    place(tab, name, { reveal });
+    // replace: in the place of the tab shown in the middle (a file opened after a file),
+    // unless that one is a conversation or a terminal: closing it would end what runs there.
+    const old = replace ? docks[name].active : null;
+    const swap = old && !old.pinned && old.kind !== "chat" && !KINDS[old.kind].terminal;
+    place(tab, name, { reveal, index: swap ? docks[name].tabs.indexOf(old) + 1 : null });
+    if (swap) close(old);
     return tab;
   }
 
@@ -667,9 +672,12 @@ function focusFollows(tab) {
 }
 
 let menuOpener = null; // what had the focus when the menu opened: it gets it back
+let menuAnchor = null; // the button that opened it: clicked again, it closes it
 
 function showMenu(anchor, items, at = null) {
   const menu = $("#menu");
+  if (!menu.hidden && anchor && anchor === menuAnchor) { closeMenu(); return; }
+  closeMenu(false);
   menu.replaceChildren();
   menu.setAttribute("role", "menu");
   for (const item of items) {
@@ -685,6 +693,8 @@ function showMenu(anchor, items, at = null) {
   }
   const box = at ? { left: at.x, bottom: at.y } : anchor.getBoundingClientRect();
   menuOpener = document.activeElement;
+  menuAnchor = anchor;
+  anchor?.setAttribute("aria-expanded", "true");
   menu.hidden = false;
   menu.style.top = `${Math.max(8, Math.min(box.bottom + 2, window.innerHeight - menu.offsetHeight - 8))}px`;
   menu.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - menu.offsetWidth - 8))}px`;
@@ -695,6 +705,8 @@ function closeMenu(giveBack = true) {
   const menu = $("#menu");
   if (menu.hidden) return;
   menu.hidden = true;
+  menuAnchor?.setAttribute("aria-expanded", "false");
+  menuAnchor = null;
   if (giveBack && menuOpener && document.contains(menuOpener)) menuOpener.focus?.();
   menuOpener = null;
 }
@@ -712,5 +724,6 @@ $("#menu").addEventListener("keydown", (e) => {
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 document.addEventListener("pointerdown", (event) => {
-  if (!event.target.closest("#menu, .add, .tab-actions")) closeMenu(false);
+  // The opener's own click closes it (showMenu): left to it here.
+  if (!event.target.closest("#menu, .add, .tab-actions") && !menuAnchor?.contains(event.target)) closeMenu(false);
 });

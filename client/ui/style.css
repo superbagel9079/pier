@@ -1155,3 +1155,7 @@ button.row-main:hover { background: none; }
 /* The composer on a narrow middle: the model and thinking names shrink, never Send. */
 .composer .pickish { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
 .composer .send, .composer .ring, .composer .bar > .icon-btn { flex: none; }
+.tree .node .badge { color: var(--dim); font-size: var(--t-small); }
+.context-card .meter { margin-bottom: var(--s2); }
+.context-card .kv { display: flex; gap: var(--s2); font-size: 12px; line-height: 20px; color: var(--dim); }
+.context-card .kv span:last-child { margin-left: auto; color: var(--fg); font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

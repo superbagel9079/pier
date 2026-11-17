@@ -436,7 +436,7 @@ function makeChat(tab) {
     const window = state.model?.contextWindow;
     const used = lastUsage ? (lastUsage.input || 0) + (lastUsage.cacheRead || 0) + (lastUsage.cacheWrite || 0) + (lastUsage.output || 0) : 0;
     ring.hidden = !window || !used;
-    tab.context = ring.hidden ? null : { pct: Math.min(100, Math.round((used / window) * 100)), used, window, spent, model: state.model?.id };
+    tab.context = ring.hidden ? null : { pct: Math.min(100, Math.round((used / window) * 100)), used, window, spent, model: state.model?.id, usage: lastUsage };
     for (const t of workspace.tabs()) t.onContext?.(); // Details' Context card (project.js)
     if (ring.hidden) return;
     const pct = Math.min(100, Math.round((used / window) * 100));

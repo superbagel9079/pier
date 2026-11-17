@@ -11,7 +11,7 @@ function openFile(rel, project) {
     open.reload();
     return;
   }
-  workspace.add("file", workspace.find("main")?.dock || "center", { params: { rel, project } });
+  workspace.add("file", "center", { params: { rel, project }, replace: true });
 }
 
 const VIEW_HIGHLIGHT_MAX = 400 * 1024; // past this, plain text: coloring would freeze the page

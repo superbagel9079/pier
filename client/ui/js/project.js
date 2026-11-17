@@ -16,11 +16,11 @@ const fileIcon = (entry) => entry.kind === "dir" ? "folder"
     : /\.(py|js|mjs|ts|tsx|jsx|rs|go|c|h|cc|cpp|hpp|java|kt|rb|php|sh|bash|zsh|ps1|toml|json|ya?ml|css|scss|html|xml|sql|lua|swift)$/i.test(entry.name) ? "file-code" : "file";
 
 const STATES = {
-  modifying: { mark: "✎", label: "Being modified" },
-  reading: { mark: "◐", label: "Being read" },
-  modified: { mark: "✓", label: "Modified" },
-  read: { mark: "●", label: "Read" },
-  error: { mark: "!", label: "Failed" },
+  modifying: { label: "Pi is changing it" },
+  reading: { label: "Pi is reading it" },
+  modified: { label: "Pi changed it" },
+  read: { label: "Pi read it" },
+  error: { label: "Pi's change failed" },
 };
 
 /** git's two-letter status of a file, in words ("?? notes.md": new, not in git). */
@@ -142,6 +142,18 @@ function makeProject(tab) {
       el("h2", {}, el("span", { textContent: title }), aside ? el("span", { className: "card-aside", textContent: aside }) : null), ...body);
   }
 
+  const changing = (f) => f.modified || f.edits > 0 || ["modifying", "modified", "error"].includes(f.state);
+  /** What happened to a file, in a word: the Changes card's and the tree's. */
+  const word = (path, f) => {
+    const git = activity.git[path]?.trim();
+    if (f?.state === "modifying") return "being changed";
+    if (f?.state === "reading") return "being read";
+    if (git === "??" || git === "A") return "new";
+    if (git === "D") return "deleted";
+    if (f && changing(f)) return f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : "changed";
+    return git ? "changed" : "read";
+  };
+
   /** Details, as the mock-up: what waits for you, what Pi changed (and Undo), the
    *  session's tokens and cost; then what Pi read and its last steps. */
   function drawActivity() {
@@ -174,20 +186,11 @@ function makeProject(tab) {
     }
     // Changed: by Pi's edit and write tools, then what git sees changed otherwise (a bash
     // command, or you).
-    const changing = (f) => f.modified || f.edits > 0 || ["modifying", "modified", "error"].includes(f.state);
     const mine = sorted(files.filter(([, f]) => changing(f)));
     const touched = new Set(mine.map(([p]) => p));
     const outside = Object.entries(activity.git).filter(([path]) => !touched.has(path));
     // Changes: each file as a link, what happened to it on the right (as the mock-up's).
     const read = sorted(files.filter(([, f]) => !changing(f) && f.state !== "reading"));
-    const word = (path, f) => {
-      const git = activity.git[path];
-      if (f?.state === "modifying") return "being changed";
-      if (git === "??" || git === "A") return "new";
-      if (git === "D") return "deleted";
-      if (f && changing(f)) return f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : "changed";
-      return git ? "changed" : "read";
-    };
     const changeRow = (path, f) => {
       const changed = !f || changing(f);
       const ref = el("button", { className: "ref", type: "button", textContent: path, title: changed ? "See what changed" : "Open it" });
@@ -215,41 +218,17 @@ function makeProject(tab) {
     meter.setAttribute("role", "meter");
     meter.setAttribute("aria-label", "Context used");
     meter.setAttribute("aria-valuenow", String(c.pct));
-    const box = card("Context", `${c.pct}% · ${dollars(c.spent) || "$0"}`, meter);
-    box.title = `${tokens(c.used)} of ${tokens(c.window)} tokens${c.model ? ` · ${c.model}` : ""}`;
+    const kv = (k, v) => el("div", { className: "kv" }, el("span", { textContent: k }), el("span", { textContent: v }));
+    const u = c.usage || {};
+    const box = card("Context", `${c.pct}% · ${dollars(c.spent) || "$0"}`, meter,
+      kv("Used", `${tokens(c.used)} of ${tokens(c.window)} tokens`),
+      kv("Tokens in", `${tokens(u.input || 0)}${u.cacheRead ? `, ${tokens(u.cacheRead)} cached` : ""}`),
+      kv("Tokens out", tokens(u.output || 0)),
+      ...(c.model ? [kv("Model", c.model)] : []));
+    box.classList.add("context-card");
     ctxSlot.replaceChildren(box);
   }
   tab.onContext = drawContext;
-
-  function group(title, rows) {
-    const box = el("div", { className: "group" });
-    const list = el("ul");
-    list.append(...rows);
-    box.append(el("h3", { textContent: title }), list);
-    return box;
-  }
-
-  function fileRow(path, spec, f) {
-    const li = el("li");
-    li.dataset.key = path;
-    const changed = !f || f.edits > 0 || f.state === "modifying" || f.state === "modified" || f.state === "error";
-    li.title = changed ? "Click to see the changes, double-click to mention it in Pi" : "Double-click to mention it in Pi";
-    if (changed) {
-      li.classList.add("clickable");
-      li.addEventListener("click", (e) => { if (e.detail === 1) openDiff(path, base); });
-    }
-    li.append(
-      el("span", { textContent: spec.mark }),
-      splitPath(path),
-    );
-    if (f) {
-      const counts = [f.reads ? `${f.reads} read` : "", f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
-      const git = gitWords(activity.git[path]);
-      li.append(el("span", { className: "count", textContent: [counts, git].filter(Boolean).join(" · ") }));
-    }
-    li.addEventListener("dblclick", () => mention(path));
-    return pressable(li);
-  }
 
   // --- files view ---
 
@@ -467,10 +446,13 @@ function makeProject(tab) {
       const f = activity.files[rel];
       const badge = $(":scope > .node > .badge", li);
       const git = $(":scope > .node > .git", li);
-      badge.textContent = f ? (STATES[f.state]?.mark ?? "?") : li.classList.contains("dir") && touchedDirs.has(rel) ? "•" : "";
+      // In words, as the Changes card; a folder: a dot when Pi touched something in it.
+      const dir = li.classList.contains("dir");
+      badge.textContent = dir ? (touchedDirs.has(rel) ? "•" : "") : f || activity.git[rel] ? word(rel, f) : "";
+      badge.title = dir ? (badge.textContent ? "Pi read or changed files in here" : "")
+        : [f ? STATES[f.state]?.label : "", activity.git[rel] ? `git: ${gitWords(activity.git[rel])}` : ""].filter(Boolean).join(" · ");
       badge.className = "badge";
-      git.textContent = activity.git[rel] || "";
-      git.title = gitWords(activity.git[rel]);
+      git.textContent = "";
     }
   }
 
