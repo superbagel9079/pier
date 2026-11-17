@@ -345,7 +345,6 @@ async function openHandOff() {
     );
     list.append(li);
   }
-  $("#handoff-none").hidden = live.length > 0;
   showError($("#handoff-error"), "");
   $("#handoff").hidden = false;
   releaseHandOff = trapDialog($("#handoff .dialog"), closeHandOff);
@@ -370,23 +369,22 @@ async function handOff() {
   // Rebuilt folders at a folder's top stay on this computer: said, not silent.
   const leftOut = left.length ? ` Left out (rebuilt on the VM: npm install, cargo build…): ${left.join("; ")}.` : "";
   go.disabled = false;
-  go.textContent = "Hand off";
+  go.textContent = "Copy them, then disconnect";
   if (failed.length) {
     showError($("#handoff-error"), `Not handed off, still live (this computer must stay on for them): ${failed.join("; ")}`);
     givenToPi()?.refresh?.();
     return;
   }
   closeHandOff();
-  if ($("#handoff-disconnect").checked) {
-    await leave();
-    toLogin(`Handed off. Pi keeps working on the VM: you can turn this computer off. Log in again to see what it did.${leftOut}`);
-  } else {
-    givenToPi()?.refresh?.();
-    if (leftOut) flashStatus(`Handed off.${leftOut}`);
-  }
+  await leave();
+  toLogin(`Copied to the VM. Pi keeps working there: you can turn this computer off. Log in again to see what it did.${leftOut}`);
 }
 
-$("#btn-handoff").addEventListener("click", openHandOff);
+$("#handoff-leave").addEventListener("click", async () => {
+  closeHandOff();
+  await leave();
+  toLogin();
+});
 $("#handoff-go").addEventListener("click", handOff);
 $("#handoff-cancel").addEventListener("click", closeHandOff);
 

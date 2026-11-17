@@ -93,7 +93,7 @@ pub fn enabled(level: Level) -> bool {
     level as u8 <= LEVEL.load(Ordering::Relaxed)
 }
 
-/// Called with every line written: the Logs tab follows the log live.
+/// Called with every line written: the log viewer (Settings > Diagnostics) follows it live.
 pub fn set_listener(listener: impl Fn(&str) + Send + Sync + 'static) {
     if let Some(logger) = LOGGER.get() {
         *logger.listener.lock().unwrap() = Some(Box::new(listener));

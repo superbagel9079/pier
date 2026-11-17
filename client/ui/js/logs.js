@@ -1,4 +1,4 @@
-// The Logs tab.
+// The log viewer of Settings > Diagnostics.
 
 // Logs: Pier's own, and the picker's on the VM, as they happen
 
@@ -192,11 +192,6 @@ function makeLogs(tab) {
   // Newest at the top: "follow" keeps the top in view; scrolling down, into older lines, stops it.
   follow.addEventListener("change", () => { if (follow.checked) view.scrollTop = 0; });
   view.addEventListener("wheel", (e) => { if (e.deltaY > 0) follow.checked = false; }, { passive: true });
-  $(".copy-report", tab.pane).addEventListener("click", () => copyReport((text) => {
-    showError(error, "");
-    error.hidden = false;
-    error.textContent = text;
-  }));
   tab.onShow = load;
   tab.onVisible = (shown) => { if (!shown) vm.follow({ log: false }); };
   tab.onLogLevel = render;

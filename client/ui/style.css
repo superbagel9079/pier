@@ -277,7 +277,6 @@ body.own-titlebar #topbar { padding-right: 154px; user-select: none; }
    window's buttons. */
 nav { margin-left: auto; display: flex; gap: var(--s4); flex-shrink: 1; min-width: 0; }
 nav > button { flex-shrink: 0; white-space: nowrap; }
-nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
 #topbar { overflow: hidden; min-height: 40px; }
 @media (max-width: 900px) { #status { display: none; } }
 
@@ -1134,3 +1133,4 @@ button.row-main:hover { background: none; }
 .setting-row .setting-key { display: none; }
 .prefs-page .actions button.secondary { height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); }
 .prefs-page .actions button.secondary:hover { background: var(--hover); }
+#prefs-logs .log-lines { height: 360px; flex: none; background: var(--field); border: 1px solid var(--line); border-radius: var(--r); }

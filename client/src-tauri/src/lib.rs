@@ -677,7 +677,7 @@ fn log_ui(state: State<'_, AppState>, level: String, event: String, fields: Opti
     journal::write(level, &format!("ui.{event}"), &borrowed);
 }
 
-/// The end of Pier's log, for the Logs tab.
+/// The end of Pier's log, for the log viewer (Settings > Diagnostics).
 #[tauri::command]
 fn log_tail(lines: Option<usize>) -> Vec<String> {
     journal::tail(lines.unwrap_or(1000))

@@ -14,7 +14,6 @@ function showConnect(view) {
   showMark($("#connect-mark"), { cols: 4, rows: 2, reveal: true });
   $("#btn-prefs").hidden = true;
   $("#btn-palette").hidden = true;
-  $("#btn-handoff").hidden = true;
   $("#btn-waiting").hidden = true; // shown again by the next approvals (firstuse.js)
   $("#btn-disconnect").hidden = true;
   $("#target").hidden = true;
@@ -27,7 +26,6 @@ function showWorkspace() {
   $("#status").disabled = false;
   $("#btn-prefs").hidden = false;
   $("#btn-palette").hidden = false;
-  $("#btn-handoff").hidden = false;
   $("#btn-disconnect").hidden = false;
   $("#btn-waiting").hidden = false;
   renderSessionBadge();
@@ -274,7 +272,9 @@ $("#btn-untrust").addEventListener("click", () => {
   toLogin();
 });
 
+// Folders still shared live: first asked whether to copy them to the VM (context.js).
 $("#btn-disconnect").addEventListener("click", async () => {
+  if ((await backend.shareList().catch(() => [])).length) { openHandOff(); return; }
   await leave();
   toLogin();
 });

@@ -15,7 +15,6 @@ const KINDS = {
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
   file: { title: "file", make: (tab) => makeFile(tab) },
   takeback: { title: "Pi's work", make: (tab) => makeTakeBack(tab) },
-  logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
   labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },
   lab: { title: "lab", terminal: true },
 };
@@ -255,7 +254,7 @@ const workspace = (() => {
     ];
     // The panels of the middle, and the sides' two when closed. Labs once they are on
     // (Settings > Labs); Given to Pi is in Activity.
-    for (const kind of ["setup", "repository", "logs", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
+    for (const kind of ["setup", "repository", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
       const open = find(kind);
       if (!open) items.push([KINDS[kind].title, () => add(kind, name)]);
       else if (open.dock === "center") items.push([`${KINDS[kind].title} · show`, () => show(open)]);

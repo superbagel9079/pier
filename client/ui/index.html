@@ -288,6 +288,8 @@
         <div class="set"><div class="what"><span>A report</span><span>The versions, the connection (never a password), and the end of both logs.</span></div><div class="btns"><button id="prefs-report" class="secondary">Copy</button><button id="prefs-report-save" class="secondary">Save…</button></div></div>
       </div>
       <p id="prefs-diag-note" class="notice" hidden></p>
+      <h2>The logs, live</h2>
+      <div id="prefs-logs"></div>
       </section>
 
       <section class="prefs-page" data-page="labs" data-title="Labs" role="tabpanel" hidden>
@@ -365,7 +367,6 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         <div class="set" id="prefs-status-row" data-state="lost"><div class="what"><span>Status</span><span id="prefs-connection"></span></div><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span></div>
         <div class="set"><div class="what"><span>Address</span><span>To change the address, port or bastion: disconnect, then "change connection" on the login screen.</span></div><button id="btn-disconnect" class="secondary" hidden>Disconnect</button></div>
       </div>
-      <div class="actions"><button id="btn-handoff" class="secondary" hidden title="Hand off: your shares become copies on the VM, so Pi keeps working with this computer off">Keep working without this PC…</button></div>
       </section>
 
       <section class="prefs-page" data-page="picker" data-title="The picker" role="tabpanel" hidden>
@@ -393,19 +394,18 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
     </div>
   </div>
 
-  <!-- Hand off: Pi keeps working on the VM with this computer off. -->
+  <!-- Disconnect with folders shared live: copy them to the VM (hand off), or just go. -->
   <div id="handoff" class="overlay" hidden>
     <div class="dialog" role="dialog" aria-labelledby="handoff-title">
-      <h1 id="handoff-title">Hand off to Pi</h1>
-      <p>Pi runs on the VM and keeps working with this computer off. Only folders shared live depend on this computer: each becomes a copy on the VM, at the same place, so Pi keeps its files even in the middle of a task.</p>
+      <h1 id="handoff-title">Folders are shared with Pi</h1>
+      <p>Pi runs on the VM and keeps working after you disconnect, but these folders live on this computer: disconnected, Pi loses them. Copied to the VM, at the same place, Pi keeps its files even in the middle of a task.</p>
       <ul id="handoff-shares" class="handoff-list"></ul>
-      <p id="handoff-none" class="dim">No folder is shared live: there is nothing to copy, this computer can be turned off as it is.</p>
-      <label class="check"><input id="handoff-disconnect" type="checkbox" checked> <span>Disconnect when done</span></label>
       <p class="hint">No notification can reach you while Pier is off: log in again to see what Pi did, in Activity. Bring a copy back from Activity > Given to Pi.</p>
       <p id="handoff-error" class="error" hidden></p>
       <div class="actions end">
         <button id="handoff-cancel" class="secondary">Cancel</button>
-        <button id="handoff-go">Hand off</button>
+        <button id="handoff-leave" class="secondary">Just disconnect</button>
+        <button id="handoff-go">Copy them, then disconnect</button>
       </div>
     </div>
   </div>
@@ -569,10 +569,9 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         </select>
         <input class="search" type="search" aria-label="Filter the log" placeholder="filter" spellcheck="false">
         <label class="check small"><input type="checkbox" class="follow" checked> follow</label>
-        <button class="link copy-report" title="Versions, connection and the end of both logs, on the clipboard">copy a report</button>
       </div>
       <p class="error" hidden></p>
-      <p class="hint debug-hint" hidden>Detailed logs are off: debug lines are not written. Turn them on in Settings, Diagnostics.</p>
+      <p class="hint debug-hint" hidden>Detailed logs are off: debug lines are not written. Turn them on above.</p>
       <div class="log-lines"></div>
       <p class="hint">Times are local here; in the files they are UTC. A call to the VM has the same req=… in both logs.</p>
     </div>

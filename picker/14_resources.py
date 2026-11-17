@@ -550,7 +550,7 @@ def pi_package(args):
     print("\n" + ("done" if not status else f"pi {action} failed (status {status})")
           + ". Pis load the change when they next start.")
     if status and network:
-        print("If it needed another site, look for net.blocked in the picker's log (Logs tab), "
+        print("If it needed another site, look for net.blocked in the picker's log (Settings > Diagnostics), "
               "and add it to network_allow in ~/.config/pier-picker/config.toml.")
     pause_for_enter("press Enter to close ")
     return status

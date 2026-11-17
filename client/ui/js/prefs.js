@@ -46,6 +46,7 @@ function closePrefs() {
   if ($("#prefs").hidden) return;
   closeThemeEditor(); // an unsaved theme is not kept
   $("#prefs").hidden = true;
+  prefsLogs.onVisible?.(false);
   $("#workspace").hidden = false;
   for (const tab of workspace.tabs()) tab.refit?.();
   workspace.find("main")?.onShow?.();
@@ -75,7 +76,12 @@ function showSettingsPage(page) {
   if ($("#prefs-search").value.trim()) return; // the search shows what matches, wherever it is
   for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = !shown.includes(section.dataset.page);
   settingsPageShown(page);
+  // The log viewer (logs.js): made the first time Diagnostics is shown, paused elsewhere.
+  if (page !== "diagnostics") prefsLogs.onVisible?.(false);
+  else if (prefsLogs.onShow) prefsLogs.onShow();
+  else makeLogs(prefsLogs);
 }
+const prefsLogs = { pane: $("#prefs-logs") };
 /** A page asked for from elsewhere (Labs' settings link, the update button, the palette). */
 function showPrefsPage(page) {
   $("#prefs-search").value = "";
@@ -445,7 +451,7 @@ $("#prefs-debug").addEventListener("change", (e) => {
   prefs.debugLogs = e.target.checked;
   savePrefs();
   backend.setLogLevel(prefs.debugLogs).catch(() => {});
-  for (const tab of workspace.tabs()) tab.onLogLevel?.();
+  prefsLogs.onLogLevel?.();
 });
 
 $("#prefs-logfolder").addEventListener("click", () => backend.openLogFolder().catch((error) => prefsNote($("#prefs-diag-note"), String(error))));

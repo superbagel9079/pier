@@ -14,7 +14,7 @@ const palette = (() => {
   function collect() {
     const out = [];
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
-    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() ? ["labs"] : [])]) {
+    for (const kind of ["conversations", "project", "setup", "repository", ...(labsOn() ? ["labs"] : [])]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind)]);
     }
     const projects = new Map();
@@ -49,14 +49,10 @@ const palette = (() => {
     out.push(["action", "Waiting for you", "Pi's requests: approve or refuse", () => waiting.show()]);
     out.push(["action", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()]);
     out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
-    out.push(["action", "Keep working without this PC…", "hand off: your shares become copies on the VM", () => openHandOff()]);
     out.push(["page", "Activity: Given to Pi", "images, files, folders and shares given to Pi", () => contextTab({ reveal: true })]);
     out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
     out.push(["action", "Reset layout", "layout", () => placePanels()]);
-    out.push(["action", workspace.find("logs") ? "Close the Logs tab" : "Open the Logs tab", "diagnostics", () => {
-      const logs = workspace.find("logs");
-      if (logs) workspace.close(logs); else workspace.add("logs");
-    }]);
+    out.push(["action", "Logs", "Settings > Diagnostics", () => { openPrefs(); showPrefsPage("diagnostics"); }]);
     for (const theme of [{ id: "system", name: "Follow the system" }, ...allThemes()]) {
       if (theme.id !== prefs.theme) out.push(["theme", `Theme: ${theme.name}`, "", () => { prefs.theme = theme.id; savePrefs(); applyTheme(); }]);
     }
