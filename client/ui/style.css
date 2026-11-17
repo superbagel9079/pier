@@ -1380,3 +1380,15 @@ body:not(.in-workspace) .connect-close, #connect-close:not(#connect *) { display
 .qs-step .what > :first-child { font-weight: 600; }
 .qs-step .what > :last-child { font-size: 12px; line-height: 16px; color: var(--dim); }
 .qs-step button { height: 30px; padding: 0 var(--s3); flex: none; }
+/* Mica (Appearance): the window shows the wallpaper's tint (Windows 11). The outer
+   surfaces let it through (the sides more than the middle); the layers inside them are
+   clear, else they would pile up and be opaque again. */
+html.mica, html.mica body { background: transparent; }
+html.mica #workspace :is(.dock-head, .center-head, .panes, .panel-head, .dock-foot, .view-files .files-bar, .pane-project > .toolbar .switch) { background: transparent; }
+html.mica #workspace :is(#rail, #dock-left) { background: var(--mica-side); }
+html.mica #workspace :is(#dock-center, #dock-right) { background: var(--mica-mid); }
+html.mica .settings-nav { background: var(--mica-side); }
+html.mica .settings { background: var(--mica-mid); }
+html.mica #workspace .empty.launcher { background: radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 55%), transparent; }
+/* The browser preview has no Mica: a wallpaper behind the page shows what it does. */
+html.mica-preview body { background: linear-gradient(135deg, #2d4a7a, #6b3d6e 55%, #1f5a52); }

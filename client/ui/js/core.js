@@ -97,7 +97,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "" };
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -146,6 +146,20 @@ applyCorners();
 /** Ctrl+Alt+V types the clipboard image's reference into Pi's prompt in tmux: taken from
  *  Windows only when Pi runs there (Settings > Terminals), not for the conversation view. */
 const shortcutOn = () => Boolean(prefs.shortcut && prefs.piTerminal);
+
+/** Mica (Appearance, Windows 11): the window takes a tint of the wallpaper, as the
+ *  Explorer's; the window is transparent (tauri.windows.conf.json), the panels let it
+ *  through. Elsewhere (Windows 10, the browser preview) the effect is refused: in the
+ *  preview a wallpaper is drawn behind the page instead, to see it. */
+function applyMica() {
+  const on = Boolean(prefs.mica);
+  const root = document.documentElement;
+  root.classList.toggle("mica", on);
+  const win = tauri?.window?.getCurrentWindow?.();
+  root.classList.toggle("mica-preview", on && !win);
+  if (!win?.setEffects) return;
+  (on ? win.setEffects({ effects: ["mica"] }) : win.clearEffects()).catch((error) => uiLog("warn", "mica-failed", { msg: String(error) }));
+}
 
 /** Translucent menus (Appearance): what is behind them shows through, blurred. */
 function applyMenuBlur() {
@@ -213,6 +227,9 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = theme.dark ? "dark" : "light";
   for (const key of UI_KEYS) root.style.setProperty(`--${key}`, theme.ui[key]);
+  // Mica (Appearance): the sides let the wallpaper's tint through more than the middle.
+  root.style.setProperty("--mica-side", alpha(theme.ui.panel, 0.55));
+  root.style.setProperty("--mica-mid", alpha(theme.ui.bg, 0.8));
   // An accent chosen in Appearance stays over every theme's ("" follows the theme).
   const own = /^#[0-9a-f]{6}$/i.test(prefs.accent || "") ? prefs.accent : "";
   if (own) root.style.setProperty("--accent", own);

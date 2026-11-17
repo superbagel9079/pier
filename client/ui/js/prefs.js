@@ -12,6 +12,7 @@ function openPrefs() {
   showCorners();
   showAccent();
   $("#prefs-menublur").checked = prefs.menuBlur;
+  $("#prefs-mica").checked = prefs.mica;
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -503,6 +504,7 @@ $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.targe
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
 $("#prefs-menublur").addEventListener("change", (e) => { prefs.menuBlur = e.target.checked; savePrefs(); applyMenuBlur(); });
+$("#prefs-mica").addEventListener("change", (e) => { prefs.mica = e.target.checked; savePrefs(); applyMica(); });
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();

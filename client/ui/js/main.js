@@ -3,6 +3,7 @@
 // Start
 
 applyTheme();
+applyMica();
 // Right click: Pier's own menu where it has one (terminals, tabs), the system's in text
 // fields and on selected text, nothing elsewhere: never the browser's (Back, Print).
 document.addEventListener("contextmenu", (event) => {
