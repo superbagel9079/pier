@@ -269,7 +269,7 @@ const workspace = (() => {
    *  latest conversations. */
   function emptyDock(name) {
     if (!settings || (!online && vmForm)) return quickStart(); // no VM yet, or its form asked for: how to begin (3A)
-    if (!online) return el("div", { className: "empty launcher" }, loginCard()); // a VM known: its password (D)
+    if (!online) return el("div", { className: "empty launcher" }, pierMark(), loginCard()); // a VM known: its password (D)
     const line = (icon, label, detail, action) => {
       const b = el("button", { className: "lrow" }, svgIcon(icon), el("span", { textContent: label }), el("span", { className: "m", textContent: detail }));
       b.addEventListener("click", () => (online ? action() : toLogin())); // not connected: connect first
@@ -300,7 +300,7 @@ const workspace = (() => {
     const vmFields = firstVmForm(vmForm === "edit" ? settings : null);
     if (vmFields.back) $(".what", first).after(vmFields.back); // back to "Your VM", in the step's header
     first.append(vmFields);
-    return el("div", { className: "empty launcher quick-start" }, el("div", { className: "qs" },
+    return el("div", { className: "empty launcher quick-start" }, el("div", { className: "qs" }, pierMark(),
       el("h2", { textContent: "Run Pi on your Linux VM" }),
       el("p", { textContent: "Pier talks to it over SSH: Pi works there, you follow it from here." }),
       first,
