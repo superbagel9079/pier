@@ -205,3 +205,12 @@ document.addEventListener("invalid", (event) => {
   field.setAttribute("aria-invalid", "true");
   if (!field.form || field.form.querySelector(":invalid") === field) field.focus();
 }, true);
+
+// Settings: a row's name is not a button. A click on it no longer flips its switch or opens
+// its list (only the control does); a text field still takes the keyboard from its name.
+document.addEventListener("click", (event) => {
+  const label = event.target.closest(".set > label.what, .setting-head > label");
+  if (!label || event.target.closest("input, select, button, textarea")) return;
+  const control = label.control;
+  if (control && !control.matches("textarea, input:not([type=checkbox], [type=radio], [type=range], [type=color])")) event.preventDefault();
+}, true);
