@@ -149,7 +149,8 @@ const workspace = (() => {
   /** The middle's toggles: a side hidden or shown again. */
   function toggle(name) {
     const dock = docks[name];
-    if (dock.over) dock.overOpen = !dock.overOpen; // over the middle: for a look, not saved
+    // Over the middle too, open or closed is what a wider window keeps.
+    if (dock.over) { dock.overOpen = !dock.overOpen; dock.collapsed = !dock.overOpen; }
     else dock.collapsed = !dock.collapsed;
     if (!folded(dock)) { lastOpened = name; dock.overOpen = true; opening = name; }
     renderAll();
@@ -358,7 +359,7 @@ const workspace = (() => {
     $(".panes", dock.el).append(tab.pane);
     if (reveal || !dock.active) dock.active = tab;
     if (reveal && dock.over) dock.overOpen = true;
-    else if (reveal) dock.collapsed = false;
+    if (reveal) dock.collapsed = false;
     render(name);
     if (reveal) {
       tab.onShow?.();
@@ -414,7 +415,7 @@ const workspace = (() => {
     const dock = docks[tab.dock];
     dock.active = tab;
     if (dock.over) dock.overOpen = true;
-    else dock.collapsed = false;
+    dock.collapsed = false;
     render(tab.dock);
     tab.onShow?.();
     setCurrentTab(tab);
@@ -512,7 +513,8 @@ const workspace = (() => {
   // A click in the middle closes a side open over it; a resize may move a side in or out.
   docks.center.el.addEventListener("pointerdown", () => {
     for (const name of ["left", "right"]) {
-      if (docks[name].over && docks[name].overOpen) { docks[name].overOpen = false; render(name); }
+      // Closed, as by its button: a wider window does not bring it back.
+      if (docks[name].over && docks[name].overOpen) { docks[name].overOpen = false; docks[name].collapsed = true; render(name); save(); }
     }
   }, true);
   let resizeFrame = 0;
