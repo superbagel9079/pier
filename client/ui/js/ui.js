@@ -186,3 +186,22 @@ const pickAllSelects = () => {
 };
 pickAllSelects();
 new MutationObserver(() => { if (!pickFrame) pickFrame = requestAnimationFrame(pickAllSelects); }).observe(document.body, { childList: true, subtree: true });
+
+// A field left empty or wrong: Pier's own line under it, not the browser's bubble (drawn by
+// Chromium, out of the theme). The first such field of the form gets the keyboard.
+document.addEventListener("invalid", (event) => {
+  const field = event.target;
+  event.preventDefault();
+  const v = field.validity;
+  const text = v.valueMissing ? "Needed." : v.typeMismatch || v.patternMismatch ? "Not in the expected form." : field.validationMessage;
+  let line = field.nextElementSibling?.classList.contains("field-error") ? field.nextElementSibling : null;
+  if (!line) {
+    line = el("span", { className: "field-error", id: `field-error-${Math.random().toString(36).slice(2, 8)}` });
+    field.after(line);
+    field.setAttribute("aria-describedby", line.id);
+    field.addEventListener("input", () => { line.remove(); field.removeAttribute("aria-invalid"); field.removeAttribute("aria-describedby"); }, { once: true });
+  }
+  line.textContent = text;
+  field.setAttribute("aria-invalid", "true");
+  if (!field.form || field.form.querySelector(":invalid") === field) field.focus();
+}, true);

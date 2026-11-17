@@ -149,8 +149,10 @@
     <div id="view-trust" hidden>
       <h1 id="trust-title">First contact</h1>
       <p id="trust-text"></p>
-      <pre id="trust-fingerprint"></pre>
-      <p class="hint">To check it, on the machine itself:<br><code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code></p>
+      <!-- The fingerprint whole (wrapped, never a scrollbar), the command to compare it with. -->
+      <div class="trust-print"><span id="trust-algo" class="trust-algo"></span><code id="trust-fingerprint"></code><button id="trust-copy" type="button" class="icon-btn" title="Copy the fingerprint" aria-label="Copy the fingerprint"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+      <p class="hint trust-how">To compare, run this on the machine itself:</p>
+      <div class="trust-print trust-cmd"><code id="trust-command">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code><button id="trust-copy-command" type="button" class="icon-btn" title="Copy the command" aria-label="Copy the command"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
       <div class="actions">
         <button id="btn-trust">Trust it</button>
         <button id="btn-untrust" class="secondary">Cancel</button>

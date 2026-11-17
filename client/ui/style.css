@@ -1435,9 +1435,12 @@ html.mica.grad-in-newtab #workspace .empty.launcher { background: var(--grain-la
 .grad-thumb { --gi: 42%; }
 /* A side over the middle (a narrow window) is read on its own: nearly solid, what is behind
    blurred (with Mica too), and the middle dimmed behind it; a click there closes it. */
-html.mica #workspace #dock-left.over { background: color-mix(in srgb, var(--panel) 94%, transparent); }
-html.mica #workspace #dock-right.over { background: color-mix(in srgb, var(--bg) 94%, transparent); }
 .dock.side.over { -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+/* With Mica, not a black block: it lies on the middle, already tinted, so its own tint is
+   light (its tint in place, piled on the middle's, made it nearly opaque); the middle under
+   it blurred enough to read on, and not dimmed. */
+html.mica #workspace :is(#dock-left, #dock-right).over { background: color-mix(in srgb, var(--panel) 25%, transparent); -webkit-backdrop-filter: blur(48px) saturate(1.5); backdrop-filter: blur(48px) saturate(1.5); }
+html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-center::after { background: none; }
 #dock-center { position: relative; }
 #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-center::after { content: ""; position: absolute; inset: 0; z-index: 15; background: rgba(0, 0, 0, .4); pointer-events: none; }
 /* Labs' settings in tabs (the proposals' 1B) */
@@ -1484,11 +1487,21 @@ html.mica #workspace #dock-right.over { background: color-mix(in srgb, var(--bg)
 #rail-projects::before { content: ""; flex: none; width: 24px; height: 1px; margin: var(--s1) 0; background: var(--line); }
 #rail-projects:empty { display: none; }
 .rail-proj { width: 32px; height: 32px; }
-.rail-proj:hover { background: none; }
-.rail-proj .pbadge { width: 26px; height: 26px; font-size: 13px; border-radius: min(var(--r), 6px); transition: border-radius .15s; }
-.rail-proj .pbadge .i { width: 15px; height: 15px; }
+.rail-proj .pbadge { width: 20px; height: 20px; font-size: 11px; border-radius: min(var(--r), 4px); }
+.rail-proj .pbadge .i { width: 13px; height: 13px; }
 .rail-proj::before { content: ""; position: absolute; left: -6px; top: 50%; width: 3px; height: 0; translate: 0 -50%; background: var(--fg); transition: height .15s; }
-.rail-proj:hover::before { height: 10px; }
-.rail-proj.on::before { height: 20px; }
+.rail-proj.on::before { height: 16px; }
 .rail-proj .badge { background: var(--yellow, #d29922); color: #111; right: -2px; top: -2px; }
-@media (prefers-reduced-motion: reduce) { .rail-proj .pbadge, .rail-proj::before { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rail-proj::before { transition: none; } }
+/* A field left empty or wrong (ui.js): a line under it, in place of the browser's bubble. */
+.field-error { display: block; margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--red, #f85149); }
+[aria-invalid="true"]:is(input, select, textarea) { border-color: var(--red, #f85149); }
+/* First contact: the fingerprint in a field of its own, whole and wrapped; copy at its end. */
+.trust-print { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--field); margin: var(--s3) 0; }
+.trust-print code { flex: 1; min-width: 0; font-family: var(--code); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; background: none; padding: 0; }
+.trust-algo { flex: none; font-size: 11px; line-height: 20px; padding: 0 6px; border-radius: var(--r); background: var(--hover); color: var(--dim); }
+.trust-algo:empty { display: none; }
+.trust-print .icon-btn { flex: none; margin: -4px -4px -4px 0; }
+.trust-how { margin: var(--s4) 0 0; }
+.trust-cmd { margin-top: var(--s2); padding: var(--s2) var(--s3); }
+.trust-cmd code { font-size: 12px; color: var(--dim); }

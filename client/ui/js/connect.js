@@ -171,8 +171,10 @@ async function connect() {
     } else if (outcome.status === "unknown_host") {
       pendingTrust = outcome;
       $("#trust-title").textContent = "First contact";
-      $("#trust-text").textContent = `This is the first connection to ${outcome.host} (${outcome.which === "bastion" ? "the bastion" : "the VM"}). Check that its fingerprint is this one:`;
-      $("#trust-fingerprint").textContent = outcome.fingerprint;
+      $("#trust-text").textContent = `Pier has never connected to ${outcome.host} (${outcome.which === "bastion" ? "the bastion" : "the VM"}). Before trusting it, check that it shows the same fingerprint.`;
+      const [algo, print] = String(outcome.fingerprint).includes(":") ? String(outcome.fingerprint).split(/:(.*)/s) : ["", outcome.fingerprint];
+      $("#trust-algo").textContent = algo;
+      $("#trust-fingerprint").textContent = print;
       $("#btn-trust").hidden = false;
       setStatus("not connected");
       showConnect("trust");
@@ -181,6 +183,7 @@ async function connect() {
       forgetPasswords();
       $("#trust-title").textContent = "Different fingerprint: connection refused";
       $("#trust-text").textContent = `The fingerprint of ${outcome.host} changed since the last connection. Unless the machine was reinstalled, someone may be impersonating it. Nothing was sent, not even the password.`;
+      $("#trust-algo").textContent = "";
       $("#trust-fingerprint").textContent = `known     ${outcome.known}\npresented ${outcome.fingerprint}`;
       $("#btn-trust").hidden = true;
       setStatus("not connected");
@@ -497,4 +500,14 @@ function renderSessionBadge() {
     badge.textContent = projectLabel(project);
     badge.title = project;
   }
+}
+
+// First contact: the fingerprint and the command to compare it with, copied in one click.
+for (const [button, source] of [["#trust-copy", () => [$("#trust-algo").textContent, $("#trust-fingerprint").textContent].filter(Boolean).join(":")], ["#trust-copy-command", () => $("#trust-command").textContent]]) {
+  $(button).addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(source()); } catch { return; }
+    const use = $("use", $(button));
+    use.setAttribute("href", "#i-check");
+    setTimeout(() => use.setAttribute("href", "#i-copy"), 1200);
+  });
 }

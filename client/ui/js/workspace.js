@@ -65,11 +65,13 @@ const workspace = (() => {
     // (opening the conversations no longer closes Details, closing them no longer reopens it).
     const wants = (d) => !d.collapsed && d.tabs.length;
     if (!left.over && !right.over && wants(left) && wants(right) && room - left.width - right.width < CENTRE_MIN.right) {
-      const over = lastOpened === "left" ? left : right;
-      if (!wasOver[over.name]) over.overOpen = true; // pushed out of the row while shown: it stays shown
-      over.over = true;
+      (lastOpened === "left" ? left : right).over = true;
     }
+    // A side that just left the row (a narrower window, a start) folds into its button; it
+    // opens over the middle only if its button was what pushed it out.
+    for (const d of [left, right]) if (d.over && !wasOver[d.name]) d.overOpen = opening === d.name;
   }
+  let opening = null; // the side whose button is being clicked
   /** A side out of sight: hidden by its toggle, or over the middle and not opened. */
   const folded = (dock) => dock.side && (dock.over ? !dock.overOpen : dock.collapsed);
 
@@ -149,8 +151,9 @@ const workspace = (() => {
     const dock = docks[name];
     if (dock.over) dock.overOpen = !dock.overOpen; // over the middle: for a look, not saved
     else dock.collapsed = !dock.collapsed;
-    if (!folded(dock)) { lastOpened = name; dock.overOpen = true; }
+    if (!folded(dock)) { lastOpened = name; dock.overOpen = true; opening = name; }
     renderAll();
+    opening = null;
     if (!folded(dock)) dock.active?.onShow?.();
     save();
   }
