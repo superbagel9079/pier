@@ -393,7 +393,7 @@ function drawProjects() {
   back.addEventListener("click", () => { if (projectsSub) projectsSub = null; else projectsOpen = null; drawProjects(); });
   const title = el("div", { className: "project-title" }, projectBadge(p.project, looks[p.project]), el("h2", { textContent: projectsSub ? "Instructions" : p.label }));
   if (projectsSub === "instructions") {
-    section.replaceChildren(back, title, promptCards(p.project, p.label));
+    section.replaceChildren(back, title, promptCards(p.project));
     return;
   }
   const action = (text, run, primary = false) => {
@@ -419,28 +419,29 @@ function drawProjects() {
 }
 
 /** A project's texts for Pi (the Project tab's, here now): AGENTS.md, APPEND_SYSTEM.md and
- *  SYSTEM.md, a card each, saved with their earlier versions kept on the VM. */
-function promptCards(project, projectName) {
-  const box = el("div", { className: "system-prompts" }, el("p", { className: "dim", textContent: "Asking the VM…" }));
+ *  SYSTEM.md, a row each (what it does, its file, empty or its tokens); one open at a time
+ *  (the proposals' B), its text and Revert, Save. */
+let promptOpen = "instructions";
+function promptCards(project) {
+  const box = el("div", { className: "prompt-acc" }, el("p", { className: "dim", textContent: "Asking the VM…" }));
   const WORDS = {
     instructions: ["Read first in every session", "Read by Pi at the start of every session in this project: what it is, the commands to run and test, the conventions, what to avoid."],
     append: ["Added to Pi's system prompt", "Read after Pi's own instructions, in every session of this project."],
     system: ["Replaces Pi's system prompt", "Replaces Pi's own instructions entirely, including how it uses its tools. Leave it empty unless you know why you need it."],
   };
   backend.api(["setup", project]).then((data) => {
-    box.replaceChildren(...["instructions", "append", "system"].map((which) => {
+    const parts = ["instructions", "append", "system"].map((which) => {
       const info = data.texts[which];
       let saved = info.text;
-      const area = el("textarea", { className: "prompt-edit", spellcheck: false, value: info.text, rows: 6, ariaLabel: WORDS[which][0] });
-      const facts = el("span", { className: "dim small" });
+      const area = el("textarea", { className: "prompt-edit", spellcheck: false, value: info.text, rows: 8, placeholder: WORDS[which][1], ariaLabel: WORDS[which][0] });
+      const chip = el("span", { className: "prompt-chip" });
       const problem = el("p", { className: "error", hidden: true });
       const revert = el("button", { type: "button", className: "secondary", textContent: "Revert" });
       const save = el("button", { type: "button", className: "primary", textContent: "Save" });
-      const versions = el("button", { type: "button", className: "link", textContent: "Earlier versions" });
       const update = () => {
         const n = Math.ceil(area.value.length / 4);
-        facts.textContent = (area.value.trim() ? `≈ ${n.toLocaleString()} tokens` : "empty")
-          + (info.global && !info.exists ? " · a global one in ~/.pi/agent applies" : "");
+        chip.textContent = area.value !== saved ? "not saved" : !info.exists ? (info.global ? "the global one applies" : "not created yet") : `≈ ${n.toLocaleString()} tokens`;
+        chip.classList.toggle("on", info.exists && area.value === saved);
         revert.disabled = save.disabled = area.value === saved;
       };
       const write = async () => {
@@ -448,7 +449,6 @@ function promptCards(project, projectName) {
         showError(problem, "");
         saved = area.value;
         info.exists = Boolean(area.value.trim()); // emptied: the file is removed, the global one applies
-        label.textContent = `${info.name}${info.exists ? "" : " · not created yet"}`;
         update();
         flashStatus(`${info.name} saved: new sessions read it`);
       };
@@ -456,38 +456,26 @@ function promptCards(project, projectName) {
       area.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); write(); } });
       revert.addEventListener("click", () => { area.value = saved; update(); });
       save.addEventListener("click", write);
-      // AGENTS.md: a section to start from, or Pi asked to write it.
-      const extras = [];
-      if (which === "instructions") {
-        const sections = el("button", { type: "button", className: "link", textContent: "Add a section" });
-        sections.addEventListener("click", () => showMenu(sections, INSTRUCTION_SNIPPETS.map(([name, text]) => [name, () => {
-          const at = area.selectionStart ?? area.value.length;
-          const before = area.value.slice(0, at);
-          const glue = before && !before.endsWith("\n\n") ? (before.endsWith("\n") ? "\n" : "\n\n") : "";
-          area.value = before + glue + text + area.value.slice(at);
-          area.focus();
-          update();
-        }])));
-        const askPi = el("button", { type: "button", className: "link", textContent: "Let Pi write it" });
-        askPi.addEventListener("click", async () => {
-          closePrefs();
-          try { flashStatus(await letPiWriteInstructions(project, projectName, data.pis.length > 0)); } catch (e) { flashStatus(String(e)); }
-        });
-        extras.push(sections, askPi);
-      }
-      versions.disabled = !info.history.length;
-      versions.title = info.history.length ? "Every save keeps the previous one" : "No earlier version yet";
-      versions.addEventListener("click", () => showMenu(versions, info.history.slice().reverse().map((v) => [
-        `${new Date(v.at * 1000).toLocaleString()} · ${(v.text.split("\n").find((l) => l.trim()) || "(empty)").slice(0, 48)}`,
-        () => { area.value = v.text; update(); }, false, { icon: "history" }])));
-      const label = el("span", { className: "when", textContent: `${info.name}${info.exists ? "" : " · not created yet"}` });
-      area.placeholder = WORDS[which][1];
       update();
-      // A card as the diff tab's: its head (what it does, its file), the text, its foot.
-      return el("section", { className: "diff-card prompt-block" },
-        el("div", { className: "diff-card-head" }, svgIcon({ instructions: "file-text", append: "file-plus", system: "file-code" }[which]), el("span", { textContent: WORDS[which][0] }), label),
-        area, problem, el("div", { className: "prompt-foot" }, facts, ...extras, versions, revert, save));
-    }));
+      const head = el("button", { type: "button", className: "prompt-head" }, svgIcon("chevron-right"),
+        el("span", { className: "what" }, el("span", { textContent: WORDS[which][0] }), el("span", { textContent: info.name })), chip);
+      const body = el("div", { className: "prompt-body" }, area, problem, el("div", { className: "prompt-foot" }, revert, save));
+      const part = el("div", { className: "prompt-part" }, head, body);
+      head.addEventListener("click", () => {
+        promptOpen = promptOpen === which ? null : which;
+        for (const x of parts) x.show();
+        if (promptOpen === which) area.focus();
+      });
+      part.show = () => {
+        const open = promptOpen === which;
+        part.classList.toggle("open", open);
+        head.setAttribute("aria-expanded", String(open));
+        body.hidden = !open;
+      };
+      return part;
+    });
+    for (const x of parts) x.show();
+    box.replaceChildren(...parts);
   }).catch((e) => box.replaceChildren(el("p", { className: "error", textContent: String(e) })));
   return box;
 }
