@@ -1762,3 +1762,6 @@ body { -webkit-user-select: none; user-select: none; }
 ::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); color: inherit; }
 /* A <pre> scrolls by default (long code): the mark never does, its glyphs taller than its lines. */
 .pier-mark { overflow: visible; }
+/* The VM's address under "Your VM": in the interface's font, as the rest of the card (the
+   terminals' font, chosen for code, looked out of place there). */
+.lc-head small { font-family: var(--ui); font-size: 13px; font-variant-numeric: tabular-nums; }
