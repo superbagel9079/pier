@@ -292,6 +292,7 @@ function makeConversations(tab) {
   }
   /** The rail's speech bubble: every project again. */
   tab.showAll = () => { only = null; render(); };
+  tab.filtered = () => Boolean(alone());
 
   async function stop(project, pi) {
     const what = pi ? `Pi #${pi.n}` : "its Pis";
@@ -652,6 +653,7 @@ function makeConversations(tab) {
 
 // The rail's pen: a new conversation in the project of the Pi in use, else the last one.
 $("#rail-new").addEventListener("click", () => {
+  if (!online) return; // greyed: nothing to start before connecting
   const project = target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
   if (project) openPiTerminal(project, projectLabel(project), ["--new"]);
   else openFolderPicker();
@@ -660,6 +662,8 @@ $("#rail-new").addEventListener("click", () => {
 // The rail's speech bubble: Conversations shown, opened on the left if it was closed.
 $("#btn-conversations").addEventListener("click", () => {
   const tab = workspace.find("conversations");
+  // Shown with every project: the bubble folds them (it is the rail's fold button).
+  if (tab && $("#workspace").classList.contains("left-open") && !tab.filtered?.()) { workspace.toggle("left"); return; }
   tab?.showAll?.(); // narrow: every project, not only the one whose square was clicked
   if (tab) workspace.show(tab); // shows its side too, if it was hidden
   else workspace.add("conversations", "left");

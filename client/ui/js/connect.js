@@ -11,6 +11,8 @@ let online = false; // connected, the picker answering
  *  known), no connection window. note: a word to show (after a hand-off, say). */
 function showOffline(note = "") {
   online = false;
+  document.body.classList.remove("online");
+  $("#rail-new").title = "New conversation: connect to your VM first";
   $("#connect").hidden = true;
   showWorkspace();
   $("#btn-disconnect").hidden = true;
@@ -321,6 +323,8 @@ function firstVmForm(from = null) {
 
 async function enterWorkspace(note = "", version = null) {
   online = true;
+  document.body.classList.add("online");
+  $("#rail-new").title = "New conversation";
   $("#connect-card").hidden = true;
   setStatus(`connected · ${describe(settings)}`);
   if (note) flashStatus(note);

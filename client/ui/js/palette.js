@@ -47,10 +47,12 @@ const palette = (() => {
       out.push(["page", `Activity: ${label}`, detail, () => { const t = panel("project"); workspace.show(t); t?.setMode?.(mode); }]);
     }
     out.push(["action", "Waiting for you", "Pi's requests: approve or refuse", () => waiting.show()]);
-    out.push(["action", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()]);
-    out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
+    if (online) { // what needs the VM, once connected
+      out.push(["action", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()]);
+      out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
+    }
     out.push(["page", "Activity: Given to Pi", "images, files, folders and shares given to Pi", () => contextTab({ reveal: true })]);
-    out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
+    if (online) out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
     out.push(["action", "Reset layout", "layout", () => placePanels()]);
     out.push(["action", "Logs", "Settings > Diagnostics", () => { openPrefs(); showPrefsPage("diagnostics"); }]);
     for (const theme of [{ id: "system", name: "Follow the system" }, ...allThemes()]) {

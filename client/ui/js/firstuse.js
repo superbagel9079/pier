@@ -70,6 +70,7 @@ function vmReadyAfterConnect(version) {
  *  first, as the rail's squares; then the VM's folders, from home, by a clickable path. A
  *  click chooses a folder, a double click (or →) goes in; the button says where Pi starts. */
 function openFolderPicker(start = null) {
+  if (!online) { flashStatus("Connect first: the folders are on your VM"); return; }
   let home = lastProjects?.home || ""; // else learnt from the first answer (ls "" is home)
   let here = start || home;
   let chosen = null; // a folder chosen in the list or the recent ones; else here
@@ -176,6 +177,7 @@ const waiting = (() => {
   });
 
   function show() {
+    if (!pending.length) { bubbleBy(button, "Nothing waits for you"); return; }
     open = el("div", { className: "wait-list" });
     const dialog = resourceDialog("Waiting for you", [
       el("p", { className: "hint", textContent: "Shown exactly as it will be done. Nothing happens until you approve it." }), open], []);

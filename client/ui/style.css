@@ -1805,3 +1805,13 @@ html.grad-in-sides #workspace #dock-right.over, html.mica.grad-in-sides #workspa
 html.rail-always #workspace:not(.left-open) #rail { display: flex; }
 /* The VM banner's command in the interface's font, as its sentence above it. */
 .vr-text code { font-family: var(--ui); font-size: 12px; }
+/* Keep the rail off: in a narrow window too, no rail; the middle's fold button comes back.
+   Kept: the rail's bubble folds the conversations, the middle's button is not needed. */
+html:not(.rail-always) #workspace.left-over #rail { display: none; }
+html:not(.rail-always) #workspace #dock-left.over { left: 0; background-position: 0 0; }
+html:not(.rail-always) #workspace.left-over #toggle-left { display: grid; }
+html.rail-always #toggle-left { display: none; }
+/* Not connected: what needs the VM greyed (the pen of the rail). */
+body:not(.online) #rail-new { opacity: .4; }
+body:not(.online) #rail-new:hover { background: none; }
+.bubble-by { font-weight: 600; }

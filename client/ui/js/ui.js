@@ -296,3 +296,18 @@ document.addEventListener("click", (event) => {
   }, true);
   for (const type of ["pointerdown", "keydown", "wheel", "blur"]) window.addEventListener(type, hide, true);
 }
+
+
+/** A word by an element for a moment (a button with nothing to open, say): the hints' card,
+ *  beside it when it is at the window's left edge, else under it. */
+function bubbleBy(anchor, text) {
+  document.querySelector(".bubble-by")?.remove();
+  const card = el("div", { className: "hint-card bubble-by", role: "status", textContent: text });
+  document.body.append(card);
+  const box = anchor.getBoundingClientRect();
+  const w = card.offsetWidth, h = card.offsetHeight;
+  const beside = box.left < 80;
+  card.style.left = `${Math.round(beside ? box.right + 8 : Math.min(Math.max(8, box.left + box.width / 2 - w / 2), innerWidth - w - 8))}px`;
+  card.style.top = `${Math.round(beside ? box.top + box.height / 2 - h / 2 : box.bottom + 8)}px`;
+  setTimeout(() => card.remove(), 1600);
+}
