@@ -1890,3 +1890,12 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 /* (the same, over the rule that cleared the ground of the settings rows' buttons) */
 .set > button:not(.icon-btn):not(.pick):not(.primary), .set .btns button:not(.icon-btn) { background: color-mix(in srgb, var(--fg) 9%, transparent); border-color: transparent; color: var(--fg); }
 .set > button:not(.icon-btn):not(.pick):not(.primary):hover:not(:disabled), .set .btns button:not(.icon-btn):hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 15%, transparent); }
+/* Segmented choices (Theme / Custom, Accent / Custom, Square / Slight / Round…): a tinted
+   ground instead of a faint edge, the chosen one a shade lighter, as the fields and buttons. */
+.seg { border-color: transparent; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.seg button[aria-checked="true"], .seg button[aria-selected="true"], .seg .mode.active { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
+.seg button:not([aria-checked="true"]):not([aria-selected="true"]):hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+/* The connection's bars in the text's colour (the dim one sank into some themes), the bars
+   not lit a faint tint of it; lost, all faint. */
+.bars i { background: var(--fg); }
+[data-state="slow"] .bars i:nth-child(3), [data-state="lost"] .bars i { background: color-mix(in srgb, var(--fg) 28%, transparent); }
