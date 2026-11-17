@@ -198,7 +198,7 @@
         <!-- As the mock-up's option A: what to show, then the project whose own are listed with yours. -->
         <button type="button" id="ext-back" class="link back-to" hidden></button>
         <div class="toolbar ext-bar">
-          <span id="ext-tabs" class="seg" role="tablist" aria-label="What to show"></span>
+          <span id="ext-tabs" class="tabline" role="tablist" aria-label="What to show"></span>
           <span class="head-gap"></span>
           <select id="ext-project" aria-label="Project" title="Its own skills and packages are listed with yours"></select>
         </div>
@@ -308,10 +308,11 @@
       </section>
 
       <section class="prefs-page needs-vm" data-page="terminals" data-offline="Terminals run on your VM: connect to it, then choose how they behave." data-title="Terminals" role="tabpanel" hidden>
-      <!-- Shells use these too; the image key only with Pi in tmux (prefs.js). -->
+      <!-- The terminals' options only with Pi in tmux (prefs.js). -->
       <div class="rows">
         <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
       </div>
+      <div id="prefs-term-more" hidden>
       <h2>Display</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-font"><span>Font size</span><span>Ctrl+ and Ctrl- change it in a terminal, Ctrl+0 resets it.</span></label><input id="prefs-font" type="number" min="8" max="28"></div>
@@ -327,6 +328,7 @@
         <div class="set" id="prefs-shortcut-row"><label class="what" for="prefs-shortcut"><span>Ctrl+Alt+V sends the clipboard's image</span><span>From anywhere, typed into the prompt of the Pi in use (in tmux; the conversation view takes Ctrl+V).</span></label><input id="prefs-shortcut" type="checkbox"></div>
       </div>
       <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an older Pier still in the tray?), then turn this off and on again.</p>
+      </div>
       </section>
 
 
@@ -361,7 +363,7 @@
       <p id="labs-relogin" class="hint" hidden>Then reconnect Pier, so the picker's next SSH login is in the incus group. For virtual machines too, set the VM's CPU type to host in Proxmox (Hardware &gt; Processors).</p>
       <!-- On: the settings in tabs (the proposals' 1B), one thing on screen at a time. -->
       <div class="labs-on" hidden>
-        <div class="labs-tabs-bar"><span id="labs-tabs" class="seg" role="tablist" aria-label="Labs settings"><button type="button" role="tab" data-pane="hosts">Hosts</button><button type="button" role="tab" data-pane="limits">Limits</button><button type="button" role="tab" data-pane="networks">Networks</button><button type="button" role="tab" data-pane="machines">Machines</button></span></div>
+        <div class="labs-tabs-bar"><span id="labs-tabs" class="tabline" role="tablist" aria-label="Labs settings"><button type="button" role="tab" data-pane="hosts">Hosts</button><button type="button" role="tab" data-pane="limits">Limits</button><button type="button" role="tab" data-pane="networks">Networks</button><button type="button" role="tab" data-pane="machines">Machines</button></span></div>
         <div class="labs-pane" data-pane="hosts">
         <p class="hint">Where labs are made: a VM with Incus. Another VM you add (Pier runs Incus there over SSH, with its key), or Pi's own VM if you choose it. New labs go to the default host, unless Pi or New lab… names another. No host, no lab.</p>
         <ul id="labs-hosts" class="resource-items"></ul>

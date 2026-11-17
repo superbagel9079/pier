@@ -22,7 +22,7 @@ function openPrefs() {
   $("#prefs-resume").checked = prefs.resume;
   $("#prefs-focus").checked = prefs.focusFollowsMouse;
   $("#prefs-pi-terminal").checked = prefs.piTerminal;
-  $("#prefs-shortcut-row").hidden = !prefs.piTerminal;
+  $("#prefs-term-more").hidden = !prefs.piTerminal;
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   showCopy();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
@@ -549,8 +549,7 @@ $("#prefs-rail").addEventListener("change", (e) => { prefs.railAlways = e.target
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
-  $("#prefs-shortcut-row").hidden = !prefs.piTerminal; // the image key types into Pi in tmux
-  if (!prefs.piTerminal) $("#prefs-shortcut-note").hidden = true; // its notice goes with it
+  $("#prefs-term-more").hidden = !prefs.piTerminal; // the terminals' options, only with Pi in tmux
   backend.setShortcut(shortcutOn()).catch(() => {});
 });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
