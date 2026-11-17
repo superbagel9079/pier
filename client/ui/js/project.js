@@ -2,6 +2,19 @@
 
 // Project: what the agent reads and changes, and the files
 
+/** The tree's orders (Files, sorted from its bar); folders always come first. */
+const fileExt = (name) => (name.includes(".", 1) ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "");
+const FILE_ORDER = {
+  name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  type: (a, b) => fileExt(a.name).localeCompare(fileExt(b.name)) || FILE_ORDER.name(a, b),
+  size: (a, b) => (b.size || 0) - (a.size || 0) || FILE_ORDER.name(a, b),
+  date: (a, b) => (b.mtime || 0) - (a.mtime || 0) || FILE_ORDER.name(a, b),
+};
+/** A file's icon by what it holds: text, code, or anything else. */
+const fileIcon = (entry) => entry.kind === "dir" ? "folder"
+  : /\.(md|txt|rst|adoc)$/i.test(entry.name) || !entry.name.includes(".", 1) ? "file-text"
+    : /\.(py|js|mjs|ts|tsx|jsx|rs|go|c|h|cc|cpp|hpp|java|kt|rb|php|sh|bash|zsh|ps1|toml|json|ya?ml|css|scss|html|xml|sql|lua|swift)$/i.test(entry.name) ? "file-code" : "file";
+
 const STATES = {
   modifying: { mark: "✎", label: "Being modified" },
   reading: { mark: "◐", label: "Being read" },
@@ -31,6 +44,8 @@ function makeProject(tab) {
   const filesView = $(".view-files", tab.pane);
   const tree = $(".tree", tab.pane);
   const showHidden = $(".show-hidden", tab.pane);
+  const sortBy = $(".files-sort", tab.pane);
+  sortBy.value = FILE_ORDER[prefs.filesSort] ? prefs.filesSort : "name";
   const restoreView = $(".view-restore", tab.pane);
   const points = $(".points", restoreView);
   const restoreNote = $(".restore-note", restoreView);
@@ -217,14 +232,16 @@ function makeProject(tab) {
     }
     if (asked !== base) return; // another project is shown now
     list.replaceChildren();
-    for (const entry of listing.entries) {
-      if (entry.hidden && !showHidden.checked) continue;
-      list.append(node(entry));
-    }
+    const shown = listing.entries.filter((entry) => !entry.hidden || showHidden.getAttribute("aria-pressed") === "true");
+    // Folders first, then the order chosen.
+    shown.sort((a, b) => (b.kind === "dir") - (a.kind === "dir") || FILE_ORDER[sortBy.value](a, b));
+    for (const entry of shown) list.append(node(entry));
     if (listing.truncated) list.append(el("li", { className: "dim small", textContent: "… (list cut short)" }));
     decorateTree();
   }
 
+  /** A row of the tree: an arrow for a folder, its kind, its name, what Pi and git did to
+   *  it, and the size or the date when the files are sorted by them. */
   function node(entry) {
     const li = el("li");
     li.className = entry.kind === "dir" ? "dir" : "file";
@@ -232,11 +249,21 @@ function makeProject(tab) {
     const row = el("div");
     row.className = "node" + (entry.hidden ? " hidden-entry" : "");
     row.setAttribute("role", "treeitem");
-    const label = (open) => (entry.kind === "dir" ? `${open ? "▾" : "▸"} ${entry.name}/` : `${entry.name}${entry.kind === "link" ? " \u2197\uFE0E" : ""}`);
-    const name = el("span", { textContent: label(false) });
-    row.append(el("span", { className: "badge" }), el("span", { className: "git" }), name);
-    if (entry.kind === "file") row.append(el("span", { className: "size", textContent: humanSize(entry.size) }));
+    if (entry.kind === "dir") row.setAttribute("aria-expanded", "false");
+    const name = el("span", { className: "name", textContent: entry.name + (entry.kind === "link" ? " \u2197\uFE0E" : "") });
+    const meta = sortBy.value === "size" && entry.kind === "file" ? humanSize(entry.size)
+      : sortBy.value === "date" && entry.mtime ? relTime(entry.mtime).replace(/ ago$/, "") : "";
+    row.append(el("span", { className: "fold-arrow" }, ...(entry.kind === "dir" ? [svgIcon("chevron-right")] : [])),
+      el("span", { className: "kind" }, svgIcon(fileIcon(entry))), name,
+      el("span", { className: "badge" }), el("span", { className: "git" }), el("span", { className: "size", textContent: meta }));
     li.append(pressable(row));
+    row.addEventListener("contextmenu", (e) => { e.preventDefault(); nodeMenu(entry, li.dataset.rel, row, { x: e.clientX, y: e.clientY }); });
+    row.addEventListener("keydown", (e) => {
+      if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+      e.preventDefault();
+      const box = row.getBoundingClientRect();
+      nodeMenu(entry, li.dataset.rel, row, { x: box.left + 24, y: box.bottom });
+    });
     row.addEventListener("click", async () => {
       selected?.classList.remove("selected");
       selected = row;
@@ -252,16 +279,29 @@ function makeProject(tab) {
       let children = $(":scope > ul", li);
       if (children) {
         children.remove();
-        name.textContent = label(false);
+        row.setAttribute("aria-expanded", "false");
       } else {
         children = el("ul");
         li.append(children);
-        name.textContent = label(true);
+        row.setAttribute("aria-expanded", "true");
         await fill(children, entry.path);
       }
     });
     row.addEventListener("dblclick", () => { if (entry.kind !== "dir") mention(li.dataset.rel); });
     return li;
+  }
+
+  /** A right click on a file or a folder: what Pier can do with it from here. */
+  function nodeMenu(entry, rel, row, at) {
+    const copy = (text) => backend.copyText(text).then(() => flashStatus("copied")).catch((e) => showError(error, String(e)));
+    const items = [];
+    if (entry.kind === "dir") items.push([row.getAttribute("aria-expanded") === "true" ? "Fold" : "Open", () => row.click()]);
+    else {
+      if (activity && (activity.git[rel] || activity.files[rel]?.edits)) items.push(["Open its changes", () => openDiff(rel, base)]);
+      items.push(["Open in a tab", () => openFile(rel, base)], [`Mention it to Pi (@${rel})`, () => mention(rel)]);
+    }
+    items.push(null, ["Copy its path", () => copy(entry.path)], ["Copy its path in the project", () => copy(rel)]);
+    showMenu(null, items, at);
   }
 
   /** Marks files the agent touched, and folders that contain any. */
@@ -509,7 +549,15 @@ function makeProject(tab) {
 
   for (const b of tab.pane.querySelectorAll(".mode")) b.addEventListener("click", () => setMode(b.dataset.mode));
   $(".refresh", tab.pane).addEventListener("click", loadTree);
-  showHidden.addEventListener("change", loadTree);
+  showHidden.addEventListener("click", () => {
+    const on = showHidden.getAttribute("aria-pressed") !== "true";
+    showHidden.setAttribute("aria-pressed", String(on));
+    showHidden.title = on ? "Hide hidden files" : "Show hidden files";
+    showHidden.setAttribute("aria-label", showHidden.title);
+    $("use", showHidden).setAttribute("href", on ? "#i-eye" : "#i-eye-off");
+    loadTree();
+  });
+  sortBy.addEventListener("change", () => { prefs.filesSort = sortBy.value; savePrefs(); loadTree(); });
   tab.onTargetChange = () => { retarget(); given.onTargetChange?.(); };
   tab.onVisible = (shown) => { follow(); given.onVisible?.(shown !== false && mode === "given"); };
   tab.onShow = () => {
