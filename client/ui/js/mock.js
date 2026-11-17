@@ -263,6 +263,37 @@ function mockBackend() {
         if (dir === "/home/leo") return { path: dir, label: "~", entries: [{ name: "work", kind: "dir", path: "/home/leo/work" }, { name: "clients", kind: "dir", path: "/home/leo/clients" }], truncated: false };
         return { entries: (files[dir] || []).map((e) => ({ size: 0, hidden: false, ...e, path: `${dir}/${e.name}` })), truncated: false };
       }
+      // The Files panel's changes, on the tree above.
+      if (args[0]?.startsWith("fs-")) {
+        const [cmd, project, rel, extra] = args;
+        const parts = rel.split("/");
+        const name = parts.pop();
+        const dir = [project, ...parts].join("/");
+        const list = (files[dir] ||= []);
+        const at = list.findIndex((e) => e.name === name);
+        if (cmd === "fs-new") {
+          if (at >= 0) throw `${name} already exists`;
+          list.push({ name, kind: extra, size: 0, mtime: Date.now() / 1000, hidden: name.startsWith(".") });
+          if (extra === "dir") files[`${dir}/${name}`] = [];
+          return { created: `${dir}/${name}` };
+        }
+        if (at < 0) throw `${name} is not there any more`;
+        if (cmd === "fs-rename") {
+          if (list.some((e) => e.name === extra)) throw `${extra} already exists`;
+          list[at] = { ...list[at], name: extra, hidden: extra.startsWith(".") };
+          return { renamed: `${dir}/${extra}` };
+        }
+        if (cmd === "fs-copy") {
+          const dot = name.lastIndexOf(".");
+          const copyName = (n) => (dot > 0 ? `${name.slice(0, dot)} copy${n > 1 ? ` ${n}` : ""}${name.slice(dot)}` : `${name} copy${n > 1 ? ` ${n}` : ""}`);
+          let n = 1;
+          while (list.some((e) => e.name === copyName(n))) n++;
+          list.push({ ...list[at], name: copyName(n) });
+          return { copied: `${dir}/${copyName(n)}` };
+        }
+        list.splice(at, 1);
+        return { deleted: `${dir}/${name}` };
+      }
       if (args[0] === "activity") {
         tick++;
         const busy = tick % 2 === 1;

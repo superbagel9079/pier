@@ -259,6 +259,9 @@ function makeProject(tab) {
     li.append(pressable(row));
     row.addEventListener("contextmenu", (e) => { e.preventDefault(); nodeMenu(entry, li.dataset.rel, row, { x: e.clientX, y: e.clientY }); });
     row.addEventListener("keydown", (e) => {
+      if (e.target !== row) return;
+      if (e.key === "F2") { e.preventDefault(); renameEntry(entry, li.dataset.rel, row); return; }
+      if (e.key === "Delete") { e.preventDefault(); deleteEntry(entry, li.dataset.rel, li); return; }
       if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
       e.preventDefault();
       const box = row.getBoundingClientRect();
@@ -301,7 +304,111 @@ function makeProject(tab) {
       items.push(["Open in a tab", () => openFile(rel, base), false, { icon: "external-link" }], [`Mention it to Pi (@${rel})`, () => mention(rel), false, { icon: "at-sign" }]);
     }
     items.push(null, ["Copy its path", () => copy(entry.path), false, { icon: "copy" }], ["Copy its path in the project", () => copy(rel), false, { icon: "copy" }]);
+    // New things go in the folder clicked, or beside the file clicked.
+    const li = row.parentElement;
+    const where = entry.kind === "dir" ? { li, rel } : { li: li.parentElement.closest("li.dir"), rel: rel.split("/").slice(0, -1).join("/") };
+    items.push(null,
+      ["New file here", () => newEntry("file", where), false, { icon: "file-plus" }],
+      ["New folder here", () => newEntry("dir", where), false, { icon: "folder-plus" }],
+      null,
+      ["Rename", () => renameEntry(entry, rel, row), false, { icon: "pencil" }],
+      ...(entry.kind === "file" ? [["Duplicate", () => change(["fs-copy", base, rel], li.parentElement, parentOf(entry.path)), false, { icon: "copy-plus" }]] : []),
+      ["Delete…", () => deleteEntry(entry, rel, li), false, { icon: "trash", danger: true }]);
     showMenu(null, items, at);
+  }
+
+  const parentOf = (path) => path.slice(0, path.lastIndexOf("/")) || base;
+  /** A change through the picker, then the folder it touched listed again. */
+  async function change(args, list, dir) {
+    try {
+      await backend.api(args);
+      showError(error, "");
+    } catch (e) { showError(error, String(e)); return false; }
+    await fill(list, dir);
+    return true;
+  }
+
+  /** A name typed in the tree, in the row of a new entry or of the one renamed: Enter
+   *  does it, Escape leaves it; what the picker refuses ("already exists") shows in the row. */
+  function nameField(row, { value = "", kind, done, cancel }) {
+    const input = el("input", { value, spellcheck: false });
+    input.setAttribute("aria-label", kind === "dir" ? "Folder name" : "File name");
+    input.placeholder = kind === "dir" ? "Folder name" : "File name";
+    const hint = el("span", { className: "name-hint", textContent: "Enter to save" });
+    hint.id = `name-hint-${Date.now()}`;
+    input.setAttribute("aria-describedby", hint.id);
+    $(".name", row).replaceWith(input);
+    row.append(hint);
+    row.classList.add("naming");
+    let busy = false;
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("keydown", async (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") { e.preventDefault(); cancel(); }
+      if (e.key !== "Enter" || busy || !input.value.trim()) return;
+      e.preventDefault();
+      busy = true;
+      const problem = await done(input.value.trim());
+      busy = false;
+      if (problem) { hint.textContent = problem; hint.classList.add("bad"); input.setAttribute("aria-invalid", "true"); }
+    });
+    input.addEventListener("input", () => { hint.textContent = "Enter to save"; hint.classList.remove("bad"); input.removeAttribute("aria-invalid"); });
+    input.focus();
+    // A file's name chosen up to its extension, as in every file manager.
+    const dot = kind === "file" ? value.lastIndexOf(".") : -1;
+    input.setSelectionRange(0, dot > 0 ? dot : value.length);
+    return input;
+  }
+
+  /** A new file or folder: a row at the top of its folder (opened first) to name it. */
+  async function newEntry(kind, where = { li: null, rel: "" }) {
+    const dir = where.rel ? `${base}/${where.rel}` : base;
+    let list = tree;
+    if (where.li) {
+      list = $(":scope > ul", where.li);
+      if (!list) { // the folder opened first, listed before the new row goes on top
+        list = el("ul");
+        where.li.append(list);
+        $(":scope > .node", where.li).setAttribute("aria-expanded", "true");
+        await fill(list, dir);
+      }
+    }
+    const li = el("li", { className: kind === "dir" ? "dir" : "file" });
+    const row = el("div", { className: "node" },
+      el("span", { className: "fold-arrow" }, ...(kind === "dir" ? [svgIcon("chevron-right")] : [])),
+      el("span", { className: "kind" }, svgIcon(kind === "dir" ? "folder" : "file")), el("span", { className: "name" }));
+    li.append(row);
+    list.prepend(li);
+    nameField(row, { kind,
+      cancel: () => li.remove(),
+      done: async (name) => {
+        const rel = where.rel ? `${where.rel}/${name}` : name;
+        try { await backend.api(["fs-new", base, rel, kind]); } catch (e) { return String(e); }
+        await fill(list, dir);
+        $(`:scope > li[data-rel="${CSS.escape(rel)}"] > .node`, list)?.focus();
+        return null;
+      } });
+  }
+
+  function renameEntry(entry, rel, row) {
+    const list = row.parentElement.parentElement;
+    const back = () => fill(list, parentOf(entry.path));
+    nameField(row, { kind: entry.kind, value: entry.name,
+      cancel: back,
+      done: async (name) => {
+        if (name === entry.name) { back(); return null; }
+        try { await backend.api(["fs-rename", base, rel, name]); } catch (e) { return String(e); }
+        await back();
+        const moved = rel.split("/").slice(0, -1).concat(name).join("/");
+        $(`:scope > li[data-rel="${CSS.escape(moved)}"] > .node`, list)?.focus();
+        return null;
+      } });
+  }
+
+  async function deleteEntry(entry, rel, li) {
+    const what = entry.kind === "dir" ? `the folder "${rel}" and all it holds` : `"${rel}"`;
+    if (!(await ask(`Delete ${what} for good? It goes from the VM, not to a bin; a restore point taken before has it.`))) return;
+    await change(["fs-delete", base, rel], li.parentElement, parentOf(entry.path));
   }
 
   /** Marks files the agent touched, and folders that contain any. */
@@ -549,6 +656,8 @@ function makeProject(tab) {
 
   for (const b of tab.pane.querySelectorAll(".mode")) b.addEventListener("click", () => setMode(b.dataset.mode));
   $(".refresh", tab.pane).addEventListener("click", loadTree);
+  $(".new-file", tab.pane).addEventListener("click", () => base && newEntry("file"));
+  $(".new-folder", tab.pane).addEventListener("click", () => base && newEntry("dir"));
   showHidden.addEventListener("click", () => {
     const on = showHidden.getAttribute("aria-pressed") !== "true";
     showHidden.setAttribute("aria-pressed", String(on));

@@ -52,6 +52,10 @@ const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
 const PASSTHROUGH: &[&str] = &[
     "projects",
     "ls",
+    "fs-new",
+    "fs-rename",
+    "fs-copy",
+    "fs-delete",
     "file",
     "config",
     "models",

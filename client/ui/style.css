@@ -693,6 +693,12 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 .tree .node .badge:empty, .tree .node .git:empty, .tree .node .size:empty { display: none; }
 .tree .node .git { color: var(--dim); font-family: var(--code); font-size: var(--t-small); }
 .tree .node .size { color: var(--dim); font-size: var(--t-small); }
+/* Naming in the tree: the row of the selection, a bare field where the name goes, what
+   Enter does on the right (or what went wrong, in red). */
+.tree .node.naming { background: var(--raise); cursor: default; }
+.tree .node.naming input { flex: 1; min-width: 0; height: 20px; padding: 0; border: 0; background: none; outline: none; font: inherit; }
+.name-hint { font-size: var(--t-small); color: var(--dim); white-space: nowrap; }
+.name-hint.bad { color: var(--red, #f85149); white-space: normal; }
 .tree .dir > .node { cursor: pointer; }
 .tree .hidden-entry { color: var(--dim); }
 
