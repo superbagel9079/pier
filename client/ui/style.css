@@ -597,7 +597,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
    left (back, search, then grouped), the page on the right, its text at a reading width. */
 .settings { flex: 1; min-height: 0; display: flex; background: var(--bg); }
 .settings-nav { flex: 0 0 220px; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4) var(--s3);
-  background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; }
+  background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; }
 .settings-nav .back { align-self: flex-start; display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s2); }
 .settings-nav .back .i { width: 14px; height: 14px; }
 /* A search field with its glyph where a row's icon goes, its text where the labels start. */
@@ -608,15 +608,18 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .settings-group { margin: var(--s4) 0 var(--s1); padding: 0 var(--s2); font-size: var(--t-label); color: var(--dim);
   font-weight: 600; }
 .prefs-tabs { display: flex; flex-direction: column; gap: 2px; }
-.prefs-tabs button { background: none; border: none; color: var(--dim); padding: var(--s1) var(--s2); margin: 0; text-align: left; white-space: nowrap; }
-.prefs-tabs button:hover { color: var(--fg); background: var(--hover); }
-.prefs-tabs button[aria-selected="true"] { color: var(--fg); background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); font-weight: 600; }
+.prefs-tabs button { background: none; border: none; color: var(--fg); min-height: 32px; padding: 0 var(--s2); margin: 0; text-align: left; white-space: nowrap; }
+.prefs-tabs button:hover { background: var(--hover); }
+.prefs-tabs button[aria-selected="true"] { background: var(--raise); }
 /* Searching: the categories with something that matches stay bright. */
 .settings.searching .prefs-tabs button { color: var(--dim); background: none; box-shadow: none; font-weight: 400; }
 .settings.searching .prefs-tabs button.has-match { color: var(--fg); }
-.prefs-pages { flex: 1; min-width: 0; overflow: auto; padding: var(--s5); }
-.prefs-pages > * { max-width: 760px; }
-.prefs-page > .grid { margin-bottom: var(--s2); }
+.prefs-pages { flex: 1; min-width: 0; overflow: auto; padding: var(--s5) 32px 48px; }
+.prefs-pages > * { max-width: 720px; }
+/* The mock-up's settings: each section a framed group, a setting's name (and what it does)
+   on the left, its control on the right. */
+.prefs-page > .grid { margin-bottom: var(--s2); padding: var(--s3) var(--s4); row-gap: var(--s3); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); }
+.prefs-page h2 { font-size: var(--t-small); line-height: 16px; color: var(--dim); font-weight: 600; margin: var(--s5) 0 var(--s2); }
 .prefs-page > h2:first-child, .prefs-page > div:first-child + h2 { margin-top: 0; }
 /* Two pages shown together (Appearance, then Layout): the second keeps its space above. */
 .settings:not(.searching) .prefs-page:not([hidden]) ~ .prefs-page:not([hidden]) > h2:first-child { margin-top: var(--s5); }
@@ -634,9 +637,11 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 }
 /* A setting of the picker's config: label and control on a line, what it does under it,
    its key in config.toml; a bar on the left when config.toml sets it. */
-.setting-row { padding: var(--s2) var(--s3); margin: 0 calc(-1 * var(--s3)); border-left: 2px solid transparent; }
-.setting-row.modified { border-left-color: var(--accent); }
-.setting-row + .setting-row { border-top: 1px solid var(--line); }
+.setting-row { padding: var(--s3) var(--s4); margin: 0; background: var(--field); border: 1px solid var(--line); border-top: none; }
+:not(.setting-row) + .setting-row { border-top: 1px solid var(--line); border-radius: var(--r) var(--r) 0 0; }
+.setting-row:not(:has(+ .setting-row)) { border-radius: 0 0 var(--r) var(--r); margin-bottom: var(--s2); }
+:not(.setting-row) + .setting-row:not(:has(+ .setting-row)) { border-radius: var(--r); }
+.setting-row.modified { box-shadow: inset 2px 0 0 var(--accent); }
 .setting-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .setting-head > label, .setting-head > span:first-child { flex: 1 1 200px; font-weight: 600; }
 .setting-head > input:not([type="checkbox"]), .setting-head > select, .setting-head > .combo { flex: 0 1 360px; min-width: 0; }

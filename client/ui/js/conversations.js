@@ -47,7 +47,7 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }, f
 /** A row of the list: its mark, its title, a detail on the right, all one button that does
  *  the row's main thing (none for a row that only informs); its other actions under ⋯,
  *  shown under the pointer, and on a right click or the menu key. */
-function listRow({ key, className = "", mark = null, title, fresh = false, meta = "", tip = "", run = null, menu = null }) {
+function conversationRow({ key, className = "", mark = null, title, fresh = false, meta = "", tip = "", run = null, menu = null }) {
   const main = el(run ? "button" : "div", { className: "row-main", title: tip });
   main.append(el("span", { className: "mark" }, ...(mark ? [mark] : [])),
     el("span", { className: fresh ? "title fresh" : "title", textContent: title }),
@@ -292,7 +292,7 @@ function makeConversations(tab) {
    *  conversation goes to the sub-agents folder once it is done. */
   function helperRow(pi, h, i) {
     const since = Math.max(0, Math.round(Date.now() / 1000 - (h.since || 0)));
-    return listRow({ key: `helper:${pi.slot}:${i}`, className: "running working helper in-team", mark: svgIcon("search"),
+    return conversationRow({ key: `helper:${pi.slot}:${i}`, className: "running working helper in-team", mark: svgIcon("search"),
       title: `${h.role} · ${h.title}`, meta: since < 60 ? `${since} s` : `${Math.round(since / 60)} min`,
       tip: `A read-only helper of Pi #${pi.n}: it reads the project and answers its Pi` });
   }
@@ -304,7 +304,7 @@ function makeConversations(tab) {
     const state = pi.working ? "working" : pi.reported ? "reported" : "waiting";
     const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
     const own = [["Open its terminal", open, false, { icon: "terminal" }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
-    return listRow({ key: `pi:${pi.slot}`, className: `running ${state}`,
+    return conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}`,
       mark: svgIcon({ working: "clock", reported: "check", waiting: "circle-alert" }[state]),
       title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta: state,
       tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
@@ -314,7 +314,7 @@ function makeConversations(tab) {
   /** A conversation no Pi runs: a click starts a Pi on it. Pinned ones carry a pin. */
   function row(p, s, inFolder = false) {
     const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
-    return listRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : ""].filter(Boolean).join(" "),
+    return conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : ""].filter(Boolean).join(" "),
       mark: s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
@@ -329,7 +329,7 @@ function makeConversations(tab) {
       keep();
       render();
     };
-    const li = listRow({ key: `folder:${key}`, className: "folder-head" + (folder.subagents ? " subagents" : ""),
+    const li = conversationRow({ key: `folder:${key}`, className: "folder-head" + (folder.subagents ? " subagents" : ""),
       mark: svgIcon("folder"), title: folder.name, meta: String(folder.sessions.length),
       tip: folder.subagents ? "Conversations of sub-agents (the helpers an orchestrator or a worker consults, pi-multiagent's agent_team): a Pi's work, not yours" : "",
       run: toggle, menu: folder.subagents ? null : (anchor, at, row) => showMenu(anchor, [
@@ -401,7 +401,7 @@ function makeConversations(tab) {
       ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e))), false, { icon: "copy" }],
       ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null), false, { icon: "square" }]] : []),
     ];
-    const li = listRow({ key: `project:${p.project}`, className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : ""),
+    const li = conversationRow({ key: `project:${p.project}`, className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : ""),
       mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(p.sessions.length) : pis.length ? `${pis.length} running` : "",
       tip: [p.project, factLine([pis.length ? `${pis.length} running` : "", `${p.sessions.length} conv.`]), projectTotals(p.sessions),
         inUse ? "the project of the Pi in use" : ""].filter(Boolean).join("\n"),
