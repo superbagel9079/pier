@@ -348,6 +348,14 @@ function providerDialog(p) {
 // --- Projects (the proposals' 2B): the VM's projects, one at a time -----------------
 
 let projectsOpen = null; // the project whose page is shown, else the list
+let projectsSub = null;  // "instructions": that page of the project
+/** Settings > Projects at a project (and its Instructions page): from Conversations' menu. */
+function openProjectSettings(project, sub = null) {
+  projectsOpen = project;
+  projectsSub = sub;
+  openPrefs();
+  showPrefsPage("projects");
+}
 /** The host on top, then the VM's projects with their mark; a project's page: its
  *  instructions, what Pi loads, its mark, its repository, its path. */
 function drawProjects() {
@@ -381,8 +389,13 @@ function drawProjects() {
       el("h2", { textContent: "Projects" }), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
     return;
   }
-  const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: "All projects" }));
-  back.addEventListener("click", () => { projectsOpen = null; drawProjects(); });
+  const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: projectsSub ? p.label : "All projects" }));
+  back.addEventListener("click", () => { if (projectsSub) projectsSub = null; else projectsOpen = null; drawProjects(); });
+  const title = el("div", { className: "project-title" }, projectBadge(p.project, looks[p.project]), el("h2", { textContent: projectsSub ? "Instructions" : p.label }));
+  if (projectsSub === "instructions") {
+    section.replaceChildren(back, title, promptCards(p.project, p.label));
+    return;
+  }
   const action = (text, run, primary = false) => {
     const b = el("button", { type: "button", className: primary ? "primary" : "secondary", textContent: text });
     b.addEventListener("click", run);
@@ -396,27 +409,26 @@ function drawProjects() {
     drawProjects();
   }));
   const copy = action("Copy", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
-  section.replaceChildren(back,
-    el("div", { className: "project-title" }, projectBadge(p.project, looks[p.project]), el("h2", { textContent: p.label })),
+  section.replaceChildren(back, title,
     el("div", { className: "rows" },
-      row("Instructions", "AGENTS.md and the rest Pi reads first in this project.", action("Edit", toTab("setup", (t) => t.openProject?.(p.project)))),
-      row("What Pi loads", "Its skills, extensions and prompt templates, the project's and yours.", action("Open", () => showPrefsPage("extensions"))),
+      row("Instructions", "AGENTS.md and Pi's system prompt: what Pi reads first in every session here.", action("Edit", () => { projectsSub = "instructions"; drawProjects(); })),
+      row("What Pi loads", "Its skills, extensions, prompt templates and packages, the project's and yours.", action("Open", () => { extProject = p.project; extFromProject = true; showPrefsPage("extensions"); })),
       row("Its mark", "A colour, a letter, an icon or a picture, in the lists and the rail.", change),
       row("Repository", "Its git repository and forge: branches, pull requests, what Pi pushed.", action("Open", toTab("repository", (t) => t.openProject?.(p.project)))),
-      row("Its path", p.project, copy)),
-    el("h2", { textContent: "Pi's system prompt" }), systemPrompts(p.project));
+      row("Its path", p.project, copy)));
 }
 
-/** APPEND_SYSTEM.md and SYSTEM.md of a project (the Project tab's Advanced, here now): each
- *  in a field, saved with its earlier versions kept on the VM. */
-function systemPrompts(project) {
+/** A project's texts for Pi (the Project tab's, here now): AGENTS.md, APPEND_SYSTEM.md and
+ *  SYSTEM.md, a card each, saved with their earlier versions kept on the VM. */
+function promptCards(project, projectName) {
   const box = el("div", { className: "system-prompts" }, el("p", { className: "dim", textContent: "Asking the VM…" }));
   const WORDS = {
+    instructions: ["Read first in every session", "Read by Pi at the start of every session in this project: what it is, the commands to run and test, the conventions, what to avoid."],
     append: ["Added to Pi's system prompt", "Read after Pi's own instructions, in every session of this project."],
     system: ["Replaces Pi's system prompt", "Replaces Pi's own instructions entirely, including how it uses its tools. Leave it empty unless you know why you need it."],
   };
   backend.api(["setup", project]).then((data) => {
-    box.replaceChildren(...["append", "system"].map((which) => {
+    box.replaceChildren(...["instructions", "append", "system"].map((which) => {
       const info = data.texts[which];
       let saved = info.text;
       const area = el("textarea", { className: "prompt-edit", spellcheck: false, value: info.text, rows: 6, ariaLabel: WORDS[which][0] });
@@ -427,7 +439,7 @@ function systemPrompts(project) {
       const versions = el("button", { type: "button", className: "link", textContent: "Earlier versions" });
       const update = () => {
         const n = Math.ceil(area.value.length / 4);
-        facts.textContent = (area.value.trim() ? `≈ ${n.toLocaleString()} tokens, read in every session` : "empty")
+        facts.textContent = (area.value.trim() ? `≈ ${n.toLocaleString()} tokens` : "empty")
           + (info.global && !info.exists ? " · a global one in ~/.pi/agent applies" : "");
         revert.disabled = save.disabled = area.value === saved;
       };
@@ -444,6 +456,25 @@ function systemPrompts(project) {
       area.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); write(); } });
       revert.addEventListener("click", () => { area.value = saved; update(); });
       save.addEventListener("click", write);
+      // AGENTS.md: a section to start from, or Pi asked to write it.
+      const extras = [];
+      if (which === "instructions") {
+        const sections = el("button", { type: "button", className: "link", textContent: "Add a section" });
+        sections.addEventListener("click", () => showMenu(sections, INSTRUCTION_SNIPPETS.map(([name, text]) => [name, () => {
+          const at = area.selectionStart ?? area.value.length;
+          const before = area.value.slice(0, at);
+          const glue = before && !before.endsWith("\n\n") ? (before.endsWith("\n") ? "\n" : "\n\n") : "";
+          area.value = before + glue + text + area.value.slice(at);
+          area.focus();
+          update();
+        }])));
+        const askPi = el("button", { type: "button", className: "link", textContent: "Let Pi write it" });
+        askPi.addEventListener("click", async () => {
+          closePrefs();
+          try { flashStatus(await letPiWriteInstructions(project, projectName, data.pis.length > 0)); } catch (e) { flashStatus(String(e)); }
+        });
+        extras.push(sections, askPi);
+      }
       versions.disabled = !info.history.length;
       versions.title = info.history.length ? "Every save keeps the previous one" : "No earlier version yet";
       versions.addEventListener("click", () => showMenu(versions, info.history.slice().reverse().map((v) => [
@@ -454,8 +485,8 @@ function systemPrompts(project) {
       update();
       // A card as the diff tab's: its head (what it does, its file), the text, its foot.
       return el("section", { className: "diff-card prompt-block" },
-        el("div", { className: "diff-card-head" }, svgIcon(which === "system" ? "file-code" : "file-plus"), el("span", { textContent: WORDS[which][0] }), label),
-        area, problem, el("div", { className: "prompt-foot" }, facts, versions, revert, save));
+        el("div", { className: "diff-card-head" }, svgIcon({ instructions: "file-text", append: "file-plus", system: "file-code" }[which]), el("span", { textContent: WORDS[which][0] }), label),
+        area, problem, el("div", { className: "prompt-foot" }, facts, ...extras, versions, revert, save));
     }));
   }).catch((e) => box.replaceChildren(el("p", { className: "error", textContent: String(e) })));
   return box;
@@ -598,16 +629,26 @@ async function drawForges() {
  *  project's own. Built once; the project list and the lists drawn again on each visit. */
 let extProject = null;  // the project whose own resources are shown with yours
 let extParts = null;    // {manager, tools, showTab}
+let extFromProject = false; // shown from Settings > Projects: that project's, its name on top
 let extTab = "skills";   // the tab shown: skills, extensions, prompts, packages
 
 /** From Project's "manage": that project's own resources, with yours. */
 function settingsExtensionsFor(project) {
   extProject = project;
+  extFromProject = true;
   if (!$("#prefs").hidden && prefsPage === "extensions") drawExtensions();
 }
 
 async function drawExtensions() {
   const select = $("#ext-project");
+  // From a project's page: back to it, its name on top, no list of projects.
+  $(".ext-bar").classList.toggle("from-project", extFromProject);
+  const back = $("#ext-back");
+  back.hidden = !extFromProject;
+  if (extFromProject) {
+    back.replaceChildren(svgIcon("arrow-left"), el("span", { textContent: projectLabel(extProject) }));
+    back.onclick = () => { extFromProject = false; projectsOpen = extProject; projectsSub = null; showPrefsPage("projects"); };
+  }
   const projects = lastProjects || await fetchProjects().catch(() => null);
   const options = [];
   for (const p of [...(projects?.running || []), ...(projects?.recent || [])]) if (!options.some((o) => o.path === p.path)) options.push(p);

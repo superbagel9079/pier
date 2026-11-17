@@ -77,7 +77,7 @@ function showSettingsPage(page) {
   const shown = PREFS_GROUPS[page] || [page];
   const tabs = prefsTabs();
   for (const tab of tabs) {
-    const on = tab.dataset.page === page;
+    const on = tab.dataset.page === (page === "extensions" ? "projects" : page);
     tab.setAttribute("aria-selected", String(on));
     tab.tabIndex = on ? 0 : -1;
   }
@@ -102,7 +102,7 @@ function showPrefsPage(page) {
 for (const tab of prefsTabs()) tab.addEventListener("click", () => showPrefsPage(tab.dataset.page));
 // The categories, a vertical tab list: arrows move, Home and End go to the ends.
 $("#prefs .prefs-tabs").addEventListener("keydown", (e) => {
-  const tabs = prefsTabs();
+  const tabs = prefsTabs().filter((t) => !t.hidden);
   const at = tabs.indexOf(document.activeElement);
   if (at < 0) return;
   const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: tabs.length - 1 }[e.key];

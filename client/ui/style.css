@@ -2031,3 +2031,8 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .prompt-block .prompt-edit::placeholder { color: var(--dim); font-family: var(--ui); }
 .prompt-block .prompt-foot { padding: 6px var(--s3); border-top: 1px solid var(--line); }
 .prompt-block > .error { margin: 0 var(--s3) var(--s2); }
+.prompt-foot { flex-wrap: wrap; row-gap: 4px; }
+.prompt-foot > .dim { white-space: nowrap; }
+.prompt-foot .link { white-space: nowrap; font-size: 12px; }
+#ext-back { margin-bottom: var(--s3); }
+.ext-bar.from-project :is(#ext-project, .pick) { display: none; }

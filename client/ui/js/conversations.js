@@ -483,7 +483,7 @@ function makeConversations(tab) {
       ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
       ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"]), false, { icon: "network" }],
       null,
-      ["Instructions and what Pi loads here", () => { const t = workspace.find("setup") || workspace.add("setup", "center"); workspace.show(t); t?.openProject?.(p.project); }, false, { icon: "folder-cog" }],
+      ["Instructions and what Pi loads here", () => openProjectSettings(p.project), false, { icon: "folder-cog" }],
       ["Change its mark…", () => projectLookDialog(p.project, p.label, view.looks[p.project] || {}, (look) => { view.looks[p.project] = look; keep(); redraw(); }), false, { icon: "palette" }],
       ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e))), false, { icon: "copy" }],
       ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null), false, { icon: "square" }]] : []),

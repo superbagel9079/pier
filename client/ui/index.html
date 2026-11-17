@@ -174,7 +174,7 @@
         <p class="settings-group">Pi</p>
         <button role="tab" data-page="agents" title="Models: Pi's default, the orchestrator, workers, helpers">Agents</button>
         <button role="tab" data-page="network" title="The sandbox, where Pi may connect">Network &amp; sandbox</button>
-        <button role="tab" data-page="extensions" title="Pi's version, its packages, skills, extensions, prompt templates, the gallery">Extensions &amp; skills</button>
+        <button role="tab" data-page="extensions" hidden>What Pi loads</button>
         <button role="tab" data-page="git" title="Your accounts on GitHub, GitLab, Gitea: Pi pushes and opens pull requests through them">Git &amp; forges</button>
         <button role="tab" data-page="labs" title="Disposable machines where Pi may do anything">Labs</button>
         <p class="settings-group">Pier</p>
@@ -196,6 +196,7 @@
       <section class="prefs-page" data-page="network" data-title="Network &amp; sandbox" role="tabpanel" hidden></section>
       <section class="prefs-page needs-vm" data-page="extensions" data-title="Extensions &amp; skills" role="tabpanel" hidden>
         <!-- As the mock-up's option A: what to show, then the project whose own are listed with yours. -->
+        <button type="button" id="ext-back" class="link back-to" hidden></button>
         <div class="toolbar ext-bar">
           <span id="ext-tabs" class="seg" role="tablist" aria-label="What to show"></span>
           <span class="head-gap"></span>

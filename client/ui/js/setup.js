@@ -17,6 +17,25 @@ const DRAFT_PROMPT = "Read this project: its structure, README, build, run and t
 
 /** What the conversation view takes (see rpc_command in Rust): a new Pi, the last
  *  conversation, a conversation file, or a Pi running in RPC mode ("…-r1"). */
+/** Pi asked to write the project's AGENTS.md: in a new conversation's message box (the
+ *  conversation view), else typed into Pi in tmux (started if none runs); you send it.
+ *  Says what happened. */
+async function letPiWriteInstructions(project, label, running) {
+  if (!prefs.piTerminal) {
+    const t = openPiTerminal(project, label, ["--new"]);
+    const box = t && $(".composer textarea", t.pane);
+    if (box) { box.value = DRAFT_PROMPT; box.dispatchEvent(new Event("input")); box.focus(); }
+    return "The request is in a new conversation's message box: send it, and Pi writes AGENTS.md itself.";
+  }
+  if (!running) {
+    openPiTerminal(project, label, []);
+    setTimeout(() => backend.api(["type", DRAFT_PROMPT, project]).catch((e) => flashStatus(String(e))), 5000);
+    return "Starting Pi… the request is typed into it in a moment: press Enter there to send it.";
+  }
+  await backend.api(["type", DRAFT_PROMPT, project]);
+  return "The request is typed into Pi: press Enter in its terminal to send it. Pi writes AGENTS.md itself.";
+}
+
 const chatArgs = (args) => args.length === 0 || (args.length === 1 && ["--new", "--continue"].includes(args[0]))
   || (args.length === 2 && args[0] === "--session") || (args.length === 2 && args[0] === "--slot" && /-r\d+$/.test(args[1]));
 
@@ -257,17 +276,7 @@ function makeSetup(tab) {
   });
   $$(".ask-pi").addEventListener("click", async () => {
     if (!data) return;
-    if (!data.pis.length) {
-      openPiTerminal(data.project, data.label, []);
-      showError(notice, "Starting Pi… the request is typed into it in a moment: press Enter there to send it.");
-      const asked = data.project;
-      setTimeout(() => backend.api(["type", DRAFT_PROMPT, asked]).catch((e) => showError(error, String(e))), 5000);
-      return;
-    }
-    try {
-      await backend.api(["type", DRAFT_PROMPT, data.project]);
-      showError(notice, "The request is typed into Pi: press Enter in its terminal to send it. Pi writes AGENTS.md itself; this tab shows it when you come back.");
-    } catch (e) { showError(error, String(e)); }
+    try { showError(notice, await letPiWriteInstructions(data.project, data.label, data.pis.length > 0)); } catch (e) { showError(error, String(e)); }
   });
 
   // --- what Pi reads ---
