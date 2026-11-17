@@ -1875,3 +1875,9 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 :is(.palette-field, .palette-search, .composer, .tree .node.naming, .xterm) :is(input, textarea),
 :is(.palette-field, .palette-search, .composer, .tree .node.naming, .xterm) :is(input, textarea):focus,
 .tab-rename, .tab-rename:focus { background: transparent !important; }
+/* A field shows it can be filled by a ground a shade lighter than whatever is behind it (a tint
+   of the text, so on every surface and theme), a little more while in use. */
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea, .pick) { background-color: color-mix(in srgb, var(--fg) 6%, transparent); }
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea):focus,
+.pick[aria-expanded="true"] { background-color: color-mix(in srgb, var(--fg) 11%, transparent); }
+.pick:hover { background-color: color-mix(in srgb, var(--fg) 9%, transparent); }
