@@ -1820,3 +1820,7 @@ body:not(.online) #btn-waiting { opacity: .4; }
 body:not(.online) #btn-waiting:hover { background: none; }
 /* The conversations' title the size of the middle's ("New tab"): the two bars read as one. */
 .panel-title { font-size: var(--t-text); line-height: 20px; }
+/* Settings kept on the VM (extensions, git accounts, labs), not connected: said in one line,
+   as Agents and Network say it, instead of empty tools. */
+body:not(.online) .prefs-page.needs-vm > * { display: none !important; }
+body:not(.online) .prefs-page.needs-vm::after { content: "These settings live on the VM: connect to it to see and change them."; display: block; color: var(--dim); font-size: var(--t-text); }

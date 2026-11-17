@@ -81,9 +81,13 @@ function setStatus(text) {
   $("#prefs-status-row").dataset.state = state;
   // Connected: who and where, as "leo@vm" in the mock-up; otherwise the words that matter.
   $("#status-foot span:last-child").textContent = state === "ok" && settings ? `${settings.user}@${settings.host}` : text;
-  $("#status-foot").title = `${text}: Settings > Connection`;
+  // Not connected, it is the way to connect; connected, to the connection's settings.
+  $("#status-foot").title = online ? `${text}: Settings > Connection` : "Click to connect to your VM";
 }
-for (const id of ["#status", "#status-foot"]) $(id).addEventListener("click", () => { openPrefs(); showPrefsPage("connection"); });
+for (const id of ["#status", "#status-foot"]) $(id).addEventListener("click", () => {
+  if (!online) { closePrefs(); if (settings) toLogin(); return; } // the first page: its password, or Add your VM
+  openPrefs(); showPrefsPage("connection");
+});
 
 function fillSetup(s) {
   const form = $("#setup-form");
