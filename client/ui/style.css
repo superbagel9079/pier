@@ -1409,14 +1409,14 @@ html.mica { --chip: color-mix(in srgb, var(--fg) 7%, transparent); --strong: col
 .wait-none { padding: var(--s3) var(--s5); }
 /* The gradient (Appearance): one drawing per style, from --g1 and --g2 (the accent and the
    link colour, or two chosen) at --gi; the same rule draws its thumbnail (.s-<style>). */
-:root { --g1: var(--accent); --g2: var(--link); --gi: 22%; --grain-layer: none; --grad: none;
+:root { --g1: var(--tg1, var(--accent)); --g2: var(--tg2, var(--link)); --g3: var(--tg3, #2dd4bf); --g4: var(--tg4, #f97316); --g5: var(--tg5, #ec4899); --gi: 22%; --grain-layer: none; --grad: none;
   --grad-ink: #0b0b0b; }
 :root[data-theme="light"] { --grad-ink: #ffffff; }
 :is(.grad-aurora, .s-aurora) { --grad: radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 55%), radial-gradient(circle at 8% 100%, color-mix(in srgb, var(--g2) calc(var(--gi) * .8), transparent), transparent 55%); }
-:is(.grad-mesh, .s-mesh) { --grad: radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--g2) var(--gi), transparent), transparent 45%), radial-gradient(circle at 85% 25%, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 45%), radial-gradient(circle at 60% 95%, color-mix(in srgb, #2dd4bf calc(var(--gi) * .9), transparent), transparent 50%); }
+:is(.grad-mesh, .s-mesh) { --grad: radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--g2) var(--gi), transparent), transparent 45%), radial-gradient(circle at 85% 25%, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 45%), radial-gradient(circle at 60% 95%, color-mix(in srgb, var(--g3) calc(var(--gi) * .9), transparent), transparent 50%); }
 :is(.grad-linear, .s-linear) { --grad: linear-gradient(135deg, color-mix(in srgb, var(--g1) var(--gi), transparent), transparent 55%, color-mix(in srgb, var(--g2) calc(var(--gi) * .7), transparent)); }
 :is(.grad-glow, .s-glow) { --grad: radial-gradient(ellipse 70% 55% at 50% -10%, color-mix(in srgb, var(--g1) calc(var(--gi) * 1.4), transparent), transparent 70%); }
-:is(.grad-dusk, .s-dusk) { --grad: linear-gradient(180deg, transparent 40%, color-mix(in srgb, #f97316 calc(var(--gi) * .8), transparent) 85%, color-mix(in srgb, #ec4899 var(--gi), transparent)); }
+:is(.grad-dusk, .s-dusk) { --grad: linear-gradient(180deg, transparent 40%, color-mix(in srgb, var(--g4) calc(var(--gi) * .8), transparent) 85%, color-mix(in srgb, var(--g5) var(--gi), transparent)); }
 :is(.grad-off, .s-off) { --grad: none; }
 .grad-grain { --grain-layer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"); }
 /* Where it goes */
