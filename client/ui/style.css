@@ -1392,3 +1392,5 @@ html.mica .settings { background: var(--mica-mid); }
 html.mica #workspace .empty.launcher { background: radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 55%), transparent; }
 /* The browser preview has no Mica: a wallpaper behind the page shows what it does. */
 html.mica-preview body { background: linear-gradient(135deg, #2d4a7a, #6b3d6e 55%, #1f5a52); }
+/* Mica: the surfaces made of the page's colour (buttons, chips) become tints of the text */
+html.mica { --chip: color-mix(in srgb, var(--fg) 7%, transparent); --surface: color-mix(in srgb, var(--fg) 5%, transparent); --strong: color-mix(in srgb, var(--fg) 16%, transparent); }

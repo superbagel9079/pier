@@ -288,9 +288,9 @@ async function saveLabsSettings(changes) {
     // Turned on: the Labs tab, beside the other panels (and in the + menu from now on).
     // Turned off: it goes. Appearance's list of panels follows at once.
     const on = labsOn();
-    if (changes.enabled === true && on && !workspace.find("labs")) {
-      workspace.add("labs", "center");
-      flashStatus("Labs on: the Labs tab is open (and in the + menu)");
+    // Turned on: said, not opened (the tab is in the + menu); turned off: its tab goes.
+    if (changes.enabled === true && on) {
+      flashStatus("Labs on: the Labs tab is in the + menu");
     } else if (changes.enabled === false && workspace.find("labs")) {
       workspace.close(workspace.find("labs"));
     }

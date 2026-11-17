@@ -164,7 +164,7 @@ function makeChat(tab) {
     if (n <= PREVIEW_LINES) return el("div", { className: "step-body" }, node);
     const label = unit === "thought" ? "Show the whole thought" : `Show ${n - 4} more lines`;
     const more = el("button", { className: "more", type: "button" }, svgIcon("chevrons-up-down"), el("span", { textContent: label }));
-    const box = el("div", { className: "step-body clipbox" }, el("div", { className: `clip ${unit === "thought" ? "thought" : "file"}` }, node), el("div", { className: "fade" }), more);
+    const box = el("div", { className: "step-body clipbox" }, el("div", { className: `clip ${unit === "thought" ? "thought" : "lines"}` }, node), el("div", { className: "fade" }), more);
     more.addEventListener("click", () => {
       const open = box.classList.toggle("open");
       more.lastChild.textContent = open ? "Show less" : label;

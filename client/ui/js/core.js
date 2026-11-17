@@ -155,6 +155,7 @@ function applyMica() {
   const on = Boolean(prefs.mica);
   const root = document.documentElement;
   root.classList.toggle("mica", on);
+  applyTheme(); // the surfaces' colours, solid or not
   const win = tauri?.window?.getCurrentWindow?.();
   root.classList.toggle("mica-preview", on && !win);
   if (!win?.setEffects) return;
@@ -230,6 +231,9 @@ function applyTheme() {
   // Mica (Appearance): the sides let the wallpaper's tint through more than the middle.
   root.style.setProperty("--mica-side", alpha(theme.ui.panel, 0.55));
   root.style.setProperty("--mica-mid", alpha(theme.ui.bg, 0.8));
+  // With Mica, the cards, fields and hovers let it through too (else they stay solid).
+  root.style.setProperty("--field", prefs.mica ? alpha(theme.ui.field, 0.55) : theme.ui.field);
+  root.style.setProperty("--hover", prefs.mica ? alpha(theme.ui.hover, 0.6) : theme.ui.hover);
   // An accent chosen in Appearance stays over every theme's ("" follows the theme).
   const own = /^#[0-9a-f]{6}$/i.test(prefs.accent || "") ? prefs.accent : "";
   if (own) root.style.setProperty("--accent", own);
