@@ -81,8 +81,8 @@ function setStatus(text) {
   $("#prefs-status-row").dataset.state = state;
   // Connected: who and where, as "leo@vm" in the mock-up; otherwise the words that matter.
   $("#status-foot span:last-child").textContent = state === "ok" && settings ? `${settings.user}@${settings.host}` : text;
-  // Not connected, it is the way to connect; connected, to the connection's settings.
-  $("#status-foot").title = online ? `${text}: Settings > Connection` : "Click to connect to your VM";
+    // Not connected, no hint: the first page asks for the VM already.
+  $("#status-foot").title = online ? `${text}: Settings > Connection` : "";
 }
 for (const id of ["#status", "#status-foot"]) $(id).addEventListener("click", () => {
   if (!online) { closePrefs(); if (settings) toLogin(); return; } // the first page: its password, or Add your VM
