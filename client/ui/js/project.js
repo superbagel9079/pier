@@ -123,48 +123,76 @@ function makeProject(tab) {
     agent.replaceChildren();
     if (!activity?.session) { agent.textContent = "no session yet"; return; }
     agent.append(el("span", { className: activity.working ? "" : "dim", textContent: activity.working ? "working" : "idle" }));
-    const usage = $(".usage", tab.pane);
-    const u = activity.usage;
-    usage.hidden = !u;
-    if (u) {
-      const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
-      if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
-      parts.push(dollars(u.cost) || "cost unknown");
-      usage.replaceChildren(`session · ${parts.join(" · ")}`);
-      // The model: a click goes where models are chosen.
-      if (u.model) usage.append(" · ", linkButton(u.model, "The models of Pi, the orchestrator, workers and helpers: Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); }));
-    }
   }
 
   let drawnActivity = "";
   function renderActivity() {
     // Activity comes every 1.5 s while a Pi works: drawn again only when what it shows
     // changed, and without losing the focus or the scroll.
-    const shape = JSON.stringify([activity, base]);
+    const shape = JSON.stringify([activity, base, waitingHere()]);
     if (shape === drawnActivity && activityView.childElementCount) return;
     drawnActivity = shape;
     keepPlace(activityView, drawActivity);
   }
 
+  /** What Pi asks in this project and waits for: approve or refuse it here. */
+  function waitingHere() {
+    return (vm.latest("approvals")?.data?.approvals || []).filter((a) => (a.state === "pending" || a.state === undefined) && a.project === base);
+  }
+
+  /** A card of Details: its title, a detail on the right, what it holds. */
+  function card(title, aside, ...body) {
+    return el("section", { className: "card" },
+      el("h2", {}, el("span", { textContent: title }), aside ? el("span", { className: "card-aside", textContent: aside }) : null), ...body);
+  }
+
+  /** Details, as the mock-up: what waits for you, what Pi changed (and Undo), the
+   *  session's tokens and cost; then what Pi read and its last steps. */
   function drawActivity() {
     activityView.replaceChildren();
     if (!activity) return;
     const files = Object.entries(activity.files);
-    for (const [state, spec] of Object.entries(STATES)) {
-      const items = files.filter(([, f]) => f.state === state).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
-      if (!items.length) continue;
-      activityView.append(group(`${spec.label} (${items.length})`, items.map(([path, f]) => fileRow(path, spec, f))));
+    const sorted = (items) => items.sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
+    const asks = waitingHere().sort((x, y) => (x.at || 0) - (y.at || 0));
+    if (asks.length) {
+      // The oldest request, in full (what will be done exactly); the others in the list.
+      const a = asks[0];
+      activityView.append(card("Waiting for you", asks.length > 1 ? `1 of ${asks.length}` : "",
+        el("ul", { className: "resource-items" }, approvalItem(a, async (yes) => {
+          try {
+            await backend.approvalAnswer(a.id, yes);
+            flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
+            vm.poke();
+          } catch (e) { flashStatus(String(e)); }
+        })),
+        asks.length > 1 ? el("p", {}, linkButton(`See all ${asks.length}`, "Every request waiting for you", () => waiting.show())) : null));
     }
-    // Changes git sees that did not go through Pi's edit or write tools: made by
-    // a bash command, or by you.
-    const touched = new Set(files.filter(([, f]) => f.modified || f.edits > 0 || f.state === "modifying" || f.state === "modified").map(([p]) => p));
+    // Changed: by Pi's edit and write tools, then what git sees changed otherwise (a bash
+    // command, or you).
+    const changing = (f) => f.modified || f.edits > 0 || ["modifying", "modified", "error"].includes(f.state);
+    const mine = sorted(files.filter(([, f]) => changing(f)));
+    const touched = new Set(mine.map(([p]) => p));
     const outside = Object.entries(activity.git).filter(([path]) => !touched.has(path));
-    if (outside.length) {
-      activityView.append(group(`Changed on disk, not by Pi's edit tool (${outside.length})`,
-        outside.map(([path, code]) => fileRow(path, { mark: code }, null))));
+    const changes = el("ul", {}, ...mine.map(([path, f]) => fileRow(path, STATES[f.state] || { mark: "✓" }, f)),
+      ...outside.map(([path, code]) => fileRow(path, { mark: code }, null)));
+    const count = mine.length + outside.length;
+    activityView.append(card("Changes", count ? `${count} file${count > 1 ? "s" : ""}` : "",
+      count ? changes : el("p", { className: "dim small", textContent: activity.session ? "Pi has changed nothing yet." : "No Pi session for this project yet." }),
+      ...(outside.length ? [el("p", { className: "hint", textContent: "A path marked ?? or M without Pi's mark was changed by a command or by you." })] : []),
+      undo));
+    const u = activity.usage;
+    if (u) {
+      const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
+      if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
+      activityView.append(card("Context", dollars(u.cost) || "cost unknown",
+        el("p", { className: "small", textContent: `This session: ${parts.join(" · ")}` }),
+        // The model: a click goes where models are chosen.
+        u.model ? el("p", { className: "small" }, "Model ", linkButton(u.model, "The models of Pi, the orchestrator, workers and helpers: Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); })) : null));
     }
+    const read = sorted(files.filter(([, f]) => !changing(f)));
+    if (read.length) activityView.append(card("Read", String(read.length), el("ul", {}, ...read.map(([path, f]) => fileRow(path, STATES[f.state], f)))));
     if (activity.events.length) {
-      activityView.append(group("Recent", activity.events.slice(0, 15).map((e) => {
+      activityView.append(card("Recent", "", el("ul", {}, ...activity.events.slice(0, 15).map((e) => {
         const li = el("li");
         const mark = e.state === "running" ? "…" : e.state === "error" ? "!" : "·";
         li.append(
@@ -173,14 +201,11 @@ function makeProject(tab) {
           el("span", { className: "path", textContent: e.target }),
         );
         return li;
-      })));
-    }
-    if (!activityView.childElementCount) {
-      activityView.append(el("p", { className: "dim", textContent: activity.session ? "Pi has not touched any file yet." : "No Pi session for this project yet." }));
+      }))));
     }
     activityView.append(el("p", {
       className: "hint",
-      textContent: "Shown from Pi's own session log: files read or changed by a bash command only appear under \"changed on disk\". What Pi will read next cannot be known in advance.",
+      textContent: "From Pi's own session log: what Pi will read next cannot be known in advance. Double-click a file to mention it in Pi.",
     }));
   }
 
@@ -673,7 +698,9 @@ function makeProject(tab) {
     if (stale && vm.latest("activity")) onActivity(vm.latest("activity"));
     if (mode === "given") given.onShow?.();
   };
-  const unlisten = [vm.on("activity", onActivity), vm.on("checkpoints", onPoints)];
+  // A request answered elsewhere (or a new one): the Waiting card follows.
+  const onApprovals = () => { if (activity && mode === "activity" && visible()) renderActivity(); };
+  const unlisten = [vm.on("activity", onActivity), vm.on("checkpoints", onPoints), vm.on("approvals", onApprovals)];
   tab.onClose = () => { unlisten.forEach((stop) => stop()); given.onClose?.(); vm.follow({ activity: null, checkpoints: null }); };
   retarget();
 }

@@ -506,6 +506,23 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 
 /* Rows: a line between them; the row under the pointer lights up, with its actions. */
 .group { margin-bottom: var(--s4); }
+/* Details: cards on the side's tone, as the mock-up. */
+.view-activity { display: flex; flex-direction: column; gap: var(--s3); }
+.card { background: var(--field); border: 1px solid var(--line); padding: var(--s3) var(--s4); border-radius: var(--r); min-width: 0; }
+.card h2 { display: flex; align-items: baseline; gap: var(--s2); margin: 0 0 var(--s2); font-size: var(--t-text); font-weight: 600; }
+.card-aside { margin-left: auto; font-size: var(--t-small); font-weight: 400; color: var(--dim); }
+.card > ul { list-style: none; margin: 0 calc(-1 * var(--s2)); padding: 0; }
+.card > ul > li { display: flex; gap: var(--s2); padding: 2px var(--s2); white-space: nowrap; cursor: default; border-radius: var(--r); }
+.card > ul > li:hover { background: var(--hover); }
+.card > ul > li .path { overflow: hidden; text-overflow: ellipsis; }
+.card > ul > li .count { margin-left: auto; color: var(--dim); font-size: var(--t-small); }
+.card > ul > li.clickable { cursor: pointer; }
+.card > ul.resource-items { margin: 0; }
+.card > ul.resource-items > li { display: block; white-space: normal; padding: 0; }
+.card > ul.resource-items > li:hover { background: none; }
+.card > ul.resource-items > li + li { margin-top: var(--s3); padding-top: var(--s3); border-top: 1px solid var(--line); }
+.card p { margin: var(--s1) 0 0; }
+.card .undo-prompt { margin-top: var(--s2); }
 .group ul { list-style: none; margin: 0; padding: 0; }
 .group li { display: flex; gap: var(--s2); padding: 2px var(--s2); white-space: nowrap; cursor: default; }
 .group li:hover { background: var(--hover); }
