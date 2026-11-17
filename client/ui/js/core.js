@@ -102,7 +102,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false,
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false, railAlways: true,
   gradStyle: "aurora", gradIntensity: 22, gradCustom: false, gradC1: "#4c8dff", gradC2: "#a371f7", gradGrain: false,
   gradNewTab: true, gradWorking: true, gradEmpty: false, gradButtons: false, gradSides: true };
 const prefs = (() => {
@@ -200,6 +200,12 @@ function applyMenuBlur() {
   document.documentElement.classList.toggle("menus-blur", Boolean(prefs.menuBlur));
 }
 applyMenuBlur();
+
+/** Keep the rail (Appearance): its icons stay on the left when the conversations are hidden. */
+function applyRail() {
+  document.documentElement.classList.toggle("rail-always", prefs.railAlways !== false);
+}
+applyRail();
 
 /** The two faces of the panels, as CSS variables: the interface, and what is code
  *  (paths, branches, logs, diffs) in the terminals' font. Set again when either changes. */

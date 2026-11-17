@@ -1801,3 +1801,7 @@ html.grad-in-sides #workspace #dock-right.over, html.mica.grad-in-sides #workspa
 .chat .node { background: none; }
 .chat .step:not(:last-child)::before { top: 25px; bottom: -4px; }
 .chat .step:last-child:has(> .step-body:not([hidden]))::before { top: 25px; height: 26px; }
+/* Keep the rail (an option, on by default): it stays with the conversations hidden. */
+html.rail-always #workspace:not(.left-open) #rail { display: flex; }
+/* The VM banner's command in the interface's font, as its sentence above it. */
+.vr-text code { font-family: var(--ui); font-size: 12px; }

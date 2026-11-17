@@ -14,6 +14,7 @@ function openPrefs() {
   showGradient();
   $("#prefs-menublur").checked = prefs.menuBlur;
   $("#prefs-mica").checked = prefs.mica;
+  $("#prefs-rail").checked = prefs.railAlways !== false;
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -544,6 +545,7 @@ $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.c
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
 $("#prefs-menublur").addEventListener("change", (e) => { prefs.menuBlur = e.target.checked; savePrefs(); applyMenuBlur(); });
 $("#prefs-mica").addEventListener("change", (e) => { prefs.mica = e.target.checked; savePrefs(); applyMica(); });
+$("#prefs-rail").addEventListener("change", (e) => { prefs.railAlways = e.target.checked; savePrefs(); applyRail(); window.dispatchEvent(new Event("resize")); });
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
