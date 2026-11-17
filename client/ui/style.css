@@ -642,10 +642,19 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
   margin: var(--s5) 0 var(--s2); padding-bottom: var(--s1); border-bottom: 1px solid var(--line); }
 .settings.searching .prefs-page:first-of-type::before { margin-top: 0; }
 .settings .found { box-shadow: -2px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+/* A narrow window: back and the search on one line, the categories on one line under them
+   that scrolls sideways (the selected one underlined), not two lines of blocks. */
 @media (max-width: 720px) {
   .settings { flex-direction: column; }
-  .settings-nav { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--line); }
-  .prefs-tabs { flex-direction: row; flex-wrap: wrap; }
+  .settings-nav { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); padding: var(--s2) var(--s4) 0; border-right: none; border-bottom: 1px solid var(--line); overflow: visible; width: 100%; min-width: 0; box-sizing: border-box; }
+  .settings-nav .back { flex: none; }
+  .settings-nav .search-field { flex: 1; min-width: 160px; }
+  .prefs-tabs { flex: 1 0 calc(100% + var(--s3)); flex-direction: row; flex-wrap: nowrap; gap: 0; min-width: 0; overflow-x: auto; scrollbar-width: none; margin: 0 0 0 calc(-1 * var(--s3));
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+  .prefs-tabs::-webkit-scrollbar { display: none; }
+  .prefs-tabs button { flex: none; min-height: 36px; padding: 0 var(--s3); border-radius: 0; color: var(--dim); }
+  .prefs-tabs button:hover { background: none; color: var(--fg); }
+  .prefs-tabs button[aria-selected="true"] { background: none; color: var(--fg); box-shadow: inset 0 -2px 0 var(--fg); }
   .settings-group { display: none; }
   .prefs-pages { padding: var(--s4); }
 }
@@ -1518,3 +1527,10 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 /* A narrow window: the rail opens the conversations (its bubble, the projects' squares), so
    the middle's button for the left side is one too many. */
 #workspace.left-over #toggle-left { display: none; }
+/* Windows (dialogs, the connection's) in the theme's colours: with translucent menus or Mica,
+   as the menus, the window behind blurred through them; a light edge; secondary buttons
+   outlined, not grey blocks. */
+:is(.menus-blur, html.mica) :is(.dialog, body.in-workspace #connect > div:not([hidden])) { background: color-mix(in srgb, var(--raise) 62%, transparent); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
+.dialog { border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
+:is(.dialog, #connect) .actions button.secondary { background: none; border: 1px solid var(--line); }
+:is(.dialog, #connect) .actions button.secondary:hover:not(:disabled) { background: var(--hover); }
