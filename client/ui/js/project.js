@@ -108,7 +108,12 @@ function makeProject(tab) {
     return (slot && activity?.pis?.find((pi) => pi.slot === slot)?.file) || null;
   }
 
+  /** Details and Files belong to the conversation (or file) shown in the middle: none
+   *  there, a note in their place. */
+  const gate = () => tab.pane.firstElementChild.classList.toggle("no-conversation", !currentTab?.params?.project);
+  gate();
   tab.onShownTab = () => {
+    gate();
     drawContext();
     if (shownFile() === chosenFile) return;
     chosenFile = shownFile();

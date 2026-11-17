@@ -696,7 +696,10 @@ function showMenu(anchor, items, at = null) {
   menuAnchor = anchor;
   anchor?.setAttribute("aria-expanded", "true");
   menu.hidden = false;
-  menu.style.top = `${Math.max(8, Math.min(box.bottom + 2, window.innerHeight - menu.offsetHeight - 8))}px`;
+  // Under its button; above it when there is no room below (the composer's): never over it.
+  const below = box.bottom + 4;
+  const above = (box.top ?? box.bottom) - menu.offsetHeight - 4;
+  menu.style.top = `${below + menu.offsetHeight > window.innerHeight - 8 && above >= 8 ? above : Math.max(8, Math.min(below, window.innerHeight - menu.offsetHeight - 8))}px`;
   menu.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - menu.offsetWidth - 8))}px`;
   menu.querySelector("button:not(:disabled)")?.focus(); // by keyboard: the arrows go on from here
 }

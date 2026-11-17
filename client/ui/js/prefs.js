@@ -87,10 +87,7 @@ function showSettingsPage(page) {
 }
 const prefsLogs = { pane: $("#prefs-logs") };
 
-// Every list of the settings as the mock-up's pick (ui.js), those drawn later too.
-const pickAll = (root) => root.querySelectorAll(".set > select, .setting-head > select, #ext-project, #prefs-logs .level").forEach(pickify);
-pickAll($("#prefs"));
-new MutationObserver(() => pickAll($("#prefs"))).observe($("#prefs .prefs-pages"), { childList: true, subtree: true });
+
 /** A page asked for from elsewhere (Labs' settings link, the update button, the palette). */
 function showPrefsPage(page) {
   $("#prefs-search").value = "";

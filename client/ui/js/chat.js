@@ -496,10 +496,20 @@ function makeChat(tab) {
     }, false, { icon: "paperclip" }],
     ["Mention a project file (@)", () => { input.value += "@"; input.focus(); }, false, { icon: "at-sign" }],
   ]));
+  // The model: the palette of Settings (ui.js), above the composer: search, the name, its
+  // provider, a check on the one in use.
   modelBtn.addEventListener("click", () => command({ type: "get_available_models" }, (data) => {
     const models = data?.models || [];
-    showMenu(modelBtn, models.length ? models.map((m) => [`${m.provider}/${m.id}`, () => command({ type: "set_model", provider: m.provider, modelId: m.id },
-      () => command({ type: "get_state" }, (d) => { state = d || {}; showState(); }))]) : [["No other model", () => {}, true]]);
+    const key = (m) => `${m.provider}/${m.id}`;
+    pickPalette(modelBtn, {
+      items: models.map((m) => ({ value: key(m), label: m.id, detail: m.provider })),
+      current: state.model ? `${state.model.provider}/${state.model.id}` : null,
+      placeholder: "Search models",
+      onPick: (v) => {
+        const m = models.find((x) => key(x) === v);
+        if (m) command({ type: "set_model", provider: m.provider, modelId: m.id }, () => command({ type: "get_state" }, (d) => { state = d || {}; showState(); }));
+      },
+    });
   }));
   thinkBtn.addEventListener("click", () => command({ type: "get_available_thinking_levels" }, (data) => {
     const levels = data?.levels || [];

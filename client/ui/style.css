@@ -1296,3 +1296,19 @@ button.row-main:hover { background: none; }
 .approval-whole.command { white-space: normal; padding: var(--s2) var(--s3); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); }
 .approval-whole.command .cl { display: block; white-space: pre-wrap; word-break: normal; overflow-wrap: break-word; padding-left: 2ch; text-indent: -2ch; }
 .approval-whole.command .cl .w { display: inline-block; max-width: 100%; overflow-wrap: anywhere; text-indent: 0; }
+/* Details and Files with no conversation in the middle */
+.no-conversation-note { display: none; }
+.pane-project.no-conversation > :is(.view-activity, .view-files, .view-restore, .view-given, .error) { display: none !important; }
+.pane-project.no-conversation .no-conversation-note { display: flex; flex-direction: column; align-items: center; gap: var(--s1); margin: 64px var(--s4) 0; text-align: center; color: var(--dim); }
+.no-conversation-note .i { width: 20px; height: 20px; margin-bottom: var(--s2); }
+.no-conversation-note p:first-of-type { color: var(--fg); font-weight: 600; }
+.no-conversation-note p + p { font-size: 12px; line-height: 16px; max-width: 240px; }
+/* A request's detail: its facts in plain text, the command with a line on its left
+   (code font kept: every character of what is approved must read as it is). */
+.wait-detail .approval-fact { font-family: var(--ui); font-size: 12px; line-height: 18px; font-weight: 400; color: var(--dim); }
+.wait-detail .approval-whole { font-weight: 400; color: var(--fg); }
+.wait-detail .approval-whole.command { margin: var(--s2) 0 var(--s1); padding: 0 0 0 var(--s3); background: none; border: 0; border-left: 2px solid var(--line); border-radius: 0; }
+.wait-detail .approval-reason { margin-top: var(--s2); }
+.wait-detail > .dim.small { font-size: 11px; }
+/* A pick in a form or a dialog takes the field's width, as the list did. */
+:is(.dialog, .grid, form, fieldset, .fields) .pick { width: 100%; }

@@ -70,7 +70,9 @@ function pickPalette(anchor, { items, current = null, placeholder, custom = null
   draw();
   const r = anchor.getBoundingClientRect();
   box.style.width = `${Math.max(r.width, 340)}px`;
-  box.style.left = `${Math.max(8, Math.min(r.right - box.offsetWidth, innerWidth - box.offsetWidth - 8))}px`;
+  // From its button's left edge when it fits, else ending at its right edge.
+  const left = r.left + box.offsetWidth <= innerWidth - 8 ? r.left : r.right - box.offsetWidth;
+  box.style.left = `${Math.max(8, Math.min(left, innerWidth - box.offsetWidth - 8))}px`;
   box.style.top = `${r.bottom + 4 + box.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - box.offsetHeight - 4) : r.bottom + 4}px`;
   anchor.setAttribute("aria-expanded", "true");
   document.addEventListener("pointerdown", outside, true);
@@ -173,3 +175,14 @@ function keyed(key, node) {
 
 /** A path of the VM as the user reads it: /home/<them>/x as ~/x. */
 const projectLabel = (path) => String(path || "").replace(/^\/home\/[^/]+/, "~");
+
+// Every list of Pier as a pick with Pier's menu, those drawn later too (dialogs, Repository,
+// Labs...): the system's own list is drawn by Windows, out of the theme. Looked for once a
+// frame at most, whatever the number of changes (a conversation streams many).
+let pickFrame = 0;
+const pickAllSelects = () => {
+  pickFrame = 0;
+  for (const select of document.querySelectorAll("select:not([data-pick]):not([multiple])")) pickify(select);
+};
+pickAllSelects();
+new MutationObserver(() => { if (!pickFrame) pickFrame = requestAnimationFrame(pickAllSelects); }).observe(document.body, { childList: true, subtree: true });
