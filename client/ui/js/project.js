@@ -10,10 +10,8 @@ const FILE_ORDER = {
   size: (a, b) => (b.size || 0) - (a.size || 0) || FILE_ORDER.name(a, b),
   date: (a, b) => (b.mtime || 0) - (a.mtime || 0) || FILE_ORDER.name(a, b),
 };
-/** A file's icon by what it holds: text, code, or anything else. */
-const fileIcon = (entry) => entry.kind === "dir" ? "folder"
-  : /\.(md|txt|rst|adoc)$/i.test(entry.name) || !entry.name.includes(".", 1) ? "file-text"
-    : /\.(py|js|mjs|ts|tsx|jsx|rs|go|c|h|cc|cpp|hpp|java|kt|rb|php|sh|bash|zsh|ps1|toml|json|ya?ml|css|scss|html|xml|sql|lua|swift)$/i.test(entry.name) ? "file-code" : "file";
+/** A file's icon by its type (python, rust, markdown…); a folder's, open or not (CSS). */
+const fileIcon = (entry) => entry.kind === "dir" ? "ft-folder" : fileTypeIcon(entry.name);
 
 const STATES = {
   modifying: { label: "Pi is changing it" },
@@ -264,7 +262,7 @@ function makeProject(tab) {
     const meta = sortBy.value === "size" && entry.kind === "file" ? humanSize(entry.size)
       : sortBy.value === "date" && entry.mtime ? relTime(entry.mtime).replace(/ ago$/, "") : "";
     row.append(el("span", { className: "fold-arrow" }, ...(entry.kind === "dir" ? [svgIcon("chevron-right")] : [])),
-      el("span", { className: "kind" }, svgIcon(fileIcon(entry))), name,
+      el("span", { className: "kind" }, svgIcon(fileIcon(entry)), ...(entry.kind === "dir" ? [svgIcon("ft-folder-open")] : [])), name,
       el("span", { className: "badge" }), el("span", { className: "git" }), el("span", { className: "size", textContent: meta }));
     li.append(pressable(row));
     row.addEventListener("contextmenu", (e) => { e.preventDefault(); nodeMenu(entry, li.dataset.rel, row, { x: e.clientX, y: e.clientY }); });

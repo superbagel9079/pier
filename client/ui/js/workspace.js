@@ -19,6 +19,11 @@ const KINDS = {
   lab: { title: "lab", terminal: true },
 };
 const DOCKS = ["left", "center", "right"];
+// A tab's icon: a file's or a diff's by its type, else by what the tab is.
+const TAB_ICON = { chat: "message-square", project: "activity", setup: "folder-cog", repository: "git-branch",
+  conversations: "inbox", takeback: "undo-2", labs: "flask-conical" };
+const tabIcon = (tab) => (tab.kind === "file" || tab.kind === "diff") && tab.params?.rel ? fileTypeIcon(tab.params.rel)
+  : TAB_ICON[tab.kind] || (KINDS[tab.kind]?.terminal ? "terminal" : "file");
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
 // Fixed, as the mock-up: Conversations on the left, Activity on the right, everything else
 // (terminals, files, Project, Repository, Logs, Labs) as tabs in the middle.
@@ -186,7 +191,7 @@ const workspace = (() => {
       requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
     });
     node.title = tab.pinned ? "picker: the main terminal (cannot be closed)" : tab.title;
-    node.append(el("span", { textContent: tab.title }));
+    node.append(el("span", { className: "tab-icon" }, svgIcon(tabIcon(tab))), el("span", { textContent: tab.title }));
     const actions = el("span");
     actions.className = "tab-actions";
     // Only ×: moving, renaming and the rest are in the tab's right-click menu.
@@ -225,7 +230,7 @@ const workspace = (() => {
 
   /** Edits a tab's name in place: Enter keeps it, Escape cancels, empty restores it. */
   function rename(tab) {
-    const label = [...$(".tabs", docks[tab.dock].el).children][docks[tab.dock].tabs.indexOf(tab)]?.firstChild;
+    const label = [...$(".tabs", docks[tab.dock].el).children][docks[tab.dock].tabs.indexOf(tab)]?.querySelector(":scope > .tab-icon + span");
     if (!label) return;
     const input = el("input", { className: "tab-rename", value: tab.title });
     input.size = Math.max(6, tab.title.length + 2);

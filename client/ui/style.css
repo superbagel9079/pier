@@ -386,9 +386,9 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .pane-conversations .toolbar { padding: 0 var(--s2) var(--s2); }
 .pane-conversations .count { padding: 0 var(--s4); }
 .pane-conversations .sessions { margin: 0; padding: 0 var(--s2) var(--s2); }
-.tab.pinned > span:first-child { font-weight: 600; }
+.tab.pinned > .tab-icon + span { font-weight: 600; }
 /* Six letters and the ellipsis at least, in the name's own font: "Conver…", never "Con…". */
-.tab > span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 7ch; }
+.tab > .tab-icon + span { overflow: hidden; text-overflow: ellipsis; min-width: 7ch; }
 /* Only the active tab (or the one under the pointer) shows its ×. */
 .tab .tab-actions { display: none; flex: 0 0 auto; align-items: center; }
 .tab .tab-actions .icon { display: grid; place-items: center; height: 28px; padding: 0 var(--s1); min-width: 0; }
@@ -1953,3 +1953,11 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .project-title .pbadge { width: 26px; height: 26px; font-size: 13px; }
 .project-title h2 { margin: 0 !important; font-size: 18px; color: var(--fg); font-weight: 600; }
 .mark-preview .pbadge { width: 22px; height: 22px; }
+/* File-type icons (Catppuccin, monochrome): the tree's folder open when unfolded; a tab's
+   icon before its name. */
+.tree .node .kind .i + .i { display: none; }
+.tree .node[aria-expanded="true"] .kind .i:first-child { display: none; }
+.tree .node[aria-expanded="true"] .kind .i + .i { display: inline-block; }
+.tab > .tab-icon { display: inline-flex; flex: none; color: var(--dim); }
+.tab.active > .tab-icon { color: var(--fg); }
+.tab > .tab-icon .i { width: 14px; height: 14px; }

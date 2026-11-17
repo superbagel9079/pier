@@ -17,6 +17,31 @@ function svgIcon(name) {
   return svg;
 }
 
+// A file's icon by its name (Catppuccin's, in the text's colour): "ft-python" for x.py.
+const FT_EXT = {
+  py: "python", pyi: "python", js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
+  ts: "typescript", tsx: "typescript", mts: "typescript", rs: "rust", go: "go", java: "java", kt: "java",
+  c: "c", h: "c", cc: "cpp", cpp: "cpp", cxx: "cpp", hpp: "cpp", rb: "ruby", php: "php", lua: "lua",
+  sh: "bash", bash: "bash", zsh: "bash", fish: "bash", ps1: "bash", md: "markdown", mdx: "markdown",
+  json: "json", jsonl: "json", json5: "json", toml: "toml", yml: "yaml", yaml: "yaml", xml: "xml",
+  html: "html", htm: "html", css: "css", scss: "css", sass: "css", less: "css", vue: "vue", svelte: "svelte",
+  svg: "svg", png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", ico: "image", bmp: "image",
+  txt: "text", rst: "text", adoc: "text", log: "log", csv: "csv", tsv: "csv", pdf: "pdf",
+  zip: "zip", tar: "zip", gz: "zip", tgz: "zip", xz: "zip", bz2: "zip", "7z": "zip", rar: "zip",
+  db: "database", sqlite: "database", sqlite3: "database", sql: "database", lock: "lock",
+  ini: "config", cfg: "config", conf: "config", env: "env", exe: "binary", bin: "binary", so: "binary", dll: "binary", o: "binary",
+};
+function fileTypeIcon(path) {
+  const name = String(path).split("/").pop().toLowerCase();
+  if (/^\.env(\.|$)/.test(name)) return "ft-env";
+  if (/^\.git(ignore|attributes|modules)$/.test(name)) return "ft-git";
+  if (/^(dockerfile|containerfile|docker-compose\.ya?ml|compose\.ya?ml)$/.test(name)) return "ft-docker";
+  if (/^(makefile|gnumakefile|justfile)$/.test(name)) return "ft-makefile";
+  if (/^(license|licence|copying)(\.|$)/.test(name)) return "ft-license";
+  const ext = name.includes(".", 1) ? name.split(".").pop() : "";
+  return `ft-${FT_EXT[ext] || (ext ? "file" : "text")}`;
+}
+
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   // "aria-…" and "data-…" are attributes, not properties: assigned, they did nothing.
