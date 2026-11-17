@@ -65,6 +65,7 @@ document.addEventListener("mousemove", (event) => {
   $("#window-buttons").hidden = false;
 })();
 backend.setLogLevel(prefs.debugLogs).catch(() => {});
+backend.setShortcut(shortcutOn()).catch(() => {}); // Rust takes it at launch; only kept with tmux
 (async () => {
   settings = await backend.loadSettings();
   if (settings) toLogin();

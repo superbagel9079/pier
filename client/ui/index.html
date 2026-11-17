@@ -228,7 +228,7 @@
         <div class="set"><label class="what" for="prefs-termfont"><span>Code font</span><span>Files, commands, the terminal.</span></label><select id="prefs-termfont"></select></div>
         <div class="set"><div class="what"><span id="prefs-corners-label">Corners</span><span>Buttons, menus, cards and fields.</span></div>
           <div id="prefs-corners" class="seg" role="radiogroup" aria-labelledby="prefs-corners-label"><button role="radio" data-v="0">Square</button><button role="radio" data-v="4">Slight</button><button role="radio" data-v="8">Round</button></div></div>
-        <div class="set"><label class="what" for="prefs-menublur"><span>Translucent menus</span><span>Menus let what is behind them show through, blurred.</span></label><input id="prefs-menublur" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-menublur"><span>Translucent menus and notifications</span><span>Menus, the command palette and Pier's notifications let what is behind them show through, blurred.</span></label><input id="prefs-menublur" type="checkbox"></div>
       </div>
       <input id="prefs-termfont-other" aria-label="Another terminal font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
       <input id="prefs-uifont-other" aria-label="Another interface font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
@@ -243,14 +243,13 @@
       </section>
 
       <section class="prefs-page" data-page="behavior" data-title="Behavior" role="tabpanel" hidden>
-      <h2>Notifications and keys</h2>
+      <h2>Notifications</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-notify"><span>When a Pi finishes</span><span>A Windows notification, while Pier is in the background.</span></label><button id="prefs-notify-test" class="secondary" type="button">Send a test</button><input id="prefs-notify" type="checkbox"></div>
         <!-- What it looks like (the proposals' 6B), as connect.js sends it. -->
-        <div class="set notify-preview" aria-hidden="true"><div class="toast-preview"><svg class="i"><use href="#i-circle-check"/></svg><div><div class="t">Pi finished</div><div class="b">~/work is waiting for you</div></div></div></div>
-        <div class="set"><label class="what" for="prefs-shortcut"><span>Ctrl+Alt+V sends the clipboard's image</span><span>From anywhere, into the Pi in use.</span></label><input id="prefs-shortcut" type="checkbox"></div>
+        <div class="set notify-preview" aria-hidden="true"><span class="what"><span>Preview</span><span>As Windows shows it, in the corner of the screen.</span></span>
+          <div class="toast-preview"><div class="app"><span class="mark">P</span>Pier<span class="when">now</span></div><div class="t">Pi finished</div><div class="b">~/work is waiting for you</div></div></div>
       </div>
-      <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an older Pier still in the tray?), then turn this off and on again.</p>
       <h2>Shares and files given to Pi</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-autostop"><span>Stop a share when its Pi ends</span><span>The folder shared with the project's Pi stops being shared.</span></label><input id="prefs-autostop" type="checkbox"></div>
@@ -284,8 +283,10 @@
       <h2>Behaviour</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The terminal or panel under the pointer gets the keyboard, without a click.</span></label><input id="prefs-focus" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-shortcut"><span>Ctrl+Alt+V sends the clipboard's image</span><span>From anywhere, typed into the prompt of the Pi in use (in tmux; the conversation view takes Ctrl+V).</span></label><input id="prefs-shortcut" type="checkbox"></div>
         <div class="set"><label class="what" for="prefs-gpu"><span>Draw with the graphics card</span><span>Smooth scrolling. Turn it off if text looks wrong; terminals opened after the change use it.</span></label><input id="prefs-gpu" type="checkbox"></div>
       </div>
+      <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an older Pier still in the tray?), then turn this off and on again.</p>
       </div>
       </section>
 

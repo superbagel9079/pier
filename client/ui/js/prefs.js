@@ -32,7 +32,7 @@ function openPrefs() {
   fillLabsPrefs();
   backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
   $("#prefs-shortcut-note").hidden = true;
-  backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !prefs.shortcut; }).catch(() => {});
+  backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !shortcutOn(); }).catch(() => {});
   showSettingsPage(prefsPage);
   if ($("#prefs").hidden) {
     // The workspace stays as it was behind (terminals run on), only out of sight.
@@ -458,7 +458,7 @@ $("#prefs-padding").addEventListener("change", (e) => {
 $("#prefs-shortcut").addEventListener("change", async (e) => {
   prefs.shortcut = e.target.checked;
   savePrefs();
-  try { await backend.setShortcut(prefs.shortcut); } catch (error) { alert(String(error)); }
+  try { await backend.setShortcut(shortcutOn()); } catch (error) { alert(String(error)); }
 });
 $("#prefs-autostop").addEventListener("change", (e) => { prefs.autostop = e.target.checked; savePrefs(); });
 $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.checked; savePrefs(); });
@@ -474,6 +474,7 @@ $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
   $("#prefs-term-more").hidden = !prefs.piTerminal; // the terminals' settings, only with tmux
+  backend.setShortcut(shortcutOn()).catch(() => {});
 });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
 $("#prefs-copykeys").addEventListener("change", (e) => { prefs.copyKeys = e.target.value; savePrefs(); });

@@ -143,6 +143,10 @@ function applyCorners() {
 }
 applyCorners();
 
+/** Ctrl+Alt+V types the clipboard image's reference into Pi's prompt in tmux: taken from
+ *  Windows only when Pi runs there (Settings > Terminals), not for the conversation view. */
+const shortcutOn = () => Boolean(prefs.shortcut && prefs.piTerminal);
+
 /** Translucent menus (Appearance): what is behind them shows through, blurred. */
 function applyMenuBlur() {
   document.documentElement.classList.toggle("menus-blur", Boolean(prefs.menuBlur));
