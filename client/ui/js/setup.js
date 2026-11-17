@@ -15,11 +15,19 @@ const INSTRUCTION_SNIPPETS = [
 
 const DRAFT_PROMPT = "Read this project: its structure, README, build, run and test setup, and the conventions you can infer from the code. Then write an AGENTS.md at the project root for future sessions: what the project is, the exact commands to install, run and test, the conventions to follow, and what to avoid. Keep it short (under 60 lines) and concrete. If an AGENTS.md already exists, improve it instead and tell me what you changed.";
 
+/** What the conversation view takes (see rpc_command in Rust): a new Pi, the last
+ *  conversation, a conversation file, or a Pi running in RPC mode ("…-r1"). */
+const chatArgs = (args) => args.length === 0 || (args.length === 1 && ["--new", "--continue"].includes(args[0]))
+  || (args.length === 2 && args[0] === "--session") || (args.length === 2 && args[0] === "--slot" && /-r\d+$/.test(args[1]));
+
 /** A terminal on a Pi of project. args: nothing (the Pi used last there, or a new one),
  *  ["--new"], ["--slot", NAME] (a running Pi), ["--continue"] or ["--session", FILE]
  *  (that conversation: its Pi if one runs it, else a new Pi on it). A tab already open
  *  on the same Pi is shown instead; n numbers the project's Pis in the tab's title. */
 function openPiTerminal(project, label, args = [], n = 1) {
+  // Pier's conversation view, unless Settings > Terminals asks for Pi's own screen in
+  // tmux; a Pi already running in tmux, an orchestrator or a task still open there.
+  if (!prefs.piTerminal && chatArgs(args)) return openChat(project, label, args);
   // The same Pi: the tab that shows that tmux session (it learns it when attached), or
   // one opened the same way.
   const slot = args[0] === "--slot" ? args[1] : null;

@@ -90,7 +90,7 @@ p { margin: var(--s2) 0; }
 /* What is code, in the terminal's font. */
 code, kbd, pre, .editor, .path, .rel, .file-name, .log-lines, .diff,
 .desc, .facts, .setup-summary, .startup .ellipsis, .context-project .label,
-.toolbar .root, .setup-project, .which-pi, #target, .tab-rename, .mark {
+.toolbar .root, .setup-project, #target, .tab-rename, .mark {
   font-family: var(--code);
 }
 /* A path with its name always whole, its folder cut short first (splitPath). */
@@ -280,9 +280,6 @@ nav > button { flex-shrink: 0; white-space: nowrap; }
 nav > #btn-handoff { flex-shrink: 1; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; }
 #topbar { overflow: hidden; min-height: 40px; }
 @media (max-width: 900px) { #status { display: none; } }
-body.own-titlebar .dock-head.under-buttons { padding-right: 138px; }
-body.own-titlebar .side.collapsed .dock-head.under-buttons { padding-right: 0; padding-top: 40px; }
-body.own-titlebar .dock-head.beside-buttons { padding-right: 108px; }
 
 /* The rail: 44 px of icons on the left edge. */
 #rail { flex: 0 0 44px; display: flex; flex-direction: column; align-items: center; gap: var(--s1); padding: var(--s1) 0; background: var(--bg); border-right: 1px solid var(--line); user-select: none; }
@@ -297,12 +294,10 @@ body.own-titlebar .dock-head.beside-buttons { padding-right: 108px; }
 .bars i:nth-child(1) { height: 3px; } .bars i:nth-child(2) { height: 6px; } .bars i:nth-child(3) { height: 9px; }
 [data-state="slow"] .bars i:nth-child(3), [data-state="lost"] .bars i { background: var(--line); }
 /* In the rail only while the left side is closed; otherwise at that side's foot, with its words. */
-#workspace:has(#dock-left:not([hidden]):not(.collapsed)) #rail-status { display: none; }
 .dock-foot { flex: 0 0 40px; display: flex; align-items: center; padding: 0 var(--s2); border-top: 1px solid var(--line); background: var(--bg); }
-.side.collapsed .dock-foot { display: none; }
 .status-line { display: flex; align-items: baseline; gap: var(--s2); min-width: 0; height: 32px; line-height: 32px; padding: 0 var(--s3); background: none; color: var(--dim); font-size: var(--t-small); }
 .status-line:hover { background: var(--hover); color: var(--fg); }
-.status-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.status-line span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #target { align-self: center; padding: 0 var(--s3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-size: var(--t-small); }
 
 /* connection screens */
@@ -363,16 +358,15 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 .tabs { gap: 2px; padding: 0 var(--s1); }
 .tab { margin: var(--s1) 0; border-radius: var(--r); }
 /* A side holding one panel: its name as the side's title, as the mock-up's headers. */
-.side.single .tab.active { background: none; font-weight: 600; cursor: default; }
-.side.single .tab .tab-actions { display: none; }
 
 /* The mock-up's frame: each side a fixed panel with its own header (no tab bar), hidden
    whole by the middle's toggles; the middle a header above its tabs. */
 .side > .dock-head { display: none; }
 .side.collapsed { display: none !important; }
-.center-head { flex: 0 0 40px; display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s2); border-bottom: 1px solid var(--line); background: var(--bg); min-width: 0; }
+.center-head { flex: 0 0 40px; display: flex; align-items: center; gap: var(--s3); padding: 0 var(--s3); border-bottom: 1px solid var(--line); background: var(--bg); min-width: 0; }
+.center-head .icon-btn { width: 28px; height: 28px; }
 .head-title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.center-head #target { padding: 0; font-size: var(--t-text); }
+.center-head #target { padding: 0; font-size: var(--t-text); font-family: var(--ui); color: var(--dim); }
 .head-gap { flex: 1; }
 /* The toggles say open or closed by their icon, not by a pressed fill. */
 .center-head .icon-btn[aria-pressed] { background: none; }
@@ -380,8 +374,12 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 body.own-titlebar #workspace:not(.right-open) .center-head { padding-right: 146px; }
 body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { padding-right: 146px; }
 /* A panel's header: its name or its page tabs, 40 px, staying at the top as it scrolls. */
-.panel-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--s1); height: 40px; padding: 0 var(--s2) 0 var(--s4); background: var(--panel); }
-.panel-title { flex: 1; font-weight: 600; }
+.panel-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: var(--s1); height: 40px; padding: 0 var(--s2) 0 20px; background: var(--panel); }
+.panel-title { flex: 1; font-size: var(--t-small); line-height: 16px; font-weight: 600; }
+.panel-head .icon-btn { width: 24px; height: 24px; }
+/* The rail belongs to the left side: hidden with it, as in the mock-up. */
+#workspace:not(.left-open) #rail { display: none; }
+.rail-btn[aria-pressed="true"] { background: var(--raise); color: var(--fg); }
 .pane:has(> .pane-conversations) { padding: 0; }
 .pane-conversations .toolbar { padding: 0 var(--s2) var(--s2); }
 .pane-conversations .count { padding: 0 var(--s4); }
@@ -390,15 +388,18 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 /* Six letters and the ellipsis at least, in the name's own font: "Conver…", never "Con…". */
 .tab > span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 7ch; }
 /* Only the active tab (or the one under the pointer) shows its ×. */
-.tab .tab-actions { display: none; flex: 0 0 auto; }
+.tab .tab-actions { display: none; flex: 0 0 auto; align-items: center; }
+.tab .tab-actions .icon { display: grid; place-items: center; height: 28px; padding: 0 var(--s1); min-width: 0; }
+.tab .tab-actions .icon .i { width: 14px; height: 14px; }
+#dock-center > .dock-head { min-height: 36px; border-bottom: 1px solid var(--line); padding: 0 var(--s3); gap: var(--s1); align-items: center; }
+#dock-center > .dock-head .tabs { flex: 0 1 auto; align-items: center; gap: var(--s1); padding: 0; } /* the + right after the last tab */
+#dock-center .tab { height: 28px; margin: 0; padding: 0 var(--s1) 0 var(--s3); }
+#dock-center > .dock-head > button.icon { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; font-size: 18px; color: var(--dim); }
+#dock-center > .dock-head > button.icon:hover { background: var(--hover); color: var(--fg); }
 .tab:hover .tab-actions, .tab.active .tab-actions { display: flex; }
 .tab:not(.active):not(:hover) { padding-right: var(--s3); }
 .tab-rename { padding: 0 var(--s1); min-width: 4em; max-width: 16em; }
 /* A panel's tab on a side: its icon alone, named by its title (closed from its right-click menu). */
-.tab.icon-tab, .tab.icon-tab:not(.active):not(:hover) { min-width: 0; padding: 0 var(--s3); }
-.tab.icon-tab .tab-actions { display: none; }
-.side.collapsed .tab.icon-tab { padding: var(--s2) 0; justify-content: center; }
-#dock-left.collapsed .tab.icon-tab { transform: none; }
 /* The bar's buttons, apart from the tabs. */
 .dock-head > button.icon { flex: 0 0 auto; padding: 0 var(--s2); }
 .dock-head > button.icon + button.icon { padding-left: var(--s1); }
@@ -408,15 +409,11 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .tab.insert-before { box-shadow: inset 3px 0 0 var(--fg); }
 .tab.insert-after { box-shadow: inset -3px 0 0 var(--fg); }
 /* Floats over the workspace, so showing it moves nothing under the pointer. */
-.side.drop-target { position: absolute; top: 0; bottom: 0; z-index: 5; width: 110px; border: 1px dashed var(--dim); }
-#dock-left.drop-target { left: 0; }
-#dock-right.drop-target { right: 0; }
-.side.drop-target .panes::before { content: "drop here"; display: block; padding: 40px var(--s2); text-align: center; color: var(--dim); }
-.side.drop-target .empty, .side.drop-target .dock-head button { display: none; }
 
 .panes { position: relative; flex: 1; min-height: 0; background: var(--surface); }
 /* The sides (and the rail) a step below the middle, as the theme's panels; a line between. */
-.side .panes, .side .dock-head, .side .dock-foot, #rail { background: var(--panel); }
+#dock-left .panes, #dock-left .dock-foot, #rail { background: var(--panel); }
+#dock-right .panes { background: var(--bg); }
 #dock-left { border-right: 1px solid var(--line); }
 #dock-right { border-left: 1px solid var(--line); }
 #dock-center .panes { background: var(--bg); }
@@ -432,27 +429,15 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .pane.terminal .xterm, .pane.terminal .xterm-screen, .pane.terminal .xterm-viewport, .pane.terminal .xterm-rows { cursor: default; }
 
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: var(--s2); padding: var(--s3); color: var(--dim); }
-.empty .choices { display: flex; flex-direction: column; gap: var(--s2); align-items: stretch; max-width: 100%; }
-.empty .choices button { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.empty.launcher { overflow: auto; }
+.lgroup { width: min(520px, 90%); display: flex; flex-direction: column; gap: var(--s2); }
+.llabel { margin: var(--s5) 0 var(--s1); font-size: var(--t-small); line-height: 16px; color: var(--dim); }
+.lrow { display: flex; align-items: center; gap: var(--s3); height: 40px; padding: 0 var(--s4); background: var(--field); border: 1px solid var(--line); color: var(--fg); text-align: left; border-radius: var(--r); }
+.lrow:hover, .lrow:focus-visible { background: var(--field); border-color: var(--dim); }
+.lrow .i { color: var(--dim); }
+.lrow > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrow .m { margin-left: auto; flex: none; font-size: var(--t-small); line-height: 16px; color: var(--dim); }
 
-/* Collapsed side: a thin strip with the tab names written vertically. */
-.side.collapsed { width: 30px; }
-.side.collapsed .panes, .side.collapsed .add { display: none; }
-.side.collapsed .dock-head { flex-direction: column; flex: 1; }
-.side.collapsed .tabs { flex-direction: column; overflow: visible; }
-.side.collapsed .tab, .side.collapsed .tab:not(.active):not(:hover) {
-  writing-mode: vertical-rl;
-  min-width: 0;
-  flex: 0 0 auto;
-  padding: var(--s3) 0;
-  justify-content: center;
-}
-.side.collapsed .tab > span:first-child { overflow: visible; min-width: 0; }
-#dock-left.collapsed .tab { transform: rotate(180deg); }
-.side.collapsed .tab.active { box-shadow: none; background: none; }
-.side.collapsed .tab .tab-actions { display: none; }
-.side.collapsed .collapse { order: -1; padding: var(--s2) 0; }
-.side.collapsed .dock-head > button.icon { padding: var(--s2) 0; }
 
 /* Menus: a raised surface over everything. */
 /* Compact: rows of 24 px, text 13, an icon column on the left that every row keeps. */
@@ -488,8 +473,16 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .toolbar { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s2); flex-wrap: wrap; }
 .toolbar .root { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane-project > .toolbar { gap: var(--s2) var(--s3); }
-.pane-project > .toolbar .switch { order: -1; flex: 1 0 auto; position: sticky; top: calc(-1 * var(--s4)); z-index: 1; height: 40px; align-items: center; gap: var(--s1);
-  margin: calc(-1 * var(--s4)) calc(-1 * var(--s4)) var(--s2); padding: 0 var(--s2); background: var(--panel); border-bottom: 1px solid var(--line); }
+.pane-project > .toolbar .switch { order: -1; flex: 1 0 auto; position: sticky; top: calc(-1 * var(--s3)); z-index: 1; height: 40px; align-items: center; gap: var(--s1);
+  margin: calc(-1 * var(--s3)) calc(-1 * var(--s3)) 0; padding: 0 var(--s3); background: var(--bg); border-bottom: 1px solid var(--line); }
+.pane:has(> .pane-project) { padding: var(--s3); }
+/* Given to Pi and Restore are pages of Details (its links), not tabs of the header. */
+.pane-project > .toolbar .switch .mode[data-mode="given"], .pane-project > .toolbar .switch .mode[data-mode="restore"] { display: none; }
+.pane-project > .toolbar .root, .pane-project > .toolbar .agent { display: none; }
+.pane-project > .toolbar > .undo-prompt { display: none; }
+.pane-project > .toolbar { margin-bottom: var(--s3); }
+.pane-project > .toolbar .switch { flex-basis: calc(100% + 2 * var(--s3)); }
+/* Several Pis here: whose work Details shows, on its own line under the header. */
 .pane-project > .toolbar .switch .mode { width: 32px; height: 32px; min-height: 0; padding: 0; display: grid; place-items: center; }
 .pane-project > .toolbar .agent { font-size: var(--t-small); }
 /* The project's path on its own line, whole as far as it goes; its Pi and Undo under it. */
@@ -508,9 +501,29 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .group { margin-bottom: var(--s4); }
 /* Details: cards on the side's tone, as the mock-up. */
 .view-activity { display: flex; flex-direction: column; gap: var(--s3); }
-.card { background: var(--field); border: 1px solid var(--line); padding: var(--s3) var(--s4); border-radius: var(--r); min-width: 0; }
-.card h2 { display: flex; align-items: baseline; gap: var(--s2); margin: 0 0 var(--s2); font-size: var(--t-text); font-weight: 600; }
+.card { background: var(--field); border: 1px solid var(--line); padding: var(--s4); border-radius: var(--r); min-width: 0; }
+.card h2 { display: flex; align-items: baseline; gap: var(--s2); margin: 0 0 var(--s2); font-size: var(--t-text); line-height: 20px; font-weight: 600; }
 .card-aside { margin-left: auto; font-size: var(--t-small); font-weight: 400; color: var(--dim); }
+.card > p { margin: 0 0 var(--s3); }
+.card .btns { display: flex; gap: var(--s2); justify-content: flex-end; }
+.card .btns button { height: 32px; padding: 0 var(--s3); }
+.card .btns button.secondary { background: none; border: 1px solid var(--line); }
+.card .row { display: flex; align-items: baseline; gap: var(--s2); padding: var(--s1) 0; }
+.card .row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .row .add { font-size: var(--t-small); color: var(--dim); white-space: nowrap; }
+.card .ref { font-family: var(--code); font-size: var(--t-small); color: var(--link, #8cc4ff); background: var(--hover); padding: 0 var(--s1); border-radius: var(--r); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .ref:hover { text-decoration: underline; text-underline-offset: 3px; background: var(--hover); }
+.card-links { display: flex; gap: var(--s4); margin-top: var(--s3); }
+.card-links .link { display: inline-flex; align-items: center; gap: var(--s2); }
+.card-links .link .i { width: 14px; height: 14px; }
+.approval-exact { margin: 0 0 var(--s3); font-size: var(--t-small); }
+.approval-exact summary { color: var(--dim); cursor: pointer; }
+.approval-exact .approval-fact { font-family: var(--ui); }
+/* Files: the project's name above its tree, as the mock-up's group label. */
+.tree-root { margin: var(--s4) 0 var(--s1); padding: 0 var(--s3); font-size: var(--t-small); line-height: 16px; color: var(--dim); }
+.files-bar .files-sort { appearance: none; -webkit-appearance: none; background: none; border: 0; color: var(--dim); padding: 0 18px 0 var(--s2); background-position: right 8px center, right 4px center; }
+.files-bar .files-sort:hover { background-color: var(--hover); color: var(--fg); }
+.view-files .files-bar { height: 36px; margin: 0 calc(-1 * var(--s3)); padding: 0 var(--s2) 0 var(--s3); border-bottom: 1px solid var(--line); }
 .card > ul { list-style: none; margin: 0 calc(-1 * var(--s2)); padding: 0; }
 .card > ul > li { display: flex; gap: var(--s2); padding: 2px var(--s2); white-space: nowrap; cursor: default; border-radius: var(--r); }
 .card > ul > li:hover { background: var(--hover); }
@@ -529,7 +542,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .group li .path { overflow: hidden; text-overflow: ellipsis; }
 .group li .count { margin-left: auto; color: var(--dim); }
 .group li.clickable { cursor: pointer; }
-.meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* the Given list (context.js) */
 
 .resource-items { list-style: none; margin: 0; padding: 0; }
 .resource-items li { display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s2); margin: 0 calc(-1 * var(--s2)); min-height: 28px; border-top: 1px solid var(--line); }
@@ -619,7 +632,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 /* The mock-up's settings: each section a framed group, a setting's name (and what it does)
    on the left, its control on the right. */
 .prefs-page > .grid { margin-bottom: var(--s2); padding: var(--s3) var(--s4); row-gap: var(--s3); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); }
-.prefs-page h2 { font-size: var(--t-small); line-height: 16px; color: var(--dim); font-weight: 600; margin: var(--s5) 0 var(--s2); }
+.prefs-page h2 { font-size: var(--t-small); line-height: 16px; color: var(--dim); font-weight: 400; margin: var(--s5) 0 var(--s2); }
 .prefs-page > h2:first-child, .prefs-page > div:first-child + h2 { margin-top: 0; }
 /* Two pages shown together (Appearance, then Layout): the second keeps its space above. */
 .settings:not(.searching) .prefs-page:not([hidden]) ~ .prefs-page:not([hidden]) > h2:first-child { margin-top: var(--s5); }
@@ -666,8 +679,6 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .setting-list { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .setting-list li { display: flex; align-items: center; gap: var(--s2); padding: 2px var(--s2); background: var(--chip); }
 .setting-list li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--code); }
-.setting-list.chips { flex-direction: row; flex-wrap: wrap; }
-.setting-list.chips li { flex: none; }
 .setting-add { display: flex; gap: var(--s2); margin-top: var(--s2); }
 .setting-add input { flex: 1; min-width: 0; max-width: 360px; }
 .model-input { font-family: var(--code); }
@@ -732,14 +743,12 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 /* Activity: files, restore */
 
 .usage { color: var(--dim); font-size: var(--t-small); margin: calc(-1 * var(--s1)) 0 var(--s2); }
-.which-pi { padding: 1px var(--s1); font-size: var(--t-small); }
 
 /* Files: a bar (the order, hidden files, refresh), then the tree, one 24 px row a file. */
 .files-bar { display: flex; align-items: center; gap: var(--s1); }
 .files-bar .files-sort { margin-right: auto; height: 28px; padding-top: 0; padding-bottom: 0; font-size: var(--t-small); }
 .icon-btn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; background: none; color: var(--dim); }
 .icon-btn:hover, .icon-btn[aria-pressed="true"] { background: var(--hover); color: var(--fg); }
-.view-files .legend { margin: var(--s1) 0 var(--s2); }
 .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
 .tree { margin: 0 calc(-1 * var(--s2)); }
 .tree ul { padding-left: var(--s3); }
@@ -839,8 +848,14 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
    under the pointer. The whole row is the button that does its main thing. */
 .sessions li { position: relative; display: flex; align-items: center; min-width: 0; border-radius: var(--r); }
 .sessions li:hover, .sessions li:focus-within { background: var(--hover); }
-.sessions li.in-use > .row-main .title { font-weight: 600; }
-.row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s2); background: none; color: var(--fg); text-align: left; font: inherit; }
+.sessions li.current { background: var(--raise); }
+/* Unread, or waiting for you: the title bold, its detail bright, as an unread mail. */
+.sessions li.unread > .row-main .title { font-weight: 600; }
+.sessions li.unread > .row-main .row-meta { color: var(--fg); }
+/* A project's head: muted until pointed at, as in the mock-up. */
+.sessions li.project-head > .row-main { color: var(--dim); }
+.sessions li.project-head:hover > .row-main { color: var(--fg); }
+.row-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); min-height: 32px; padding: 0 var(--s3); background: none; color: var(--fg); text-align: left; font: inherit; }
 button.row-main:hover { background: none; }
 .row-main .mark { width: 16px; flex: none; display: grid; place-items: center; color: var(--dim); }
 .row-main .mark .i { width: 14px; height: 14px; }
@@ -853,12 +868,12 @@ button.row-main:hover { background: none; }
 .row-more .i { width: 14px; height: 14px; }
 .sessions li:hover .row-more, .sessions li:focus-within .row-more { opacity: 1; }
 .row-more:hover { background: var(--raise); color: var(--fg); }
-.sessions li:hover .row-meta, .sessions li:focus-within .row-meta { display: none; }
+.sessions li:has(.row-more):hover .row-meta, .sessions li:has(.row-more):focus-within .row-meta { display: none; }
 .sessions li.project-head:hover .row-meta { display: none; }
 /* A running Pi: its mark bright while it works, waiting for you in the text's colour too. */
 .sessions li.running.working .mark, .sessions li.running.waiting .mark { color: var(--fg); }
 .sessions li.archived .title { color: var(--dim); }
-.sessions li.more { padding: var(--s1) 0 var(--s1) 32px; font-size: var(--t-small); gap: var(--s3); }
+.sessions li.more { min-height: 32px; padding: 0 var(--s3) 0 36px; font-size: var(--t-small); gap: var(--s3); }
 .sessions li.more:hover { background: none; }
 /* Set in: a worker under its orchestrator, a helper under its Pi, a conversation in its folder. */
 .sessions li.in-team > .row-main, .sessions li.in-folder > .row-main { padding-left: 32px; }
@@ -876,9 +891,6 @@ button.row-main:hover { background: none; }
 .pbadge { width: 16px; height: 16px; flex: none; display: grid; place-items: center; font-size: 10px; line-height: 1; font-weight: 600; color: #fff; border-radius: min(var(--r), 4px); }
 .pbadge .i { width: 12px; height: 12px; color: #fff; }
 .row-main .mark:has(.pbadge) { width: 16px; }
-.sessions li.interrupted { display: block; background: var(--chip); box-shadow: inset 2px 0 0 var(--fg); padding: var(--s1) var(--s2); margin: 2px 0 var(--s1) 32px; color: var(--dim); }
-.sessions li.interrupted:hover { background: var(--chip); }
-.sessions li.interrupted .link { margin-left: var(--s2); }
 /* The project-mark dialog. */
 .look-preview { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
 .look-row { display: flex; flex-wrap: wrap; gap: var(--s1); }
@@ -900,6 +912,10 @@ button.row-main:hover { background: none; }
 .chat-col > .you:not(:first-child) { margin-top: var(--s3); }
 .you { align-self: flex-end; max-width: 80%; background: var(--field); border: 1px solid var(--line); padding: var(--s3) var(--s4); white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--r); }
 .chat-notice { color: var(--dim); font-size: var(--t-small); }
+.chat { position: relative; }
+.chat-empty { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: var(--s1); padding: var(--s5); pointer-events: none; }
+.chat-empty p:first-child { font-weight: 600; }
+.chat-empty p + p { color: var(--dim); }
 .chat-notice.error { color: var(--red, #f85149); }
 .answer .md-page { max-width: none; padding: 0; }
 .answer { line-height: 22px; overflow-wrap: anywhere; }
@@ -919,7 +935,7 @@ button.row-main:hover { background: none; }
 .chat .fold-btn:hover { background: none; }
 .chat .fold-btn:hover .what { text-decoration: underline; text-underline-offset: 3px; }
 .chat .fold-btn .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat .fold-btn .meta { margin-left: auto; font-size: var(--t-small); color: var(--dim); white-space: nowrap; }
+.chat .fold-btn .meta { display: block; flex: none; margin-left: auto; font-size: var(--t-small); color: var(--dim); white-space: nowrap; }
 .chat .path { font-family: var(--code); font-size: var(--t-small); }
 .chat .open-tab { width: 24px; height: 24px; }
 .chat .step-body { margin: var(--s1) 0 var(--s2); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
@@ -1039,3 +1055,82 @@ button.row-main:hover { background: none; }
 .md-page .md-table { border-collapse: collapse; margin: 0 0 0.8em; font-size: var(--t-small); }
 .md-page .md-table th, .md-page .md-table td { border: 1px solid var(--line); padding: var(--s1) var(--s2); text-align: left; }
 .md-page .md-table th { background: var(--raise); }
+
+/* A run: what Pi did for one request, folded behind one line once done ("Thought twice,
+   read 2 files, edited 1 · 1 min 07"); the working clock; how long the answer took. */
+.chat .run > .run-fold { width: 100%; color: var(--dim); }
+.chat .run > .run-fold:not([hidden]) + .tl { margin-top: var(--s1); }
+.chat .arrow { width: 16px; height: 16px; flex: none; display: grid; place-items: center; color: var(--dim); }
+.chat .arrow .i { width: 12px; height: 12px; transition: transform .12s ease-out; }
+.chat [aria-expanded="true"] > .arrow .i { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .chat .arrow .i { transition: none; } }
+.chat .answers:empty { display: none; }
+.chat .answers { display: flex; flex-direction: column; gap: var(--s3); }
+.chat .foot-note, .chat .working { color: var(--dim); font-size: var(--t-small); line-height: 16px; }
+.chat .working { display: flex; gap: var(--s2); }
+.chat .working .num { font-variant-numeric: tabular-nums; }
+
+/* The context ring: fills as the conversation grows; orange past 80 %, red past 95 %. */
+.composer .ring svg { width: 16px; height: 16px; transform: rotate(-90deg); }
+.composer .ring circle { fill: none; stroke-width: 2; }
+.composer .ring .track { stroke: var(--line); }
+.composer .ring .used { stroke: var(--dim); }
+.composer .ring[data-level="high"] .used { stroke: var(--warn, #d29922); }
+.composer .ring[data-level="full"] .used { stroke: var(--red, #f85149); }
+.composer .ring:hover .used { stroke: var(--fg); }
+.pop-card { position: fixed; z-index: 25; background: var(--raise); box-shadow: 0 8px 24px rgba(0, 0, 0, .35); border-radius: var(--r); outline: none; }
+.ctxcard { width: 280px; padding: var(--s3); font-size: 12px; line-height: 16px; color: var(--dim); }
+.ctxcard h3 { display: flex; align-items: baseline; margin: 0; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--fg); }
+.ctxcard h3 span, .ctxcard .kv span:last-child { margin-left: auto; font-variant-numeric: tabular-nums; }
+.ctxcard .kv { display: flex; gap: var(--s2); padding: 2px 0; }
+.ctxcard .kv span:last-child { color: var(--fg); }
+.ctxcard hr { border: 0; border-top: 1px solid var(--line); margin: var(--s2) 0; }
+.ctxcard .meter { height: 4px; background: var(--hover); overflow: hidden; margin: var(--s1) 0 var(--s2); }
+.ctxcard .meter i { display: block; height: 100%; background: var(--fg); }
+
+/* Settings, as the mock-up: a group's rows in one box, each row its name and what it does
+   on the left, its control on the right (a list 184 wide, buttons, a switch). */
+.prefs-page .rows { margin-bottom: var(--s2); border: 1px solid var(--line); background: var(--field); border-radius: var(--r); }
+.set { display: flex; align-items: center; gap: var(--s5); padding: var(--s3) var(--s4); }
+.set + .set { border-top: 1px solid var(--line); }
+.set .what { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0; }
+.set .what > :first-child { font-weight: 600; }
+.set .what > * + * { font-size: 12px; line-height: 16px; color: var(--dim); overflow-wrap: anywhere; }
+.set > select, .set > input:not([type="checkbox"]) { flex: none; width: 184px; height: 32px; padding-left: var(--s3); background-color: var(--bg); border: 1px solid var(--line); }
+.set > select:hover, .set > input:not([type="checkbox"]):hover { border-color: var(--dim); }
+.set > button, .set .btns button { flex: none; height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); color: var(--fg); }
+.set > button:hover, .set .btns button:hover { background: var(--hover); }
+.set .btns { display: flex; gap: var(--s2); flex: none; }
+.seg { display: flex; flex: none; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r); }
+.seg button { height: 26px; padding: 0 var(--s3); background: none; border: 0; color: var(--dim); border-radius: max(0px, calc(var(--r) - 2px)); }
+.seg button:hover { background: none; color: var(--fg); }
+.seg button[aria-checked="true"] { background: var(--raise); color: var(--fg); }
+/* A yes/no setting: a switch. */
+.set > input[type="checkbox"], .setting-row.toggle .setting-head > input[type="checkbox"] {
+  width: 36px; height: 20px; top: 0; border: 1px solid var(--dim); border-radius: var(--r); display: block; position: relative; flex: none; order: 0;
+}
+.set > input[type="checkbox"]::before, .setting-row.toggle .setting-head > input[type="checkbox"]::before {
+  position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; visibility: visible; background: var(--dim);
+  border-radius: max(0px, calc(var(--r) - 3px)); transition: left .12s ease-out;
+}
+.set > input[type="checkbox"]:checked, .setting-row.toggle .setting-head > input[type="checkbox"]:checked { background: var(--fg); border-color: var(--fg); }
+.set > input[type="checkbox"]:checked::before, .setting-row.toggle .setting-head > input[type="checkbox"]:checked::before { left: 19px; background: var(--bg); }
+@media (prefers-reduced-motion: reduce) { .set > input[type="checkbox"]::before, .setting-row.toggle .setting-head > input[type="checkbox"]::before { transition: none; } }
+@media (max-width: 700px) { .set { flex-wrap: wrap; gap: var(--s2) var(--s5); } }
+
+/* The Pi settings (settings.js) drawn the same way: the head's name and control become the
+   row's, what it does goes under the name, lists and fields span the row. */
+.setting-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--s5); align-items: center; }
+.setting-row .setting-head { display: contents; }
+.setting-row .setting-head > label, .setting-row .setting-head > span:first-child { grid-column: 1; grid-row: 1; font-weight: 600; }
+.setting-row .setting-head > :not(label):not(span:first-child):not(.link) { grid-column: 2; grid-row: 1 / span 2; justify-self: end; }
+/* Set in config.toml: "reset" under its control. */
+.setting-row:has(> .setting-head > .link) .setting-head > :not(label):not(span:first-child):not(.link) { grid-row: 1; }
+.setting-row .setting-head > input:not([type="checkbox"]), .setting-row .setting-head > select { width: 184px; }
+.setting-row .setting-head > .combo { width: 240px; } /* model names are long */
+.setting-row .setting-head > .link { grid-column: 2; grid-row: 2; justify-self: end; align-self: start; font-size: 12px; }
+.setting-row > .hint { grid-column: 1; grid-row: 2; margin: 0; font-size: 12px; line-height: 16px; color: var(--dim); }
+.setting-row > :not(.setting-head):not(.hint) { grid-column: 1 / -1; }
+.setting-row .setting-key { display: none; }
+.prefs-page .actions button.secondary { height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); }
+.prefs-page .actions button.secondary:hover { background: var(--hover); }

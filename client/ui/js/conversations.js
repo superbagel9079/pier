@@ -47,20 +47,22 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }, f
 /** A row of the list: its mark, its title, a detail on the right, all one button that does
  *  the row's main thing (none for a row that only informs); its other actions under ⋯,
  *  shown under the pointer, and on a right click or the menu key. */
-function conversationRow({ key, className = "", mark = null, title, fresh = false, meta = "", tip = "", run = null, menu = null }) {
+function conversationRow({ key, className = "", mark = null, title, fresh = false, meta = "", tip = "", run = null, menu = null, more: dots = false }) {
   const main = el(run ? "button" : "div", { className: "row-main", title: tip });
   main.append(el("span", { className: "mark" }, ...(mark ? [mark] : [])),
     el("span", { className: fresh ? "title fresh" : "title", textContent: title }),
     el("span", { className: "row-meta", textContent: meta }));
   if (run) main.addEventListener("click", run);
   const li = keyed(key, el("li", { className }, main));
-  if (menu) {
+  if (menu && dots) {
     const more = el("button", { className: "row-more", title: "More" });
     more.setAttribute("aria-label", `More: ${title}`);
     more.setAttribute("aria-haspopup", "menu");
     more.append(svgIcon("ellipsis"));
     more.addEventListener("click", () => menu(more, null, li));
     li.append(more);
+  }
+  if (menu) {
     li.addEventListener("contextmenu", (e) => { e.preventDefault(); menu(null, { x: e.clientX, y: e.clientY }, li); });
     main.addEventListener("keydown", (e) => {
       if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
@@ -252,6 +254,7 @@ function makeConversations(tab) {
   let query = "";
   let archived = false;
   let editing = false;
+  let openConv = {}; // the conversation of the tab shown in the middle: its row is marked
   let categories = [];
   const PER_PROJECT = 5;
 
@@ -302,25 +305,25 @@ function makeConversations(tab) {
    *  terminal. Its mark says what it does: working, waiting for you, or done (reported). */
   function piRow(p, pi, s) {
     const state = pi.working ? "working" : pi.reported ? "reported" : "waiting";
+    const meta = { working: "working", reported: s ? ago(s.modified) : "done", waiting: "needs you" }[state];
     const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
     const own = [["Open its terminal", open, false, { icon: "terminal" }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
-    return conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}`,
+    return conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${state === "working" ? "" : " unread"}${openConv.slot === pi.slot ? " current" : ""}`,
       mark: svgIcon({ working: "clock", reported: "check", waiting: "circle-alert" }[state]),
-      title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta: state,
+      title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta,
       tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
       run: open, menu: s ? menuOf(p, s, own) : (anchor, at) => showMenu(anchor, own, at) });
   }
 
   /** A conversation no Pi runs: a click starts a Pi on it. Pinned ones carry a pin. */
   function row(p, s, inFolder = false) {
-    const resume = () => openChat(p.project, p.label, ["--session", s.path]);
-    const inTerminal = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
-    return conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : ""].filter(Boolean).join(" "),
-      mark: s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
+    const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
+    const stopped = s.path === p.interrupted; // Pi stopped mid-work (the VM restarted?)
+    return conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : "", stopped ? "unread" : "", openConv.file === s.path ? "current" : ""].filter(Boolean).join(" "),
+      mark: stopped ? svgIcon("circle-alert") : s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: stopped ? "stopped" : ago(s.modified),
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
-      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }],
-        ["Continue in a terminal", inTerminal, false, { icon: "terminal" }]]) });
+      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) });
   }
 
   /** A folder: a category of the project (or its sub-agents), with how many it holds;
@@ -392,11 +395,10 @@ function makeConversations(tab) {
    *  ⋯ and a right click hold the rest. */
   function head(p, folded, inUse) {
     const pis = p.pis || [];
-    const fresh = () => openChat(p.project, p.label, ["--new"]);
+    const fresh = () => openPiTerminal(p.project, p.label, ["--new"]);
     const items = [
       ["New conversation (a new Pi)", fresh, false, { icon: "plus" }],
-      ["Continue the last conversation", () => openChat(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
-      ["New Pi in a terminal", () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : []), false, { icon: "terminal" }],
+      ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
       ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"]), false, { icon: "network" }],
       null,
       ["Instructions and what Pi loads here", () => workspace.find("setup")?.openProject?.(p.project), false, { icon: "folder-cog" }],
@@ -405,11 +407,11 @@ function makeConversations(tab) {
       ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null), false, { icon: "square" }]] : []),
     ];
     const li = conversationRow({ key: `project:${p.project}`, className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : ""),
-      mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(p.sessions.length) : pis.length ? `${pis.length} running` : "",
+      mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(p.sessions.length) : "",
       tip: [p.project, factLine([pis.length ? `${pis.length} running` : "", `${p.sessions.length} conv.`]), projectTotals(p.sessions),
         inUse ? "the project of the Pi in use" : ""].filter(Boolean).join("\n"),
       run: () => { view.folded[p.project] = !folded; keep(); render(); },
-      menu: (anchor, at) => showMenu(anchor, items, at) });
+      menu: (anchor, at) => showMenu(anchor, items, at), more: true });
     const main = $(".row-main", li);
     main.setAttribute("aria-expanded", String(!folded));
     main.prepend(el("span", { className: "fold-arrow" }, svgIcon("chevron-right")));
@@ -430,7 +432,8 @@ function makeConversations(tab) {
   }
   function render() {
     if (!data || editing) return;
-    const shape = JSON.stringify([data, query, archived, view, target?.path || null]);
+    openConv = shownConversation();
+    const shape = JSON.stringify([data, query, archived, view, target?.path || null, openConv]);
     if (shape === drawn) return; // the same as on screen: nothing to redraw (every 5 s while a Pi works)
     drawn = shape;
     keepPlace(list, draw);
@@ -453,11 +456,6 @@ function makeConversations(tab) {
       const folded = !query && (view.folded[p.project] ?? index >= 3) && p.project !== inUse;
       list.append(head(p, folded, p.project === inUse));
       if (folded) continue;
-      if (p.interrupted && !query) {
-        list.append(el("li", { className: "interrupted small" },
-          el("span", { textContent: "Pi stopped in the middle of its work (the VM restarted?): its conversation is saved." }),
-          linkButton("continue where it stopped", "", () => openPiTerminal(p.project, p.label, ["--session", p.interrupted]))));
-      }
       // Running Pis first, each with its conversation, an orchestrator's workers right
       // under it; then pinned, then the latest.
       const held = new Set(matches.filter((s) => s.slot).map((s) => s.slot));
@@ -475,12 +473,13 @@ function makeConversations(tab) {
           const li = piRow(p, pi, s || null);
           if (pi.role === "worker" && item !== pi) li.classList.add("in-team");
           list.append(li);
-          if (!query) (pi.helpers || []).forEach((h, i) => list.append(helperRow(pi, h, i)));
+          if (!query && view.helpers) (pi.helpers || []).forEach((h, i) => list.append(helperRow(pi, h, i)));
           if (s) shown += 1;
         }
       }
       const idle = matches.filter((s) => !s.slot && !s.deleted);
-      const pinnedFirst = (xs) => [...xs.filter((s) => s.pinned), ...xs.filter((s) => !s.pinned)];
+      const first = (s) => s.path === p.interrupted || s.pinned;
+      const pinnedFirst = (xs) => [...xs.filter(first), ...xs.filter((s) => !first(s))];
       // Outside any folder: the latest few, the rest behind "show all".
       const rest = pinnedFirst(idle.filter((s) => !s.category && !s.subagent));
       const room = Math.max(PER_PROJECT - held.size, rest.filter((s) => s.pinned).length);
@@ -491,9 +490,9 @@ function makeConversations(tab) {
       }
       const tools = el("li", { className: "small more" });
       if (visible.length < rest.length) {
-        tools.append(linkButton(`show all ${rest.length + held.size}`, "", () => { view.expanded[p.project] = true; keep(); render(); }));
+        tools.append(linkButton(`Show ${rest.length - visible.length} more`, "", () => { view.expanded[p.project] = true; keep(); render(); }));
       } else if (view.expanded[p.project] && !query && rest.length > room) {
-        tools.append(linkButton("show fewer", "", () => { delete view.expanded[p.project]; keep(); render(); }));
+        tools.append(linkButton("Show fewer", "", () => { delete view.expanded[p.project]; keep(); render(); }));
       }
       if (tools.children.length) list.append(tools);
       // Each category, a folder (folded until opened); the sub-agents of pi-multiagent in
@@ -501,7 +500,7 @@ function makeConversations(tab) {
       const named = [...new Set(idle.filter((s) => s.category && !s.subagent).map((s) => s.category))].sort((a, b) => a.localeCompare(b));
       const folders = named.map((name) => ({ name, sessions: pinnedFirst(idle.filter((s) => s.category === name && !s.subagent)) }));
       const subagents = idle.filter((s) => s.subagent);
-      if (subagents.length) folders.push({ name: "sub-agents", subagents: true, sessions: subagents });
+      if (subagents.length && view.helpers) folders.push({ name: "sub-agents", subagents: true, sessions: subagents });
       for (const folder of folders) {
         const key = `${p.project}|${folder.subagents ? "\u0000sub-agents" : folder.name}`;
         const open = Boolean(query) || Boolean(view.openFolders[key]);
@@ -546,20 +545,20 @@ function makeConversations(tab) {
     clearTimeout(filterTimer);
     filterTimer = setTimeout(() => { query = event.target.value.trim().toLowerCase(); render(); }, 150);
   });
-  $$(".search-toggle").addEventListener("click", (event) => {
-    const bar = $$(".toolbar"), on = bar.hidden;
+  // Display: the search field, the archived ones, the helpers (and their sub-agents).
+  const searching = (on) => {
+    const bar = $$(".toolbar");
     bar.hidden = !on;
-    event.currentTarget.setAttribute("aria-pressed", String(on));
     if (on) $$(".conversation-filter").focus();
     else if (query) { $$(".conversation-filter").value = ""; query = ""; render(); }
-  });
-  $$(".show-archived").addEventListener("click", (event) => {
-    archived = !archived;
-    const b = event.currentTarget;
-    b.setAttribute("aria-pressed", String(archived));
-    b.title = archived ? "Hide the archived ones" : "Show the archived ones";
-    render();
-  });
+  };
+  $$(".display-btn").addEventListener("click", (event) => showMenu(event.currentTarget, [
+    [$$(".toolbar").hidden ? "Search" : "Close the search", () => searching($$(".toolbar").hidden), false, { icon: "search" }],
+    null,
+    ["Show archived", () => { archived = !archived; render(); }, false, { icon: archived ? "check" : null }],
+    ["Show helpers", () => { view.helpers = !view.helpers; keep(); redraw(); }, false, { icon: view.helpers ? "check" : null }],
+  ]));
+  $$(".conversation-filter").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); searching(false); } });
 
   const unlisten = vm.on("conversations", (message) => {
     if (message.error) { showError(error, message.error); return; }
@@ -567,10 +566,18 @@ function makeConversations(tab) {
     data = message.data;
     render();
   });
-  tab.onVisible = (shown) => vm.follow({ conversations: shown });
+  tab.onVisible = (on) => vm.follow({ conversations: on });
+  tab.onShownTab = render; // the open conversation's row is marked
   tab.onClose = () => { unlisten(); vm.follow({ conversations: false }); };
   vm.follow({ conversations: tab.shown !== false });
 }
+
+// The rail's pen: a new conversation in the project of the Pi in use, else the last one.
+$("#rail-new").addEventListener("click", () => {
+  const project = target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
+  if (project) openPiTerminal(project, projectLabel(project), ["--new"]);
+  else openFolderPicker();
+});
 
 // The rail's speech bubble: Conversations shown, opened on the left if it was closed.
 $("#btn-conversations").addEventListener("click", () => {

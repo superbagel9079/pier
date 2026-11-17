@@ -101,7 +101,7 @@ const waiting = (() => {
 
   vm.on("approvals", (message) => {
     pending = (message.data?.approvals || []).filter((a) => a.state === "pending" || a.state === undefined);
-    button.hidden = !pending.length;
+    $(".badge", button).hidden = !pending.length;
     $(".badge", button).textContent = pending.length;
     button.setAttribute("aria-label", `${pending.length} waiting for you`);
     render();

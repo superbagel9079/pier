@@ -49,12 +49,11 @@ function makeProject(tab) {
   const restoreView = $(".view-restore", tab.pane);
   const points = $(".points", restoreView);
   const restoreNote = $(".restore-note", restoreView);
-  const whichPi = $(".which-pi", tab.pane);
   let mode = "activity";
   let activity = null;
   let base = "";
   let selected = null;
-  let chosenFile = null; // the conversation shown, when several Pis run here; else the one in use
+  let chosenFile = null; // the conversation of the Pi in the middle's tab; else the one used last
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
 
@@ -63,6 +62,8 @@ function makeProject(tab) {
   }
 
   async function mention(rel) {
+    // The conversation shown in the middle is of this project: into its message.
+    if (currentTab?.mention && currentTab.params?.project === base) { currentTab.mention(`@${rel}`); return; }
     try {
       const slot = activity?.pis?.find((pi) => pi.file === chosenFile)?.slot || "";
       const result = await backend.api(["type", `@${rel} `, base, slot]);
@@ -89,34 +90,28 @@ function makeProject(tab) {
     if (message.error) { showError(error, message.error); return; }
     showError(error, "");
     activity = message.data;
-    if (chosenFile && !activity.pis.some((pi) => pi.file === chosenFile)) {
-      chosenFile = null; // that Pi stopped: back to the one used last
+    if (shownFile() !== chosenFile) {
+      chosenFile = shownFile(); // another tab shown, or its Pi stopped: back to the one used last
       follow();
     }
     if (!visible()) { stale = true; return; }
     stale = false;
-    renderPis();
     renderAgent();
     if (mode === "activity") renderActivity();
     else decorateTree();
   }
 
-  /** Several Pis here: a list to choose whose work is shown. */
-  function renderPis() {
-    const pis = activity?.pis || [];
-    whichPi.hidden = pis.length < 2;
-    if (pis.length < 2) return;
-    whichPi.replaceChildren();
-    whichPi.add(new Option("the Pi used last", ""));
-    for (const pi of pis) whichPi.add(new Option(`Pi #${pi.n}${pi.working ? " · working" : ""}`, pi.file || ""));
-    whichPi.value = chosenFile && pis.some((pi) => pi.file === chosenFile) ? chosenFile : "";
+  /** The conversation of the Pi in the tab shown in the middle, when it runs here. */
+  function shownFile() {
+    const { slot } = shownConversation();
+    return (slot && activity?.pis?.find((pi) => pi.slot === slot)?.file) || null;
   }
 
-  whichPi.addEventListener("change", () => {
-    chosenFile = whichPi.value || null;
-    activity = null;
+  tab.onShownTab = () => {
+    if (shownFile() === chosenFile) return;
+    chosenFile = shownFile();
     follow();
-  });
+  };
 
   function renderAgent() {
     const agent = $(".agent", tab.pane);
@@ -155,17 +150,26 @@ function makeProject(tab) {
     const sorted = (items) => items.sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
     const asks = waitingHere().sort((x, y) => (x.at || 0) - (y.at || 0));
     if (asks.length) {
-      // The oldest request, in full (what will be done exactly); the others in the list.
+      // The oldest request in a sentence, Refuse and Approve; exactly what will be done
+      // under "What exactly", open at once when it is a command or a text Pi wrote.
       const a = asks[0];
+      const answer = async (yes) => {
+        try {
+          await backend.approvalAnswer(a.id, yes);
+          flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
+          vm.poke();
+        } catch (e) { flashStatus(String(e)); }
+      };
+      const full = approvalItem(a, answer);
+      const buttons = $(".approval-actions", full);
+      $(".approval-what", full)?.remove();
+      buttons.remove();
+      buttons.className = "btns";
+      const exact = el("details", { className: "approval-exact", open: Boolean($(".approval-whole", full)) },
+        el("summary", { textContent: "What exactly" }), ...full.childNodes);
       activityView.append(card("Waiting for you", asks.length > 1 ? `1 of ${asks.length}` : "",
-        el("ul", { className: "resource-items" }, approvalItem(a, async (yes) => {
-          try {
-            await backend.approvalAnswer(a.id, yes);
-            flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
-            vm.poke();
-          } catch (e) { flashStatus(String(e)); }
-        })),
-        asks.length > 1 ? el("p", {}, linkButton(`See all ${asks.length}`, "Every request waiting for you", () => waiting.show())) : null));
+        el("p", { textContent: approvalSentence(a) }), exact, buttons,
+        asks.length > 1 ? el("p", { className: "small" }, linkButton(`See all ${asks.length}`, "Every request waiting for you", () => waiting.show())) : null));
     }
     // Changed: by Pi's edit and write tools, then what git sees changed otherwise (a bash
     // command, or you).
@@ -173,40 +177,36 @@ function makeProject(tab) {
     const mine = sorted(files.filter(([, f]) => changing(f)));
     const touched = new Set(mine.map(([p]) => p));
     const outside = Object.entries(activity.git).filter(([path]) => !touched.has(path));
-    const changes = el("ul", {}, ...mine.map(([path, f]) => fileRow(path, STATES[f.state] || { mark: "✓" }, f)),
-      ...outside.map(([path, code]) => fileRow(path, { mark: code }, null)));
-    const count = mine.length + outside.length;
-    activityView.append(card("Changes", count ? `${count} file${count > 1 ? "s" : ""}` : "",
-      count ? changes : el("p", { className: "dim small", textContent: activity.session ? "Pi has changed nothing yet." : "No Pi session for this project yet." }),
-      ...(outside.length ? [el("p", { className: "hint", textContent: "A path marked ?? or M without Pi's mark was changed by a command or by you." })] : []),
-      undo));
+    // Changes: each file as a link, what happened to it on the right (as the mock-up's).
+    const read = sorted(files.filter(([, f]) => !changing(f) && f.state !== "reading"));
+    const word = (path, f) => {
+      const git = activity.git[path];
+      if (f?.state === "modifying") return "being changed";
+      if (git === "??" || git === "A") return "new";
+      if (git === "D") return "deleted";
+      if (f && changing(f)) return f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : "changed";
+      return git ? "changed" : "read";
+    };
+    const changeRow = (path, f) => {
+      const changed = !f || changing(f);
+      const ref = el("button", { className: "ref", type: "button", textContent: path, title: changed ? "See what changed" : "Open it" });
+      ref.addEventListener("click", () => (changed ? openDiff(path, base) : openFile(path, base)));
+      ref.addEventListener("dblclick", () => mention(path));
+      return el("div", { className: "row" }, el("span", { className: "grow" }, ref), el("span", { className: "add", textContent: word(path, f) }));
+    };
+    const rows = [...mine.map(([p, f]) => changeRow(p, f)), ...outside.map(([p]) => changeRow(p, null)), ...read.map(([p, f]) => changeRow(p, f))];
+    const restore = linkButton("", "The project as it was before a prompt", () => setMode("restore"));
+    restore.append(svgIcon("history"), el("span", { textContent: "Restore points" }));
+    activityView.append(card("Changes", "this session",
+      ...(rows.length ? rows : [el("p", { className: "dim", textContent: activity.session ? "Pi has not touched a file yet." : "No Pi session for this project yet." })]),
+      el("div", { className: "card-links" }, undo, restore)));
     const u = activity.usage;
     if (u) {
-      const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
-      if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
-      activityView.append(card("Context", dollars(u.cost) || "cost unknown",
-        el("p", { className: "small", textContent: `This session: ${parts.join(" · ")}` }),
-        // The model: a click goes where models are chosen.
-        u.model ? el("p", { className: "small" }, "Model ", linkButton(u.model, "The models of Pi, the orchestrator, workers and helpers: Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); })) : null));
+      const title = `This session: ${tokens(u.input)} in · ${tokens(u.output)} out${u.cacheRead ? ` · ${tokens(u.cacheRead)} cached` : ""}${u.model ? ` · ${u.model}` : ""}`;
+      const box = card("Context", dollars(u.cost) || "cost unknown");
+      box.title = title;
+      activityView.append(box);
     }
-    const read = sorted(files.filter(([, f]) => !changing(f)));
-    if (read.length) activityView.append(card("Read", String(read.length), el("ul", {}, ...read.map(([path, f]) => fileRow(path, STATES[f.state], f)))));
-    if (activity.events.length) {
-      activityView.append(card("Recent", "", el("ul", {}, ...activity.events.slice(0, 15).map((e) => {
-        const li = el("li");
-        const mark = e.state === "running" ? "…" : e.state === "error" ? "!" : "·";
-        li.append(
-          el("span", { textContent: mark }),
-          el("span", { className: "dim", textContent: e.tool }),
-          el("span", { className: "path", textContent: e.target }),
-        );
-        return li;
-      }))));
-    }
-    activityView.append(el("p", {
-      className: "hint",
-      textContent: "From Pi's own session log: what Pi will read next cannot be known in advance. Double-click a file to mention it in Pi.",
-    }));
   }
 
   function group(title, rows) {
@@ -654,7 +654,6 @@ function makeProject(tab) {
     givenView.hidden = mode !== "given";
     given.onVisible?.(mode === "given" && tab.shown !== false);
     if (mode === "given") given.onShow?.();
-    $(".files-hint", tab.pane).hidden = mode === "restore" || mode === "given";
     if (mode === "files" && !tree.childElementCount) loadTree();
     if (mode === "restore") loadPoints();
     follow();
@@ -665,6 +664,7 @@ function makeProject(tab) {
     base = target?.path || "";
     chosenFile = null;
     $(".root", tab.pane).textContent = target ? target.label : "no Pi running: start one from the picker";
+    $(".tree-root", tab.pane).textContent = target ? target.label : "";
     activity = null;
     activityView.replaceChildren();
     tree.replaceChildren();
@@ -673,7 +673,6 @@ function makeProject(tab) {
     points.replaceChildren();
     restoreNote.hidden = true;
     renderAgent();
-    renderPis();
     follow();
     if (mode === "files") await loadTree();
     if (mode === "restore") loadPoints();

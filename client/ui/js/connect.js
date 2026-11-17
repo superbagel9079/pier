@@ -29,6 +29,7 @@ function showWorkspace() {
   $("#btn-palette").hidden = false;
   $("#btn-handoff").hidden = false;
   $("#btn-disconnect").hidden = false;
+  $("#btn-waiting").hidden = false;
   renderSessionBadge();
 }
 
@@ -53,12 +54,13 @@ function setStatus(text) {
   $("#status").textContent = text;
   const state = /^connected/.test(text) ? (/attention/.test(text) ? "slow" : "ok")
     : /^(connecting|installing)/.test(text) ? "slow" : "lost";
-  for (const node of [$("#rail-status"), $("#status-foot")]) node.dataset.state = state;
-  $("#status-foot span").textContent = text;
-  $("#rail-status").title = text;
-  $("#rail-status").setAttribute("aria-label", `${text}: Settings > Connection`);
+  $("#status-foot").dataset.state = state;
+  $("#prefs-status-row").dataset.state = state;
+  // Connected: who and where, as "leo@vm" in the mock-up; otherwise the words that matter.
+  $("#status-foot span:last-child").textContent = state === "ok" && settings ? `${settings.user}@${settings.host}` : text;
+  $("#status-foot").title = `${text}: Settings > Connection`;
 }
-for (const id of ["#status", "#rail-status", "#status-foot"]) $(id).addEventListener("click", () => { openPrefs(); showPrefsPage("connection"); });
+for (const id of ["#status", "#status-foot"]) $(id).addEventListener("click", () => { openPrefs(); showPrefsPage("connection"); });
 
 function fillSetup(s) {
   const form = $("#setup-form");
@@ -341,9 +343,13 @@ async function applyProjects(projects) {
   running = new Set(projects.running.map((p) => p.path));
   lastProjects = projects;
   noticeFinishedWork(projects.running);
-  const current = projects.running[0];
+  // The project of the tab shown first (the right panel follows the conversation in
+  // view), else the one used last.
+  const shown = currentTab?.params?.project;
+  const current = projects.running.find((p) => p.path === shown) || (shown ? null : projects.running[0]);
   const pi = current?.pis?.[0];
-  const next = current ? { path: current.path, label: current.label, slot: pi?.slot, n: pi?.n || 1 } : null;
+  const next = current ? { path: current.path, label: current.label, slot: pi?.slot, n: pi?.n || 1 }
+    : shown ? { path: shown, label: projectLabel(shown), slot: null, n: 1 } : target;
   const changed = next?.path !== target?.path;
   target = next;
   renderSessionBadge();
@@ -444,21 +450,29 @@ function setCurrentTab(tab) {
   if (currentTab === tab) return;
   currentTab = tab;
   renderSessionBadge();
+  for (const t of workspace.tabs()) t.onShownTab?.();
+  // A tab of another project: the right panel turns to it.
+  const project = tab?.params?.project;
+  if (project && project !== target?.path) {
+    target = { path: project, label: projectLabel(project), slot: null, n: 1 };
+    for (const t of workspace.tabs()) t.onTargetChange?.();
+  }
+}
+
+/** The conversation of the tab shown in the middle: its Pi (slot) or its file. */
+function shownConversation() {
+  const args = currentTab?.params?.args || [];
+  return { slot: currentTab?.slot || (args[0] === "--slot" ? args[1] : null), file: args[0] === "--session" ? args[1] : currentTab?.params?.file || null };
 }
 
 function renderSessionBadge() {
   const badge = $("#target");
   const tab = currentTab;
-  if ($("#workspace").hidden || !tab || tab.kind !== "pi" || !tab.params?.project) {
-    badge.hidden = true;
-    return;
+  // The project of the tab shown, as "~/work" after its title (the mock-up's header).
+  const project = tab?.params?.project;
+  badge.hidden = $("#workspace").hidden || !project;
+  if (!badge.hidden) {
+    badge.textContent = projectLabel(project);
+    badge.title = project;
   }
-  const project = lastProjects?.running.find((p) => p.path === tab.params.project);
-  const slot = tab.slot || (tab.params.args?.[0] === "--slot" ? tab.params.args[1] : null);
-  const pi = project?.pis?.find((p) => p.slot === slot) || project?.pis?.[0];
-  const label = project?.label || tab.params.label;
-  badge.hidden = false;
-  badge.textContent = pi ? `session · ${label}${piNumber(pi)} · ${pi.working ? "working" : "waiting for you"}` : `session · ${label} · ended`;
-  badge.title = "The Pi of the tab in use";
-  badge.classList.toggle("live", Boolean(pi));
 }

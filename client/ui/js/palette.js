@@ -13,10 +13,9 @@ const palette = (() => {
   /** Everything the palette can do now: [kind, label, detail, action]. */
   function collect() {
     const out = [];
-    const side = "center"; // each panel opens in its own place (workspace.js, homeOf)
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
     for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() ? ["labs"] : [])]) {
-      if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind, side)]);
+      if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind)]);
     }
     const projects = new Map();
     for (const p of [...(lastProjects?.running || []), ...(lastProjects?.recent || [])]) projects.set(p.path, { label: p.label, running: p.running });
@@ -25,7 +24,7 @@ const palette = (() => {
     for (const [path, p] of projects) {
       out.push(["project", `${p.label}: new Pi`, p.running ? "running" : "", () => openPiTerminal(path, p.label, p.running ? ["--new"] : [])]);
       out.push(["project", `${p.label}: last conversation`, "", () => openPiTerminal(path, p.label, ["--continue"])]);
-      out.push(["project", `${p.label}: setup`, "", () => (workspace.find("setup") || workspace.add("setup", side))?.openProject?.(path)]);
+      out.push(["project", `${p.label}: setup`, "", () => (workspace.find("setup") || workspace.add("setup"))?.openProject?.(path)]);
     }
     for (const p of conversations) {
       for (const s of p.sessions.slice(0, 100)) {
@@ -39,7 +38,7 @@ const palette = (() => {
     for (const button of document.querySelectorAll("#prefs .prefs-tabs button")) {
       out.push(["setting", `Settings: ${button.textContent}`, "", () => { openPrefs(); showPrefsPage(button.dataset.page); }]);
     }
-    const panel = (kind) => workspace.find(kind) || workspace.add(kind, side);
+    const panel = (kind) => workspace.find(kind) || workspace.add(kind);
     for (const button of document.querySelectorAll("#tpl-setup")[0]?.content.querySelectorAll(".setup-pages .mode") || []) {
       out.push(["page", `Project: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
     }
@@ -56,9 +55,9 @@ const palette = (() => {
     out.push(["action", "Reset layout", "layout", () => placePanels()]);
     out.push(["action", workspace.find("logs") ? "Close the Logs tab" : "Open the Logs tab", "diagnostics", () => {
       const logs = workspace.find("logs");
-      if (logs) workspace.close(logs); else workspace.add("logs", side);
+      if (logs) workspace.close(logs); else workspace.add("logs");
     }]);
-    for (const theme of [{ id: "system", name: "follow the system" }, ...allThemes()]) {
+    for (const theme of [{ id: "system", name: "Follow the system" }, ...allThemes()]) {
       if (theme.id !== prefs.theme) out.push(["theme", `Theme: ${theme.name}`, "", () => { prefs.theme = theme.id; savePrefs(); applyTheme(); }]);
     }
     return out;

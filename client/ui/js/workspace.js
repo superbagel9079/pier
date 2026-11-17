@@ -1,22 +1,22 @@
-// The three docks and their tabs: placing, dragging, renaming, saving the layout.
+// The three docks and their tabs: placing, reordering, renaming, saving the layout.
 
 // Workspace: three docks, any tab in any of them
 
 const KINDS = {
   picker: { title: "picker", terminal: true },
   shell: { title: "shell", terminal: true },
-  project: { title: "Activity", single: true, icon: "activity", make: (tab) => makeProject(tab) },
-  setup: { title: "Project", single: true, icon: "folder-cog", make: (tab) => makeSetup(tab) },
-  repository: { title: "Repository", single: true, icon: "git-branch", make: (tab) => makeRepository(tab) },
-  conversations: { title: "Conversations", single: true, icon: "message-square", make: (tab) => makeConversations(tab) },
+  project: { title: "Activity", single: true, make: (tab) => makeProject(tab) },
+  setup: { title: "Project", single: true, make: (tab) => makeSetup(tab) },
+  repository: { title: "Repository", single: true, make: (tab) => makeRepository(tab) },
+  conversations: { title: "Conversations", single: true, make: (tab) => makeConversations(tab) },
   pi: { title: "pi", terminal: true },
   chat: { title: "Pi", make: (tab) => makeChat(tab) },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
   file: { title: "file", make: (tab) => makeFile(tab) },
   takeback: { title: "Pi's work", make: (tab) => makeTakeBack(tab) },
-  logs: { title: "Logs", single: true, icon: "scroll-text", make: (tab) => makeLogs(tab) },
-  labs: { title: "Labs", single: true, icon: "flask-conical", make: (tab) => makeLabs(tab) },
+  logs: { title: "Logs", single: true, make: (tab) => makeLogs(tab) },
+  labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },
   lab: { title: "lab", terminal: true },
 };
 const DOCKS = ["left", "center", "right"];
@@ -27,10 +27,10 @@ const HOME = { conversations: "left", project: "right" };
 const homeOf = (kind) => HOME[kind] || "center";
 function defaultLayout() {
   return {
-    left: { tabs: ["conversations"], active: "conversations", collapsed: false, width: 320 },
+    left: { tabs: ["conversations"], active: "conversations", collapsed: false, width: 236 },
     right: { tabs: ["project"], active: "project", collapsed: false, width: 360 },
-    center: { tabs: ["main"] },
-    layout: 7,
+    center: { tabs: [] },
+    layout: 8,
   };
 }
 
@@ -55,20 +55,11 @@ const workspace = (() => {
     const dock = docks[name];
     if (dock.side) {
       const empty = !dock.tabs.length;
-      dock.el.hidden = empty && !dragging;
+      dock.el.hidden = empty;
       dock.splitter.hidden = empty || dock.collapsed;
-      dock.el.classList.toggle("collapsed", dock.collapsed && !empty);
-      dock.el.classList.toggle("single", dock.tabs.length === 1);
-      // While a tab is dragged, an empty side shows as a wide drop target.
-      dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
+      dock.el.classList.toggle("collapsed", dock.collapsed && !empty); // hidden by the header's toggle
       dock.el.style.setProperty("--width", `${dock.width}px`);
       dock.splitter.setAttribute("aria-valuenow", String(dock.width));
-      const collapse = $(".collapse", dock.el);
-      if (dock.peek) collapse.replaceChildren(pinIcon());
-      else collapse.textContent = (name === "right") === dock.collapsed ? "‹" : "›";
-      collapse.title = dock.peek ? "Keep this side open (otherwise it folds back when you go back to the terminals)"
-        : dock.collapsed ? "Expand" : "Collapse";
-      collapse.setAttribute("aria-label", collapse.title); // its text is a glyph or the pin
     }
     const bar = $(".tabs", dock.el);
     bar.replaceChildren();
@@ -119,7 +110,8 @@ const workspace = (() => {
       b.setAttribute("aria-label", b.title);
       $("use", b).setAttribute("href", `#i-panel-${name}${open ? "-close" : ""}`);
     }
-    $("#head-title").textContent = docks.center.active?.title || "";
+    $("#head-title").textContent = docks.center.active?.title || "New tab";
+    $("#btn-conversations").setAttribute("aria-pressed", String(ws.classList.contains("left-open")));
   }
 
   /** The middle's toggles: a side hidden or shown again. */
@@ -158,17 +150,15 @@ const workspace = (() => {
       requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
     });
     node.title = tab.pinned ? "picker: the main terminal (cannot be closed)" : tab.title;
-    // On a side, a panel's tab is its icon; alone there (not folded), its name, as a title.
-    const icon = dock.side && (dock.tabs.length > 1 || dock.collapsed) ? KINDS[tab.kind].icon : null;
-    if (icon) {
-      node.classList.add("icon-tab");
-      node.setAttribute("aria-label", tab.title);
-      node.append(svgIcon(icon));
-    } else node.append(el("span", { textContent: tab.title }));
+    node.append(el("span", { textContent: tab.title }));
     const actions = el("span");
     actions.className = "tab-actions";
     // Only ×: moving, renaming and the rest are in the tab's right-click menu.
-    if (!tab.pinned) actions.append(iconButton("×", "Close", () => close(tab)));
+    if (!tab.pinned) {
+      const x = iconButton("", "Close", () => close(tab));
+      x.append(svgIcon("x"));
+      actions.append(x);
+    }
     node.append(actions);
     dragSource(node, tab);
     node.addEventListener("auxclick", (e) => { if (e.button === 1 && !tab.pinned) close(tab); });
@@ -236,25 +226,26 @@ const workspace = (() => {
   }
 
 
+  /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
+   *  latest conversations. */
   function emptyDock(name) {
-    const choices = el("div");
-    choices.className = "choices";
-    for (const [label, action] of addChoices(name)) {
-      const b = el("button", { className: "link", textContent: label, title: label });
+    const line = (icon, label, detail, action) => {
+      const b = el("button", { className: "lrow" }, svgIcon(icon), el("span", { textContent: label }), el("span", { className: "m", textContent: detail }));
       b.addEventListener("click", action);
-      choices.append(b);
+      return b;
+    };
+    const project = target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
+    const group = el("div", { className: "lgroup" },
+      line("square-pen", "New conversation", project ? projectLabel(project) : "", () => (project ? openPiTerminal(project, projectLabel(project), ["--new"]) : openFolderPicker())),
+      line("folder", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()),
+      line("terminal", "New shell", "on the VM", () => add("shell", name)));
+    const recent = (vm.latest("conversations")?.data?.projects || []).flatMap((p) => p.sessions.filter((s) => !s.archived && !s.subagent).map((s) => [p, s]))
+      .sort((a, b) => b[1].modified - a[1].modified).slice(0, 5);
+    if (recent.length) {
+      group.append(el("p", { className: "llabel", textContent: "Recent conversations" }));
+      for (const [p, s] of recent) group.append(line("message-square", conversationTitle(s), p.label, () => openPiTerminal(p.project, p.label, ["--session", s.path])));
     }
-    const box = el("div");
-    box.className = "empty";
-    // The centre left empty (a side hides instead): the Pier mark gives it a centre.
-    if (name === "center") {
-      const mark = el("pre", { className: "mark" });
-      mark.setAttribute("aria-hidden", "true");
-      showMark(mark, { cols: 4, rows: 2 });
-      box.append(mark);
-    }
-    box.append(el("span", { textContent: "Open a tab here" }), choices);
-    return box;
+    return el("div", { className: "empty launcher" }, group);
   }
 
   function addChoices(name) {
@@ -367,35 +358,13 @@ const workspace = (() => {
     setCurrentTab(tab);
   }
 
-  /** A click on a tab shows it, never hides the panel (collapse: ‹ › or the right-click menu).
-   *  On a collapsed side it unfolds for a look ("peek"), folding back on the terminals. */
+  /** A click on a tab shows it. */
   function clickTab(tab) {
-    const dock = docks[tab.dock];
-    if (dock.side && dock.collapsed) dock.peek = true;
     show(tab);
     save();
   }
 
-  function keepOpen(name) {
-    docks[name].peek = false;
-    render(name);
-    save();
-  }
-
-  /** The sides unfolded for a look, folded again. */
-  function foldPeeks() {
-    for (const name of DOCKS) {
-      const dock = docks[name];
-      if (!dock.peek) continue;
-      dock.peek = false;
-      dock.collapsed = true;
-      render(name);
-      save();
-    }
-  }
-
-
-  // --- dragging tabs between docks ---
+  // --- dragging a tab along its bar (the middle's: a side holds one panel) ---
 
   let dragging = null;
 
@@ -414,7 +383,6 @@ const workspace = (() => {
           dragging = tab;
           ghost.textContent = tab.title;
           ghost.hidden = false;
-          renderAll(); // empty sides appear as thin drop targets
         }
         ghost.style.left = `${e.clientX + 12}px`;
         ghost.style.top = `${e.clientY + 8}px`;
@@ -434,9 +402,6 @@ const workspace = (() => {
         const target = e.type === "pointerup" ? dropTarget(e) : null;
         dragging = null;
         if (target) move(tab, target.dock, { index: target.index });
-        // Every dock, not only the two the tab moved between: an empty side shown as
-        // a drop target must go away even though nothing landed on it.
-        renderAll();
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", finish);
@@ -449,7 +414,7 @@ const workspace = (() => {
    *  from the tabs' middles (the end when the pointer is over the dock's content). */
   function dropTarget(event) {
     const name = dockAt(event);
-    if (!name) return null;
+    if (!name || name !== dragging?.dock) return null; // a tab stays in its dock (homeOf)
     const elements = [...$(".tabs", docks[name].el).children];
     let index = elements.length;
     const bar = $(".dock-head", docks[name].el).getBoundingClientRect();
@@ -482,43 +447,13 @@ const workspace = (() => {
     return null;
   }
 
-  // --- side controls ---
-
-  /** A pin, drawn in the text's colour like the other icons (never a coloured emoji). */
-  function pinIcon() {
-    const ns = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(ns, "svg");
-    for (const [k, v] of Object.entries({ viewBox: "0 0 16 16", width: "13", height: "13", fill: "none", stroke: "currentColor",
-      "stroke-width": "1.4", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
-    for (const d of ["M5.5 2h5", "M6.5 2v4L4.5 8.5h7L9.5 6V2", "M8 8.5V14"]) {
-      const path = document.createElementNS(ns, "path");
-      path.setAttribute("d", d);
-      svg.append(path);
-    }
-    return svg;
-  }
-
-  // Back on the terminals, a side unfolded for a look folds again: as soon as the
-  // pointer is there when the focus follows the mouse, at the next click otherwise.
-  const center = docks.center.el;
-  center.addEventListener("pointerenter", (e) => {
-    if (prefs.focusFollowsMouse && e.buttons === 0) foldPeeks();
-  });
-  center.addEventListener("pointerdown", () => foldPeeks(), true);
+  // --- the sides' widths ---
 
   const MIN_SIDE_WIDTH = 220; // px: narrower, a side's panels cut their lines
 
   for (const name of DOCKS) {
     const dock = docks[name];
-    $(".add", dock.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));
     if (!dock.side) continue;
-    $(".collapse", dock.el).addEventListener("click", () => {
-      if (dock.peek) { keepOpen(name); return; } // the pin: the look becomes the layout
-      dock.collapsed = !dock.collapsed;
-      render(name);
-      if (!dock.collapsed) dock.active?.onShow?.();
-      save();
-    });
     // Dragging changes one width per frame at most. Terminals are not fitted here: their
     // ResizeObserver does it once the size rests (terminal.js).
     let resizing = false;
@@ -587,9 +522,9 @@ const workspace = (() => {
     const saved = {};
     for (const name of DOCKS) {
       const dock = docks[name];
-      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed || Boolean(dock.peek), width: dock.width };
+      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
     }
-    saved.layout = 6;
+    saved.layout = 8; // what restore() keeps; below, it starts from the default layout
     // Names given by the user, for the tabs that come back at the next connection.
     saved.titles = Object.fromEntries(tabs().filter((t) => t.renamed && (t.pinned || KINDS[t.kind].single)).map((t) => [keyOf(t), t.title]));
     return saved;
@@ -607,7 +542,7 @@ const workspace = (() => {
     // An older layout gets the new arrangement once (Reset layout gives it again); the
     // names given to tabs stay.
     // Before 6, Context had a tab of its own: the default layout again (it is in Activity).
-    if ((saved.layout || 0) < 7) saved = { ...defaultLayout(), titles: saved.titles };
+    if ((saved.layout || 0) < 8) saved = { ...defaultLayout(), titles: saved.titles };
     clear();
     let mainPlaced = false;
     for (const name of DOCKS) {
@@ -625,7 +560,6 @@ const workspace = (() => {
       dock.active = dock.tabs.find((t) => keyOf(t) === want.active) || dock.tabs[0] || null;
       dock.collapsed = Boolean(want.collapsed) && dock.side;
     }
-    if (!mainPlaced) place(create("picker", { pinned: true }), "center", { reveal: true });
     for (const [key, title] of Object.entries(saved.titles || {})) {
       const tab = find(key);
       if (tab && typeof title === "string" && title.trim()) Object.assign(tab, { title: title.trim(), renamed: true });
@@ -674,6 +608,9 @@ const workspace = (() => {
     renderAll();
   }
 
+  // The New tab page lists the latest conversations: drawn again once they are known.
+  vm.on("conversations", () => { if (!docks.center.tabs.length) render("center"); });
+  $(".add", docks.center.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices("center")));
   $("#toggle-left").addEventListener("click", () => toggle("left"));
   $("#toggle-right").addEventListener("click", () => toggle("right"));
   return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };

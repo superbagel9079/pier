@@ -97,7 +97,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  termFont: "", termPadding: 8, uiFont: "", corners: 0 };
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();

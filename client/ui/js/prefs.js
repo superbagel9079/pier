@@ -9,13 +9,14 @@ function openPrefs() {
   $("#prefs-padding").value = prefs.termPadding;
   fillTermFonts();
   fillUiFonts();
-  $("#prefs-corners").value = String(prefs.corners);
+  showCorners();
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
   $("#prefs-clear").checked = prefs.clearOnEnd;
   $("#prefs-resume").checked = prefs.resume;
   $("#prefs-focus").checked = prefs.focusFollowsMouse;
+  $("#prefs-pi-terminal").checked = prefs.piTerminal;
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   $("#prefs-copykeys").value = prefs.copyKeys;
   $("#prefs-copymode").value = prefs.copyMode;
@@ -116,7 +117,7 @@ function searchSettings(query) {
     page.hidden = !hit;
     if (!hit) continue;
     any = true;
-    for (const row of page.querySelectorAll(".setting-row, label, h2, .check, .hint, button")) {
+    for (const row of page.querySelectorAll(".set, .setting-row, label, h2, .check, .hint, button")) {
       if (matches(textOf(row)) && !row.closest(".found")) row.classList.add("found");
     }
   }
@@ -159,7 +160,7 @@ function fillThemes() {
   const select = $("#prefs-theme");
   select.replaceChildren();
   const builtIn = el("optgroup", { label: "Built in" });
-  builtIn.append(new Option("follow the system (Pier dark / light)", "system"));
+  builtIn.append(new Option("Follow the system", "system"));
   for (const t of BUILTIN_THEMES) builtIn.append(new Option(t.name, t.id));
   select.append(builtIn);
   if (prefs.customThemes.length) {
@@ -277,7 +278,13 @@ $("#theme-save").addEventListener("click", () => {
   closeThemeEditor();
   fillThemes();
 });
-$("#prefs-corners").addEventListener("change", (e) => { prefs.corners = Number(e.target.value); savePrefs(); applyCorners(); });
+/** Corners: Square, Slight, Round; the one in use pressed. */
+function showCorners() {
+  for (const b of $("#prefs-corners").children) b.setAttribute("aria-checked", String(Number(b.dataset.v) === prefs.corners));
+}
+for (const b of $("#prefs-corners").children) {
+  b.addEventListener("click", () => { prefs.corners = Number(b.dataset.v); savePrefs(); applyCorners(); showCorners(); });
+}
 $("#prefs-font").addEventListener("change", (e) => {
   prefs.fontSize = Math.min(28, Math.max(8, Number(e.target.value) || PREFS_DEFAULT.fontSize));
   e.target.value = prefs.fontSize;
@@ -313,7 +320,7 @@ function fillTermFonts() {
   const select = $("#prefs-termfont");
   const chosen = prefs.termFont || "";
   select.replaceChildren();
-  select.add(new Option("Cascadia Mono (default)", ""));
+  select.add(new Option("Cascadia Mono", ""));
   for (const name of installedFonts) if (name !== "Cascadia Mono") select.add(new Option(name, name));
   if (chosen && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
   select.add(new Option("Other font…", OTHER_FONT));
@@ -352,8 +359,8 @@ function fillUiFonts() {
   const select = $("#prefs-uifont");
   const chosen = prefs.uiFont || "";
   select.replaceChildren();
-  select.add(new Option("The system's sans, Segoe UI (default)", ""));
-  select.add(new Option("Same as the terminals", UI_TERM));
+  select.add(new Option("Segoe UI", ""));
+  select.add(new Option("Same as the code", UI_TERM));
   for (const name of installedFonts) select.add(new Option(name, name));
   if (chosen && chosen !== UI_TERM && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
   select.add(new Option("Other font…", OTHER_FONT));
@@ -398,6 +405,7 @@ $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.c
 $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.target.checked; savePrefs(); });
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
+$("#prefs-pi-terminal").addEventListener("change", (e) => { prefs.piTerminal = e.target.checked; savePrefs(); });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
 $("#prefs-copykeys").addEventListener("change", (e) => { prefs.copyKeys = e.target.value; savePrefs(); });
 $("#prefs-copymode").addEventListener("change", (e) => { prefs.copyMode = e.target.value; savePrefs(); });

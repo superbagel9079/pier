@@ -38,6 +38,17 @@ function prFacts(args, method) {
   return facts;
 }
 
+/** A request in one sentence, for the Details card ("Pi asks to merge #12, ... into main."). */
+function approvalSentence(a) {
+  const args = a.args || {};
+  if (a.kind === "merge") return `Pi asks to merge #${args.number}${args.title ? `, "${visibleText(args.title)}",` : ""} into ${args.base || "its base"}.`;
+  if (a.kind === "review") return `Pi asks to post a review of #${args.number}: ${String(args.verdict || "").replace("_", " ")}.`;
+  if (a.kind === "create_repo") return `Pi asks to create the repository ${visibleText(args.name || "")}${args.private === false ? " (public)" : ""}.`;
+  if (a.kind === "workers") return `Pi asks to start worker Pis, up to ${args.max} at once.`;
+  if (a.kind === "lab") return args.op === "lab_run" ? `Pi asks to run a command on ${args.machine}.` : `Pi asks to ${visibleText(args.what || args.op || "act")} on ${args.machine}.`;
+  return `Pi asks: ${visibleText(String(a.kind))}.`;
+}
+
 /** One request, in a list: what it asks, what exactly will be done, what Pi says, then
  *  Refuse and Approve. answer(yes) does it; both buttons wait for it. */
 function approvalItem(a, answer) {
