@@ -1980,3 +1980,11 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .code-scroll { flex: 1; min-width: 0; overflow-x: auto; }
 .code-scroll > .src { min-width: max-content; }
 .code-view.wrap .code-scroll > .src { min-width: 0; }
+/* The tree's marks as icons: changed in the accent, failed in red, read dim; a folder's dot. */
+.tree .node .badge { display: inline-flex; align-items: center; gap: 2px; }
+.tree .node .badge .i { width: 13px; height: 13px; }
+.tree .node .badge:is(.is-changed, .is-new, .is-being-changed) { color: var(--accent); }
+.tree .node .badge.is-change-failed { color: var(--red, #f85149); }
+.tree .node .badge.is-being-read .i { animation: spin 1.2s linear infinite; }
+.tree .node .badge.dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.tree .node .badge.dot:empty { display: inline-flex; }

@@ -13,6 +13,9 @@ const FILE_ORDER = {
 /** A file's icon by its type (python, rust, markdown…); a folder's, open or not (CSS). */
 const fileIcon = (entry) => entry.kind === "dir" ? "ft-folder" : fileTypeIcon(entry.name);
 
+// The tree's marks, from a file's word (the Changes card's): what Pi or git did to it.
+const BADGE_ICONS = { "being changed": "pencil", "being read": "loader-circle", "change failed": "circle-alert",
+  new: "plus", deleted: "trash", changed: "check", read: "eye" };
 const STATES = {
   modifying: { label: "Pi is changing it" },
   reading: { label: "Pi is reading it" },
@@ -152,6 +155,7 @@ function makeProject(tab) {
     const git = activity.git[path]?.trim();
     if (f?.state === "modifying") return "being changed";
     if (f?.state === "reading") return "being read";
+    if (f?.state === "error") return "change failed";
     if (git === "??" || git === "A") return "new";
     if (git === "D") return "deleted";
     if (f && changing(f)) return f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : "changed";
@@ -442,10 +446,13 @@ function makeProject(tab) {
       const git = $(":scope > .node > .git", li);
       // In words, as the Changes card; a folder: a dot when Pi touched something in it.
       const dir = li.classList.contains("dir");
-      badge.textContent = dir ? (touchedDirs.has(rel) ? "•" : "") : f || activity.git[rel] ? word(rel, f) : "";
-      badge.title = dir ? (badge.textContent ? "Pi read or changed files in here" : "")
-        : [f ? STATES[f.state]?.label : "", activity.git[rel] ? `git: ${gitWords(activity.git[rel])}` : ""].filter(Boolean).join(" · ");
-      badge.className = "badge";
+      // An icon (its word in the hint); a folder: a dot when Pi touched something in it.
+      const said = dir ? "" : f || activity.git[rel] ? word(rel, f) : "";
+      const icon = BADGE_ICONS[said] || (/edit/.test(said) ? "check" : "");
+      badge.replaceChildren(...(icon ? [svgIcon(icon)] : []), ...(f?.edits > 1 ? [String(f.edits)] : []));
+      badge.title = dir ? (touchedDirs.has(rel) ? "Pi read or changed files in here" : "")
+        : [said, f ? STATES[f.state]?.label : "", activity.git[rel] ? `git: ${gitWords(activity.git[rel])}` : ""].filter(Boolean).join(" · ");
+      badge.className = "badge" + (said ? ` is-${said.replace(/^\d+ edits?$/, "changed").replace(/ /g, "-")}` : "") + (dir && touchedDirs.has(rel) ? " dot" : "");
       git.textContent = "";
     }
   }
