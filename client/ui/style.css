@@ -1726,3 +1726,8 @@ html:not(.grad-off) .settings-nav { background: transparent; }
 /* Pier's mark (core.js): the pier in braille, quiet, over the first page. */
 .pier-mark { margin: 0 0 var(--s4); padding: 0; background: none; font: 18px/1 "Cascadia Mono", "Segoe UI Symbol", monospace; color: var(--dim); white-space: pre; user-select: none; align-self: center; }
 .qs > .pier-mark { align-self: flex-start; }
+/* Every tab's × always there (not only under the pointer): the others faint, the shown one
+   and the pointed one bright. */
+.tab .tab-actions { display: flex; }
+.tab:not(.active):not(:hover) { padding-right: 0; }
+.tab:not(.active):not(:hover) .tab-actions .icon { color: var(--dim); opacity: .7; }
