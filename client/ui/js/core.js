@@ -363,19 +363,13 @@ document.addEventListener("keydown", (event) => {
   if (!event.defaultPrevented && !$("#workspace").hidden && !event.target.closest?.(".xterm")) fontKey(event);
 });
 
-// Pier's mark: a pier over the water, in braille; drawn, then made into characters by
-// asciify-engine (braille mode, 44 columns). Shown on the first page, above the VM.
+// Pier's mark: π in braille, made into characters by asciify-engine (braille mode, 20
+// columns) from a drawn π. Shown on the first page, above the VM.
 const PIER_ART = [
-  "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣶⣶⣄⠀⠀⠀⠀",
-  "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⡿⠀⠀⠀⠀",
-  "⠀⠀⠀⢦⣀⢀⣀⢀⣀⢀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠛⠁⠀⠀⠀⠀",
-  "⠀⠀⠀⣳⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-  "⠀⠀⠀⠉⢽⡋⠉⠉⢽⡉⠉⠈⣿⠉⠉⠉⣿⠉⠉⠩⡯⠉⠉⢙⡏⠉⠉⢹⡋⠉⠉⢽⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-  "⠀⠀⠀⠀⢽⡅⠀⠀⣻⠄⠀⠀⣿⠀⠀⠐⣟⠀⠀⢨⡯⠀⠀⢸⡇⠀⠀⢸⡃⠀⠀⢽⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-  "⠀⠀⠀⠀⢽⡆⠀⠀⢿⠂⠀⠀⣿⠀⠀⠐⣿⠀⠀⢐⡯⠀⠀⢸⠇⠀⠀⢸⡃⠀⠀⢽⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-  "⣄⡰⠒⢤⣹⠖⢢⣀⠿⠣⣄⡔⠟⣄⣠⠒⢿⣀⠔⠺⣏⡴⠒⢼⡧⠒⢤⣸⠓⢢⣀⡟⠧⢄⡰⠒⢤⡠⠖⢢⣠⠔⠲⣀",
-  "⣀⣀⠴⠤⣀⣀⠤⠢⣄⣀⠤⠢⣀⣀⠤⠢⢄⣀⠤⠦⢄⣀⠤⠢⢄⣀⠤⠢⢄⣀⠤⠢⢄⣀⠤⠦⢄⣀⠤⠢⢄⣀⠤⠦",
-  "⠄⠤⠰⠐⠢⠄⠤⠔⠂⠢⠠⠤⠂⠒⠤⠤⠄⠂⠢⠄⠤⠄⠒⠢⠤⠠⠔⠒⠤⠄⠤⠒⠂⠢⠄⠤⠒⠐⠤⠤⠰⠐⠢⠄",
+  "⣿⢿⣿⣿⣿⣿⣿⣿⣿⠿",
+  "⠀⢸⣿⣿⠀⢨⣿⣿⠂",
+  "⠀⢘⣿⣿⠀⠨⣿⣿⣅⡀",
+  "⠀⠸⠿⠻⠀⠀⠛⠿⠿⠃",
 ].join("\n");
 // The empty braille cell (U+2800) is drawn as faint dots by some fonts: a plain space instead.
 function pierMark() { return el("pre", { className: "pier-mark", textContent: PIER_ART.replace(/⠀/g, " "), "aria-hidden": "true" }); }

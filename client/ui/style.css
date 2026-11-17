@@ -1724,5 +1724,5 @@ html:not(.grad-off) .settings-nav { background: transparent; }
 .vr-btn .i, .vr-go .i { width: 14px; height: 14px; }
 .grad-in-buttons .vr-go { background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); border-color: transparent; }
 /* Pier's mark (core.js): the pier in braille, quiet, over the first page. */
-.pier-mark { margin: 0 0 var(--s4); padding: 0; background: none; font: 11px/1 "Cascadia Mono", "Segoe UI Symbol", monospace; color: var(--dim); white-space: pre; user-select: none; align-self: center; }
+.pier-mark { margin: 0 0 var(--s4); padding: 0; background: none; font: 18px/1 "Cascadia Mono", "Segoe UI Symbol", monospace; color: var(--dim); white-space: pre; user-select: none; align-self: center; }
 .qs > .pier-mark { align-self: flex-start; }
