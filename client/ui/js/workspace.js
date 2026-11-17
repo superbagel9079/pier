@@ -266,6 +266,7 @@ const workspace = (() => {
    *  latest conversations. */
   function emptyDock(name) {
     if (!settings) return quickStart(); // no VM yet: how to begin (the proposals' 3A)
+    if (!online) return el("div", { className: "empty launcher" }, loginCard()); // a VM known: its password (D)
     const line = (icon, label, detail, action) => {
       const b = el("button", { className: "lrow" }, svgIcon(icon), el("span", { textContent: label }), el("span", { className: "m", textContent: detail }));
       b.addEventListener("click", () => (online ? action() : toLogin())); // not connected: connect first
@@ -290,12 +291,14 @@ const workspace = (() => {
     const step = (n, done, on, title, detail, button) => el("div", { className: `qs-step${done ? " done" : ""}${on ? " on" : ""}` },
       el("span", { className: "n", "aria-hidden": "true" }, ...(done ? [svgIcon("check")] : [String(n)])),
       el("div", { className: "what" }, el("span", { textContent: title }), el("span", { textContent: detail })), button || null);
-    const add = el("button", { type: "button", textContent: "Add your VM" });
-    add.addEventListener("click", () => { fillSetup(null); showConnect("setup"); });
+    // The first step open in place, its fields in it (the proposals' G): no window.
+    const first = step(1, false, true, "Add your VM", "Its address and your user on it.");
+    first.classList.add("open");
+    first.append(firstVmForm());
     return el("div", { className: "empty launcher quick-start" }, el("div", { className: "qs" },
       el("h2", { textContent: "Run Pi on your Linux VM" }),
       el("p", { textContent: "Pier talks to it over SSH: Pi works there, you follow it from here." }),
-      step(1, false, true, "Add your VM", "Its address and your user on it.", add),
+      first,
       step(2, false, false, "Connect", "Pier installs its picker there if it is missing."),
       step(3, false, false, "Start a conversation", "In a folder of the VM.")));
   }

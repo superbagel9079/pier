@@ -16,7 +16,8 @@ function showOffline(note = "") {
   $("#btn-disconnect").hidden = true;
   if (!workspace.tabs().length) workspace.restore();
   setStatus("not connected");
-  $("#connect-card").hidden = !settings;
+  // The first page shows the VM itself (loginCard) when nothing is open in the middle.
+  $("#connect-card").hidden = !settings || !workspace.docks.center.tabs.length;
   if (settings) $("#connect-card-target").textContent = describe(settings);
   workspace.redrawEmpty();
   if (note) flashStatus(note);
@@ -133,6 +134,13 @@ $("#setup-form").addEventListener("submit", async (event) => {
 });
 
 function toLogin(message) {
+  // The first page in view (nothing open in the middle): the password is asked there.
+  if (!online && workspace.docks.center.tabs.length === 0) {
+    loginNote = message || "";
+    showOffline();
+    $(".login-card input[type=password]")?.focus();
+    return;
+  }
   $("#login-target").textContent = describe(settings);
   $("#bastion-password-label").hidden = !settings.bastion;
   $("#login-form").bastion_password.required = Boolean(settings.bastion);
@@ -157,6 +165,9 @@ async function connect() {
   const button = $("#btn-connect");
   button.disabled = true;
   button.textContent = "Connecting…";
+  connecting = true;
+  loginNote = "";
+  workspace.redrawEmpty();
   setStatus("connecting…");
   try {
     uiLog("info", "connect", { to: describe(settings) });
@@ -196,7 +207,70 @@ async function connect() {
   } finally {
     button.disabled = false;
     button.textContent = "Connect";
+    connecting = false;
+    if (!online) workspace.redrawEmpty();
   }
+}
+
+// The first page, not connected (the proposals' G and D): the fields there, not in a window.
+let connecting = false; // a connection under way: the first page says so
+let loginNote = "";     // why the last one failed, shown on the first page
+
+/** A field with its name above it. */
+function lcField(label, input) {
+  return el("label", { className: "lc-field" }, el("span", { textContent: label }), input);
+}
+
+/** The VM known (D): the machine large, its password alone; "Another VM" and "Options"
+ *  open the full form. */
+function loginCard() {
+  const pw = el("input", { type: "password", name: "password", required: true, autocomplete: "current-password", disabled: connecting });
+  const bpw = settings.bastion ? el("input", { type: "password", name: "bastion_password", required: true, autocomplete: "off", disabled: connecting }) : null;
+  const note = el("p", { className: "lc-error", role: "alert", textContent: loginNote, hidden: !loginNote });
+  const go = el("button", { type: "submit", textContent: connecting ? "Connecting…" : "Connect", disabled: connecting });
+  const another = el("button", { type: "button", className: "link", textContent: "Another VM" });
+  another.addEventListener("click", () => { fillSetup(null); showConnect("setup"); });
+  const options = el("button", { type: "button", className: "link", textContent: "Options" });
+  options.addEventListener("click", () => { fillSetup(settings); showConnect("setup"); });
+  const form = el("form", { className: "login-card" },
+    el("div", { className: "lc-head" }, el("span", { className: "lc-icon" }, svgIcon("server")), el("b", { textContent: "Your VM" }),
+      el("small", { textContent: describe(settings).replace(/:22(?= via|$)/g, "") })),
+    ...(bpw ? [lcField(`Bastion password (${settings.bastion.user}@${settings.bastion.host})`, bpw)] : []),
+    lcField("Password", pw), note, go, el("div", { className: "lc-links" }, another, options));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    password = pw.value;
+    bastionPassword = bpw?.value || "";
+    await connect();
+  });
+  if (!connecting) requestAnimationFrame(() => { if (form.isConnected && !document.querySelector("#connect:not([hidden]), .overlay")) (bpw || pw).focus(); });
+  return form;
+}
+
+/** No VM yet (G): the user, the address, the password, in the quick start's first step;
+ *  the port, a bastion and the picker's path under "Options" (the full form). */
+function firstVmForm() {
+  const user = el("input", { name: "user", required: true, autocomplete: "username", spellcheck: false });
+  const host = el("input", { name: "host", required: true, placeholder: "192.168.1.20 or vm.example.org", spellcheck: false });
+  const pw = el("input", { type: "password", name: "password", required: true, autocomplete: "current-password" });
+  const note = el("p", { className: "lc-error", role: "alert", hidden: true });
+  const go = el("button", { type: "submit", textContent: "Connect" });
+  const options = el("button", { type: "button", className: "link", textContent: "Options: port, bastion, picker" });
+  const typed = () => ({ host: host.value.trim(), port: 22, user: user.value.trim(), bastion: null, remote_command: "~/bin/pi-pick" });
+  options.addEventListener("click", () => { fillSetup(typed()); showConnect("setup"); });
+  const form = el("form", { className: "qs-form" },
+    el("div", { className: "lc-row" }, lcField("User", user), lcField("Address", host)),
+    el("div", { className: "lc-row end" }, lcField("Password", pw), go), note, options);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const next = typed();
+    try { await backend.saveSettings(next); settings = next; } catch (error) { showError(note, String(error)); return; }
+    password = pw.value;
+    bastionPassword = "";
+    toLogin();
+    await connect();
+  });
+  return form;
 }
 
 async function enterWorkspace(note = "", version = null) {
