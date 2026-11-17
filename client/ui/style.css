@@ -1731,3 +1731,32 @@ html:not(.grad-off) .settings-nav { background: transparent; }
 .tab .tab-actions { display: flex; }
 .tab:not(.active):not(:hover) { padding-right: 0; }
 .tab:not(.active):not(:hover) .tab-actions .icon { color: var(--dim); opacity: .7; }
+/* Pier's hints (ui.js, the proposals' C): glass as the menus, the name with its shortcut,
+   then what it does. */
+.hint-card { position: fixed; z-index: 60; max-width: 280px; padding: 7px 10px; display: flex; flex-direction: column; gap: 2px; pointer-events: none;
+  background: color-mix(in srgb, var(--raise) 88%, transparent); -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent); border-radius: var(--r); box-shadow: 0 8px 22px rgb(0 0 0 / .35);
+  font: 400 12px/16px var(--ui); color: var(--fg); animation: hint-in .12s ease-out; }
+.hint-card[hidden] { display: none; }
+.hint-card b { display: flex; align-items: center; gap: var(--s3); justify-content: space-between; font-weight: 600; font-size: 12px; }
+.hint-card kbd { font: 11px/16px var(--ui); padding: 0 4px; color: var(--dim); background: none; border: 1px solid var(--line); border-radius: min(var(--r), 3px); white-space: nowrap; }
+.hint-card .hint-words { color: var(--dim); }
+@keyframes hint-in { from { opacity: 0; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .hint-card { animation: none; } }
+
+/* The pointer (the proposals' B): the arrow everywhere, as a Windows application; the text
+   bar in what is typed or read and copied, the drag and resize shapes where they act. */
+*, *::before, *::after { cursor: default !important; }
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="button"], [type="submit"]), textarea, [contenteditable="true"]) { cursor: text !important; }
+:is(.chat-col, .code-view, .md-page, .diff, .log-lines, .selectable) :not(button, button *, a, summary, [role=button], [role=button] *) { cursor: text !important; }
+.splitter { cursor: col-resize !important; }
+.prefs-tabs.dragging, .prefs-tabs.dragging * { cursor: grabbing !important; }
+:is(button, input, select, textarea):disabled { cursor: default !important; }
+.xterm, .xterm * { cursor: text !important; }
+
+/* Text taken with the mouse where it is worth keeping (a conversation, a file, a diff, the
+   logs, a terminal, what is typed): the rest of the interface is not selected by a drag. */
+body { -webkit-user-select: none; user-select: none; }
+:is(.chat-col, .code-view, .md-page, .diff, .log-lines, .trust-print, .vr-text code, input, textarea, [contenteditable="true"], .xterm, .selectable) { -webkit-user-select: text; user-select: text; }
+/* A selection in the theme's colours, not the system's blue. */
+::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); color: inherit; }
