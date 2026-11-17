@@ -1228,12 +1228,16 @@ button.row-main:hover { background: none; }
 .theme-actions .icon-btn { width: 24px; height: 24px; background: var(--raise); }
 .theme-actions .icon-btn .i { width: 14px; height: 14px; }
 /* Behavior: the notification as it will show (the proposals' 6B) */
-.set.notify-preview { background: var(--bg); }
+/* The preview on a bit of "desktop" (the accent's colours): a translucent one shows it is. */
+.set.notify-preview { background: radial-gradient(circle at 70% 20%, color-mix(in srgb, var(--accent) 45%, transparent), transparent 55%), radial-gradient(circle at 95% 95%, color-mix(in srgb, var(--link) 40%, transparent), transparent 50%), var(--bg); }
+.toast-preview.shown { animation: notify-in .35s ease-out; }
+@keyframes notify-in { from { opacity: 0; transform: translateX(24px); } }
+@media (prefers-reduced-motion: reduce) { .toast-preview.shown { animation: none; } }
 .set.notify-preview .what > :first-child { font-weight: 400; color: var(--dim); font-size: 12px; }
 /* As Windows 11 draws a notification: the app's line, then the title and the text. */
-.toast-preview { width: 340px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s4) var(--s4); background: var(--raise); border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); border-radius: max(var(--r), 8px); box-shadow: 0 16px 40px rgba(0, 0, 0, .4); }
+.toast-preview { width: 340px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: var(--s3) var(--s4) var(--s4); background: var(--raise); border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); border-radius: var(--r); box-shadow: 0 16px 40px rgba(0, 0, 0, .4); }
 .toast-preview .app { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); font-size: 12px; color: var(--dim); }
-.toast-preview .mark { width: 16px; height: 16px; display: grid; place-items: center; background: var(--fg); color: var(--bg); font-size: 10px; font-weight: 700; border-radius: 3px; }
+.toast-preview .mark { width: 16px; height: 16px; display: grid; place-items: center; background: var(--fg); color: var(--bg); font-size: 10px; font-weight: 700; border-radius: min(3px, var(--r)); }
 .toast-preview .when { margin-left: auto; }
 .toast-preview .t { font-weight: 600; font-size: 14px; }
 .toast-preview .b { color: var(--dim); font-size: 13px; }

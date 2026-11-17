@@ -489,9 +489,16 @@ $("#prefs-shortcut").addEventListener("change", async (e) => {
 $("#prefs-autostop").addEventListener("change", (e) => { prefs.autostop = e.target.checked; savePrefs(); });
 $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.checked; savePrefs(); });
 // A real one, as connect.js sends them, to see where and how it shows.
-$("#prefs-notify-test").addEventListener("click", () => backend.notify("Pi finished", "~/work is waiting for you (a test from Pier's settings)")
-  .then(() => flashStatus("Test notification sent"))
-  .catch((error) => flashStatus(`No notification: ${error}`)));
+$("#prefs-notify-test").addEventListener("click", () => {
+  // The preview comes in as the real one does; Windows shows the real one in its corner.
+  const preview = $(".toast-preview");
+  preview.classList.remove("shown");
+  void preview.offsetWidth; // restart its animation
+  preview.classList.add("shown");
+  backend.notify("Pi finished", "~/work is waiting for you (a test from Pier's settings)")
+    .then(() => flashStatus("Sent: Windows shows it in the corner of the screen"))
+    .catch((error) => flashStatus(`No notification: ${error}`));
+});
 $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.target.checked; savePrefs(); });
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
