@@ -56,7 +56,11 @@ const PASSTHROUGH: &[&str] = &[
     "fs-rename",
     "fs-copy",
     "fs-delete",
+    "fs-write",
     "file",
+    "providers",
+    "provider-save",
+    "provider-delete",
     "config",
     "models",
     "type",
@@ -632,6 +636,12 @@ async fn api_call(app: AppHandle, state: State<'_, AppState>, args: Vec<String>)
         let mut moved = vec!["type", "-"];
         moved.extend_from_slice(rest);
         return api(&app, &state, &moved, text.as_bytes()).await;
+    }
+    // A file saved from the viewer, a provider saved from Settings: their text (the last
+    // argument) on stdin, as above; a key never on a command line.
+    if matches!(args.first(), Some(&"fs-write") | Some(&"provider-save")) && args.len() >= 2 {
+        let (text, head) = args.split_last().unwrap();
+        return api(&app, &state, head, text.as_bytes()).await;
     }
     api(&app, &state, &args, &[]).await
 }

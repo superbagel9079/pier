@@ -237,8 +237,42 @@ function makeFile(tab) {
   head.append(path, facts, view, el("span", { className: "file-acts" }, copy, changes, refresh, mention));
   const error = el("p", { className: "error", hidden: true });
   const body = el("div", { className: "file-body" });
-  tab.pane.append(head, error, body);
+  const conflict = el("div", { className: "file-conflict", role: "alert", hidden: true });
+  tab.pane.append(head, error, conflict, body);
   let last = null;
+  // Typing in it (the proposals' 3, saved by itself): a moment after the last key, or at
+  // Ctrl+S; the VM's copy written only if it did not change since read (else the choice).
+  let area = null, dirty = false, saveTimer = 0, saving = false;
+  const factsText = () => facts.textContent.replace(/ · (saving…|saved|not saved)$/, "");
+  const say = (word) => { facts.textContent = `${factsText()}${word ? ` · ${word}` : ""}`; };
+  async function save(force = false) {
+    clearTimeout(saveTimer);
+    if (!area || !dirty || saving) return;
+    saving = true;
+    say("saving…");
+    const tail = last.text.endsWith("\n") ? "\n" : "";
+    const text = area.value + tail;
+    let r;
+    try { r = await backend.api(["fs-write", project, rel, force ? "-" : (last.mtime || "-"), text]); }
+    catch (e) { saving = false; say("not saved"); showError(error, String(e)); return; }
+    saving = false;
+    if (r.conflict) {
+      say("not saved");
+      const theirs = el("button", { type: "button", className: "secondary", textContent: "Show theirs" });
+      const mine = el("button", { type: "button", textContent: "Keep mine" });
+      theirs.addEventListener("click", () => { dirty = false; conflict.hidden = true; reload(); });
+      mine.addEventListener("click", () => { conflict.hidden = true; save(true); });
+      conflict.replaceChildren(el("span", { textContent: "It changed on the VM since you opened it (Pi, perhaps): nothing was saved." }), theirs, mine);
+      conflict.hidden = false;
+      return;
+    }
+    showError(error, "");
+    last = { ...last, text, mtime: r.mtime, size: text.length };
+    // Typed on while it was being saved: saved again in a moment.
+    dirty = area.value + tail !== text;
+    if (dirty) saveTimer = setTimeout(save, 700);
+    else say("saved");
+  }
 
   function draw() {
     body.replaceChildren();
@@ -257,7 +291,39 @@ function makeFile(tab) {
       gutter.setAttribute("aria-hidden", "true");
       const src = el("pre", { className: "src" });
       highlight(src, text, markdown ? null : lang);
-      code.append(gutter, src);
+      if (last.truncated) {
+        area = null;
+        code.append(gutter, src);
+      } else {
+        // The text typed in a clear field laid exactly over the coloured one, which follows it.
+        area = el("textarea", { className: "code-edit", spellcheck: false, value: text, ariaLabel: `${rel}: type to change it, saved by itself` });
+        const wrap = el("div", { className: "code-wrap" }, src, area);
+        code.append(gutter, wrap);
+        let paint = 0;
+        const repaint = () => {
+          paint = 0;
+          src.replaceChildren();
+          highlight(src, area.value + (area.value.endsWith("\n") ? " " : ""), markdown ? null : lang);
+          gutter.textContent = Array.from({ length: area.value.split("\n").length }, (_, n) => n + 1).join("\n");
+        };
+        area.addEventListener("input", () => {
+          dirty = true;
+          say("");
+          if (!paint) paint = setTimeout(repaint, 60);
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(save, 700);
+        });
+        area.addEventListener("keydown", (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+          if (e.key === "Tab" && !e.ctrlKey && !e.altKey) {
+            // Tab indents as the file does (a tab, or four spaces).
+            e.preventDefault();
+            const unit = /^\t/m.test(area.value) ? "\t" : "    ";
+            document.execCommand("insertText", false, unit);
+          }
+        });
+        area.addEventListener("blur", () => save());
+      }
       body.append(code);
     }
     if (last.truncated) {
@@ -266,6 +332,7 @@ function makeFile(tab) {
   }
 
   async function reload() {
+    if (dirty) { await save(); if (dirty) return; } // never drop what was typed
     let result;
     try {
       result = await backend.api(["file", project, rel]);

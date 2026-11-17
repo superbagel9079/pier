@@ -181,6 +181,7 @@
         <button role="tab" data-page="terminals">Terminals</button>
         <button role="tab" data-page="behavior" title="What Pier does by itself: shares, notifications, the shortcut">Behavior</button>
         <p class="settings-group">The VM</p>
+        <button role="tab" data-page="projects" title="Each project of the VM: its instructions, what Pi loads, its mark, its repository">Projects</button>
         <button role="tab" data-page="connection" title="The VM, the picker on it">Connection</button>
         <button role="tab" data-page="updates">Updates</button>
         <button role="tab" data-page="diagnostics">Diagnostics</button>
@@ -427,6 +428,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <p id="update-error" class="error" hidden></p>
       </section>
 
+      <section class="prefs-page needs-vm" data-page="projects" data-title="Projects" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="connection" data-title="Connection" role="tabpanel" hidden>
       <h2>The VM</h2>
       <div class="rows">

@@ -622,3 +622,88 @@ def api_pi_default(home, value):
     write_settings("user", None, change)
     log("info", "pi.default-model", provider=provider)
     return {"default": pi_default_model(home)}
+
+
+# --- providers (Settings > Agents): Pi's models.json ---------------------------------
+
+PROVIDER_APIS = ("openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai")
+PROVIDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+PROVIDER_MAX_BYTES = 64 * 1024
+
+
+def models_json_path():
+    return os.path.join(agent_dir(), "models.json")
+
+
+def read_models_json():
+    """models.json as Pi reads it ({} when absent); one it cannot parse is refused, never
+    overwritten."""
+    path = models_json_path()
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise ApiError(f"cannot read {path}: {exc}")
+    if not isinstance(data, dict):
+        raise ApiError(f"{path} is not an object")
+    return data
+
+
+def api_providers(home):
+    """The providers of models.json: name, address, kind of API, models, and whether a key
+    is set (never the key itself)."""
+    data = read_models_json()
+    out = []
+    for name, p in sorted((data.get("providers") or {}).items()):
+        if not isinstance(p, dict):
+            continue
+        models = [m.get("id") for m in p.get("models") or [] if isinstance(m, dict) and m.get("id")]
+        key = p.get("apiKey")
+        out.append({"name": name, "baseUrl": p.get("baseUrl") or "", "api": p.get("api") or "",
+                    "models": models, "key": bool(key), "keyEnv": key if isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key or "") else ""})
+    return {"providers": out, "path": models_json_path()}
+
+
+def api_provider_save(home, name, data):
+    """A provider added or changed: {baseUrl, api, apiKey?, models: [ids]} on stdin. An
+    absent apiKey keeps the one there; the provider's other fields (a model's limits…) stay."""
+    if not PROVIDER_NAME.match(name or ""):
+        raise ApiError("a provider's name: letters, digits, . _ -")
+    if len(data) > PROVIDER_MAX_BYTES:
+        raise ApiError("too long")
+    try:
+        given = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ApiError("not JSON")
+    base = str(given.get("baseUrl") or "").strip()
+    api = str(given.get("api") or "").strip()
+    if not re.match(r"^https?://[^\s]+$", base):
+        raise ApiError("the address: http:// or https://, then the host")
+    if api not in PROVIDER_APIS:
+        raise ApiError(f"the API: one of {', '.join(PROVIDER_APIS)}")
+    ids = [str(m).strip() for m in given.get("models") or [] if str(m).strip()]
+    whole = read_models_json()
+    providers = whole.setdefault("providers", {})
+    entry = providers.get(name) if isinstance(providers.get(name), dict) else {}
+    entry["baseUrl"], entry["api"] = base, api
+    if given.get("apiKey"):
+        entry["apiKey"] = str(given["apiKey"]).strip()
+    known = {m.get("id"): m for m in entry.get("models") or [] if isinstance(m, dict)}
+    entry["models"] = [known.get(i) or {"id": i} for i in ids]
+    providers[name] = entry
+    path = models_json_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    atomic_write(path, json.dumps(whole, indent=2) + "\n", os.path.dirname(path), 0o600)
+    return {"saved": name}
+
+
+def api_provider_delete(home, name):
+    whole = read_models_json()
+    if name not in (whole.get("providers") or {}):
+        raise ApiError(f"no provider {name}")
+    del whole["providers"][name]
+    path = models_json_path()
+    atomic_write(path, json.dumps(whole, indent=2) + "\n", os.path.dirname(path), 0o600)
+    return {"removed": name}

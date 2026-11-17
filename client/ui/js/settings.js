@@ -28,6 +28,7 @@ function settingsPageShown(page) {
   else if (page === "network") drawNetwork();
   else if (page === "git") drawForges();
   else if (page === "extensions") drawExtensions();
+  else if (page === "projects") drawProjects();
 }
 
 const configValue = (key) => pickerConfig?.keys?.[key]?.value;
@@ -219,6 +220,7 @@ function drawAgents(again) {
       models.textContent = `${piModels.models.length}, from ${providers || "no provider"}. A gateway such as Bifrost lists its own as one provider's. Type a few letters in a field to choose.`;
     }
     const knows = el("div", { className: "setting-row" }, el("div", { className: "setting-head" }, el("span", { textContent: "Models Pi knows" }), refresh), models);
+    out.push(el("h2", { textContent: "Providers" }), providersBlock());
     out.push(el("h2", { textContent: "Models" }), knows, defRow,
       modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
       modelRow("worker_model", "Workers", "The model of the workers a Pi starts, when it names none. A cheaper model does.", "Pi's default"),
@@ -240,6 +242,169 @@ function drawAgents(again) {
       toggleRow("track_sessions", "Which conversation each Pi holds", "A small extension tells Pier; without it, Pier guesses from the newest file.", "agents"));
     return out;
   });
+}
+
+// --- Providers (the proposals' 1B): Pi's models.json on the VM -----------------------
+
+let piProviders = null; // {providers: [{name, baseUrl, api, models, key, keyEnv}], path}
+async function loadProviders() {
+  try { piProviders = await backend.api(["providers"]); } catch (e) { piProviders = { providers: [], problem: String(e) }; }
+}
+// Well-known ones, filled in for you: the name Pi will show, the address, the kind of API.
+const PROVIDER_PRESETS = [
+  ["OpenRouter", "openrouter", "https://openrouter.ai/api/v1", "openai-completions"],
+  ["OpenAI", "openai", "https://api.openai.com/v1", "openai-responses"],
+  ["Anthropic", "anthropic", "https://api.anthropic.com", "anthropic-messages"],
+  ["Google Gemini", "google", "https://generativelanguage.googleapis.com/v1beta", "google-generative-ai"],
+  ["Groq", "groq", "https://api.groq.com/openai/v1", "openai-completions"],
+  ["DeepSeek", "deepseek", "https://api.deepseek.com/v1", "openai-completions"],
+  ["Mistral", "mistral", "https://api.mistral.ai/v1", "openai-completions"],
+  ["Together", "together", "https://api.together.xyz/v1", "openai-completions"],
+  ["Ollama, on the VM", "ollama", "http://localhost:11434/v1", "openai-completions"],
+  ["LM Studio", "lmstudio", "http://localhost:1234/v1", "openai-completions"],
+  ["Custom (an OpenAI-compatible API)", "", "", "openai-completions"],
+];
+const PROVIDER_APIS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"];
+
+/** The providers of models.json, a row each (its address, kind of API, models, key), ⋯ to
+ *  change or remove it; Add a provider below. */
+function providersBlock() {
+  const box = el("div", { className: "provider-list" });
+  if (!piProviders) {
+    box.append(el("p", { className: "hint", textContent: "Asking the VM…" }));
+    loadProviders().then(() => drawAgents(false));
+    return box;
+  }
+  if (piProviders.problem) box.append(el("p", { className: "error", textContent: piProviders.problem }));
+  for (const p of piProviders.providers) {
+    const more = el("button", { className: "icon-btn", type: "button", title: `${p.name}: more` }, svgIcon("ellipsis"));
+    more.addEventListener("click", () => showMenu(more, [
+      ["Edit…", () => providerDialog(p), false, { icon: "pencil" }],
+      ["Remove", async () => {
+        if (!(await ask(`Remove the provider ${p.name}? Its models leave Pi's list (models.json).`))) return;
+        try { await backend.api(["provider-delete", p.name]); } catch (e) { flashStatus(String(e)); return; }
+        await afterProviders();
+      }, false, { icon: "trash", danger: true }],
+    ]));
+    const facts = [p.baseUrl, p.api, `${p.models.length} model${p.models.length === 1 ? "" : "s"}`, p.key ? (p.keyEnv ? `key from ${p.keyEnv}` : "key set") : "no key"];
+    box.append(el("div", { className: "setting-row provider-row" },
+      el("div", { className: "setting-head" }, el("span", { className: "provider-name", textContent: p.name }), more),
+      el("p", { className: "hint", textContent: facts.filter(Boolean).join(" · ") })));
+  }
+  const add = el("button", { type: "button", className: "add-row" }, svgIcon("plus"), el("span", { textContent: "Add a provider" }));
+  add.addEventListener("click", () => providerDialog(null));
+  box.append(el("div", { className: "setting-row add-line" }, add));
+  return box;
+}
+
+/** After a change: models.json read again, and Pi's models (its list holds them). */
+async function afterProviders() {
+  await loadProviders();
+  await loadPiModels(true);
+  drawAgents(false);
+}
+
+/** A provider added (from a well-known one or by hand) or changed: its name, address, API,
+ *  key (left empty, the one set stays) and models, one per line. */
+function providerDialog(p) {
+  const field = (label, input, hint) => el("label", { className: "provider-field" }, el("span", { textContent: label }), input, hint ? el("small", { textContent: hint }) : null);
+  const preset = el("select", {});
+  PROVIDER_PRESETS.forEach(([label], i) => preset.add(new Option(label, String(i))));
+  const name = el("input", { value: p?.name || "", spellcheck: false, placeholder: "openrouter", disabled: Boolean(p) });
+  const base = el("input", { value: p?.baseUrl || "", spellcheck: false, placeholder: "https://api.example.com/v1" });
+  const api = el("select", {});
+  PROVIDER_APIS.forEach((a) => api.add(new Option(a, a)));
+  api.value = p?.api || "openai-completions";
+  const key = el("input", { type: "password", autocomplete: "off", spellcheck: false, placeholder: p?.key ? "set: leave empty to keep it" : "its API key, or an environment variable's NAME" });
+  const models = el("textarea", { rows: 4, spellcheck: false, placeholder: "one model id a line, as the provider names it", value: (p?.models || []).join("\n") });
+  const problem = dialogError();
+  preset.addEventListener("change", () => {
+    const [, n, url, kind] = PROVIDER_PRESETS[Number(preset.value)];
+    if (!name.value || !p) name.value = n;
+    base.value = url;
+    api.value = kind;
+    api.dispatchEvent(new Event("change"));
+    name.focus();
+  });
+  const save = el("button", { type: "button", textContent: p ? "Save" : "Add" });
+  const dialog = resourceDialog(p ? `Provider ${p.name}` : "Add a provider", [
+    ...(p ? [] : [field("Start from", preset)]),
+    field("Name", name, "As Pi will show it, before each model: name/model."),
+    field("Address", base),
+    field("API", api),
+    field("Key", key, "Kept on the VM, in Pi's models.json (readable by your user only); never logged."),
+    field("Models", models),
+    problem], [save]);
+  dialog.box.classList.add("provider-dialog");
+  save.addEventListener("click", async () => {
+    const body = { baseUrl: base.value.trim(), api: api.value, models: models.value.split(/[\n,]+/).map((m) => m.trim()).filter(Boolean) };
+    if (key.value.trim()) body.apiKey = key.value.trim();
+    try { await backend.api(["provider-save", (p?.name || name.value).trim(), JSON.stringify(body)]); } catch (e) { showError(problem, String(e)); return; }
+    dialog.close();
+    await afterProviders();
+  });
+}
+
+// --- Projects (the proposals' 2B): the VM's projects, one at a time -----------------
+
+let projectsOpen = null; // the project whose page is shown, else the list
+/** The host on top, then the VM's projects with their mark; a project's page: its
+ *  instructions, what Pi loads, its mark, its repository, its path. */
+function drawProjects() {
+  const section = $('#prefs .prefs-page[data-page="projects"]');
+  if (!online) { section.replaceChildren(); return; }
+  const data = vm.latest("conversations")?.data;
+  if (!data) {
+    section.replaceChildren(el("p", { className: "dim", textContent: "Asking the VM…" }));
+    vm.follow({ conversations: true });
+    const stop = vm.on("conversations", () => { stop(); if (prefsPage === "projects") drawProjects(); });
+    return;
+  }
+  const STORE = "devbox.conversations.v1";
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(STORE)) || {}; } catch { /* none */ }
+  const looks = saved.looks || {};
+  const host = el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: "Host" }),
+    el("span", { className: "host-line" }, el("span", { className: "host-dot ok", "aria-hidden": "true" }), el("span", { textContent: settings ? describe(settings).replace(/:22(?= via|$)/g, "") : "" }))));
+  const projects = [...data.projects].sort((a, b) => a.label.localeCompare(b.label));
+  const p = projects.find((x) => x.project === projectsOpen);
+  if (!p) {
+    projectsOpen = null;
+    const rows = projects.map((x) => {
+      const b = el("button", { type: "button", className: "project-pick" }, projectBadge(x.project, looks[x.project]),
+        el("span", { className: "what" }, el("span", { textContent: x.label }), el("span", { textContent: `${x.sessions.length} conversation${x.sessions.length === 1 ? "" : "s"}` })),
+        svgIcon("chevron-right"));
+      b.addEventListener("click", () => { projectsOpen = x.project; drawProjects(); });
+      return b;
+    });
+    section.replaceChildren(el("h2", { textContent: "Connected to" }), el("div", { className: "rows" }, host),
+      el("h2", { textContent: "Projects" }), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
+    return;
+  }
+  const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: "All projects" }));
+  back.addEventListener("click", () => { projectsOpen = null; drawProjects(); });
+  const action = (text, run, primary = false) => {
+    const b = el("button", { type: "button", className: primary ? "primary" : "secondary", textContent: text });
+    b.addEventListener("click", run);
+    return b;
+  };
+  const toTab = (kind, then) => () => { closePrefs(); const t = workspace.find(kind) || workspace.add(kind, "center"); workspace.show(t); then?.(t); };
+  const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
+  const mark = el("span", { className: "mark-preview" }, projectBadge(p.project, looks[p.project]));
+  const change = action("Change…", () => projectLookDialog(p.project, p.label, looks[p.project] || {}, (look) => {
+    try { saved.looks = { ...looks, [p.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
+    workspace.find("conversations")?.reloadLooks?.();
+    drawProjects();
+  }));
+  const copy = action("Copy", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
+  section.replaceChildren(back,
+    el("div", { className: "project-title" }, projectBadge(p.project, looks[p.project]), el("h2", { textContent: p.label })),
+    el("div", { className: "rows" },
+      row("Instructions", "AGENTS.md and the rest Pi reads first in this project.", action("Edit", toTab("setup", (t) => t.openProject?.(p.project)))),
+      row("What Pi loads", "Its skills, extensions and prompt templates, the project's and yours.", action("Open", () => showPrefsPage("extensions"))),
+      row("Its mark", "A colour, a letter, an icon or a picture, in the lists and the rail.", el("span", { className: "btns" }, mark, change)),
+      row("Repository", "Its git repository and forge: branches, pull requests, what Pi pushed.", action("Open", toTab("repository", (t) => t.openProject?.(p.project)))),
+      row("Its path", p.project, copy)));
 }
 
 // --- Network & sandbox -------------------------------------------------------------

@@ -521,7 +521,8 @@ def api_file(home, path, file):
     rel = os.path.relpath(full, project).replace(os.sep, "/")
     try:
         with open_plain(full, project) as handle:
-            size = os.fstat(handle.fileno()).st_size
+            info = os.fstat(handle.fileno())
+            size = info.st_size
             data = handle.read(FILE_VIEW_MAX + 1)
     except OSError as exc:
         raise ApiError(f"cannot read {rel}: {exc.strerror or exc}")
@@ -531,7 +532,36 @@ def api_file(home, path, file):
     text = None if binary else data.decode("utf-8", "replace")
     if truncated and text and "\n" in text:
         text = text[:text.rindex("\n") + 1]  # no half line at the end
-    return {"file": rel, "project": project, "size": size, "binary": binary, "truncated": truncated, "text": text}
+    return {"file": rel, "project": project, "size": size, "binary": binary, "truncated": truncated, "text": text,
+            "mtime": str(info.st_mtime_ns)}
+
+
+def api_fs_write(home, path, file, expected, data):
+    """A file of the project saved from Pier's viewer, as it is typed in: its whole text,
+    written only if the file did not change since Pier read it (expected: its mtime then,
+    "-" for no check); else {"conflict": true} and nothing written. A plain file inside the
+    project only, never through a link out of it, never one too big to be shown whole."""
+    project = resolve_inside(home, path)
+    full = os.path.realpath(os.path.join(project, file))
+    if full == project or not within(full, project):
+        raise ApiError(f"not in the project: {file}")
+    rel = os.path.relpath(full, project).replace(os.sep, "/")
+    if len(data) > FILE_VIEW_MAX:
+        raise ApiError(f"too big to save from Pier: {rel}")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ApiError("the text is not UTF-8")
+    try:
+        info = os.lstat(full)
+    except OSError as exc:
+        raise ApiError(f"cannot save {rel}: {exc.strerror or exc}")
+    if not stat.S_ISREG(info.st_mode):
+        raise ApiError(f"not a plain file: {rel}")
+    if expected != "-" and str(info.st_mtime_ns) != expected:
+        return {"conflict": True, "file": rel, "mtime": str(info.st_mtime_ns)}
+    atomic_write(full, text, project, stat.S_IMODE(info.st_mode))
+    return {"saved": rel, "mtime": str(os.lstat(full).st_mtime_ns)}
 
 
 def mounted_shares(home):

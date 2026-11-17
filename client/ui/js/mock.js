@@ -59,6 +59,8 @@ function mockPi(onBytes, params) {
 function mockBackend() {
   let saved = null;
   let mockClipboard = "";
+  const mockWritten = {}; // files saved from the viewer
+  let mockProviders = [{ name: "bifrost", baseUrl: "http://gateway:8080/v1", api: "openai-completions", models: ["claude-fable-5-2", "deepseek-v4.1-flash"], key: true, keyEnv: "" }];
   const updateListeners = [];
   const labsState = { settings: { enabled: false, max: 3, ttl_hours: 24, network: "open", cpu: 2, memory_gib: 4, disk_gib: 20, image: "debian/13" },
     labs: [{ name: "db-tests", host: "lab-box", description: "Postgres 16 for the integration tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
@@ -85,7 +87,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.54" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.55" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -191,16 +193,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.54") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.54", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.54" };
+      if (pickerVersion !== "4.55") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.55", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.55" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.54", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.54";
-      return { status: "connected", bundled: "4.54", version: { version: "4.54", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.55", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.55";
+      return { status: "connected", bundled: "4.55", version: { version: "4.55", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.54" ? 22 : 21 }, bundled: "4.54", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.55" ? 22 : 21 }, bundled: "4.55", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -280,7 +282,7 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.54", checks: [
+        return { version: "4.55", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
@@ -310,9 +312,27 @@ function mockBackend() {
         const rust = Array.from({ length: 60 }, (_, i) => i % 12 === 0
           ? `/// Parses feed number ${i}.\npub fn parse_${i}(body: &str) -> Result<Feed, Error> {`
           : i % 12 === 11 ? "}\n" : `    let items = body.lines().filter(|l| !l.is_empty()).count(); // ${i}\n    if items > ${i * 10} { return Err(Error::TooMany(items)); }`).join("\n");
-        const text = samples[rel] ?? (rel.endsWith(".rs") ? `use std::collections::HashMap;\n\n${rust}\n` : "");
-        return { file: rel, project: args[1], size: text.length, binary: false, truncated: false, text };
+        const saved = mockWritten[`${args[1]}/${rel}`];
+        const text = saved?.text ?? samples[rel] ?? (rel.endsWith(".rs") ? `use std::collections::HashMap;\n\n${rust}\n` : "");
+        return { file: rel, project: args[1], size: text.length, binary: false, truncated: false, text, mtime: saved?.mtime || "1" };
       }
+      if (args[0] === "fs-write") {
+        const [, project, rel, expected, text] = args;
+        const key = `${project}/${rel}`;
+        const now = mockWritten[key]?.mtime || "1";
+        if (expected !== "-" && expected !== now) return { conflict: true, file: rel, mtime: now };
+        mockWritten[key] = { text, mtime: String(Date.now()) };
+        return { saved: rel, mtime: mockWritten[key].mtime };
+      }
+      if (args[0] === "providers") return { providers: mockProviders, path: "/home/leo/.pi/agent/models.json" };
+      if (args[0] === "provider-save") {
+        const body = JSON.parse(args[2]);
+        const old = mockProviders.find((x) => x.name === args[1]);
+        const next = { name: args[1], baseUrl: body.baseUrl, api: body.api, models: body.models, key: Boolean(body.apiKey) || Boolean(old?.key), keyEnv: "" };
+        mockProviders = [...mockProviders.filter((x) => x.name !== args[1]), next].sort((x, y) => x.name.localeCompare(y.name));
+        return { saved: args[1] };
+      }
+      if (args[0] === "provider-delete") { mockProviders = mockProviders.filter((x) => x.name !== args[1]); return { removed: args[1] }; }
       if (args[0] === "ls") {
         const dir = args[1] || "/home/leo";
         if (dir === "/home/leo") return { path: dir, label: "~", entries: [{ name: "work", kind: "dir", path: "/home/leo/work" }, { name: "clients", kind: "dir", path: "/home/leo/clients" }], truncated: false };

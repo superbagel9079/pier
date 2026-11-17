@@ -1,5 +1,5 @@
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
-API_READS = {"version", "projects", "ls", "file", "config", "models", "shares", "activity", "diff", "contexts",
+API_READS = {"version", "projects", "ls", "file", "config", "models", "providers", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
              "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
@@ -66,6 +66,10 @@ API_COMMANDS = {
     "config": lambda home, config, a: api_config(home),
     "config-set": lambda home, config, a: config_set(home, a[0], config_value(read_stdin_text())),
     "models": lambda home, config, a: api_models(home),
+    "providers": lambda home, config, a: api_providers(home),
+    "provider-save": lambda home, config, a: api_provider_save(home, a[0], stdin_bytes(PROVIDER_MAX_BYTES)),
+    "provider-delete": lambda home, config, a: api_provider_delete(home, a[0]),
+    "fs-write": lambda home, config, a: api_fs_write(home, a[0], a[1], a[2], stdin_bytes(FILE_VIEW_MAX)),
     "pi-default": lambda home, config, a: api_pi_default(home, a[0]),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
