@@ -39,6 +39,30 @@ function openPiTerminal(project, label, args = [], n = 1) {
   return workspace.add("pi", workspace.find("main")?.dock || "center", { params: { project, label: label + suffix, args } });
 }
 
+/** The same conversation in the other view: Pi's own screen in tmux, or Pier's conversation
+ *  view. A Pi runs in one of them only: the one running is stopped (its conversation stays
+ *  saved), then the conversation goes on in the other, from its file. */
+async function switchPiView(tab) {
+  const project = tab.params?.project;
+  const toChat = tab.kind === "pi";
+  const slot = toChat ? tab.slot : tab.params.args?.[0] === "--slot" ? tab.params.args[1] : null;
+  const sessions = (vm.latest("conversations")?.data?.projects || []).find((p) => p.project === project)?.sessions || [];
+  const file = tab.sessionFile || (slot && sessions.find((s) => s.slot === slot)?.path) || tab.params.file
+    || (tab.params.args?.[0] === "--session" ? tab.params.args[1] : null);
+  if (!project || !file) { flashStatus("Its conversation is not saved yet: say something to Pi first"); return; }
+  const where = toChat ? "in Pier's conversation view" : "in Pi's own screen (tmux)";
+  if (slot && !(await ask(`Continue this conversation ${where}? Pi stops here first: what it is doing right now is lost, the conversation is kept.`))) return;
+  if (slot) {
+    try { await backend.stopPi(project, slot); } catch (e) { flashStatus(String(e)); return; }
+    await new Promise((r) => setTimeout(r, 800)); // its session gone from the VM's list
+  }
+  const label = tab.params.label?.replace(/ · new$| #\d+$/, "") || projectLabel(project);
+  workspace.close(tab);
+  if (toChat) openChat(project, label, ["--session", file]);
+  else workspace.add("pi", workspace.find("main")?.dock || "center", { params: { project, label, args: ["--session", file] } });
+  vm.poke();
+}
+
 function makeSetup(tab) {
   tab.pane.append($("#tpl-setup").content.cloneNode(true));
   const $$ = (sel) => $(sel, tab.pane);

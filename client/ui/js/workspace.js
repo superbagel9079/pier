@@ -215,6 +215,9 @@ const workspace = (() => {
         ["Restart", () => tab.restart?.()],
         ["Clear scrollback", () => tab.clearScreen?.()]);
     }
+    // A conversation: on in the other view (switchPiView, setup.js).
+    if (tab.kind === "pi") items.push(null, ["Continue in the conversation view", () => switchPiView(tab), false, { icon: "message-square" }]);
+    if (tab.kind === "chat") items.push(null, ["Continue in Pi's screen (tmux)", () => switchPiView(tab), false, { icon: "terminal" }]);
     const others = dock.tabs.filter((t) => t !== tab && !t.pinned);
     items.push(null, ["Close", () => close(tab), tab.pinned], ["Close the other tabs here", () => others.forEach(close), !others.length]);
     showMenu(null, items, { x, y });

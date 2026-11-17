@@ -307,7 +307,7 @@ function makeChat(tab) {
         if (tab.params.args?.[0] === "--session") tab.params.file = tab.params.args[1]; // still its row in the list
         tab.params.args = ["--slot", e.slot]; // a reconnection comes back to this Pi
         if (currentTab === tab) for (const t of workspace.tabs()) t.onShownTab?.(); // the list and Details follow it
-        command({ type: "get_state" }, (data) => { state = data || {}; showState(); setWorking(Boolean(state.isStreaming)); });
+        command({ type: "get_state" }, (data) => { state = data || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); setWorking(Boolean(state.isStreaming)); });
         command({ type: "get_messages" }, (data) => {
           col.replaceChildren();
           steps.clear();
