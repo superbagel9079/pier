@@ -352,7 +352,7 @@
           <li>Nothing of your VM or home: only what Pi copies in.</li>
           <li>Gone after their lifetime; Reset brings one back clean. Every command Pi runs there is written in the Labs tab.</li>
         </ul>
-        <div class="actions"><button id="labs-turn-on">Turn on Labs</button><span class="dim small">Then add a lab host: a VM with Incus.</span></div>
+        <div class="actions"><button id="labs-turn-on" class="secondary">Turn on Labs</button><span class="dim small">Then add a lab host: a VM with Incus.</span></div>
       </div>
       <div class="rows labs-on" hidden>
         <div class="set"><label class="what" for="labs-enabled"><span>Labs</span><span id="labs-state"></span></label><input id="labs-enabled" type="checkbox"></div>
@@ -418,7 +418,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <svg class="i update-icon" aria-hidden="true"><use href="#i-circle-check"/></svg>
           <div class="what"><span id="update-title">Pier</span><span><span id="update-state">Not checked yet.</span> <button id="update-whatsnew" class="link" type="button" aria-expanded="false" aria-controls="update-found" hidden>What's new</button></span></div>
           <span id="update-progress" class="dim small" hidden></span>
-          <button id="update-install" class="primary" type="button" hidden>Restart to update</button>
+          <button id="update-install" class="secondary" type="button" hidden>Restart to update</button>
           <button id="update-check" class="secondary" type="button">Check now</button>
         </div>
         <div class="set update-notes-row" id="update-found" hidden><div id="update-notes" class="update-notes"></div></div>

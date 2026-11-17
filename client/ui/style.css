@@ -2069,3 +2069,13 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .diff-empty > p:first-of-type { font-weight: 600; color: var(--fg); }
 .diff-empty > p:last-of-type { font-size: 13px; color: var(--dim); margin-bottom: var(--s2); }
 button.switch-hint { padding: 0; background: none; border: 0; cursor: pointer; }
+/* Every button of the settings as Connect: the theme's accent, its text the ground's colour,
+   no edge, 32 px high; a shade darker under the pointer (the gradient with Main buttons on). */
+#prefs .prefs-page button.secondary { height: 32px; padding: 0 var(--s3); background: var(--accent); border: 1px solid transparent; color: var(--bg); font-weight: 400; display: inline-flex; align-items: center; gap: 6px; }
+#prefs .prefs-page button.secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, var(--bg)); }
+.grad-in-buttons #prefs .prefs-page button.secondary { background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); }
+#prefs .prefs-page button.secondary:disabled { opacity: .5; }
+#prefs .prefs-page button.secondary .i { width: 14px; height: 14px; }
+/* The texts for Pi in Pier's own font, growing with their text: no grip in the corner. */
+.prompt-body .prompt-edit { font: 13px/1.6 var(--ui); resize: none; overflow: hidden; }
+textarea { resize: none; }

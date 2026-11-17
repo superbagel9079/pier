@@ -435,7 +435,7 @@ function promptCards(project) {
       const chip = el("span", { className: "prompt-chip" });
       const problem = el("p", { className: "error", hidden: true });
       const revert = el("button", { type: "button", className: "secondary", textContent: "Revert" });
-      const save = el("button", { type: "button", className: "primary", textContent: "Save" });
+      const save = el("button", { type: "button", className: "secondary", textContent: "Save" });
       const update = () => {
         const n = Math.ceil(area.value.length / 4);
         chip.textContent = area.value !== saved ? "not saved" : !info.exists ? (info.global ? "the global one applies" : "not created yet") : `≈ ${n.toLocaleString()} tokens`;
@@ -450,9 +450,11 @@ function promptCards(project) {
         update();
         flashStatus(`${info.name} saved: new sessions read it`);
       };
-      area.addEventListener("input", update);
+      // The field grows with its text (no grip to drag).
+      const fit = () => { area.style.height = "auto"; area.style.height = `${Math.max(160, area.scrollHeight)}px`; };
+      area.addEventListener("input", () => { update(); fit(); });
       area.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); write(); } });
-      revert.addEventListener("click", () => { area.value = saved; update(); });
+      revert.addEventListener("click", () => { area.value = saved; update(); fit(); });
       save.addEventListener("click", write);
       update();
       const head = el("button", { type: "button", className: "prompt-head" }, svgIcon("chevron-right"),
@@ -462,13 +464,14 @@ function promptCards(project) {
       head.addEventListener("click", () => {
         promptOpen = promptOpen === which ? null : which;
         for (const x of parts) x.show();
-        if (promptOpen === which) area.focus();
+        if (promptOpen === which) { fit(); area.focus(); }
       });
       part.show = () => {
         const open = promptOpen === which;
         part.classList.toggle("open", open);
         head.setAttribute("aria-expanded", String(open));
         body.hidden = !open;
+        if (open) requestAnimationFrame(fit);
       };
       return part;
     });
