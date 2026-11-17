@@ -255,8 +255,9 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = theme.dark ? "dark" : "light";
   for (const key of UI_KEYS) root.style.setProperty(`--${key}`, theme.ui[key]);
-  // Mica (Appearance): the sides let the wallpaper's tint through more than the middle.
-  root.style.setProperty("--mica-side", alpha(theme.ui.panel, 0.55));
+  // Mica (Appearance): the wallpaper's tint as much on the sides as in the middle (more
+  // there made the left a different colour); the panel's own colour tells them apart.
+  root.style.setProperty("--mica-side", alpha(theme.ui.panel, 0.8));
   root.style.setProperty("--mica-mid", alpha(theme.ui.bg, 0.8));
   // With Mica, the cards, fields and hovers let it through too (else they stay solid).
   root.style.setProperty("--field", prefs.mica ? alpha(theme.ui.field, 0.55) : theme.ui.field);
