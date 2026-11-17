@@ -314,8 +314,7 @@ class Picker:
         if answer != "y":
             return
         for pi in project_pis(pi_sessions(), path):
-            run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"), child_env(self.home))
-            forget_pi_sessions()
+            stop_pi(pi, child_env(self.home))
         self.running = self.tmux_sessions()
         self.message = "pi stopped" if count == 1 else f"{count} pis stopped"
 

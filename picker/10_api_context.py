@@ -252,6 +252,8 @@ def ignored_dir(project, name):
 
 def type_into_pi(pi, text):
     """Type text into the prompt of a running Pi. Never presses Enter."""
+    if pi.get("rpc"):
+        return False  # Pi in RPC mode has no prompt to type into: Pier's conversation view does it
     text = "".join(ch for ch in text if ch.isprintable())
     # send-keys target "=name:" is the session's active pane ("=" exact match; without the
     # colon tmux reads a window name). "--": text starting with "-" is text, not an option.

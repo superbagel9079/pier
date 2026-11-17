@@ -34,6 +34,26 @@ def rpc_alive(slot):
         return None
 
 
+def rpc_sessions():
+    """The Pis running in RPC mode, as read_pi_sessions gives tmux's: by name."""
+    sessions = {}
+    try:
+        names = os.listdir(rpc_dir())
+    except OSError:
+        return sessions
+    for name in names:
+        if not RPC_SLOT_RE.fullmatch(name) or not rpc_alive(name):
+            continue
+        try:
+            with open(os.path.join(rpc_dir(), name, "meta.json"), encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        sessions[name] = {"name": name, "path": meta.get("project"), "attached": False,
+                          "last_attached": int(meta.get("started") or 0), "file": None, "rpc": True}
+    return sessions
+
+
 def rpc_new_slot(project, home):
     """A free name: the project's tmux name, then -r1, -r2…"""
     base = session_name(project, home)
@@ -147,6 +167,20 @@ def rpc_attach(path, extra):
             fresh = False
         else:
             args = rpc_pi_args(list(extra))
+            # The last conversation by its file; one a Pi already runs is joined, never
+            # opened twice (two Pis writing one file would break it).
+            if args == ["--continue"]:
+                latest = latest_session_file(project)
+                args = ["--session", latest] if latest else []
+            running = None
+            if args[:1] == ["--session"]:
+                file = session_file_in(project, args[1])
+                running = next((p for p in project_pis(pi_sessions(), project)
+                                if p.get("file") and os.path.realpath(p["file"]) == file), None)
+                if running and not running.get("rpc"):
+                    raise ApiError("this conversation runs in a terminal (tmux): open it there, or stop that Pi first")
+            if running:
+                return rpc_attach(path, ["--slot", running["name"]])
             slot = rpc_new_slot(project, home)
             folder = rpc_slot_dir(slot)
             os.makedirs(folder, mode=0o700, exist_ok=True)
@@ -159,6 +193,7 @@ def rpc_attach(path, extra):
             subprocess.Popen([sys.executable, SCRIPT, "--rpc-host", slot, project, *args], cwd=project,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True, env=child_env(home))
+            forget_pi_sessions()
             fresh = True
     except ApiError as exc:
         rpc_say({"type": "pier_error", "error": str(exc)})

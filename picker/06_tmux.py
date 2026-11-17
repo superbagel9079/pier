@@ -34,17 +34,18 @@ def pi_sessions():
 
 
 def read_pi_sessions():
+    """tmux's sessions holding a Pi, and the Pis running in RPC mode (rpc_sessions)."""
+    sessions = rpc_sessions()
     if not shutil.which("tmux"):
-        return {}
+        return sessions
     fmt = "#{session_name}\t#{session_attached}\t#{session_last_attached}\t#{@pi-file}\t#{session_path}"
     try:
         result = subprocess.run(tmux_cmd("list-sessions", "-F", fmt), stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, errors="surrogateescape", timeout=2)
     except (OSError, subprocess.SubprocessError):
-        return {}
+        return sessions
     if result.returncode != 0:
-        return {}
-    sessions = {}
+        return sessions
     for line in result.stdout.split("\n"):  # a path may hold U+2028 and the like: see preview_info
         parts = line.split("\t", 4)
         if len(parts) != 5:
@@ -117,7 +118,7 @@ def pi_infos(project, home, pis):
         file = pi_file(pi, project, len(pis))
         working = pi.get("working")
         info = {"slot": pi["name"], "n": slot_number(pi["name"], project, home), "file": file,
-                "attached": pi["attached"], "last_attached": pi["last_attached"],
+                "attached": pi["attached"], "last_attached": pi["last_attached"], "rpc": bool(pi.get("rpc")),
                 "working": working if working is not None else bool(file) and session_working(file),
                 # An orchestrator: started as one, or an ordinary Pi that started workers.
                 "role": "orchestrator" if (teams.get(pi["name"]) or {}).get("lead") or

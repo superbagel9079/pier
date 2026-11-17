@@ -2032,17 +2032,18 @@ def pi_sessions():
 
 
 def read_pi_sessions():
+    """tmux's sessions holding a Pi, and the Pis running in RPC mode (rpc_sessions)."""
+    sessions = rpc_sessions()
     if not shutil.which("tmux"):
-        return {}
+        return sessions
     fmt = "#{session_name}\t#{session_attached}\t#{session_last_attached}\t#{@pi-file}\t#{session_path}"
     try:
         result = subprocess.run(tmux_cmd("list-sessions", "-F", fmt), stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, errors="surrogateescape", timeout=2)
     except (OSError, subprocess.SubprocessError):
-        return {}
+        return sessions
     if result.returncode != 0:
-        return {}
-    sessions = {}
+        return sessions
     for line in result.stdout.split("\n"):  # a path may hold U+2028 and the like: see preview_info
         parts = line.split("\t", 4)
         if len(parts) != 5:
@@ -2115,7 +2116,7 @@ def pi_infos(project, home, pis):
         file = pi_file(pi, project, len(pis))
         working = pi.get("working")
         info = {"slot": pi["name"], "n": slot_number(pi["name"], project, home), "file": file,
-                "attached": pi["attached"], "last_attached": pi["last_attached"],
+                "attached": pi["attached"], "last_attached": pi["last_attached"], "rpc": bool(pi.get("rpc")),
                 "working": working if working is not None else bool(file) and session_working(file),
                 # An orchestrator: started as one, or an ordinary Pi that started workers.
                 "role": "orchestrator" if (teams.get(pi["name"]) or {}).get("lead") or
@@ -2358,11 +2359,24 @@ def api_stop(home, path, slot):
     if not pis:
         raise ApiError("no Pi runs there")
     for pi in pis:
-        run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"))
-        forget_pi_sessions()
+        stop_pi(pi)
     # Killed with its session, a Pi cannot clean its worktree up itself: done here.
     tidy_worktrees(project)
     return {"project": project, "stopped": len(pis)}
+
+
+def stop_pi(pi, env=None):
+    """A running Pi gone: its tmux session, or (RPC mode) its host and all it started."""
+    if pi.get("rpc"):
+        pid = rpc_alive(pi["name"])
+        if pid:
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except OSError:
+                pass
+    else:
+        run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"), env)
+    forget_pi_sessions()
 
 
 def start_pi_session(path, extra, env, home, width, height, name=None, worktree=None, role_env=None):
@@ -3366,6 +3380,8 @@ def ignored_dir(project, name):
 
 def type_into_pi(pi, text):
     """Type text into the prompt of a running Pi. Never presses Enter."""
+    if pi.get("rpc"):
+        return False  # Pi in RPC mode has no prompt to type into: Pier's conversation view does it
     text = "".join(ch for ch in text if ch.isprintable())
     # send-keys target "=name:" is the session's active pane ("=" exact match; without the
     # colon tmux reads a window name). "--": text starting with "-" is text, not an option.
@@ -10473,6 +10489,26 @@ def rpc_alive(slot):
         return None
 
 
+def rpc_sessions():
+    """The Pis running in RPC mode, as read_pi_sessions gives tmux's: by name."""
+    sessions = {}
+    try:
+        names = os.listdir(rpc_dir())
+    except OSError:
+        return sessions
+    for name in names:
+        if not RPC_SLOT_RE.fullmatch(name) or not rpc_alive(name):
+            continue
+        try:
+            with open(os.path.join(rpc_dir(), name, "meta.json"), encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        sessions[name] = {"name": name, "path": meta.get("project"), "attached": False,
+                          "last_attached": int(meta.get("started") or 0), "file": None, "rpc": True}
+    return sessions
+
+
 def rpc_new_slot(project, home):
     """A free name: the project's tmux name, then -r1, -r2…"""
     base = session_name(project, home)
@@ -10586,6 +10622,20 @@ def rpc_attach(path, extra):
             fresh = False
         else:
             args = rpc_pi_args(list(extra))
+            # The last conversation by its file; one a Pi already runs is joined, never
+            # opened twice (two Pis writing one file would break it).
+            if args == ["--continue"]:
+                latest = latest_session_file(project)
+                args = ["--session", latest] if latest else []
+            running = None
+            if args[:1] == ["--session"]:
+                file = session_file_in(project, args[1])
+                running = next((p for p in project_pis(pi_sessions(), project)
+                                if p.get("file") and os.path.realpath(p["file"]) == file), None)
+                if running and not running.get("rpc"):
+                    raise ApiError("this conversation runs in a terminal (tmux): open it there, or stop that Pi first")
+            if running:
+                return rpc_attach(path, ["--slot", running["name"]])
             slot = rpc_new_slot(project, home)
             folder = rpc_slot_dir(slot)
             os.makedirs(folder, mode=0o700, exist_ok=True)
@@ -10598,6 +10648,7 @@ def rpc_attach(path, extra):
             subprocess.Popen([sys.executable, SCRIPT, "--rpc-host", slot, project, *args], cwd=project,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True, env=child_env(home))
+            forget_pi_sessions()
             fresh = True
     except ApiError as exc:
         rpc_say({"type": "pier_error", "error": str(exc)})
@@ -11061,8 +11112,7 @@ class Picker:
         if answer != "y":
             return
         for pi in project_pis(pi_sessions(), path):
-            run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"), child_env(self.home))
-            forget_pi_sessions()
+            stop_pi(pi, child_env(self.home))
         self.running = self.tmux_sessions()
         self.message = "pi stopped" if count == 1 else f"{count} pis stopped"
 
