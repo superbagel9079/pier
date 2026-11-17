@@ -10,6 +10,7 @@ function openPrefs() {
   fillTermFonts();
   fillUiFonts();
   showCorners();
+  showAccent();
   $("#prefs-menublur").checked = prefs.menuBlur;
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
@@ -335,6 +336,34 @@ $("#theme-save").addEventListener("click", () => {
   closeThemeEditor();
   fillThemes();
 });
+/** The accent: the theme's, or a colour of the palette, or any (the colour field). */
+const ACCENTS = ["#4c8dff", "#38bdf8", "#2dd4bf", "#3fb950", "#a3e635", "#eab308", "#f97316", "#f85149", "#ec4899", "#a371f7", "#6366f1", "#9ca3af"];
+let accentLast = "#4c8dff"; // Custom chosen again: the colour it had
+function setAccent(value) {
+  prefs.accent = value;
+  if (value) accentLast = value;
+  savePrefs();
+  applyTheme();
+  showAccent();
+}
+function showAccent() {
+  const custom = Boolean(prefs.accent);
+  for (const b of $("#prefs-accent-mode").children) b.setAttribute("aria-checked", String((b.dataset.v === "custom") === custom));
+  $("#prefs-accent-palette").hidden = !custom;
+  const box = $("#prefs-accent-swatches");
+  box.replaceChildren(...ACCENTS.map((c) => {
+    const b = el("button", { type: "button", className: "accent-swatch", style: `--swatch:${c}`, title: c });
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", c);
+    b.setAttribute("aria-checked", String(prefs.accent.toLowerCase() === c));
+    b.addEventListener("click", () => setAccent(c));
+    return b;
+  }));
+  $("#prefs-accent-pick").value = prefs.accent || accentLast;
+}
+for (const b of $("#prefs-accent-mode").children) b.addEventListener("click", () => setAccent(b.dataset.v === "custom" ? (prefs.accent || accentLast) : ""));
+$("#prefs-accent-pick").addEventListener("input", (e) => setAccent(e.target.value.toLowerCase()));
+
 /** Corners: Square, Slight, Round; the one in use pressed. */
 function showCorners() {
   for (const b of $("#prefs-corners").children) b.setAttribute("aria-checked", String(Number(b.dataset.v) === prefs.corners));

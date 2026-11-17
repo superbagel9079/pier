@@ -453,7 +453,8 @@ function makeConversations(tab) {
       if (query && !matches.length) continue;
       if (!query && !matches.length && !pis.length) continue;
       // Folded by default past the first three (the most recent), open when asked.
-      const folded = !query && (view.folded[p.project] ?? index >= 3) && p.project !== inUse;
+      // Open by default for the project in use and the first three; a fold chosen is kept.
+      const folded = !query && (view.folded[p.project] ?? (index >= 3 && p.project !== inUse));
       list.append(head(p, folded, p.project === inUse));
       if (folded) continue;
       // Running Pis first, each with its conversation, an orchestrator's workers right

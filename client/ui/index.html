@@ -222,6 +222,15 @@
         <button id="theme-delete" tabindex="-1">Delete</button>
         <input id="theme-file" type="file" accept=".json,application/json" multiple>
       </div>
+      <h2>Accent colour</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span id="prefs-accent-label">Accent colour</span><span>Links, file names, what is selected. The theme's own, or one of yours for every theme.</span></div>
+          <div id="prefs-accent-mode" class="seg" role="radiogroup" aria-labelledby="prefs-accent-label"><button role="radio" data-v="theme">Theme</button><button role="radio" data-v="custom">Custom</button></div></div>
+        <div class="set accent-palette" id="prefs-accent-palette" hidden>
+          <div id="prefs-accent-swatches" class="accent-swatches" role="radiogroup" aria-label="Accent colours"></div>
+          <label class="accent-any" title="Any colour, from the full palette"><input id="prefs-accent-pick" type="color" aria-label="Any colour"><span>Any colour…</span></label>
+        </div>
+      </div>
       <h2>Fonts, corners and menus</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-uifont"><span>Pier's font</span><span>Panels, menus, the conversation, the settings.</span></label><select id="prefs-uifont"></select></div>

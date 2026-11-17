@@ -58,8 +58,13 @@ function settingRow(key, label, control, hint, page) {
   const field = control.input || control; // a model picker: its field
   if (field.matches?.("input, select, button")) field.id = id;
   const error = el("p", { className: "error", hidden: true });
-  const head = el("div", { className: "setting-head" },
-    el("label", { htmlFor: id, textContent: label }), control);
+  // A button (a model's pick) is named by aria-labelledby, not a <label>: hovering a label
+  // counts as hovering its control, which lit the pick with the pointer on the row's name.
+  const name = field.matches?.("button")
+    ? el("span", { id: `${id}-label`, textContent: label })
+    : el("label", { htmlFor: id, textContent: label });
+  if (field.matches?.("button")) field.setAttribute("aria-labelledby", name.id);
+  const head = el("div", { className: "setting-head" }, name, control);
   row.append(head);
   if (hint) row.append(el("p", { className: "hint", textContent: hint }));
   row.append(el("p", { className: "dim small setting-key", textContent: key }), error);
@@ -191,8 +196,9 @@ function drawAgents(again) {
       } catch (error) { noticeSetter(defError)(String(error)); }
     });
     def.input.id = "setting-pi-default";
+    def.setAttribute("aria-labelledby", "setting-pi-default-label");
     const defRow = el("div", { className: "setting-row" },
-      el("div", { className: "setting-head" }, el("label", { htmlFor: def.input.id, textContent: "Default model" }), def),
+      el("div", { className: "setting-head" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), def),
       el("p", { className: "hint", textContent: "Every Pi's model, unless a role below says otherwise. Written in Pi's own settings (~/.pi/agent/settings.json), as /model does." }),
       defError);
     const models = el("p", { className: "hint" });

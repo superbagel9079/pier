@@ -952,7 +952,7 @@ button.row-main:hover { background: none; }
 .chat .clipbox .more { display: flex; align-items: center; gap: var(--s2); width: 100%; height: 32px; padding: 0 var(--s3); border-top: 1px solid var(--line); background: none; font-size: var(--t-small); color: var(--dim); }
 .chat .clipbox .more:hover { background: var(--hover); color: var(--fg); }
 .chat .clipbox .more .i { width: 14px; height: 14px; }
-.chat .ref { font-family: var(--code); font-size: var(--t-small); color: var(--accent); background: var(--hover); padding: 0 var(--s1); border-radius: var(--r); }
+.chat .ref { font-family: var(--code); font-size: var(--t-small); color: var(--link); background: var(--hover); padding: 0 var(--s1); border-radius: var(--r); }
 .chat-ask { align-self: stretch; }
 .chat-ask input { width: 100%; margin-top: var(--s2); }
 .composer { flex: none; margin: 0 auto var(--s4); width: calc(100% - 2 * var(--s5)); max-width: 768px; border: 1px solid var(--line); background: var(--field); border-radius: var(--r); }
@@ -1096,7 +1096,7 @@ button.row-main:hover { background: none; }
 .set .what > :first-child { font-weight: 600; }
 .set .what > * + * { font-size: 12px; line-height: 16px; color: var(--dim); overflow-wrap: anywhere; }
 .set > select, .set > input:not([type="checkbox"]) { flex: none; width: 184px; height: 32px; padding-left: var(--s3); background-color: var(--bg); border: 1px solid var(--line); }
-.set > select:hover, .set > input:not([type="checkbox"]):hover { border-color: var(--dim); }
+/* No hover on a field: hovering its row's name (its <label>) would light it too. */
 .set > button:not(.icon-btn):not(.pick):not(.primary), .set .btns button { flex: none; height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); color: var(--fg); }
 .set > button:not(.icon-btn):not(.pick):not(.primary):hover, .set .btns button:hover { background: var(--hover); }
 .set .btns { display: flex; gap: var(--s2); flex: none; }
@@ -1312,3 +1312,15 @@ button.row-main:hover { background: none; }
 .wait-detail > .dim.small { font-size: 11px; }
 /* A pick in a form or a dialog takes the field's width, as the list did. */
 :is(.dialog, .grid, form, fieldset, .fields) .pick { width: 100%; }
+/* The accent colour (Appearance): a palette of swatches and any colour */
+.accent-palette { flex-wrap: wrap; }
+.accent-swatches { display: flex; flex-wrap: wrap; gap: var(--s2); flex: 1; }
+.accent-swatch { width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--swatch); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 15%, transparent); }
+.accent-swatch:hover { background: var(--swatch); transform: scale(1.1); }
+.accent-swatch[aria-checked="true"] { box-shadow: 0 0 0 2px var(--field), 0 0 0 4px var(--fg); }
+.accent-any { display: inline-flex; flex-direction: row; align-items: center; gap: var(--s2); flex: none; color: var(--dim); font-size: 12px; cursor: pointer; }
+.accent-any:hover { color: var(--fg); }
+.accent-any input[type="color"] { width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; overflow: hidden; background: none; cursor: pointer; }
+.accent-any input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.accent-any input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+@media (prefers-reduced-motion: reduce) { .accent-swatch:hover { transform: none; } }

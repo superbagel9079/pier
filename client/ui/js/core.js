@@ -97,7 +97,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false };
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "" };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -213,6 +213,13 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = theme.dark ? "dark" : "light";
   for (const key of UI_KEYS) root.style.setProperty(`--${key}`, theme.ui[key]);
+  // An accent chosen in Appearance stays over every theme's ("" follows the theme).
+  const own = /^#[0-9a-f]{6}$/i.test(prefs.accent || "") ? prefs.accent : "";
+  if (own) root.style.setProperty("--accent", own);
+  // Links and file names: the accent, unless it is only the text's colour (Pier's own
+  // themes): then a blue that reads on the theme.
+  const neutral = !own && String(theme.ui.accent).toLowerCase() === String(theme.ui.fg).toLowerCase();
+  root.style.setProperty("--link", own || (neutral ? (theme.dark ? "#8cc4ff" : "#0b5cad") : theme.ui.accent));
   // The file viewer's syntax colors: the terminal's, when the theme has them.
   for (const key of ["magenta", "green", "yellow", "blue", "cyan"]) {
     if (theme.terminal?.[key]) root.style.setProperty(`--ansi-${key}`, theme.terminal[key]);
