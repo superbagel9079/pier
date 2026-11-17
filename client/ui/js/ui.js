@@ -218,24 +218,39 @@ document.addEventListener("click", (event) => {
 
 // Pier's hints (the proposals' C), in place of the system's: after a short rest on anything
 // with a title, a card under it: its name in bold with its shortcut, then what it does in
-// grey. The title is set aside while the pointer is there (so Windows draws nothing), and put
-// back when it leaves; an element named only by its title keeps that name (aria-label).
+// grey. Titles are taken off as soon as they appear (kept as data-tip), so Windows never
+// draws its own, even on a row redrawn under a still pointer; an element named only by its
+// title keeps that name (aria-label).
 {
+  const takeTitle = (node) => {
+    const title = node.getAttribute("title");
+    if (title === null) return;
+    node.removeAttribute("title");
+    if (!title || title === "null" || title === "undefined") { delete node.dataset.tip; return; }
+    node.dataset.tip = title;
+    if (!node.getAttribute("aria-label") && !(node.textContent || "").trim()) node.setAttribute("aria-label", title);
+  };
+  document.querySelectorAll("[title]").forEach(takeTitle);
+  new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === "attributes") takeTitle(r.target);
+      else for (const n of r.addedNodes) if (n.nodeType === 1) { takeTitle(n); n.querySelectorAll("[title]").forEach(takeTitle); }
+    }
+  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["title"] });
+
   const hint = el("div", { className: "hint-card", role: "tooltip", hidden: true });
   document.body.append(hint);
-  let over = null, timer = 0;
+  let over = null, timer = 0, watch = 0;
   const SHORTCUT = /\s*[(,]?\s*((?:Ctrl|Alt|Shift|Win|Cmd)(?:\+[A-Za-z0-9,.\/;'\[\]=-]+)+|F\d{1,2}|Esc)\)?\s*$/;
-  /** Name and words of an element: its label (else its text, else the title's first part),
-   *  the title for the words when it says more; a shortcut at the end of either, apart. */
-  function parts(node, title) {
+  /** Name and words of an element: its label (else its text, else the tip's first part),
+   *  the tip for the words when it says more; a shortcut at the end of either, apart. */
+  function parts(node, tip) {
     let name = node.getAttribute("aria-label") || (node.textContent || "").trim() || "";
-    let words = title;
     let keys = "";
     const pull = (text) => { const m = text.match(SHORTCUT); if (!m) return text; keys ||= m[1]; return text.slice(0, m.index).trim(); };
-    words = pull(words);
+    let words = pull(tip);
     name = pull(name);
     if (!name || name.length > 40) {
-      // No short name: the title's first clause is the name, the rest the words.
       const cut = words.search(/[:.;]\s|\s[(·]/);
       name = cut > 0 ? words.slice(0, cut) : words;
       words = cut > 0 ? words.slice(cut).replace(/^[:.;·\s(]+|\)$/g, "") : "";
@@ -245,41 +260,36 @@ document.addEventListener("click", (event) => {
   }
   function hide() {
     clearTimeout(timer);
+    clearInterval(watch);
     hint.hidden = true;
-    if (over) {
-      if (over.dataset.hintTitle !== undefined && !over.hasAttribute("title")) over.setAttribute("title", over.dataset.hintTitle);
-      delete over.dataset.hintTitle;
-      over = null;
-    }
+    over = null;
   }
-  function place(node) {
+  function show(node) {
+    const tip = node.dataset.tip;
+    if (!tip || !node.isConnected) { hide(); return; }
+    const { name, words, keys } = parts(node, tip);
+    // replaceChildren writes a null out as "null": only what there is.
+    hint.replaceChildren(...[el("b", {}, el("span", { textContent: name }), keys ? el("kbd", { textContent: keys }) : null),
+      words ? el("span", { className: "hint-words", textContent: words }) : null].filter(Boolean));
     const box = node.getBoundingClientRect();
     hint.hidden = false;
     const w = hint.offsetWidth, h = hint.offsetHeight;
-    let x = Math.min(Math.max(8, box.left + box.width / 2 - w / 2), innerWidth - w - 8);
+    const x = Math.min(Math.max(8, box.left + box.width / 2 - w / 2), innerWidth - w - 8);
     let y = box.bottom + 8;
     if (y + h > innerHeight - 8) y = Math.max(8, box.top - h - 8); // no room under it: above
     hint.style.left = `${Math.round(x)}px`;
     hint.style.top = `${Math.round(y)}px`;
+    // Its element gone (a list redrawn): the card goes too.
+    watch = setInterval(() => { if (!over?.isConnected) hide(); }, 250);
   }
   document.addEventListener("pointerover", (e) => {
     if (e.pointerType && e.pointerType !== "mouse") return;
-    const node = e.target.closest?.("[title]");
-    if (!node || node === over) return;
+    const node = e.target.closest?.("[data-tip]");
+    if (node === over) return;
     hide();
-    const title = node.getAttribute("title");
-    if (!title) return;
+    if (!node) return;
     over = node;
-    node.dataset.hintTitle = title;
-    if (!node.getAttribute("aria-label") && !(node.textContent || "").trim()) node.setAttribute("aria-label", title);
-    node.removeAttribute("title");
-    timer = setTimeout(() => {
-      if (over !== node || !node.isConnected) return;
-      const { name, words, keys } = parts(node, title);
-      hint.replaceChildren(el("b", {}, el("span", { textContent: name }), keys ? el("kbd", { textContent: keys }) : null),
-        words ? el("span", { className: "hint-words", textContent: words }) : null);
-      place(node);
-    }, 450);
+    timer = setTimeout(() => { if (over === node) show(node); }, 450);
   }, true);
   document.addEventListener("pointerout", (e) => {
     if (over && !over.contains(e.relatedTarget)) hide();
