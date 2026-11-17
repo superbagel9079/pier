@@ -365,7 +365,7 @@
       <div class="labs-on" hidden>
         <div class="labs-pane" data-pane="hosts">
         <h2>Hosts</h2>
-        <p class="hint">Where labs are made: a VM with Incus. Another VM you add (Pier runs Incus there over SSH, with its key), or Pi's own VM if you choose it. New labs go to the default host, unless Pi or New lab… names another. No host, no lab.</p>
+        <p class="hint">A VM with Incus where labs are made: another VM you add, or Pi's own.</p>
         <ul id="labs-hosts" class="resource-items"></ul>
         <div class="actions wrap">
           <button id="labs-host-add" class="secondary">Add a lab host…</button>
@@ -374,15 +374,15 @@
         </div>
         <div class="labs-pane" data-pane="limits">
         <h2>Limits</h2>
-        <p class="hint">For each new lab; one already made keeps what it had.</p>
+        <p class="hint">For each new lab.</p>
         <div id="labs-limits" class="rows"></div>
         </div>
         <div class="labs-pane labs-networks" data-pane="networks">
         <h2>Networks</h2>
-        <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the lab host, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
+        <p class="hint">The internet through the host, a VLAN of your firewall, or other labs only.</p>
         <ul id="labs-networks" class="resource-items"></ul>
         <details class="labs-howto">
-          <summary>Add a network (an admin, once for each)</summary>
+          <summary>How to add a network</summary>
           <p class="hint">On the VM. Then let your account use it, with every network it should see (your own NAT, often incusbr-1000, included). The README tells it in full (Labs: networks).</p>
           <pre>&#35; a VLAN of the firewall, on a trunk card of the VM (Proxmox: no VLAN tag on it)
 sudo incus network create pier-labs-30 --type=macvlan parent=ens19 vlan=30
@@ -400,15 +400,11 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         </div>
         <div class="labs-pane" data-pane="machines">
         <h2>Machines</h2>
+        <p class="hint">Computers of yours Pi may use over SSH, with Pier's key in their ~/.ssh/authorized_keys.</p>
         <ul id="labs-machines" class="resource-items"></ul>
-        <div id="labs-key" hidden>
-          <p class="hint">Pier's key, to put in ~/.ssh/authorized_keys on each machine:</p>
-          <pre id="labs-key-text"></pre>
-        </div>
         <div class="actions wrap">
           <button id="labs-machine-add" class="secondary">Add a machine…</button>
-          <button id="labs-key-copy" class="link">copy Pier's key</button>
-          <button id="labs-open" class="link">open the Labs tab</button>
+          <button id="labs-key-copy" class="link">Copy Pier's key</button>
         </div>
         </div>
       </div>

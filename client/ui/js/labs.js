@@ -180,7 +180,7 @@ function renderLabsPrefs() {
       m.description ? el("div", { className: "desc dim small", textContent: m.description }) : null,
       el("div", { className: "desc dim small", textContent: `${m.user}@${m.host}:${m.port} · ${m.policy === "auto" ? "Pi runs commands freely" : "each command waits for your approval"}` })));
   }
-  if (!s.machines.length) list.append(el("li", { className: "dim small note", textContent: "None. A machine is a computer of yours Pi may use over SSH: a server with a GPU, a test server…" }));
+  if (!s.machines.length) list.append(el("li", { className: "dim small note", textContent: "None yet." }));
   const vlan = s.vlan || {};
   const vlanSetup = $("#labs-vlan");
   vlanSetup.hidden = s.settings.network !== "vlan";
@@ -193,8 +193,10 @@ sudo incus network create ${vlan.network} --type=macvlan parent=ens19
 incus network list  # your own network's name (often incusbr-1000)
 sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u),${vlan.network}`;
   renderLabNetworks(s);
-  $("#labs-key").hidden = !s.public_key;
-  $("#labs-key-text").textContent = s.public_key || "";
+  $("#labs-key-copy").hidden = !s.public_key;
+  // Limits and networks mean something once a host exists: until then, only Hosts and Machines.
+  const none = !(s.hosts || []).length;
+  for (const pane of ["limits", "networks"]) $(`.labs-pane[data-pane="${pane}"]`).hidden = none;
 }
 
 /** Settings > Labs > Lab hosts: where labs are made, whether Incus answers there. */
@@ -245,7 +247,7 @@ function renderLabHosts(s) {
       testBtn, more);
     list.append(li);
   }
-  if (!hosts.length) list.append(el("li", { className: "dim small note", textContent: "None. Labs are made on a lab host: another VM where Incus runs (Add a lab host…), or Pi's own VM if you choose it." }));
+  if (!hosts.length) list.append(el("li", { className: "dim small note", textContent: "None yet: add one, or use Pi's VM." }));
   const local = hosts.some((h) => h.kind === "local");
   $("#labs-host-local").textContent = local ? "" : "Use Pi's VM as a lab host";
   $("#labs-host-local").hidden = local;
@@ -348,10 +350,6 @@ $("#labs-host-add").addEventListener("click", () => {
     } catch (e) { showError(problem, String(e)); } finally { go.disabled = false; }
   });
   name.focus();
-});
-$("#labs-open").addEventListener("click", () => {
-  closePrefs();
-  workspace.add("labs", "center");
 });
 $("#labs-key-copy").addEventListener("click", async () => {
   try { await backend.copyText(labsStatus?.public_key || ""); flashStatus("Pier's key copied"); } catch (e) { showError($("#labs-error"), String(e)); }
