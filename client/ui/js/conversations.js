@@ -264,6 +264,34 @@ function makeConversations(tab) {
   let openConv = {}; // the conversation of the tab shown in the middle: its row is marked
   let categories = [];
   const PER_PROJECT = 5;
+  // A narrow window: the project whose square in the rail was clicked, alone in the list.
+  let only = null;
+  const alone = () => (workspace.docks.left.over ? only : null);
+
+  /** The rail's squares (shown in a narrow window only): the project in view marked, how
+   *  many of its Pis wait for you on it. */
+  function drawRail(projects, inUse) {
+    $("#rail-projects").replaceChildren(...projects.filter((p) => (p.pis || []).length || p.sessions.some((s) => !s.archived)).map((p) => {
+      const waiting = (p.pis || []).filter((pi) => !pi.working && !pi.reported).length;
+      const on = p.project === (alone() || inUse);
+      const b = el("button", { className: "rail-btn rail-proj" + (on ? " on" : ""), type: "button", title: p.label },
+        projectBadge(p.project, view.looks[p.project]), waiting ? el("span", { className: "badge", textContent: String(waiting) }) : null);
+      b.setAttribute("aria-label", `${p.label}${waiting ? `, ${waiting} waiting for you` : ""}`);
+      b.setAttribute("aria-current", String(on));
+      b.addEventListener("click", () => {
+        const left = workspace.docks.left;
+        const open = left.overOpen;
+        if (open && only === p.project) { workspace.toggle("left"); return; } // its square again: closed
+        only = p.project;
+        if (open) render();
+        else { workspace.show(tab); render(); }
+        list.scrollTop = 0;
+      });
+      return b;
+    }));
+  }
+  /** The rail's speech bubble: every project again. */
+  tab.showAll = () => { only = null; render(); };
 
   async function stop(project, pi) {
     const what = pi ? `Pi #${pi.n}` : "its Pis";
@@ -477,7 +505,7 @@ function makeConversations(tab) {
   function render() {
     if (!data || editing) return;
     openConv = shownConversation();
-    const shape = JSON.stringify([data, query, archived, view, target?.path || null, openConv]);
+    const shape = JSON.stringify([data, query, archived, view, target?.path || null, openConv, alone()]);
     if (shape === drawn) return; // the same as on screen: nothing to redraw (every 5 s while a Pi works)
     drawn = shape;
     keepPlace(list, draw);
@@ -491,14 +519,16 @@ function makeConversations(tab) {
     // The project of the Pi in use first.
     const inUse = target?.path;
     const projects = [...data.projects].sort((a, b) => (b.project === inUse) - (a.project === inUse));
+    drawRail(projects, inUse);
     for (const [index, p] of projects.entries()) {
+      if (alone() && p.project !== alone()) continue;
       const matches = p.sessions.filter((s) => (archived || !s.archived || query || s.slot) && conversationMatches(s, query));
       const pis = p.pis || [];
       if (query && !matches.length) continue;
       if (!query && !matches.length && !pis.length) continue;
       // Folded by default past the first three (the most recent), open when asked.
       // Open by default for the project in use and the first three; a fold chosen is kept.
-      const folded = !query && (view.folded[p.project] ?? (index >= 3 && p.project !== inUse));
+      const folded = !query && !alone() && (view.folded[p.project] ?? (index >= 3 && p.project !== inUse));
       list.append(head(p, folded, p.project === inUse));
       if (folded) continue;
       // Running Pis first, each with its conversation, an orchestrator's workers right
@@ -611,7 +641,8 @@ function makeConversations(tab) {
     data = message.data;
     render();
   });
-  tab.onVisible = (on) => vm.follow({ conversations: on });
+  // Followed while the rail's squares show too (a narrow window), the list closed or not.
+  tab.onVisible = (on) => { vm.follow({ conversations: on || Boolean(workspace.docks.left.over) }); render(); };
   tab.onShownTab = render; // the open conversation's row is marked
   tab.onClose = () => { unlisten(); vm.follow({ conversations: false }); };
   vm.follow({ conversations: tab.shown !== false });
@@ -627,6 +658,7 @@ $("#rail-new").addEventListener("click", () => {
 // The rail's speech bubble: Conversations shown, opened on the left if it was closed.
 $("#btn-conversations").addEventListener("click", () => {
   const tab = workspace.find("conversations");
+  tab?.showAll?.(); // narrow: every project, not only the one whose square was clicked
   if (tab) workspace.show(tab); // shows its side too, if it was hidden
   else workspace.add("conversations", "left");
 });

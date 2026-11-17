@@ -134,6 +134,12 @@ const workspace = (() => {
       b.setAttribute("aria-label", b.title);
       $("use", b).setAttribute("href", `#i-panel-${name}${open ? "-close" : ""}`);
     }
+    // Narrow: the rail stays, with a square per project (conversations.js); they follow the
+    // VM even while the side is closed.
+    if (ws.classList.contains("left-over") !== Boolean(docks.left.over)) {
+      ws.classList.toggle("left-over", Boolean(docks.left.over));
+      for (const t of docks.left.tabs) t.onVisible?.(Boolean(t.shown));
+    }
     $("#head-title").textContent = docks.center.active?.title || "New tab";
     $("#btn-conversations").setAttribute("aria-pressed", String(ws.classList.contains("left-open")));
   }
