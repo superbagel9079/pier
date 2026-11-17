@@ -1340,3 +1340,4 @@ button.row-main:hover { background: none; }
 .dialog.give .actions { margin-top: 0; }
 .dialog.give .actions button:not(.secondary) { display: inline-flex; align-items: center; gap: 6px; }
 .dialog.give .actions button .i { width: 14px; height: 14px; }
+.menu.no-icons .menu-icon { display: none; }

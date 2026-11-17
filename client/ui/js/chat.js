@@ -514,7 +514,7 @@ function makeChat(tab) {
   thinkBtn.addEventListener("click", () => command({ type: "get_available_thinking_levels" }, (data) => {
     const levels = data?.levels || [];
     showMenu(thinkBtn, levels.map((level) => [level, () => command({ type: "set_thinking_level", level },
-      () => command({ type: "get_state" }, (d) => { state = d || {}; showState(); }))]));
+      () => command({ type: "get_state" }, (d) => { state = d || {}; showState(); })), false, { icon: level === state.thinkingLevel ? "check" : null }]));
   }));
 
   // --- the channel ---------------------------------------------------------------------

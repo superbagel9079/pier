@@ -680,6 +680,8 @@ function showMenu(anchor, items, at = null) {
   closeMenu(false);
   menu.replaceChildren();
   menu.setAttribute("role", "menu");
+  // The icons' column only when an item has one: otherwise the labels start at the edge.
+  menu.classList.toggle("no-icons", !items.some((item) => item?.[3]?.icon));
   for (const item of items) {
     if (!item) { menu.append(el("hr")); continue; }
     // [label, action, disabled, { icon, danger }]: every row keeps the icon's column.
