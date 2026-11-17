@@ -1419,9 +1419,9 @@ html.mica { --chip: color-mix(in srgb, var(--fg) 7%, transparent); --strong: col
 :is(.grad-off, .s-off) { --grad: none; }
 .grad-grain { --grain-layer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E"); }
 /* Where it goes */
-.grad-in-newtab .empty.launcher { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+.grad-in-newtab .empty.launcher { background: var(--grain-layer), var(--grad), var(--bg); }
 html.mica.grad-in-newtab #workspace .empty.launcher { background: var(--grain-layer), var(--grad), transparent; }
-.grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+.grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); }
 .grad-in-working .composer.working { border-color: transparent; background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(90deg, var(--g1), var(--g2), var(--g1)) border-box; background-size: 100% 100%, 200% 100%; animation: composer-work 3s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .grad-in-working .composer.working { animation: none; } }
 .grad-in-buttons :is(.set > button.primary, .qs-step button, #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop), .wait-answer:last-child) {
@@ -1542,29 +1542,6 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .grad-where:empty { display: none; }
 /* A setting's name: no hand over it, the control alone is clicked (ui.js). */
 .set > label.what, .setting-head > label { cursor: default; }
-/* The gradient is one picture fixed to the window (background-attachment: fixed): each
-   surface that shows it shows its own part, so the colours run on from one panel to the next.
-   Side panels: the rail, the conversations and Details carry it under their content. */
-html.grad-in-sides #workspace :is(#dock-left, #dock-right) :is(.dock-head, .panes, .panel-head, .dock-foot, .view-files .files-bar),
-html.grad-in-sides #workspace .pane:has(> .pane-project) { background: transparent; }
-/* Over the middle too (a narrow window): the same fixed picture, so it is not a black block. */
-html.grad-in-sides #workspace :is(#rail, #dock-left) { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
-html.grad-in-sides #workspace #dock-right { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
-html.mica.grad-in-sides #workspace :is(#rail, #dock-left:not(.over)) { background: var(--grain-layer), var(--grad), var(--mica-side); background-attachment: fixed; }
-html.mica.grad-in-sides #workspace #dock-right:not(.over) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
-/* Settings show the style chosen at once: its column and its page, as the panels would. */
-html:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
-html:not(.grad-off) .settings-nav { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
-html.mica:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
-html.mica:not(.grad-off) .settings-nav { background: var(--grain-layer), var(--grad), var(--mica-side); background-attachment: fixed; }
-/* The middle showing the gradient (the new tab, an empty conversation): the whole middle
-   carries it, its bars at the top too, not the screen under them alone. */
-html.grad-in-newtab #workspace #dock-center:has(> .panes > .empty.launcher),
-html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
-html.mica.grad-in-newtab #workspace #dock-center:has(> .panes > .empty.launcher),
-html.mica.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
-html.grad-in-newtab #workspace #dock-center:has(> .panes > .empty.launcher) :is(.center-head, .dock-head, .panes, .empty.launcher),
-html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) :is(.center-head, .dock-head, .panes, .pane:not([hidden]), .pane:not([hidden]) .chat) { background: transparent; }
 /* The search (the proposals' A, Raycast): a big field with its glass, the results in
    groups with an icon each, the keys at the foot; glass as the menus. */
 .palette-box { border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); width: min(600px, 100%); }
@@ -1694,11 +1671,29 @@ html.grad-in-empty #workspace #dock-center:has(> .panes > .pane:not([hidden]) .c
 .qs-back { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; height: 28px; padding: 0 var(--s2); background: none; border: 0; color: var(--dim); font-size: 12px; flex: none; align-self: flex-start; }
 .qs-back:hover { color: var(--fg); background: var(--hover); }
 .qs-back .i { width: 14px; height: 14px; }
-/* "Around the window" (gradSides): the middle's frame carries it too, so nothing stands out
-   in the theme's plain colour: the middle under its bars and an empty page, and Details' bar
-   at the top (sticky: it takes the same fixed picture, the same pixels as behind it). */
-html.grad-in-sides #workspace #dock-center:not(.over) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
-html.mica.grad-in-sides #workspace #dock-center:not(.over) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
-html.grad-in-sides #workspace #dock-center :is(.center-head, .dock-head, .panes, .panes > .empty.launcher) { background: transparent; }
-html.grad-in-sides:not(.mica) #workspace .pane-project > .toolbar .switch { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
-html.grad-in-sides.mica #workspace .pane-project > .toolbar .switch { background: transparent; }
+/* The gradient drawn once, never one copy per panel (a copy each, even "fixed" to the window,
+   started again from each panel's corner in Pier's window: lighter tops, dark feet).
+   Around the window (gradSides): the workspace carries it; the rail, the sides, the middle
+   and their bars are clear over it, so it runs on unbroken. A side over the middle (a narrow
+   window) has its own, on its own ground. */
+html.grad-in-sides #workspace { background: var(--grain-layer), var(--grad), var(--bg); }
+html.mica.grad-in-sides #workspace { background: var(--grain-layer), var(--grad), var(--mica-mid); }
+html.grad-in-sides #workspace :is(#rail, #dock-left, #dock-right, #dock-center):not(.over),
+html.grad-in-sides #workspace :is(#dock-left, #dock-right, #dock-center) :is(.dock-head, .center-head, .panes, .panel-head, .dock-foot, .view-files .files-bar),
+html.grad-in-sides #workspace :is(.pane:has(> .pane-project), .panes > .empty.launcher, .chat:has(> .chat-empty:not([hidden]))) { background: transparent; }
+html.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background: var(--grain-layer), var(--grad), var(--bg); }
+html.mica.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background: var(--grain-layer), var(--grad), color-mix(in srgb, var(--panel) 25%, transparent); }
+/* Details' bar stays at the top over what scrolls: clear, what passes under it blurred. */
+html:is(.grad-in-sides, .mica) #workspace .pane-project > .toolbar .switch { background: transparent; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+/* Not around the window: the middle showing it (a new tab, an empty conversation) carries it
+   whole, its bars at the top too. */
+html.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .empty.launcher),
+html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--bg); }
+html.mica.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .empty.launcher),
+html.mica.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--mica-mid); }
+html.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .empty.launcher) :is(.center-head, .dock-head, .panes, .empty.launcher),
+html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .pane:not([hidden]) .chat-empty:not([hidden])) :is(.center-head, .dock-head, .panes, .pane:not([hidden]), .pane:not([hidden]) .chat) { background: transparent; }
+/* Settings show the style chosen at once: drawn once on the window, the column clear over it. */
+html:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--bg); }
+html.mica:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--mica-mid); }
+html:not(.grad-off) .settings-nav { background: transparent; }
