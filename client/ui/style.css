@@ -1545,10 +1545,11 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 /* The gradient is one picture fixed to the window (background-attachment: fixed): each
    surface that shows it shows its own part, so the colours run on from one panel to the next.
    Side panels: the rail, the conversations and Details carry it under their content. */
-html.grad-in-sides #workspace :is(#dock-left, #dock-right):not(.over) :is(.dock-head, .panes, .panel-head, .dock-foot),
+html.grad-in-sides #workspace :is(#dock-left, #dock-right) :is(.dock-head, .panes, .panel-head, .dock-foot, .view-files .files-bar),
 html.grad-in-sides #workspace .pane:has(> .pane-project) { background: transparent; }
-html.grad-in-sides #workspace :is(#rail, #dock-left:not(.over)) { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
-html.grad-in-sides #workspace #dock-right:not(.over) { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
+/* Over the middle too (a narrow window): the same fixed picture, so it is not a black block. */
+html.grad-in-sides #workspace :is(#rail, #dock-left) { background: var(--grain-layer), var(--grad), var(--panel); background-attachment: fixed; }
+html.grad-in-sides #workspace #dock-right { background: var(--grain-layer), var(--grad), var(--bg); background-attachment: fixed; }
 html.mica.grad-in-sides #workspace :is(#rail, #dock-left:not(.over)) { background: var(--grain-layer), var(--grad), var(--mica-side); background-attachment: fixed; }
 html.mica.grad-in-sides #workspace #dock-right:not(.over) { background: var(--grain-layer), var(--grad), var(--mica-mid); background-attachment: fixed; }
 /* Settings show the style chosen at once: its column and its page, as the panels would. */
