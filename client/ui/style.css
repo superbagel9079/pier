@@ -1881,3 +1881,12 @@ input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-o
 :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]), select, textarea):focus,
 .pick[aria-expanded="true"] { background-color: color-mix(in srgb, var(--fg) 11%, transparent); }
 .pick:hover { background-color: color-mix(in srgb, var(--fg) 9%, transparent); }
+/* The logs' paths: plain text the mouse can select and copy (Open the folder is beside). */
+.log-path { color: var(--fg); -webkit-user-select: text; user-select: text; overflow-wrap: anywhere; }
+/* Secondary buttons: a tinted ground, as the fields, so they read as something to press. */
+button.secondary, .set > button.secondary, .set .btns button.secondary, .prefs-page .actions button.secondary, :is(.dialog, #connect) .actions button.secondary {
+  background: color-mix(in srgb, var(--fg) 9%, transparent); border-color: transparent; color: var(--fg); }
+button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns button.secondary:hover { background: color-mix(in srgb, var(--fg) 15%, transparent); }
+/* (the same, over the rule that cleared the ground of the settings rows' buttons) */
+.set > button:not(.icon-btn):not(.pick):not(.primary), .set .btns button:not(.icon-btn) { background: color-mix(in srgb, var(--fg) 9%, transparent); border-color: transparent; color: var(--fg); }
+.set > button:not(.icon-btn):not(.pick):not(.primary):hover:not(:disabled), .set .btns button:not(.icon-btn):hover:not(:disabled) { background: color-mix(in srgb, var(--fg) 15%, transparent); }

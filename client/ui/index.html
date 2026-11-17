@@ -334,7 +334,7 @@
       <h2>Logs</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-debug"><span>Detailed logs</span><span>Every call, here and on the VM. For tracking a problem down; the log grows faster.</span></label><input id="prefs-debug" type="checkbox"></div>
-        <div class="set"><div class="what"><span>Where they are</span><span>Pier's: <button type="button" id="prefs-logpath" class="path-link" title="Open its folder">?</button>. The picker's, on the VM: <button type="button" id="prefs-vmlogpath" class="path-link" title="Copy it">~/.local/state/pier-picker/picker.log</button></span></div><button id="prefs-logfolder" class="secondary">Open the folder</button></div>
+        <div class="set"><div class="what"><span>Where they are</span><span>Pier's: <span id="prefs-logpath" class="log-path selectable">?</span>. The picker's, on the VM: <span class="log-path selectable">~/.local/state/pier-picker/picker.log</span></span></div><button id="prefs-logfolder" class="secondary">Open the folder</button></div>
         <div class="set"><div class="what"><span>A report</span><span>The versions, the connection (never a password), and the end of both logs.</span></div><div class="btns"><button id="prefs-report" class="secondary">Copy</button><button id="prefs-report-save" class="secondary">Save…</button></div></div>
       </div>
       <p id="prefs-diag-note" class="notice" hidden></p>

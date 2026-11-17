@@ -595,10 +595,6 @@ $("#prefs-debug").addEventListener("change", (e) => {
 });
 
 $("#prefs-logfolder").addEventListener("click", () => backend.openLogFolder().catch((error) => prefsNote($("#prefs-diag-note"), String(error))));
-$("#prefs-logpath").addEventListener("click", () => $("#prefs-logfolder").click());
-$("#prefs-vmlogpath").addEventListener("click", async (e) => {
-  try { await navigator.clipboard.writeText(e.currentTarget.textContent); flashStatus("copied: the picker's log path, on the VM"); } catch (error) { flashStatus(`could not copy: ${error}`); }
-});
 
 /** The report: what Pier knows (Rust side), and what only the interface knows. */
 async function makeReport() {
