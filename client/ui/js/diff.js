@@ -25,6 +25,16 @@ function diffBlock(text, { max = DIFF_LINES_MAX, kindOf = diffKind } = {}) {
   return pre;
 }
 
+/** A part of a diff tab: a frame with its head (an icon, what it is, when on the right),
+ *  then its diffs. */
+function diffCard(icon, title, when, ...blocks) {
+  return el("section", { className: "diff-card" },
+    el("div", { className: "diff-card-head" }, svgIcon(icon), el("span", { textContent: title }), when ? el("span", { className: "when", textContent: when }) : null),
+    ...blocks);
+}
+/** git's diff without its file header (diff --git, index, ---, +++): the tab names the file. */
+const withoutHeader = (diff) => { const lines = diff.split("\n"); const at = lines.findIndex((l) => l.startsWith("@@")); return (at > 0 ? lines.slice(at) : lines).join("\n"); };
+
 /** Opens (or shows) the diff of a project file, next to the main terminal: against
  *  git and Pi's edits, or, given a restore point, against the file as it was then. */
 function openDiff(rel, project, point = null) {
@@ -62,8 +72,7 @@ function makeDiff(tab) {
     }
     body.replaceChildren();
     if (result.diff) {
-      body.append(el("p", { className: "edit-title", textContent: `changes since ${point.when} (${result.label || result.reason}), - then, + now` }));
-      body.append(diffBlock(result.diff.trimEnd()));
+      body.append(diffCard("history", `Since the restore point (${result.label || result.reason})`, point.when, diffBlock(withoutHeader(result.diff.trimEnd()))));
       const undo = el("button", { className: "secondary", textContent: `Put it back as it was at ${point.when}` });
       undo.addEventListener("click", async () => {
         if (!(await ask(`Put ${rel} back as it was at ${point.when}? What is there now is saved first, as a restore point.`))) return;
@@ -94,21 +103,21 @@ function makeDiff(tab) {
     }
     body.replaceChildren();
     if (result.diff) {
-      body.append(el("p", { className: "edit-title", textContent: result.untracked ? "new file, not yet in git" : "git diff against the last commit" }));
-      body.append(diffBlock(result.diff.trimEnd()));
+      body.append(diffCard("git-compare", result.untracked ? "New file, not yet in git" : "Since the last commit", "", diffBlock(withoutHeader(result.diff.trimEnd()))));
     } else if (result.diff === "") {
       body.append(el("p", { className: "dim", textContent: "No difference with the last commit." }));
     }
     if (result.edits.length) {
-      body.append(el("p", { className: "edit-title", textContent: `Pi's ${result.edits.length} most recent change${result.edits.length > 1 ? "s" : ""} to this file, newest last` }));
-      for (const edit of result.edits) {
-        const when = edit.at ? new Date(edit.at).toLocaleTimeString() : "";
-        body.append(el("p", { className: "edit-title", textContent: `${edit.tool} · ${edit.state} · ${when}` }));
-        if (edit.tool === "write") body.append(diffBlock(String(edit.content ?? "").split("\n").map((l) => `+${l}`).join("\n"), { kindOf: () => "add" }));
-        for (const change of edit.changes || []) {
-          const text = [...change.old.split("\n").map((l) => `-${l}`), ...change.new.split("\n").map((l) => `+${l}`)].join("\n");
-          body.append(diffBlock(text));
-        }
+      // Pi's changes, the newest first: a card each, its kind and time in its head.
+      for (const edit of [...result.edits].reverse()) {
+        const when = edit.at ? new Date(edit.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+        const write = edit.tool === "write";
+        const state = edit.state === "done" ? "" : edit.state === "error" ? " · failed" : ` · ${edit.state}`;
+        const blocks = write ? [diffBlock(String(edit.content ?? "").split("\n").map((l) => `+${l}`).join("\n"), { kindOf: () => "add" })]
+          : (edit.changes || []).map((change) => diffBlock([...change.old.split("\n").map((l) => `-${l}`), ...change.new.split("\n").map((l) => `+${l}`)].join("\n")));
+        const card = diffCard(write ? "file-plus" : "pencil", `${write ? "Pi wrote the whole file" : "Pi edited it"}${state}`, when, ...blocks);
+        card.classList.toggle("failed", edit.state === "error");
+        body.append(card);
       }
     }
     if (!body.childElementCount) {

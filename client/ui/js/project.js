@@ -285,10 +285,8 @@ function makeProject(tab) {
       row.classList.add("selected");
       if (entry.kind !== "dir") {
         const rel = li.dataset.rel;
-        // A file Pi or git changed: its changes (the file itself is a link away); any
-        // other: the file.
-        if (activity && (activity.git[rel] || activity.files[rel]?.edits)) openDiff(rel, base);
-        else openFile(rel, base);
+        // The file itself, changed or not: its changes are a button away (and in Changes).
+        openFile(rel, base);
         return;
       }
       let children = $(":scope > ul", li);

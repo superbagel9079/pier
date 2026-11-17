@@ -2011,3 +2011,17 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .prompt-foot { display: flex; align-items: center; gap: var(--s2); }
 .prompt-foot > .dim { flex: 1; }
 .prompt-foot button:not(.link) { height: 28px; padding: 0 var(--s3); }
+/* A diff tab: a card per part (git, each of Pi's changes), its head a quiet bar; the lines
+   as wide as the longest, so a long line keeps its colour to its end. */
+.diff-card { margin: 0 0 var(--s4); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--chip); }
+.diff-card-head { display: flex; align-items: center; gap: var(--s2); padding: 6px var(--s3); font-size: 12px; color: var(--dim); border-bottom: 1px solid var(--line); }
+.diff-card-head .i { width: 14px; height: 14px; flex: none; }
+.diff-card-head > span:first-of-type { flex: 1; color: var(--fg); }
+.diff-card-head .when { font-variant-numeric: tabular-nums; }
+.diff-card.failed .diff-card-head > span:first-of-type { color: var(--red, #f85149); }
+.diff-card .diff { margin: 0; background: none; }
+.diff-card .diff + .diff { border-top: 1px dashed var(--line); }
+.diff { display: grid; grid-template-columns: minmax(100%, max-content); min-width: 0; }
+/* The tree's row with the keyboard: no frame (it showed after typing elsewhere, as focus
+   came back to the list), its background as under the pointer. */
+.tree .node:focus-visible { outline: none; background: var(--hover); }
