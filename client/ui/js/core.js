@@ -197,7 +197,7 @@ function applyMica() {
 /** The gradient (Appearance): its style, its strength, its colours (the accent's or two
  *  chosen), its grain, and where it goes, as classes and variables on the root
  *  (style.css draws it). */
-const GRAD_STYLES = ["off", "aurora", "mesh", "linear", "glow", "dusk"];
+const GRAD_STYLES = ["off", "aurora", "mesh", "linear", "glow", "dusk", "horizon", "halo", "corners", "dawn", "prism", "tide"];
 function applyGradient() {
   const root = document.documentElement;
   const style = GRAD_STYLES.includes(prefs.gradStyle) ? prefs.gradStyle : "aurora";

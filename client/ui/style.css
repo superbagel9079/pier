@@ -2082,3 +2082,12 @@ textarea { resize: none; }
 /* The scrollbars' thumb follows Settings > Appearance > Corners (inside its clear border). */
 ::-webkit-scrollbar-thumb { border-radius: calc(var(--r) + 4px); }
 .code-scroll::-webkit-scrollbar-thumb { border-radius: calc(var(--r) + 3px); }
+/* More gradients: Horizon (across, left to right), Halo (a soft light in the middle), Corners
+   (a colour in each corner), Dawn (a light rising from the bottom), Prism (diagonal bands of the
+   theme's colours), Tide (a wide swell along the bottom). */
+:is(.grad-horizon, .s-horizon) { --grad: linear-gradient(90deg, color-mix(in srgb, var(--g1) calc(var(--gi) * 1), transparent), transparent 45%, transparent 55%, color-mix(in srgb, var(--g3) calc(var(--gi) * 0.9), transparent)); }
+:is(.grad-halo, .s-halo) { --grad: radial-gradient(ellipse 55% 45% at 50% 45%, color-mix(in srgb, var(--g2) calc(var(--gi) * 1.2), transparent), transparent 75%); }
+:is(.grad-corners, .s-corners) { --grad: radial-gradient(circle at 0 0, color-mix(in srgb, var(--g1) calc(var(--gi) * 1), transparent), transparent 40%), radial-gradient(circle at 100% 0, color-mix(in srgb, var(--g2) calc(var(--gi) * 1), transparent), transparent 40%), radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--g3) calc(var(--gi) * 1), transparent), transparent 40%), radial-gradient(circle at 0 100%, color-mix(in srgb, var(--g5) calc(var(--gi) * 0.9), transparent), transparent 40%); }
+:is(.grad-dawn, .s-dawn) { --grad: radial-gradient(ellipse 80% 60% at 50% 115%, color-mix(in srgb, var(--g4) calc(var(--gi) * 1.2), transparent), transparent 70%), radial-gradient(ellipse 60% 40% at 50% -10%, color-mix(in srgb, var(--g1) calc(var(--gi) * 0.5), transparent), transparent 70%); }
+:is(.grad-prism, .s-prism) { --grad: linear-gradient(120deg, color-mix(in srgb, var(--g1) calc(var(--gi) * 1), transparent) 0%, transparent 22%, color-mix(in srgb, var(--g2) calc(var(--gi) * 0.8), transparent) 42%, transparent 62%, color-mix(in srgb, var(--g3) calc(var(--gi) * 0.8), transparent) 82%, color-mix(in srgb, var(--g5) calc(var(--gi) * 0.7), transparent) 100%); }
+:is(.grad-tide, .s-tide) { --grad: radial-gradient(ellipse 120% 45% at 30% 110%, color-mix(in srgb, var(--g3) calc(var(--gi) * 1.1), transparent), transparent 70%), radial-gradient(ellipse 90% 35% at 85% 105%, color-mix(in srgb, var(--g2) calc(var(--gi) * 0.9), transparent), transparent 70%); }

@@ -369,7 +369,7 @@ $("#prefs-accent-pick").addEventListener("input", (e) => setAccent(e.target.valu
 
 /** The gradient's settings: the styles as thumbnails (each drawn by its own rule), then
  *  intensity, colours, grain, and where it goes. */
-const GRAD_NAMES = { off: "Off", aurora: "Aurora", mesh: "Mesh", linear: "Linear", glow: "Glow", dusk: "Dusk" };
+const GRAD_NAMES = { off: "Off", aurora: "Aurora", mesh: "Mesh", linear: "Linear", glow: "Glow", dusk: "Dusk", horizon: "Horizon", halo: "Halo", corners: "Corners", dawn: "Dawn", prism: "Prism", tide: "Tide" };
 const GRAD_FLAGS = { "prefs-grad-grain": "gradGrain", "prefs-grad-newtab": "gradNewTab", "prefs-grad-working": "gradWorking", "prefs-grad-empty": "gradEmpty", "prefs-grad-buttons": "gradButtons", "prefs-grad-sides": "gradSides" };
 const GRAD_PLACES = [["gradSides", "around the window"], ["gradNewTab", "the new tab"], ["gradWorking", "the message field while Pi works"], ["gradEmpty", "empty screens"], ["gradButtons", "the main buttons"]];
 function setGradient(changes) {
