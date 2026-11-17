@@ -75,6 +75,24 @@ impl Terminals {
         Ok(id)
     }
 
+    /// Runs `command` without a pseudo-terminal, its output passed on as it comes: Pi in
+    /// RPC mode (the picker's --rpc-attach), JSON lines both ways, nothing to translate.
+    pub async fn open_plain(
+        &self,
+        channel: Channel<Msg>,
+        command: &str,
+        output: Output<InvokeResponseBody>,
+        on_exit: impl FnOnce(u32, Option<u32>) + Send + 'static,
+    ) -> Result<u32> {
+        let (reader, writer) = channel.split();
+        writer.exec(true, command).await?;
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let flow = Arc::new(Flow::default());
+        self.open.lock().await.insert(id, Open { writer: Arc::new(Mutex::new(writer)), control: false, flow: flow.clone() });
+        tokio::spawn(pump(id, reader, output, flow, None, on_exit));
+        Ok(id)
+    }
+
     /// Runs `command`, which ends in `tmux -C attach`, without a pseudo-terminal: tmux reads
     /// commands on input, writes notifications on output.
     pub async fn open_control(

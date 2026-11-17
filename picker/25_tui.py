@@ -943,6 +943,10 @@ def entry():
         sys.exit(attach(sys.argv[2], sys.argv[3:]))
     if len(sys.argv) >= 3 and sys.argv[1] == "--attach-control":
         sys.exit(attach_control(sys.argv[2], sys.argv[3:]))
+    if len(sys.argv) >= 3 and sys.argv[1] == "--rpc-attach":
+        sys.exit(rpc_attach(sys.argv[2], sys.argv[3:]))
+    if len(sys.argv) >= 4 and sys.argv[1] == "--rpc-host":
+        sys.exit(rpc_host(sys.argv[2], sys.argv[3], sys.argv[4:]))
     if len(sys.argv) == 3 and sys.argv[1] == "--lab-shell":
         sys.exit(lab_shell(sys.argv[2]))
     if len(sys.argv) >= 2 and sys.argv[1] == "--pi-package":

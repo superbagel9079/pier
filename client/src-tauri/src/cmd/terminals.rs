@@ -31,6 +31,28 @@ pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, S
     Ok(line)
 }
 
+/// The command line of a conversation tab: the picker's --rpc-attach (see rpc_attach there),
+/// Pi in RPC mode. Pier's forms only: nothing, --new, --continue, --session FILE, --slot NAME.
+pub(crate) fn rpc_command(project: &str, args: &[String]) -> Result<String, String> {
+    let rpc_slot = |name: &str| name.starts_with("pi-") && name.len() < 100 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let allowed = match args {
+        [] => true,
+        [flag] => flag == "--continue" || flag == "--new",
+        [flag, file] if flag == "--session" => file.ends_with(".jsonl") && file.contains("/.pi/") && !file.contains('\n'),
+        [flag, name] if flag == "--slot" => rpc_slot(name),
+        _ => false,
+    };
+    if !allowed || project.is_empty() {
+        return Err("unsupported Pi arguments".into());
+    }
+    let mut line = format!("--rpc-attach {}", sh_quote(project));
+    for arg in args {
+        line.push(' ');
+        line.push_str(&sh_quote(arg));
+    }
+    Ok(line)
+}
+
 /// `pi update` run by the picker in a terminal: Pi itself, --all, --extensions, or one
 /// package (npm:…, git:…, https://…). Nothing else reaches the command line.
 /// A package source Pier passes to `pi update`, `pi install` or `pi remove`.
@@ -100,6 +122,7 @@ pub(crate) async fn term_open(
         "picker" => Some(remote(&settings, &request, "")),
         "shell" => None,
         "pi" => Some(remote(&settings, &request, &attach_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
+        "chat" => Some(remote(&settings, &request, &rpc_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
         "update" => Some(remote(&settings, &request, &update_command(args.as_deref().unwrap_or(&[]))?)),
         "package" => Some(remote(&settings, &request, &package_command(args.as_deref().unwrap_or(&[]))?)),
         "lab" => Some(remote(&settings, &request, &lab_command(args.as_deref().unwrap_or(&[]))?)),
@@ -120,6 +143,8 @@ pub(crate) async fn term_open(
     let opening = match (kind.as_str(), command.as_deref()) {
         // Pi: tmux in control mode, Pi's own output (see term.rs).
         ("pi", Some(command)) => state.terminals.open_control(channel, command, cols, rows, output, on_exit).await,
+        // A conversation: Pi in RPC mode, JSON lines, no terminal in between.
+        ("chat", Some(command)) => state.terminals.open_plain(channel, command, output, on_exit).await,
         _ => state.terminals.open(channel, command.as_deref().map(str::trim_end), cols, rows, output, on_exit).await,
     };
     let id = opening.map_err(|e| {

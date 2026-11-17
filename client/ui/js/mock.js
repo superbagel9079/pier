@@ -1,6 +1,61 @@
 // A stand-in for the Rust side, so that the interface can be tried in a browser:
 // open index.html outside Pier and log in with the password "demo".
 
+/** A Pi in RPC mode, for the mock: Pier's commands in, Pi's events out (see chat.js). */
+function mockPi(onBytes, params) {
+  const out = (record) => onBytes(new TextEncoder().encode(`${JSON.stringify(record)}\n`));
+  const later = (ms, record) => setTimeout(() => out(record), ms);
+  const resumed = params?.args?.[0] === "--session";
+  let state = { model: { provider: "anthropic", id: "claude-sonnet-5-5", contextWindow: 200000 }, thinkingLevel: "medium", isStreaming: false,
+    sessionName: resumed ? "Write the release notes" : null };
+  const usage = (cost) => ({ input: 1200, output: 340, cacheRead: 8000, cacheWrite: 0, totalTokens: 9540, cost: { total: cost } });
+  const history = resumed ? [
+    { role: "user", content: [{ type: "text", text: "Write the release notes for 2.0, from the changelog." }] },
+    { role: "assistant", usage: usage(0.06), content: [
+      { type: "thinking", thinking: "The changelog already has a 2.0 section, so the notes can follow it: what is new, what changed, what was fixed." },
+      { type: "toolCall", id: "t1", name: "read", arguments: { path: "/home/leo/work/CHANGELOG.md" } },
+      { type: "toolCall", id: "t2", name: "edit", arguments: { path: "/home/leo/work/RELEASE-NOTES.md" } },
+      { type: "text", text: "The notes are in `RELEASE-NOTES.md`: what is new, what changed, and what was fixed, taken from the changelog since 1.9." }] },
+    { role: "toolResult", toolCallId: "t1", content: [{ type: "text", text: "# Changelog\n\n## 2.0\n- Workspace: three docks, tabs that move\n- Activity groups what Pi did by prompt\n- Labs: throwaway machines (optional)\n\n## 1.9\n- picker.command moved to [picker] command" }] },
+    { role: "toolResult", toolCallId: "t2", content: [{ type: "text", text: "Edited RELEASE-NOTES.md: +9 -0" }] },
+  ] : [];
+  setTimeout(() => out({ type: "pier_attached", slot: "pi-work-a1b2c3-r1", project: params?.project, fresh: !resumed }), 30);
+  const answer = (id, command, data) => out({ type: "response", id, command, success: true, data });
+  const run = (text) => {
+    state.isStreaming = true;
+    out({ type: "agent_start" });
+    out({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+    later(100, { type: "message_start", message: { role: "assistant", content: [] } });
+    ["Look at the README first, ", "then answer from it."].forEach((delta, i) => later(250 + i * 150, { type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta } }));
+    later(600, { type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: { id: "t9", name: "read", arguments: { path: "/home/leo/work/README.md" } } } });
+    later(650, { type: "tool_execution_start", toolCallId: "t9", toolName: "read", args: { path: "/home/leo/work/README.md" } });
+    later(1100, { type: "tool_execution_end", toolCallId: "t9", toolName: "read", isError: false, durationMs: 420,
+      result: { content: [{ type: "text", text: "# Pier\n\nPi on a Linux VM, used from your laptop.\n\nTwo pieces: the desktop app, and the picker on the VM.\n\n## Install\n\nDownload Pier, connect, done." }] } });
+    const reply = "The README says Pier runs Pi on a VM from your laptop, in two pieces: the app and the picker. See `README.md`.";
+    reply.match(/.{1,24}/g).forEach((delta, i) => later(1300 + i * 80, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 2, delta } }));
+    const done = 1400 + Math.ceil(reply.length / 24) * 80;
+    later(done, { type: "message_end", message: { role: "assistant", usage: usage(0.02), content: [{ type: "text", text: reply }] } });
+    later(done + 50, { type: "agent_end", messages: [] });
+    setTimeout(() => { state.isStreaming = false; out({ type: "agent_settled", aborted: false }); }, done + 100);
+  };
+  const handle = (data) => {
+    for (const line of String(data).split("\n").filter(Boolean)) {
+      const c = JSON.parse(line);
+      if (c.type === "get_state") answer(c.id, c.type, state);
+      else if (c.type === "get_messages") answer(c.id, c.type, { messages: history });
+      else if (c.type === "get_available_models") answer(c.id, c.type, { models: [{ provider: "anthropic", id: "claude-sonnet-5-5" }, { provider: "anthropic", id: "claude-opus-5-5" }] });
+      else if (c.type === "get_available_thinking_levels") answer(c.id, c.type, { levels: ["off", "low", "medium", "high"] });
+      else if (c.type === "set_model") { state = { ...state, model: { provider: c.provider, id: c.modelId } }; answer(c.id, c.type, {}); }
+      else if (c.type === "set_thinking_level") { state = { ...state, thinkingLevel: c.level }; answer(c.id, c.type, {}); }
+      else if (c.type === "prompt") { answer(c.id, c.type, { disposition: "started" }); run(c.message); }
+      else if (c.type === "steer") answer(c.id, c.type, {});
+      else if (c.type === "abort") { answer(c.id, c.type, {}); state.isStreaming = false; out({ type: "agent_settled", aborted: true }); }
+    }
+  };
+  handle.pi = handle;
+  return handle;
+}
+
 function mockBackend() {
   let saved = null;
   let mockClipboard = "";
@@ -497,13 +552,14 @@ function mockBackend() {
     },
     notify: async (title, body) => { console.log("notification:", title, body); },
     setShortcut: async () => {},
-    async termOpen(kind, cols, rows, onBytes) {
+    async termOpen(kind, cols, rows, onBytes, params) {
       const id = nextTerm++;
+      if (kind === "chat") { echoes[id] = mockPi(onBytes, params); return id; }
       echoes[id] = onBytes;
       setTimeout(() => onBytes(new TextEncoder().encode(`demo: ${kind} terminal ${cols}x${rows}\r\n$ `)), 50);
       return id;
     },
-    termWrite(id, data) { echoes[id]?.(new TextEncoder().encode(data === "\r" ? "\r\n$ " : data)); },
+    termWrite(id, data) { echoes[id]?.(typeof echoes[id].pi === "function" ? data : new TextEncoder().encode(data === "\r" ? "\r\n$ " : data)); },
     termResize() {},
     termClose() {},
     async shareStart(path, writable) {

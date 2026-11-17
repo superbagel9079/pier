@@ -313,12 +313,14 @@ function makeConversations(tab) {
 
   /** A conversation no Pi runs: a click starts a Pi on it. Pinned ones carry a pin. */
   function row(p, s, inFolder = false) {
-    const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
+    const resume = () => openChat(p.project, p.label, ["--session", s.path]);
+    const inTerminal = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
     return conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : ""].filter(Boolean).join(" "),
       mark: s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
-      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) });
+      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }],
+        ["Continue in a terminal", inTerminal, false, { icon: "terminal" }]]) });
   }
 
   /** A folder: a category of the project (or its sub-agents), with how many it holds;
@@ -390,10 +392,11 @@ function makeConversations(tab) {
    *  ⋯ and a right click hold the rest. */
   function head(p, folded, inUse) {
     const pis = p.pis || [];
-    const fresh = () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : []);
+    const fresh = () => openChat(p.project, p.label, ["--new"]);
     const items = [
       ["New conversation (a new Pi)", fresh, false, { icon: "plus" }],
-      ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
+      ["Continue the last conversation", () => openChat(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
+      ["New Pi in a terminal", () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : []), false, { icon: "terminal" }],
       ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"]), false, { icon: "network" }],
       null,
       ["Instructions and what Pi loads here", () => workspace.find("setup")?.openProject?.(p.project), false, { icon: "folder-cog" }],

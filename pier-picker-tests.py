@@ -437,6 +437,15 @@ def hardening_test():
     check("files: delete a folder and what it holds", not (fsp / "src").exists())
     check("files: never the project itself", "not a path" in fsapi("api_fs_delete", ".") and fsp.is_dir())
 
+    # Conversations in RPC mode: only Pier's forms reach Pi, only a Pi's name makes a folder.
+    rpc = picker("print(json.dumps([m.rpc_pi_args([]), m.rpc_pi_args(['--new']), m.rpc_pi_args(['--continue'])]))")
+    check("rpc: new and last conversation", rpc.startswith('[[], [], ["--continue"]]'), rpc)
+    check("rpc: a session file", '"--session"' in picker("print(json.dumps(m.rpc_pi_args(['--session', '/home/x/.pi/a.jsonl'])))"))
+    for bad in (["--mode", "json"], ["--session", "/etc/passwd"], ["--orchestrator"]):
+        check(f"rpc: refuses {bad}", "unsupported" in picker(f"m.rpc_pi_args({bad!r})"))
+    check("rpc: a slot name never leaves the folder", "not a Pi" in picker("m.rpc_slot_dir('../../etc')"))
+    check("rpc: a slot that never ran is not alive", picker("print(m.rpc_alive('pi-none-r1'))") == "None")
+
     # Writing: a folder swapped for a link leading out is refused, nothing lands there.
     wrote = picker(f"m.save_new({str(project / '.pi-files')!r}, 'x.png', b'data', {str(project)!r})")
     check("write: never through a link out of the project", not (outside / "x.png").exists() and "Error" in wrote, wrote)

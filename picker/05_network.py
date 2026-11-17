@@ -468,6 +468,8 @@ def wait_child(proc):
 
 
 def pause_for_enter(prompt="press Enter to go back to the picker "):
+    if os.environ.get("PIER_RPC") == "1":  # no terminal to read Enter from: Pier shows the error
+        return
     try:
         sys.stderr.write(prompt)
         sys.stderr.flush()
@@ -544,6 +546,9 @@ def exec_pi(path, extra):
                 if extension:
                     tracked = tracked + ["--extension", extension]
             env["PIER_GIT_SOCKET"] = broker.socket
+    # Pier's conversation view (see rpc_host): Pi speaks JSON on its stdin and stdout.
+    if os.environ.get("PIER_RPC") == "1":
+        extra = ["--mode", "rpc", *extra]
     plain = argv + list(extra)
     argv = argv + tracked + list(extra)
     if sandbox_wanted(config):

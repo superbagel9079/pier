@@ -10,6 +10,7 @@ const KINDS = {
   repository: { title: "Repository", single: true, icon: "git-branch", make: (tab) => makeRepository(tab) },
   conversations: { title: "Conversations", single: true, icon: "message-square", make: (tab) => makeConversations(tab) },
   pi: { title: "pi", terminal: true },
+  chat: { title: "Pi", make: (tab) => makeChat(tab) },
   update: { title: "pi update", terminal: true },
   diff: { title: "diff", make: (tab) => makeDiff(tab) },
   file: { title: "file", make: (tab) => makeFile(tab) },

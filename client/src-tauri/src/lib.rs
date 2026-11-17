@@ -1132,6 +1132,22 @@ mod tests {
     }
 
     #[test]
+    fn a_conversation_only_takes_known_pi_arguments() {
+        assert_eq!(rpc_command("/home/leo/my blog", &[]).unwrap(), "--rpc-attach '/home/leo/my blog'");
+        assert!(rpc_command("/x", &["--new".into()]).is_ok());
+        assert!(rpc_command("/x", &["--continue".into()]).is_ok());
+        assert_eq!(rpc_command("/x", &["--slot".into(), "pi-work-a1b2c3-r1".into()]).unwrap(), "--rpc-attach '/x' '--slot' 'pi-work-a1b2c3-r1'");
+        assert!(rpc_command("/x", &["--session".into(), "/home/leo/.pi/agent/sessions/--x--/a.jsonl".into()]).is_ok());
+        // An orchestrator or a task still goes through the terminal, for now.
+        for bad in [vec!["--orchestrator".to_string()], vec!["--agent-task".into(), "task".into(), "1".into()],
+                    vec!["--session".into(), "/etc/passwd".into()], vec!["--slot".into(), "pi-x; rm -rf ~".into()],
+                    vec!["--mode".into(), "json".into()]] {
+            assert!(rpc_command("/x", &bad).is_err(), "{bad:?}");
+        }
+        assert!(rpc_command("", &[]).is_err());
+    }
+
+    #[test]
     fn attach_only_takes_known_pi_arguments() {
         let line = attach_command("/home/leo/my blog", &[]).unwrap();
         assert_eq!(line, "--attach-control '/home/leo/my blog'");

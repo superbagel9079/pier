@@ -892,6 +892,66 @@ button.row-main:hover { background: none; }
 .sessions li.label-editor input { width: 100%; min-width: 0; }
 .sessions li.label-editor .row-actions { display: flex; gap: var(--s3); justify-content: flex-start; }
 
+/* A conversation tab: what you asked on the right, Pi's steps as a timeline (a mark per
+   step, a line from mark to mark that turns into the last open one), its answer, the composer. */
+.pane.chat-pane { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.chat { flex: 1; min-height: 0; overflow: auto; padding: var(--s5) var(--s5) var(--s2); }
+.chat-col { max-width: 768px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--s3); }
+.chat-col > .you:not(:first-child) { margin-top: var(--s3); }
+.you { align-self: flex-end; max-width: 80%; background: var(--field); border: 1px solid var(--line); padding: var(--s3) var(--s4); white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--r); }
+.chat-notice { color: var(--dim); font-size: var(--t-small); }
+.chat-notice.error { color: var(--red, #f85149); }
+.answer .md-page { max-width: none; padding: 0; }
+.answer { line-height: 22px; overflow-wrap: anywhere; }
+.chat .tl { position: relative; display: flex; flex-direction: column; padding-left: 28px; }
+.chat .tl:empty { display: none; }
+.chat .step { position: relative; }
+.chat .step:not(:last-child)::before { content: ""; position: absolute; left: -21px; top: 14px; bottom: -14px; width: 1px; background: var(--line); }
+.chat .step:last-child:has(> .step-body:not([hidden]))::before { content: ""; position: absolute; left: -21px; top: 14px; width: 21px; height: 37px; border: solid var(--line); border-width: 0 0 1px 1px; }
+.chat .node { position: absolute; left: -28px; top: 7px; width: 15px; height: 15px; display: grid; place-items: center; background: var(--bg); color: var(--dim); }
+.chat .node .i { width: 15px; height: 15px; }
+.chat .step:has(.node use[href="#i-loader-circle"]) .node .i { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .chat .node .i { animation: none !important; } }
+.chat .step.failed .node { color: var(--red, #f85149); }
+.chat .srow { display: flex; align-items: center; gap: var(--s1); }
+.chat .fold-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s2); min-height: 28px; padding: 0; background: none; color: var(--fg); text-align: left; }
+.chat .fold-btn:hover { background: none; }
+.chat .fold-btn:hover .what { text-decoration: underline; text-underline-offset: 3px; }
+.chat .fold-btn .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat .fold-btn .meta { margin-left: auto; font-size: var(--t-small); color: var(--dim); white-space: nowrap; }
+.chat .path { font-family: var(--code); font-size: var(--t-small); }
+.chat .open-tab { width: 24px; height: 24px; }
+.chat .step-body { margin: var(--s1) 0 var(--s2); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.chat .thought { padding: var(--s3) var(--s4); color: var(--dim); line-height: 22px; }
+.chat .thought p + p { margin-top: var(--s2); }
+.chat .file { max-height: 264px; overflow: auto; padding: var(--s2) 0; font: 12px/20px var(--code); }
+.chat .file > div { display: grid; grid-template-columns: 4ch 1fr; gap: var(--s3); padding: 0 var(--s4) 0 var(--s2); white-space: pre; }
+.chat .file > div > span:first-child { color: var(--dim); text-align: right; user-select: none; }
+.chat .clipbox { position: relative; }
+.chat .clipbox .clip { max-height: calc(4 * 20px + 2 * var(--s2)); overflow: hidden; }
+.chat .clipbox .clip .file { max-height: none; overflow: visible; }
+.chat .clipbox.open .clip { max-height: 264px; overflow: auto; }
+.chat .clipbox .fade { position: absolute; left: 0; right: 0; bottom: 32px; height: 40px; pointer-events: none; background: linear-gradient(transparent, var(--field)); }
+.chat .clipbox.open .fade { display: none; }
+.chat .clipbox .more { display: flex; align-items: center; gap: var(--s2); width: 100%; height: 32px; padding: 0 var(--s3); border-top: 1px solid var(--line); background: none; font-size: var(--t-small); color: var(--dim); }
+.chat .clipbox .more:hover { background: var(--hover); color: var(--fg); }
+.chat .clipbox .more .i { width: 14px; height: 14px; }
+.chat .ref { font-family: var(--code); font-size: var(--t-small); color: var(--accent); background: var(--hover); padding: 0 var(--s1); border-radius: var(--r); }
+.chat-ask { align-self: stretch; }
+.chat-ask input { width: 100%; margin-top: var(--s2); }
+.composer { flex: none; margin: 0 auto var(--s4); width: calc(100% - 2 * var(--s5)); max-width: 768px; border: 1px solid var(--line); background: var(--field); border-radius: var(--r); }
+.composer textarea { display: block; width: 100%; min-height: 52px; max-height: calc(8 * 20px + 2 * var(--s3)); field-sizing: content; overflow-y: auto; resize: none; border: 0; background: none; padding: var(--s3); outline: none; }
+.composer textarea:focus { outline: none; }
+.composer .bar { display: flex; align-items: center; gap: var(--s2); padding: var(--s2); color: var(--dim); }
+.composer .bar .icon-btn { width: 24px; height: 24px; }
+.composer .pickish { height: 24px; padding: 0 var(--s2); background: none; font-size: var(--t-small); color: var(--dim); }
+.composer .pickish:hover { background: var(--hover); color: var(--fg); }
+.composer .send { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; }
+.composer .send.stop { background: var(--raise); color: var(--fg); }
+.composer .send.stop .i { display: none; }
+.composer .send.stop::after { content: ""; width: 10px; height: 10px; background: currentColor; border-radius: calc(var(--r) / 4); }
+
 /* Logs */
 
 .pane-logs { display: flex; flex-direction: column; }
