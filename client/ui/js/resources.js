@@ -3,7 +3,7 @@
 // What Pi loads, managed: skills, extensions, prompts on or off (as `pi config`), local skills
 // made, edited, imported; packages installed (pi install, in Pi's sandbox on the VM).
 
-const KIND_LABELS = { skills: "Skills", extensions: "Extensions (they run code)", prompts: "Prompt templates" };
+const KIND_LABELS = { skills: "Skills", extensions: "Extensions", prompts: "Prompts" };
 const PACKAGE_WARNING = "A package's extensions run code with your rights when Pi starts, and its skills can tell Pi to do anything. "
   + "Look at its source before installing it. The installation itself runs in Pi's sandbox on the VM.";
 
@@ -49,17 +49,20 @@ function dialogError() {
 function makeResourceManager(box, currentProject, onChange) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
-  const filter = el("input", { type: "search", placeholder: "filter", spellcheck: false });
+  const filter = el("input", { type: "search", placeholder: "Filter skills", spellcheck: false });
   filter.setAttribute("aria-label", "Filter the list");
-  const add = el("button", { className: "secondary", textContent: "+ Add ▾", title: "A new skill, a skill from this computer, a package" });
-  const refresh = el("button", { className: "link", textContent: "refresh", title: "Read again what Pi loads" });
+  const add = el("button", { className: "secondary", title: "A new skill, a skill from this computer, a package" }, svgIcon("plus"), el("span", { textContent: "Add" }));
+  add.setAttribute("aria-haspopup", "menu");
+  const refresh = el("button", { className: "icon-btn", title: "Read again what Pi loads" }, svgIcon("refresh-cw"));
+  refresh.setAttribute("aria-label", refresh.title);
   const list = el("div", { className: "resource-lists" });
+  const off = el("p", { className: "hint", textContent: "Off: Pi leaves it out at its next start. Nothing is deleted." });
   box.replaceChildren(
     el("div", { className: "toolbar resource-bar" }, filter, add, refresh),
-    error, notice, list,
-    el("p", { className: "hint", textContent: "Unchecked: Pi leaves it out at its next start. Nothing is deleted." }));
+    error, notice, list, off);
 
   let data = null;
+  let kind = "skills"; // the tab shown (settings.js): skills, extensions or prompts
   const say = noticeSetter(notice);
 
   add.addEventListener("click", () => showMenu(add, [
@@ -86,34 +89,29 @@ function makeResourceManager(box, currentProject, onChange) {
     onChange?.();
   }
 
+  /** The tab shown: its rows, yours first, then the project's, then Pier's own. Where
+   *  each comes from is said after its description (the mock-up's option A1). */
   function render() {
     list.replaceChildren();
     const needle = filter.value.trim().toLowerCase();
     const shown = (item) => !needle || [item.name, item.description, item.source].some((t) => t && t.toLowerCase().includes(needle));
-    for (const kind of ["skills", "extensions", "prompts"]) {
-      const items = (data?.[kind] || []).filter(shown);
-      // Pier's own extensions: given to each Pi it starts (--extension), never in Pi's
-      // settings; shown, not toggled here (each has its setting in the picker's config).
-      const pier = kind === "extensions" ? (data?.pier || []).filter(shown) : [];
-      if (!items.length && !pier.length) continue;
-      list.append(el("h3", { textContent: `${KIND_LABELS[kind]} · ${items.length + pier.length}` }));
-      for (const [scope, label] of [["user", "Yours"], ["project", "This project"]]) {
-        const mine = items.filter((item) => item.scope === scope);
-        if (!mine.length) continue;
-        const ul = el("ul", { className: "resource-items" });
-        for (const item of mine) ul.append(row(kind, item));
-        list.append(el("p", { className: "group dim small", textContent: label }), ul);
-      }
-      if (pier.length) {
-        const ul = el("ul", { className: "resource-items" });
-        for (const item of pier) ul.append(pierRow(item));
-        list.append(el("p", { className: "group dim small", textContent: "Pier's: given to each Pi it starts, outside Pi's settings" }), ul);
-      }
-    }
-    if (!list.childElementCount) {
-      list.append(el("p", { className: "dim small", textContent: needle ? "Nothing matches." : "No skill, extension or prompt yet: + Add makes one, imports one, or installs a package." }));
-    }
+    const items = (data?.[kind] || []).filter(shown);
+    // Pier's own extensions: given to each Pi it starts (--extension), never in Pi's
+    // settings; shown, not toggled here (each has its setting in the picker's config).
+    const pier = kind === "extensions" ? (data?.pier || []).filter(shown) : [];
+    const rows = el("div", { className: "rows" },
+      ...items.filter((i) => i.scope === "user").map((i) => row(kind, i)),
+      ...items.filter((i) => i.scope === "project").map((i) => row(kind, i)),
+      ...pier.map(pierRow));
+    if (rows.childElementCount) list.append(rows);
+    else list.append(el("p", { className: "dim small", textContent: needle ? "Nothing matches." : `No ${KIND_LABELS[kind].toLowerCase()} yet: Add makes one, imports one, or installs a package.` }));
+    off.hidden = !rows.childElementCount;
   }
+
+  /** Where an item comes from, in words: "yours, local", "from pi-hindsight", "this project only". */
+  const origin = (item) => (item.scope === "project" ? "this project only"
+    : item.source ? `from ${item.source.replace(/^npm:/, "")}` : "yours, local");
+  const said = (description, from) => [description, from].filter(Boolean).join(" · ");
 
   /** One of Pier's extensions: whether the next Pi gets it, and (its title) how to change
    *  that. */
@@ -121,17 +119,17 @@ function makeResourceManager(box, currentProject, onChange) {
     const how = item.setting
       ? `${item.setting} = ${item.enabled ? "false" : "true"} in the picker's config (~/.config/pier-picker/config.toml)`
       : "set up a lab host in Labs";
-    return el("li", { className: item.enabled ? "" : "off", title: `${item.description}
-To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
-      // The same box as the others, greyed: its state, not a control.
-      el("input", { type: "checkbox", checked: item.enabled, disabled: true }),
-      el("span", { className: "name ellipsis", textContent: item.name }),
-      el("span", { className: "dim small ellipsis", textContent: "Pier" }));
+    const check = el("input", { type: "checkbox", checked: item.enabled, disabled: true }); // its state, not a control
+    check.setAttribute("aria-label", item.name);
+    return el("div", { className: item.enabled ? "set" : "set off", title: `To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
+      el("div", { className: "what" }, el("span", { textContent: item.name }), el("span", { textContent: said(item.description, "Pier's, given to each Pi it starts") })),
+      check);
   }
 
   function row(kind, item) {
-    const li = el("li", { className: item.enabled ? "" : "off", title: [item.description, item.source ? `from ${item.source}` : item.path].filter(Boolean).join("\n") });
-    const check = el("input", { type: "checkbox", checked: item.enabled, title: item.enabled ? "Loaded: uncheck to leave it out" : "Left out: check to load it" });
+    const li = el("div", { className: item.enabled ? "set" : "set off", title: item.path || "" });
+    const check = el("input", { type: "checkbox", checked: item.enabled, title: item.enabled ? "Loaded: turn off to leave it out" : "Left out: turn on to load it" });
+    check.setAttribute("aria-label", item.name);
     check.addEventListener("change", async () => {
       check.disabled = true;
       try {
@@ -147,20 +145,18 @@ To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
         check.disabled = false;
       }
     });
-    li.append(
-      check,
-      el("span", { className: "name ellipsis", textContent: item.name }),
-      el("span", { className: "dim small ellipsis", textContent: item.source ? item.source.replace(/^npm:/, "") : "local" }),
-    );
+    li.append(el("div", { className: "what" }, el("span", { textContent: item.name }), el("span", { textContent: said(item.description, origin(item)) })));
     if (item.editable) {
       const name = item.rel.split("/")[1];
-      const more = el("button", { className: "icon more", textContent: "⋯", title: "Edit, put in the bin" });
+      const more = el("button", { className: "icon-btn more", title: "Edit, put in the bin" }, svgIcon("ellipsis"));
+      more.setAttribute("aria-label", `${item.name}: edit, put in the bin`);
       more.addEventListener("click", () => showMenu(more, [
         ["Edit its SKILL.md…", () => editSkill(item.scope, name)],
         ["Put it in the bin", () => binSkill(item.scope, name)],
       ]));
       li.append(more);
     }
+    li.append(check);
     return li;
   }
 
@@ -254,7 +250,14 @@ To ${item.enabled ? "leave it out" : "have it"}: ${how}` },
     }
   }
 
-  return { load, loadFor, data: () => data };
+  /** The tab shown: skills, extensions or prompts. */
+  function show(next) {
+    kind = next;
+    filter.placeholder = `Filter ${KIND_LABELS[kind].toLowerCase()}`;
+    render();
+  }
+
+  return { load, loadFor, show, data: () => data };
 }
 
 /** Whether version a is newer than b ("1.10.0" > "1.9.2"); false when one is missing. */
@@ -331,16 +334,14 @@ function installDialog(currentProject, onDone, source = "") {
 
 /** Under the packages: Install a package…, and the gallery, searched as you type. */
 function makePackageTools(box, currentProject, onDone) {
-  const install = el("button", { className: "secondary", textContent: "Install a package…", title: "pi install npm:… / git:… / https://…, in Pi's sandbox on the VM" });
+  const install = el("button", { className: "secondary", title: "pi install npm:… / git:… / https://…, in Pi's sandbox on the VM" }, svgIcon("plus"), el("span", { textContent: "Install a package…" }));
   install.addEventListener("click", () => installDialog(currentProject, onDone));
-  const input = el("input", { type: "search", placeholder: "search the gallery", spellcheck: false });
+  const input = el("input", { type: "search", placeholder: "Search the gallery", spellcheck: false });
   input.setAttribute("aria-label", "Search the gallery");
   const results = el("ul", { className: "resource-items gallery" });
   box.replaceChildren(
-    el("div", { className: "toolbar" }, install),
-    el("h2", { textContent: "Gallery" }),
-    el("p", { className: "hint", textContent: "The packages of pi.dev/packages, searched from the VM." }),
-    el("div", { className: "toolbar" }, input),
+    el("h2", {}, el("span", { textContent: "Gallery" }), el("span", { className: "aside", textContent: "pi.dev/packages, searched from the VM" })),
+    el("div", { className: "resource-bar" }, input, install),
     results);
   let installed = new Set();
   let searched = false;

@@ -135,6 +135,7 @@ function renderLabsPrefs() {
   $("#labs-relogin").hidden = true;
   renderLabHosts(s);
   for (const section of document.querySelectorAll(".labs-on")) section.hidden = !s.settings.enabled;
+  $("#labs-welcome").hidden = s.settings.enabled;
 
   const grid = $("#labs-limits");
   grid.replaceChildren();
@@ -152,7 +153,7 @@ function renderLabsPrefs() {
     input.id = `labs-${key}`;
     input.value = s.settings[key];
     input.addEventListener("change", () => saveLabsSettings({ [key]: type === "number" ? Math.round(Number(input.value)) : input.value.trim() }));
-    grid.append(el("label", { htmlFor: input.id, textContent: label }), input);
+    grid.append(el("div", { className: "set" }, el("label", { className: "what", htmlFor: input.id }, el("span", { textContent: label })), input));
   }
 
   const list = $("#labs-machines");
@@ -300,6 +301,7 @@ async function saveLabsSettings(changes) {
 }
 
 $("#labs-enabled").addEventListener("change", (e) => saveLabsSettings({ enabled: e.target.checked }));
+$("#labs-turn-on").addEventListener("click", () => saveLabsSettings({ enabled: true }));
 $("#labs-host-local").addEventListener("click", async () => {
   if (!(await ask("Make labs on Pi's own VM too? They are Incus containers there, beside Pi, cut off from its files. Incus must be installed on it."))) return;
   try { await backend.hostLocal(true, ""); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }

@@ -320,13 +320,14 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 #dock-center { flex: 1; min-width: 160px; }
 /* A side never takes more than 45% of the window, however wide it was dragged. */
 .dock.side { flex: 0 1 auto; width: var(--width, 400px); max-width: 45%; }
-/* Between two docks: the background, a line only under the pointer. */
-.splitter { flex: 0 0 4px; cursor: col-resize; background: var(--bg); position: relative; z-index: 1; }
-/* Drawn 4 px wide, grabbed 12 px wide: the pointer need not land on a hairline. */
-.splitter::before { content: ""; position: absolute; inset: 0 -4px; }
-.splitter:hover, .splitter.dragging { background: var(--strong); }
-/* Reached by Tab (the arrows move it): the whole divider lit, its own focus ring. */
-.splitter:focus-visible { outline: none; background: var(--accent); }
+/* Between two docks, as the mock-up's grip: no room of its own (the bars' lines run on
+   from one dock to the next), grabbed 6 px wide over the border, a 2 px line when
+   pointed at, dragged or reached by Tab. */
+.splitter { flex: 0 0 0; width: 0; cursor: col-resize; position: relative; z-index: 3; }
+.splitter::before { content: ""; position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; }
+.splitter:hover::before, .splitter.dragging::before { background: linear-gradient(90deg, transparent 2px, var(--strong) 2px, var(--strong) 4px, transparent 4px); }
+.splitter:focus-visible { outline: none; }
+.splitter:focus-visible::before { background: linear-gradient(90deg, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
 /* The zone under a dragged tab: its tab bar lightens. */
 .drop-over > .dock-head { background: var(--raise); }
 
@@ -1159,3 +1160,42 @@ button.row-main:hover { background: none; }
 .context-card .meter { margin-bottom: var(--s2); }
 .context-card .kv { display: flex; gap: var(--s2); font-size: 12px; line-height: 20px; color: var(--dim); }
 .context-card .kv span:last-child { margin-left: auto; color: var(--fg); font-variant-numeric: tabular-nums; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The settings pages chosen from the proposals (audit-uiux/inspiration/styles-reglages.html). */
+.prefs-page h2 { display: flex; align-items: center; gap: var(--s2); }
+.prefs-page h2 .aside { margin-left: auto; }
+.banner { display: flex; gap: var(--s2); align-items: flex-start; margin-bottom: var(--s4); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r); color: var(--dim); font-size: 12px; line-height: 16px; }
+.banner .i { width: 14px; height: 14px; margin-top: 1px; flex: none; }
+.setting-head > button.secondary, .set > button.secondary, .resource-bar > button.secondary, .host-bar > button.secondary { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); color: var(--fg); white-space: nowrap; }
+.setting-head > button.secondary:hover, .set > button.secondary:hover, .resource-bar > button.secondary:hover, .host-bar > button.secondary:hover { background: var(--hover); }
+:is(.setting-head, .set, .resource-bar, .host-bar) > button.secondary .i { width: 14px; height: 14px; }
+/* Tabs with their counts (Extensions & skills) */
+.seg button { display: inline-flex; align-items: center; gap: 6px; }
+.seg button[aria-selected="true"] { background: var(--raise); color: var(--fg); }
+.seg .n { font-size: 12px; color: var(--dim); }
+.ext-bar { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
+.ext-bar .pick { width: 160px; }
+.resource-bar, .host-bar { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
+.resource-bar input[type="search"], .host-bar input[type="search"] { flex: 1; min-width: 0; height: 32px; padding: 0 var(--s3); background: var(--bg); border: 1px solid var(--line); }
+.set.off .what > :first-child { color: var(--dim); }
+.set > .more { visibility: hidden; flex: none; }
+.set:hover > .more, .set > .more:focus-visible { visibility: visible; }
+.set.tight { padding-top: 6px; padding-bottom: 6px; }
+.set .what .code { font-family: var(--code); font-weight: 400; }
+.set .origin { flex: none; font-size: 12px; color: var(--dim); }
+.set > .icon-btn { flex: none; width: 28px; height: 28px; }
+.rows.inactive { opacity: .6; }
+/* An account's initial (Git & forges) */
+.avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; background: var(--raise); border-radius: var(--r); font-weight: 600; }
+/* Labs, off: what they are, and one button */
+.labs-welcome { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s3); padding: var(--s6, 32px); border: 1px solid var(--line); background: var(--field); border-radius: var(--r); }
+.labs-welcome > .i { width: 24px; height: 24px; color: var(--dim); }
+.labs-welcome h2 { margin: 0; font-size: 16px; line-height: 24px; color: var(--fg); font-weight: 600; }
+.labs-welcome ul { margin: 0; padding-left: 18px; color: var(--dim); display: flex; flex-direction: column; gap: var(--s1); }
+.labs-welcome .actions { margin-top: var(--s2); }
+/* The lists of the settings (packages, the gallery, lab hosts, machines) in the rows' box */
+.prefs-page ul.resource-items { border: 1px solid var(--line); background: var(--field); border-radius: var(--r); margin: 0 0 var(--s2); }
+.prefs-page ul.resource-items > li { margin: 0; padding: var(--s2) var(--s4); min-height: 44px; border-top: 1px solid var(--line); }
+.prefs-page ul.resource-items > li:first-child { border-top: 0; }
+.prefs-page ul.resource-items > li:hover { background: none; }
+.prefs-page .gallery .desc { font-family: var(--ui); }

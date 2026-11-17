@@ -215,7 +215,8 @@ function listRow(key, label, hint, page, { placeholder, models = false } = {}) {
 function pageIntro(page) {
   const box = el("div");
   if (!pickerConfig) return box;
-  box.append(el("p", { className: "hint", textContent: `Written to ${pickerConfig.path} on the VM, for the Pis started from now on (running ones keep what they had). Lines marked are set there; reset drops them.` }));
+  box.append(el("div", { className: "banner", title: `Saved on the VM in ${pickerConfig.path}; a bar on a row's left: set there, reset drops it.` },
+    svgIcon("info"), el("span", { textContent: "For the Pis started from now on; running ones keep what they had." })));
   if (pickerConfig.warning) box.append(el("p", { className: "notice", textContent: pickerConfig.warning }));
   if (!pickerConfig.writable) box.append(el("p", { className: "notice", textContent: "The VM's Python is older than 3.11: config.toml can only be changed by hand." }));
   return box;
@@ -259,22 +260,23 @@ function drawAgents(again) {
       el("p", { className: "hint", textContent: "Every Pi's model, unless a role below says otherwise. Written in Pi's own settings (~/.pi/agent/settings.json), as /model does." }),
       defError);
     const models = el("p", { className: "hint" });
-    const refresh = linkButton("list again", "Ask Pi for its models again (pi --list-models)", async () => {
+    const refresh = el("button", { className: "secondary", title: "Ask Pi for its models again (pi --list-models)" }, svgIcon("refresh-cw"), el("span", { textContent: "Refresh" }));
+    refresh.addEventListener("click", async () => {
       models.textContent = "Asking Pi…";
       await loadPiModels(true);
       drawAgents(false);
     });
     if (!piModels) {
-      models.textContent = "Asking Pi for its models…";
+      models.textContent = "Asking Pi…";
       loadPiModels().then(() => drawAgents(false));
     } else if (piModels.problem && !piModels.models.length) {
-      models.textContent = `Pi did not list its models (${piModels.problem}): type them as provider/id.`;
+      models.textContent = `Pi did not list them (${piModels.problem}): type them as provider/id.`;
     } else {
-      const providers = piModels.providers.join(", ");
-      models.textContent = `${piModels.models.length} models Pi knows, from ${providers || "no provider"}: type a few letters in a field to choose. A gateway such as Bifrost lists its own as models of one provider.`;
+      const providers = piModels.providers.join(" and ");
+      models.textContent = `${piModels.models.length}, from ${providers || "no provider"}. A gateway such as Bifrost lists its own as one provider's. Type a few letters in a field to choose.`;
     }
-    models.append(" ", refresh);
-    out.push(el("h2", { textContent: "Models" }), models, defRow,
+    const knows = el("div", { className: "setting-row" }, el("div", { className: "setting-head" }, el("span", { textContent: "Models Pi knows" }), refresh), models);
+    out.push(el("h2", { textContent: "Models" }), knows, defRow,
       modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
       modelRow("worker_model", "Workers", "The model of the workers a Pi starts, when it names none. A cheaper model does.", "Pi's default"),
       listRow("worker_models", "Other models for workers", "Those a Pi may choose for a given worker, besides the one above.", "agents", { placeholder: "provider/id", models: true }),
@@ -307,48 +309,60 @@ function drawNetwork(again) {
         { confirmOff: "Run Pi without its sandbox? It then sees and may change everything your account can on the VM." }),
       toggleRow("network_limit", "Limit where Pi may connect", "In the sandbox, Pi reaches only the places below; the rest is refused and written to the picker's log (net.blocked).", "network",
         { confirmOff: "Let Pi connect anywhere? It could then send what it reads to any address." }));
-    // Each place has its box: unchecked, it stays in the list but Pi no longer reaches it
-    // (network_off). Yours also have × to take them out.
+    // Every place in one list (the mock-up's option C): yours, then the picker's own, each
+    // with a switch (off: still listed, Pi no longer reaches it: network_off); yours also
+    // have ×. The field on top finds a place, and adds what it holds.
     const off = (configValue("network_off") || []).map((e) => e.toLowerCase());
     const isOff = (entry) => off.includes(entry.toLowerCase());
-    const offRow = settingRow("network_off", "Built in", el("span"), "Model providers, npm, GitHub, PyPI: built into the picker. Uncheck those Pi does not need (a gateway such as Bifrost carries every model: the providers' own hosts are then of no use).", "network");
+    const own = [...(configValue("network_allow") || [])];
+    const builtin = pickerConfig.network_builtin || [];
+    const box = el("div", { className: "rows host-list" });
+    const say = (text) => { error.textContent = text; error.hidden = !text; };
+    const error = el("p", { className: "error", hidden: true });
     const setOff = (entry, on) => {
       const rest = off.filter((e) => e !== entry.toLowerCase());
-      return setConfig("network_off", on ? rest : [...rest, entry], "network", offRow.say);
+      return setConfig("network_off", on ? rest : [...rest, entry], "network", say);
     };
-    const placeItem = (entry, removable) => {
-      const box = el("input", { type: "checkbox", checked: !isOff(entry), title: isOff(entry) ? `Pi may not reach ${entry}: check to allow it` : `Pi may reach ${entry}: uncheck to refuse it` });
-      box.setAttribute("aria-label", `Allow ${entry}`);
-      box.addEventListener("change", () => setOff(entry, box.checked));
-      const li = el("li", { className: isOff(entry) ? "off" : "" }, box, el("span", { className: "name", textContent: entry }));
-      if (removable) li.append(el("button", { className: "icon", textContent: "×", title: `Take ${entry} out of the list`, onclick: () => removeOwn(entry) }));
-      return li;
-    };
-    const builtin = el("ul", { className: "setting-list" }, ...(pickerConfig.network_builtin || []).map((h) => placeItem(h, false)));
-    offRow.querySelector(".setting-key").before(builtin);
-    offRow.querySelector(".setting-key").textContent = "network_off";
-    const own = [...(configValue("network_allow") || [])];
-    const ownRow = settingRow("network_allow", "Yours", el("span"), "A gateway (Bifrost), Hindsight, a mirror: host, host:port, or .domain for every name under it.", "network");
     const removeOwn = async (entry) => {
-      if (await setConfig("network_allow", own.filter((e) => e !== entry), "network", ownRow.say) && isOff(entry)) {
-        await setConfig("network_off", off.filter((e) => e !== entry.toLowerCase()), "network", ownRow.say);
+      if (await setConfig("network_allow", own.filter((e) => e !== entry), "network", say) && isOff(entry)) {
+        await setConfig("network_off", off.filter((e) => e !== entry.toLowerCase()), "network", say);
       }
     };
-    const ownList = el("ul", { className: "setting-list" }, ...own.map((h) => placeItem(h, true)));
-    if (!own.length) ownList.append(el("li", { className: "dim", textContent: "none yet" }));
-    const field = el("input", { type: "text", placeholder: "bifrost.example.org or .example.org", spellcheck: false, autocomplete: "off", id: "setting-network_allow-new" });
-    field.setAttribute("aria-label", "Add a place Pi may reach");
-    const add = el("button", { className: "secondary", textContent: "Add" });
-    const go = () => { const v = field.value.trim(); if (v) setConfig("network_allow", [...own, v], "network", ownRow.say); };
+    const place = (entry, mine) => {
+      const sw = el("input", { type: "checkbox", checked: !isOff(entry), title: isOff(entry) ? `Pi may not reach ${entry}` : `Pi may reach ${entry}` });
+      sw.setAttribute("aria-label", `Allow ${entry}`);
+      sw.addEventListener("change", () => setOff(entry, sw.checked));
+      const row = el("div", { className: isOff(entry) ? "set tight off" : "set tight" },
+        el("div", { className: "what" }, el("span", { className: "code", textContent: entry })),
+        el("span", { className: "origin", textContent: mine ? "yours" : "built in" }));
+      if (mine) {
+        const x = el("button", { className: "icon-btn", title: `Take ${entry} out of the list` }, svgIcon("x"));
+        x.setAttribute("aria-label", x.title);
+        x.addEventListener("click", () => removeOwn(entry));
+        row.append(x);
+      }
+      row.append(sw);
+      row.dataset.host = entry.toLowerCase();
+      return row;
+    };
+    box.append(...own.map((h) => place(h, true)), ...builtin.map((h) => place(h, false)));
+    const field = el("input", { type: "search", placeholder: "Find a place, or add one: host, host:port, .domain", spellcheck: false, autocomplete: "off", id: "setting-network_allow-new" });
+    field.setAttribute("aria-label", "Find or add a place Pi may reach");
+    const add = el("button", { className: "secondary", title: "Add what the field holds to your places" }, svgIcon("plus"), el("span", { textContent: "Add" }));
+    const go = () => { const v = field.value.trim(); if (v) setConfig("network_allow", [...own, v], "network", say); };
     add.addEventListener("click", go);
     field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go(); } });
-    ownRow.querySelector(".setting-head > label").htmlFor = field.id;
-    ownRow.querySelector(".setting-key").before(ownList, el("div", { className: "setting-add" }, field, add));
+    field.addEventListener("input", () => {
+      const needle = field.value.trim().toLowerCase();
+      for (const row of box.children) row.hidden = Boolean(needle) && !row.dataset.host.includes(needle);
+    });
+    const allowed = [...own, ...builtin].filter((h) => !isOff(h)).length;
     const limited = configValue("network_limit");
-    for (const row of [offRow, ownRow]) row.classList.toggle("inactive", !limited);
-    out.push(el("h2", { textContent: "Where Pi may connect" }));
+    box.classList.toggle("inactive", !limited);
+    out.push(el("h2", {}, el("span", { textContent: "Where Pi may connect" }), el("span", { className: "aside", textContent: `${own.length + builtin.length} places, ${allowed} allowed` })));
     if (!limited) out.push(el("p", { className: "notice", textContent: "Limit where Pi may connect is off: Pi may connect anywhere, and this list does not apply." }));
-    out.push(offRow, ownRow);
+    out.push(el("div", { className: "toolbar host-bar" }, field, add), error, box,
+      el("p", { className: "hint", textContent: "Built in: model providers, npm, GitHub, PyPI. A gateway such as Bifrost carries every model: the providers' own hosts can then be turned off." }));
     const provider = (piModels?.default || "").split("/")[0];
     const known = ["anthropic", "openrouter", "deepseek"];
     if (provider && !known.includes(provider)) {
@@ -374,32 +388,37 @@ async function drawForges() {
     return;
   }
   const error = el("p", { className: "error", hidden: true });
-  const list = el("ul", { className: "setting-list" });
+  // One row per account (its initial, the forge, the address), then Add an account.
+  const rows = el("div", { className: "rows" });
   for (const f of forges) {
-    list.append(el("li", {},
-      el("span", { className: "name", textContent: `${f.login} · ${FORGE_LABELS[f.kind] || f.kind}`, title: f.url }),
-      el("span", { className: "dim small", textContent: f.url }),
-      el("button", { className: "icon", textContent: "×", title: "Forget this account (its token is deleted on the VM)", onclick: async () => {
-        if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on ${FORGE_LABELS[f.kind]} too. Repositories connected through it can no longer be pushed to.`))) return;
-        try { await backend.forgeRemove(f.id); drawForges(); } catch (e) { showError(error, String(e)); }
-      } })));
+    const remove = el("button", { className: "secondary", textContent: "Remove", title: "Forget this account (its token is deleted on the VM)" });
+    remove.addEventListener("click", async () => {
+      if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on ${FORGE_LABELS[f.kind]} too. Repositories connected through it can no longer be pushed to.`))) return;
+      try { await backend.forgeRemove(f.id); drawForges(); } catch (e) { showError(error, String(e)); }
+    });
+    rows.append(el("div", { className: "set" },
+      el("span", { className: "avatar", textContent: (f.login || "?")[0].toUpperCase(), "aria-hidden": "true" }),
+      el("div", { className: "what" }, el("span", { textContent: f.login }), el("span", { textContent: `${FORGE_LABELS[f.kind] || f.kind} · ${f.url}` })),
+      remove));
   }
-  if (!forges.length) list.append(el("li", { className: "dim", textContent: "No account yet: Pi works locally, nothing is pushed." }));
-  const add = el("div", { className: "toolbar" }, ...Object.entries(FORGE_LABELS).map(([kind, label]) =>
-    el("button", { className: "secondary", textContent: `${label}…`, onclick: () => forgeAccountDialog(kind, (forge) => {
-      flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
-      drawForges();
-    }) })));
+  const add = el("button", { className: "pick", type: "button" }, el("span", { textContent: "Add…" }));
+  add.setAttribute("aria-haspopup", "menu");
+  add.addEventListener("click", () => showMenu(add, Object.entries(FORGE_LABELS).map(([kind, label]) => [label, () => forgeAccountDialog(kind, (forge) => {
+    flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
+    drawForges();
+  })])));
+  rows.append(el("div", { className: "set" },
+    el("div", { className: "what" }, el("span", { textContent: forges.length ? "Add an account" : "No account yet" }),
+      el("span", { textContent: "Where Pi pushes its pi/… branches and opens pull requests; each project picks one in Repository. The token stays on the VM: Pi never sees it." })),
+    add));
   section.replaceChildren(
     el("h2", { textContent: "Accounts" }),
-    el("p", { className: "hint", textContent: "Where Pi pushes its pi/… branches and opens pull requests. Each project's repository is connected to one of them in Repository > Git, which also says what Pi may do there (work locally, ask to merge, merge)." }),
-    list, error, add,
-    el("p", { className: "hint", textContent: "A token stays on the VM, out of Pi's sandbox: Pi never sees it. Pi's git tools ask the picker, which checks each request: pi/… branches only, never forced." }),
+    rows, error,
     el("h2", { textContent: "Pi's git tools" }),
     (() => {
       // A key of config.toml: drawn as on Agents, once the config is known.
       const row = el("div");
-      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "push, pull requests and tasks for the connected forge, through the picker. Off: Pi has git, nothing more.", "git"))).catch(() => row.remove());
+      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "Push, pull requests and tasks for the connected forge, through the picker. Off: Pi has git, nothing more.", "git"))).catch(() => row.remove());
       return row;
     })());
   if ($("#prefs-search").value.trim()) searchSettings($("#prefs-search").value);
@@ -410,7 +429,8 @@ async function drawForges() {
 /** Pi, its packages, skills, extensions and prompt templates: yours, and the chosen
  *  project's own. Built once; the project list and the lists drawn again on each visit. */
 let extProject = null;  // the project whose own resources are shown with yours
-let extParts = null;    // {manager, tools}
+let extParts = null;    // {manager, tools, showTab}
+let extTab = "skills";   // the tab shown: skills, extensions, prompts, packages
 
 /** From Project's "manage": that project's own resources, with yours. */
 function settingsExtensionsFor(project) {
@@ -429,12 +449,35 @@ async function drawExtensions() {
   select.value = extProject || "";
   if (!extParts) {
     const current = () => extProject;
+    // The tabs: Skills, Extensions, Prompts (the manager), Packages (the list and the gallery).
+    const TABS = [["skills", "Skills"], ["extensions", "Extensions"], ["prompts", "Prompts"], ["packages", "Packages"]];
+    const tabs = Object.fromEntries(TABS.map(([key, label]) => {
+      const b = el("button", { type: "button" }, el("span", { textContent: label }), el("span", { className: "n" }));
+      b.setAttribute("role", "tab");
+      b.addEventListener("click", () => showTab(key));
+      return [key, b];
+    }));
+    $("#ext-tabs").replaceChildren(...Object.values(tabs));
+    const showTab = (key) => {
+      extTab = key;
+      for (const [k, b] of Object.entries(tabs)) b.setAttribute("aria-selected", String(k === key));
+      $("#ext-manager").hidden = key === "packages";
+      $("#ext-pack").hidden = key !== "packages";
+      if (key === "packages") tools.shown();
+      else manager.show(key);
+    };
+    const counts = () => {
+      const d = manager.data();
+      const n = { skills: d?.skills?.length, extensions: (d?.extensions?.length || 0) + (d?.pier?.length || 0), prompts: d?.prompts?.length, packages: d?.packages?.length };
+      for (const [k, b] of Object.entries(tabs)) $(".n", b).textContent = d ? String(n[k] || 0) : "";
+    };
     const manager = makeResourceManager($("#ext-manager"), current,
-      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); });
+      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); counts(); });
     const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load());
-    extParts = { manager, tools };
+    extParts = { manager, tools, showTab };
     select.addEventListener("change", () => { extProject = select.value; extParts.manager.load(); });
   }
+  extParts.showTab(extTab);
   if (!extProject) {
     $("#ext-packages").replaceChildren(el("li", { className: "dim small note", textContent: "Open a project first: Pi's packages and skills are read from the VM through one." }));
     return;

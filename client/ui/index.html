@@ -180,16 +180,18 @@
       <section class="prefs-page" data-page="agents" data-title="Agents" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="network" data-title="Network &amp; sandbox" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="extensions" data-title="Extensions &amp; skills" role="tabpanel" hidden>
-        <div class="toolbar">
-          <label for="ext-project">Project</label>
-          <select id="ext-project" title="Its own skills and packages are shown with yours"></select>
+        <!-- As the mock-up's option A: what to show, then the project whose own are listed with yours. -->
+        <div class="toolbar ext-bar">
+          <span id="ext-tabs" class="seg" role="tablist" aria-label="What to show"></span>
+          <span class="head-gap"></span>
+          <select id="ext-project" aria-label="Project" title="Its own skills and packages are listed with yours"></select>
         </div>
-        <p class="hint">Yours apply to every project; a project's own (in its .pi folder) to that project only. Both are listed, each marked.</p>
-        <h2>Pi and its packages</h2>
-        <ul id="ext-packages" class="resource-items resources"></ul>
-        <div id="ext-package-tools"></div>
-        <h2>Skills, extensions, prompt templates</h2>
         <div id="ext-manager"></div>
+        <div id="ext-pack" hidden>
+          <h2>Installed</h2>
+          <ul id="ext-packages" class="resource-items resources"></ul>
+          <div id="ext-package-tools"></div>
+        </div>
       </section>
       <section class="prefs-page" data-page="git" data-title="Git &amp; forges" role="tabpanel" hidden></section>
 
@@ -293,8 +295,20 @@
       </section>
 
       <section class="prefs-page" data-page="labs" data-title="Labs" role="tabpanel" hidden>
-      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: disposable machines where Pi may do anything (install packages, run services, Docker), made on lab hosts you add, and your machines over SSH. Pi stays in its own sandbox: it drives them from there. Turning this on sets nothing up: without a lab host, no lab.</span></label>
-      <p id="labs-state" class="dim"></p>
+      <!-- Off: what Labs are, and one button (the mock-up's option B). On: the switch, then the groups. -->
+      <div id="labs-welcome" class="labs-welcome" hidden>
+        <svg class="i" aria-hidden="true"><use href="#i-flask-conical"/></svg>
+        <h2>Throwaway machines for Pi</h2>
+        <ul>
+          <li>Pi is root there: packages, services, Docker, all allowed. It stays in its own sandbox and drives them from there.</li>
+          <li>Nothing of your VM or home: only what Pi copies in.</li>
+          <li>Gone after their lifetime; Reset brings one back clean. Every command Pi runs there is written in the Labs tab.</li>
+        </ul>
+        <div class="actions"><button id="labs-turn-on">Turn on Labs</button><span class="dim small">Then add a lab host: a VM with Incus.</span></div>
+      </div>
+      <div class="rows labs-on" hidden>
+        <div class="set"><label class="what" for="labs-enabled"><span>Labs</span><span id="labs-state"></span></label><input id="labs-enabled" type="checkbox"></div>
+      </div>
       <pre id="labs-install" hidden></pre>
       <p id="labs-relogin" class="hint" hidden>Then reconnect Pier, so the picker's next SSH login is in the incus group. For virtual machines too, set the VM's CPU type to host in Proxmox (Hardware &gt; Processors).</p>
       <div class="labs-on" hidden>
@@ -306,7 +320,7 @@
           <button id="labs-host-local" class="link">Use Pi's VM as a lab host</button>
         </div>
         <h2>Limits</h2>
-        <div id="labs-limits" class="grid"></div>
+        <div id="labs-limits" class="rows"></div>
         <details class="labs-networks">
         <summary>Advanced networks: VLANs, networks between labs</summary>
         <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the lab host, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
@@ -341,7 +355,6 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         </div>
       </div>
       <p id="labs-error" class="error" hidden></p>
-      <p class="hint">A lab is a throwaway Linux machine on one of your lab hosts. Pi is root there, with nothing of your VM or home, only what Pi copies in. A lab on the internet network gives Pi the internet. It goes after its lifetime, and goes back to its clean state on Reset. Every command Pi runs in a lab or on a machine is written in the Labs tab.</p>
       </section>
 
       <section class="prefs-page" data-page="updates" data-title="Updates" role="tabpanel" hidden>
