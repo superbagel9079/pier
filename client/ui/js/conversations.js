@@ -33,13 +33,14 @@ function conversationMenu(anchor, project, session, { edit, changed, failed }, f
   };
   showMenu(anchor, [
     ...first, ...(first.length ? [null] : []),
-    ["Name and category…", edit],
-    [session.pinned ? "Unpin" : "Pin to the top", () => mark("pinned", !session.pinned), session.archived],
-    [session.archived ? "Bring back from the archive" : "Archive (hide, keep searchable)", () => mark("archived", !session.archived)],
-    ["Give to a colleague…", () => giveDialog(project, session)],
+    ["Name and category…", edit, false, { icon: "pencil" }],
+    [session.pinned ? "Unpin" : "Pin to the top", () => mark("pinned", !session.pinned), session.archived, { icon: "pin" }],
+    [session.archived ? "Bring back from the archive" : "Archive (hide, keep searchable)", () => mark("archived", !session.archived), false,
+      { icon: session.archived ? "archive-restore" : "archive" }],
+    ["Give to a colleague…", () => giveDialog(project, session), false, { icon: "send" }],
     null,
     // Disabled while a Pi runs it: the picker refuses, Pi would write it again.
-    ["Delete…", () => deleteConversation(project, session, { changed, failed }), Boolean(session.slot)],
+    ["Delete…", () => deleteConversation(project, session, { changed, failed }), Boolean(session.slot), { icon: "trash", danger: true }],
   ], at);
 }
 
@@ -302,7 +303,7 @@ function makeConversations(tab) {
   function piRow(p, pi, s) {
     const state = pi.working ? "working" : pi.reported ? "reported" : "waiting";
     const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
-    const own = [["Open its terminal", open], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi)]];
+    const own = [["Open its terminal", open, false, { icon: "terminal" }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
     return listRow({ key: `pi:${pi.slot}`, className: `running ${state}`,
       mark: svgIcon({ working: "clock", reported: "check", waiting: "circle-alert" }[state]),
       title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta: state,
@@ -317,7 +318,7 @@ function makeConversations(tab) {
       mark: s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
-      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume]]) });
+      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) });
   }
 
   /** A folder: a category of the project (or its sub-agents), with how many it holds;
@@ -332,8 +333,8 @@ function makeConversations(tab) {
       mark: svgIcon("folder"), title: folder.name, meta: String(folder.sessions.length),
       tip: folder.subagents ? "Conversations of sub-agents (the helpers an orchestrator or a worker consults, pi-multiagent's agent_team): a Pi's work, not yours" : "",
       run: toggle, menu: folder.subagents ? null : (anchor, at, row) => showMenu(anchor, [
-        ["Rename…", () => renameFolder(row, p, folder.name, key)],
-        ["Delete the category (its conversations stay)", () => removeFolder(p, folder.name)],
+        ["Rename…", () => renameFolder(row, p, folder.name, key), false, { icon: "pencil" }],
+        ["Delete the category (its conversations stay)", () => removeFolder(p, folder.name), false, { icon: "trash", danger: true }],
       ], at) });
     const main = $(".row-main", li);
     main.setAttribute("aria-expanded", String(open));
@@ -391,14 +392,14 @@ function makeConversations(tab) {
     const pis = p.pis || [];
     const fresh = () => openPiTerminal(p.project, p.label, pis.length ? ["--new"] : []);
     const items = [
-      ["New conversation (a new Pi)", fresh],
-      ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length],
-      ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"])],
+      ["New conversation (a new Pi)", fresh, false, { icon: "plus" }],
+      ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
+      ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"]), false, { icon: "network" }],
       null,
-      ["Instructions and what Pi loads here", () => workspace.find("setup")?.openProject?.(p.project)],
-      ["Change its mark…", () => projectLookDialog(p.project, p.label, view.looks[p.project] || {}, (look) => { view.looks[p.project] = look; keep(); redraw(); })],
-      ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e)))],
-      ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null)]] : []),
+      ["Instructions and what Pi loads here", () => workspace.find("setup")?.openProject?.(p.project), false, { icon: "folder-cog" }],
+      ["Change its mark…", () => projectLookDialog(p.project, p.label, view.looks[p.project] || {}, (look) => { view.looks[p.project] = look; keep(); redraw(); }), false, { icon: "palette" }],
+      ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e))), false, { icon: "copy" }],
+      ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null), false, { icon: "square" }]] : []),
     ];
     const li = listRow({ key: `project:${p.project}`, className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : ""),
       mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(p.sessions.length) : pis.length ? `${pis.length} running` : "",

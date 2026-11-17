@@ -295,12 +295,12 @@ function makeProject(tab) {
   function nodeMenu(entry, rel, row, at) {
     const copy = (text) => backend.copyText(text).then(() => flashStatus("copied")).catch((e) => showError(error, String(e)));
     const items = [];
-    if (entry.kind === "dir") items.push([row.getAttribute("aria-expanded") === "true" ? "Fold" : "Open", () => row.click()]);
+    if (entry.kind === "dir") items.push([row.getAttribute("aria-expanded") === "true" ? "Fold" : "Open", () => row.click(), false, { icon: "folder" }]);
     else {
-      if (activity && (activity.git[rel] || activity.files[rel]?.edits)) items.push(["Open its changes", () => openDiff(rel, base)]);
-      items.push(["Open in a tab", () => openFile(rel, base)], [`Mention it to Pi (@${rel})`, () => mention(rel)]);
+      if (activity && (activity.git[rel] || activity.files[rel]?.edits)) items.push(["Open its changes", () => openDiff(rel, base), false, { icon: "git-compare" }]);
+      items.push(["Open in a tab", () => openFile(rel, base), false, { icon: "external-link" }], [`Mention it to Pi (@${rel})`, () => mention(rel), false, { icon: "at-sign" }]);
     }
-    items.push(null, ["Copy its path", () => copy(entry.path)], ["Copy its path in the project", () => copy(rel)]);
+    items.push(null, ["Copy its path", () => copy(entry.path), false, { icon: "copy" }], ["Copy its path in the project", () => copy(rel), false, { icon: "copy" }]);
     showMenu(null, items, at);
   }
 

@@ -688,9 +688,10 @@ function showMenu(anchor, items, at = null) {
   menu.setAttribute("role", "menu");
   for (const item of items) {
     if (!item) { menu.append(el("hr")); continue; }
-    const [label, action, disabled] = item;
-    const b = el("button");
-    b.textContent = label;
+    // [label, action, disabled, { icon, danger }]: every row keeps the icon's column.
+    const [label, action, disabled, { icon, danger } = {}] = item;
+    const b = el("button", { className: danger ? "danger" : "" });
+    b.append(el("span", { className: "menu-icon" }, ...(icon ? [svgIcon(icon)] : [])), el("span", { textContent: label }));
     b.disabled = Boolean(disabled);
     b.setAttribute("role", "menuitem");
     b.addEventListener("click", () => { closeMenu(false); action(); });

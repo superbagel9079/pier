@@ -425,20 +425,24 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 .side.collapsed .dock-head > button.icon { padding: var(--s2) 0; }
 
 /* Menus: a raised surface over everything. */
+/* Compact: rows of 24 px, text 13, an icon column on the left that every row keeps. */
 .menu {
   position: fixed;
   z-index: 25;
   background: var(--raise);
   display: flex;
   flex-direction: column;
-  min-width: 180px;
-  padding: var(--s1) 0;
+  min-width: 216px;
+  padding: var(--s1);
   box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
 }
-.menu button { background: none; border: none; color: var(--fg); text-align: left; padding: var(--s2) var(--s4); }
-.menu button:hover { background: var(--strong); }
+.menu button { display: flex; align-items: center; gap: var(--s2); min-height: 24px; background: none; border: none; color: var(--fg); text-align: left; padding: 0 var(--s2); font-size: 13px; border-radius: max(0px, calc(var(--r) - 4px)); }
+.menu button:hover, .menu button:focus-visible { background: var(--strong); outline: none; }
 .menu button:disabled { color: var(--dim); }
-.menu hr { border: none; border-top: 1px solid var(--strong); margin: var(--s1) 0; }
+.menu button.danger, .menu button.danger .menu-icon { color: var(--red, #f85149); }
+.menu-icon { width: 16px; flex: none; display: grid; place-items: center; color: var(--dim); }
+.menu-icon .i { width: 14px; height: 14px; }
+.menu hr { border: none; border-top: 1px solid var(--strong); margin: var(--s1) var(--s2); }
 
 /* Pi filled the clipboard (OSC 52): stays over the terminal's top right until dismissed. */
 .copy-note {
@@ -540,8 +544,12 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 .settings { flex: 1; min-height: 0; display: flex; background: var(--bg); }
 .settings-nav { flex: 0 0 220px; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s4) var(--s3);
   background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; }
-.settings-nav .back { align-self: flex-start; padding: var(--s1) 0; }
-.settings-nav input[type="search"] { width: 100%; }
+.settings-nav .back { align-self: flex-start; display: flex; align-items: center; gap: var(--s2); padding: var(--s1) var(--s2); }
+.settings-nav .back .i { width: 14px; height: 14px; }
+/* A search field with its glyph where a row's icon goes, its text where the labels start. */
+.search-field { position: relative; display: block; }
+.search-field .i { position: absolute; left: var(--s2); top: 50%; translate: 0 -50%; width: 14px; height: 14px; color: var(--dim); pointer-events: none; }
+.search-field input { width: 100%; padding-left: calc(var(--s2) + 14px + var(--s2)); }
 /* Titled like every section here: bold and plain, never capitals spaced out. */
 .settings-group { margin: var(--s4) 0 var(--s1); padding: 0 var(--s2); font-size: var(--t-label); color: var(--dim);
   font-weight: 600; }
