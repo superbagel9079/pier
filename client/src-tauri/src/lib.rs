@@ -58,6 +58,7 @@ const PASSTHROUGH: &[&str] = &[
     "fs-delete",
     "fs-write",
     "file",
+    "setup",
     "providers",
     "provider-save",
     "provider-delete",

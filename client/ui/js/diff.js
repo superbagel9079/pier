@@ -39,14 +39,15 @@ function openDiff(rel, project, point = null) {
 
 function makeDiff(tab) {
   const { rel, project, point } = tab.params;
-  tab.title = `Δ ${rel.split("/").pop()}${point ? ` · since ${point.when}` : ""}`;
-  const head = el("div", { className: "diff-head" });
-  const path = el("span", { className: "path", textContent: rel, title: `${project}/${rel}` });
-  const refresh = el("button", { className: "link", textContent: "refresh" });
-  const mention = el("button", { className: "link", textContent: "mention in Pi" });
-  const whole = el("button", { className: "link", textContent: "file", title: "The whole file, as it is now" });
+  tab.title = `${rel.split("/").pop()}${point ? ` · since ${point.when}` : ""}`;
+  const head = el("div", { className: "file-head" });
+  const iconButton = (icon, title) => el("button", { type: "button", className: "icon-btn", title, ariaLabel: title }, svgIcon(icon));
+  const refresh = iconButton("refresh-cw", "Read it again");
+  const mention = iconButton("at-sign", "Mention it in Pi's prompt");
+  mention.hidden = !prefs.piTerminal;
+  const whole = iconButton("file-text", "The whole file, as it is now");
   whole.addEventListener("click", () => openFile(rel, project));
-  head.append(path, whole, refresh, mention);
+  head.append(el("span", { className: "file-facts", textContent: rel, title: `${project}/${rel}` }), el("span", { className: "file-acts" }, whole, refresh, mention));
   const error = el("p", { className: "error", hidden: true });
   const body = el("div");
   tab.pane.append(head, error, body);

@@ -22,7 +22,7 @@ const DOCKS = ["left", "center", "right"];
 // A tab's icon: a file's or a diff's by its type, else by what the tab is.
 const TAB_ICON = { chat: "message-square", project: "activity", setup: "folder-cog", repository: "git-branch",
   conversations: "inbox", takeback: "undo-2", labs: "flask-conical" };
-const tabIcon = (tab) => (tab.kind === "file" || tab.kind === "diff") && tab.params?.rel ? fileTypeIcon(tab.params.rel)
+const tabIcon = (tab) => tab.kind === "diff" ? "git-compare" : tab.kind === "file" && tab.params?.rel ? fileTypeIcon(tab.params.rel)
   : TAB_ICON[tab.kind] || (KINDS[tab.kind]?.terminal ? "terminal" : "file");
 // "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
 // Fixed, as the mock-up: Conversations on the left, Activity on the right, everything else
@@ -197,6 +197,7 @@ const workspace = (() => {
     // Only ×: moving, renaming and the rest are in the tab's right-click menu.
     if (!tab.pinned) {
       const x = iconButton("", "Close", () => close(tab));
+      x.removeAttribute("title"); // no hint over the ×: its name is enough for a reader
       x.append(svgIcon("x"));
       actions.append(x);
     }
@@ -332,7 +333,7 @@ const workspace = (() => {
     const ICONS = { setup: "folder-cog", repository: "git-branch", labs: "flask-conical", conversations: "message-square", project: "activity" };
     // The panels of the middle, and the sides' two when closed. Labs once they are on
     // (Settings > Labs); Given to Pi is in Activity.
-    for (const kind of ["setup", "repository", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
+    for (const kind of ["repository", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
       const open = find(kind);
       if (!open) items.push([KINDS[kind].title, () => add(kind, name), false, { icon: ICONS[kind] }]);
       else if (open.dock === "center") items.push([`${KINDS[kind].title} · show`, () => show(open), false, { icon: ICONS[kind] }]);
@@ -362,10 +363,9 @@ const workspace = (() => {
     const existing = KINDS[kind].single ? find(kind) : null;
     if (existing) return move(existing, name, { reveal });
     const tab = create(kind, { pinned, params });
-    // replace: in the place of the tab shown in the middle (a file opened after a file),
-    // unless that one is a conversation or a terminal: closing it would end what runs there.
+    // replace: in the place of the file or diff shown in the middle; any other tab stays.
     const old = replace ? docks[name].active : null;
-    const swap = old && !old.pinned && old.kind !== "chat" && !KINDS[old.kind].terminal;
+    const swap = old && !old.pinned && (old.kind === "file" || old.kind === "diff");
     place(tab, name, { reveal, index: swap ? docks[name].tabs.indexOf(old) + 1 : null });
     if (swap) close(old);
     return tab;

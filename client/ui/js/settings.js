@@ -403,7 +403,60 @@ function drawProjects() {
       row("What Pi loads", "Its skills, extensions and prompt templates, the project's and yours.", action("Open", () => showPrefsPage("extensions"))),
       row("Its mark", "A colour, a letter, an icon or a picture, in the lists and the rail.", change),
       row("Repository", "Its git repository and forge: branches, pull requests, what Pi pushed.", action("Open", toTab("repository", (t) => t.openProject?.(p.project)))),
-      row("Its path", p.project, copy)));
+      row("Its path", p.project, copy)),
+    el("h2", { textContent: "Pi's system prompt" }), systemPrompts(p.project));
+}
+
+/** APPEND_SYSTEM.md and SYSTEM.md of a project (the Project tab's Advanced, here now): each
+ *  in a field, saved with its earlier versions kept on the VM. */
+function systemPrompts(project) {
+  const box = el("div", { className: "system-prompts" }, el("p", { className: "dim", textContent: "Asking the VM…" }));
+  const WORDS = {
+    append: ["Added to Pi's system prompt", "Read after Pi's own instructions, in every session of this project."],
+    system: ["Replaces Pi's system prompt", "Replaces Pi's own instructions entirely, including how it uses its tools. Leave it empty unless you know why you need it."],
+  };
+  backend.api(["setup", project]).then((data) => {
+    box.replaceChildren(...["append", "system"].map((which) => {
+      const info = data.texts[which];
+      let saved = info.text;
+      const area = el("textarea", { className: "prompt-edit", spellcheck: false, value: info.text, rows: 6, ariaLabel: WORDS[which][0] });
+      const facts = el("span", { className: "dim small" });
+      const problem = el("p", { className: "error", hidden: true });
+      const revert = el("button", { type: "button", className: "secondary", textContent: "Revert" });
+      const save = el("button", { type: "button", className: "primary", textContent: "Save" });
+      const versions = el("button", { type: "button", className: "link", textContent: "Earlier versions" });
+      const update = () => {
+        const n = Math.ceil(area.value.length / 4);
+        facts.textContent = (area.value.trim() ? `≈ ${n.toLocaleString()} tokens, read in every session` : "empty")
+          + (info.global && !info.exists ? " · a global one in ~/.pi/agent applies" : "");
+        revert.disabled = save.disabled = area.value === saved;
+      };
+      const write = async () => {
+        try { await backend.writeText(project, which, area.value); } catch (e) { showError(problem, String(e)); return; }
+        showError(problem, "");
+        saved = area.value;
+        info.exists = Boolean(area.value.trim()); // emptied: the file is removed, the global one applies
+        label.textContent = `${WORDS[which][0]}: ${info.name}${info.exists ? "" : " (not created yet)"}`;
+        update();
+        flashStatus(`${info.name} saved: new sessions read it`);
+      };
+      area.addEventListener("input", update);
+      area.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); write(); } });
+      revert.addEventListener("click", () => { area.value = saved; update(); });
+      save.addEventListener("click", write);
+      versions.disabled = !info.history.length;
+      versions.title = info.history.length ? "Every save keeps the previous one" : "No earlier version yet";
+      versions.addEventListener("click", () => showMenu(versions, info.history.slice().reverse().map((v) => [
+        `${new Date(v.at * 1000).toLocaleString()} · ${(v.text.split("\n").find((l) => l.trim()) || "(empty)").slice(0, 48)}`,
+        () => { area.value = v.text; update(); }, false, { icon: "history" }])));
+      const label = el("span", { textContent: `${WORDS[which][0]}: ${info.name}${info.exists ? "" : " (not created yet)"}` });
+      update();
+      return el("div", { className: "prompt-block" },
+        el("div", { className: "what" }, label, el("span", { textContent: WORDS[which][1] })),
+        area, problem, el("div", { className: "prompt-foot" }, facts, versions, revert, save));
+    }));
+  }).catch((e) => box.replaceChildren(el("p", { className: "error", textContent: String(e) })));
+  return box;
 }
 
 // --- Network & sandbox -------------------------------------------------------------

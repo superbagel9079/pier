@@ -4,14 +4,14 @@
 // Viewer: one file of a project, read only
 
 /** Opens (or shows) a project file next to the main terminal. */
-function openFile(rel, project) {
+function openFile(rel, project, { newTab = false } = {}) {
   const open = workspace.tabs().find((t) => t.kind === "file" && t.params.rel === rel && t.params.project === project);
   if (open) {
     workspace.show(open);
     open.reload();
     return;
   }
-  workspace.add("file", "center", { params: { rel, project } }); // a tab of its own, the others kept
+  workspace.add("file", "center", { params: { rel, project }, replace: !newTab });
 }
 
 const VIEW_HIGHLIGHT_MAX = 400 * 1024; // past this, plain text: coloring would freeze the page
@@ -225,7 +225,8 @@ function makeFile(tab) {
   const head = el("div", { className: "file-head" });
   const facts = el("span", { className: "file-facts", title: `${project}/${rel}` });
   const iconButton = (icon, title) => el("button", { type: "button", className: "icon-btn", title, ariaLabel: title }, svgIcon(icon));
-  const view = el("button", { type: "button", className: "file-mode", textContent: "Source", hidden: !markdown });
+  const view = iconButton("file-code", "Its source");
+  view.hidden = !markdown;
   const copy = iconButton("copy", "Copy its text");
   const changes = iconButton("git-compare", "What changed in it: git, and Pi's edits");
   const refresh = iconButton("refresh-cw", "Read it again");
@@ -242,7 +243,7 @@ function makeFile(tab) {
   tab.applyWrap = applyWrap;
   const mention = iconButton("at-sign", "Mention it in Pi's prompt");
   mention.hidden = !prefs.piTerminal;
-  head.append(facts, view, el("span", { className: "file-acts" }, wrapLines, copy, changes, refresh, mention));
+  head.append(facts, el("span", { className: "file-acts" }, view, wrapLines, copy, changes, refresh, mention));
   const error = el("p", { className: "error", hidden: true });
   const body = el("div", { className: "file-body" });
   const conflict = el("div", { className: "file-conflict", role: "alert", hidden: true });
@@ -298,7 +299,7 @@ function makeFile(tab) {
       const gutter = el("pre", { className: "gutter", textContent: Array.from({ length: count }, (_, n) => n + 1).join("\n") });
       gutter.setAttribute("aria-hidden", "true");
       const src = el("pre", { className: "src" });
-      highlight(src, text, markdown ? null : lang);
+      highlight(src, text || " ", markdown ? null : lang); // an empty file: a line high, to click in
       if (last.truncated) {
         area = null;
         code.append(gutter, el("div", { className: "code-scroll" }, src));
@@ -311,7 +312,7 @@ function makeFile(tab) {
         const repaint = () => {
           paint = 0;
           src.replaceChildren();
-          highlight(src, area.value + (area.value.endsWith("\n") ? " " : ""), markdown ? null : lang);
+          highlight(src, area.value + (area.value.endsWith("\n") || !area.value ? " " : ""), markdown ? null : lang);
           gutter.textContent = Array.from({ length: area.value.split("\n").length }, (_, n) => n + 1).join("\n");
         };
         area.addEventListener("input", () => {
@@ -331,10 +332,18 @@ function makeFile(tab) {
           }
         });
         area.addEventListener("blur", () => save());
+        // A click beside the text (under the last line, in the numbers): typing at its end.
+        code.addEventListener("mousedown", (e) => {
+          if (e.target === area || e.button !== 0) return;
+          e.preventDefault();
+          area.focus({ preventScroll: true });
+          area.setSelectionRange(area.value.length, area.value.length);
+        });
       }
       body.append(code);
       applyWrap();
     }
+    wrapLines.hidden = asPage; // a page wraps anyway
     if (last.truncated) {
       body.append(el("p", { className: "dim small", textContent: `Only the first ${humanSize(last.text.length)} are shown, of ${humanSize(last.size)}.` }));
     }
@@ -360,7 +369,10 @@ function makeFile(tab) {
 
   view.addEventListener("click", () => {
     asPage = !asPage;
-    view.textContent = asPage ? "Source" : "Page";
+    const word = asPage ? "Its source" : "Preview";
+    $("use", view).setAttribute("href", `#i-${asPage ? "file-code" : "eye"}`);
+    view.title = word;
+    view.setAttribute("aria-label", word);
     draw();
   });
   copy.addEventListener("click", async () => {

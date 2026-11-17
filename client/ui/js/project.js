@@ -313,7 +313,7 @@ function makeProject(tab) {
     if (entry.kind === "dir") items.push([row.getAttribute("aria-expanded") === "true" ? "Fold" : "Open", () => row.click(), false, { icon: "folder" }]);
     else {
       if (activity && (activity.git[rel] || activity.files[rel]?.edits)) items.push(["Open its changes", () => openDiff(rel, base), false, { icon: "git-compare" }]);
-      items.push(["Open in a tab", () => openFile(rel, base), false, { icon: "external-link" }], [`Mention it to Pi (@${rel})`, () => mention(rel), false, { icon: "at-sign" }]);
+      items.push(["Open in a tab", () => openFile(rel, base, { newTab: true }), false, { icon: "external-link" }], [`Mention it to Pi (@${rel})`, () => mention(rel), false, { icon: "at-sign" }]);
     }
     items.push(null, ["Copy its path", () => copy(entry.path), false, { icon: "copy" }], ["Copy its path in the project", () => copy(rel), false, { icon: "copy" }]);
     // New things go in the folder clicked, or beside the file clicked.

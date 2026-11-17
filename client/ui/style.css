@@ -1988,3 +1988,24 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .tree .node .badge.is-being-read .i { animation: spin 1.2s linear infinite; }
 .tree .node .badge.dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .tree .node .badge.dot:empty { display: inline-flex; }
+/* Tabs keep their width under the pointer (the name cut stays cut); a small, quiet ×. */
+.tab:hover { min-width: calc(7ch + 2 * var(--s3)); }
+.tab:not(.active):not(:hover) { padding-right: var(--s1); }
+.tab .tab-actions .icon { height: 18px; width: 18px; padding: 0; border-radius: var(--r); }
+.tab .tab-actions .icon:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+/* A code block's bottom: a thin sideways scrollbar, not a wide grey band. */
+.code-scroll { scrollbar-width: thin; }
+.code-view { cursor: text; }
+.code-view .gutter { cursor: default; }
+/* Markdown shown as a page: in the middle of the tab. */
+.md-page { margin-left: auto; margin-right: auto; }
+/* Settings > Projects: the system prompts, a field each with its foot. */
+.system-prompts { display: flex; flex-direction: column; gap: var(--s4); }
+.prompt-block { display: flex; flex-direction: column; gap: var(--s2); }
+.prompt-block .what { display: flex; flex-direction: column; gap: 2px; }
+.prompt-block .what > :first-child { font-weight: 600; }
+.prompt-block .what > :last-child { font-size: 12px; color: var(--dim); }
+.prompt-edit { width: 100%; min-height: 120px; resize: vertical; padding: var(--s2) var(--s3); font: 12px/1.5 var(--code); color: var(--fg); }
+.prompt-foot { display: flex; align-items: center; gap: var(--s2); }
+.prompt-foot > .dim { flex: 1; }
+.prompt-foot button:not(.link) { height: 28px; padding: 0 var(--s3); }
