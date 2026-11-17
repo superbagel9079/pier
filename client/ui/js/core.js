@@ -97,7 +97,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false };
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -142,6 +142,12 @@ function applyCorners() {
   document.documentElement.style.setProperty("--r", `${px}px`);
 }
 applyCorners();
+
+/** Translucent menus (Appearance): what is behind them shows through, blurred. */
+function applyMenuBlur() {
+  document.documentElement.classList.toggle("menus-blur", Boolean(prefs.menuBlur));
+}
+applyMenuBlur();
 
 /** The two faces of the panels, as CSS variables: the interface, and what is code
  *  (paths, branches, logs, diffs) in the terminals' font. Set again when either changes. */

@@ -10,6 +10,7 @@ function openPrefs() {
   fillTermFonts();
   fillUiFonts();
   showCorners();
+  $("#prefs-menublur").checked = prefs.menuBlur;
   $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
@@ -468,6 +469,7 @@ $("#prefs-notify-test").addEventListener("click", () => backend.notify("Pi finis
 $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.target.checked; savePrefs(); });
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
+$("#prefs-menublur").addEventListener("change", (e) => { prefs.menuBlur = e.target.checked; savePrefs(); applyMenuBlur(); });
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();

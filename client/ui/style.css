@@ -1202,13 +1202,12 @@ button.row-main:hover { background: none; }
 .add-model { display: inline-flex; align-items: center; gap: 6px; }
 .add-model .i { width: 14px; height: 14px; }
 .set > .icon-room { width: 28px; flex: none; }
-/* Menus, as the proposals' 4D (without the translucency, a later Appearance option): a fine
-   border of the text's colour, rows of 28, the line pointed at lit with a bar on its left. */
+/* Menus, as the proposals' 4D: a fine border of the text's colour, rows of 28, the line
+   pointed at lit (no bar); translucent with Appearance > Translucent menus. */
 .menu { border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); }
 .menu button { min-height: 28px; border-radius: max(0px, calc(var(--r) - 2px)); }
-.menu button:hover, .menu button:focus-visible, .palette-list button.on { background: color-mix(in srgb, var(--fg) 10%, transparent); box-shadow: inset 2px 0 0 var(--fg); outline: none; }
-.menu button.danger:hover, .menu button.danger:focus-visible { box-shadow: inset 2px 0 0 var(--red, #f85149); }
-.menu button:disabled:hover { background: none; box-shadow: none; }
+.menu button:hover, .menu button:focus-visible, .palette-list button.on { background: color-mix(in srgb, var(--fg) 10%, transparent); outline: none; }
+.menu button:disabled:hover { background: none; }
 .menu hr { border-top-color: color-mix(in srgb, var(--fg) 12%, transparent); }
 /* The theme gallery (Appearance, the proposals' 5A) */
 .theme-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); margin-bottom: var(--s2); }
@@ -1266,3 +1265,6 @@ button.row-main:hover { background: none; }
 #prefs-logs .log-lines .entry.open .fields { white-space: pre-wrap; word-break: break-word; }
 #prefs-logs .log-lines .entry.open .trace { display: block; }
 #prefs-logs .log-lines .entry.dim { display: block; cursor: default; }
+/* Translucent menus (Appearance, the proposals' 4D in full): the raised surface lets what
+   is behind it show through, blurred; a fine light border keeps its edge. */
+.menus-blur :is(.menu, .pop-card) { background: color-mix(in srgb, var(--raise) 72%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.2); backdrop-filter: blur(16px) saturate(1.2); border-color: color-mix(in srgb, var(--fg) 16%, transparent); }
