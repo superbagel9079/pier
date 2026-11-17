@@ -1870,3 +1870,8 @@ input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]):foc
 /* Numbers: no spin arrows (the keyboard's arrows still count up and down). */
 input[type="number"] { -moz-appearance: textfield; }
 input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button, input[type="number"]:focus::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; opacity: 0; display: none; }
+/* Fields that are part of a bar (the search's, a menu's search, the message to Pi, a rename in
+   place, the terminal's own): no ground of their own, focused or not; the bar is the field. */
+:is(.palette-field, .palette-search, .composer, .tree .node.naming, .xterm) :is(input, textarea),
+:is(.palette-field, .palette-search, .composer, .tree .node.naming, .xterm) :is(input, textarea):focus,
+.tab-rename, .tab-rename:focus { background: transparent !important; }
