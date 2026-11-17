@@ -45,7 +45,8 @@ function openPrefs() {
     $("#prefs-search").value = "";
     searchSettings("");
   }
-  $(`#prefs .prefs-tabs button[data-page="${prefsPage}"]`)?.focus();
+  // The keyboard where the categories are, without the ring of a key press (opened by a click).
+  $(`#prefs .prefs-tabs button[data-page="${prefsPage}"]`)?.focus({ focusVisible: false });
 }
 
 function closePrefs() {
