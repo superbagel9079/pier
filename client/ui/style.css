@@ -2068,3 +2068,4 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .diff-empty > .i { width: 28px; height: 28px; color: var(--dim); margin-bottom: var(--s1); }
 .diff-empty > p:first-of-type { font-weight: 600; color: var(--fg); }
 .diff-empty > p:last-of-type { font-size: 13px; color: var(--dim); margin-bottom: var(--s2); }
+button.switch-hint { padding: 0; background: none; border: 0; cursor: pointer; }

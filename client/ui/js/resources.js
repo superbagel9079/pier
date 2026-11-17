@@ -118,14 +118,19 @@ function makeResourceManager(box, currentProject, onChange) {
   /** One of Pier's extensions: whether the next Pi gets it, and (its title) how to change
    *  that. */
   function pierRow(item) {
-    const how = item.setting
-      ? `${item.setting} = ${item.enabled ? "false" : "true"} in ~/.config/pier-picker/config.toml, the picker's config on the VM`
-      : "set up a lab host in Labs";
+    const [page, where] = { track_sessions: ["agents", "Agents, Which conversation each Pi holds"], git_tools: ["git", "Git & forges, Git tools"],
+      "workers, helpers": ["agents", "Agents, Workers and Helpers"] }[item.setting] || ["labs", "Labs, a lab host"];
+    const how = `Settings > ${where}`;
     const check = el("input", { type: "checkbox", checked: item.enabled, disabled: true }); // its state, not a control
     check.setAttribute("aria-label", item.name);
     return el("div", { className: item.enabled ? "set" : "set off" },
       el("div", { className: "what" }, el("span", { textContent: item.name }), el("span", { textContent: said(item.description, "Pier's, given to each Pi it starts") })),
-      el("span", { className: "switch-hint", title: `To ${item.enabled ? "leave it out" : "have it"}: ${how}` }, check)); // a disabled switch gets no pointer events
+      (() => {
+        // A disabled switch gets no pointer events: its hint and its click are its frame's.
+        const b = el("button", { type: "button", className: "switch-hint", title: `To ${item.enabled ? "leave it out" : "have it"}: ${how}` }, check);
+        b.addEventListener("click", () => showPrefsPage(page));
+        return b;
+      })());
   }
 
   function row(kind, item) {

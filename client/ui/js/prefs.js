@@ -22,7 +22,7 @@ function openPrefs() {
   $("#prefs-resume").checked = prefs.resume;
   $("#prefs-focus").checked = prefs.focusFollowsMouse;
   $("#prefs-pi-terminal").checked = prefs.piTerminal;
-  $("#prefs-term-more").hidden = !prefs.piTerminal;
+  $("#prefs-shortcut-row").hidden = !prefs.piTerminal;
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   showCopy();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
@@ -63,7 +63,7 @@ function closePrefs() {
 let prefsPage = "agents";
 // A category shows its pages one under the other. A page asked by its own name or an older
 // one ("picker", "layout", "general") opens its category.
-const PREFS_GROUPS = { appearance: ["appearance", "layout"], connection: ["connection", "picker"] };
+const PREFS_GROUPS = { appearance: ["appearance", "layout"], updates: ["updates", "picker"] }; // the picker's version with the updates
 const PREFS_OLD = { general: "connection" };
 const prefsTabOf = (page) => PREFS_OLD[page] || Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
 const prefsTabs = () => [...document.querySelectorAll("#prefs .prefs-tabs button")];
@@ -549,7 +549,7 @@ $("#prefs-rail").addEventListener("change", (e) => { prefs.railAlways = e.target
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
-  $("#prefs-term-more").hidden = !prefs.piTerminal; // the terminals' settings, only with tmux
+  $("#prefs-shortcut-row").hidden = !prefs.piTerminal; // the image key types into Pi in tmux
   backend.setShortcut(shortcutOn()).catch(() => {});
 });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });

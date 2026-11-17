@@ -262,13 +262,15 @@
         <div class="set"><label class="what" for="prefs-grad-empty"><span>Empty screens</span><span>A conversation not started, Details with nothing open.</span></label><input id="prefs-grad-empty" type="checkbox"></div>
         <div class="set"><label class="what" for="prefs-grad-buttons"><span>Main buttons</span><span>Approve, Connect, Send, a window's main action.</span></label><input id="prefs-grad-buttons" type="checkbox"></div>
       </div>
-      <h2>Fonts, corners and menus</h2>
+      <h2>Fonts</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-uifont"><span>Pier's font</span><span>Panels, menus, the conversation, the settings.</span></label><select id="prefs-uifont"></select></div>
         <div class="set"><label class="what" for="prefs-termfont"><span>Code font</span><span>Files, commands, the terminal.</span></label><select id="prefs-termfont"></select></div>
+      </div>
+      <h2>Window</h2>
+      <div class="rows">
         <div class="set"><div class="what"><span id="prefs-corners-label">Corners</span><span>Buttons, menus, cards and fields.</span></div>
           <div id="prefs-corners" class="seg" role="radiogroup" aria-labelledby="prefs-corners-label"><button role="radio" data-v="0">Square</button><button role="radio" data-v="4">Slight</button><button role="radio" data-v="8">Round</button></div></div>
-        <div class="set"><label class="what" for="prefs-rail"><span>Keep the rail</span><span>Its icons (new conversation, search, waiting, settings) stay on the left when the conversations are hidden.</span></label><input id="prefs-rail" type="checkbox"></div>
         <div class="set"><label class="what" for="prefs-mica"><span>Mica</span><span>The window takes a tint of your wallpaper, as Windows 11's Explorer (Windows 11 only).</span></label><input id="prefs-mica" type="checkbox"></div>
         <div class="set"><label class="what" for="prefs-menublur"><span>Translucent menus and notifications</span><span>Menus, the command palette and Pier's notifications let what is behind them show through, blurred.</span></label><input id="prefs-menublur" type="checkbox"></div>
       </div>
@@ -280,11 +282,16 @@
       <section class="prefs-page" data-page="layout" data-title="Layout" role="tabpanel" hidden>
       <h2>Layout</h2>
       <div class="rows">
+        <div class="set"><label class="what" for="prefs-rail"><span>Keep the rail</span><span>Its icons (new conversation, search, waiting, settings) stay on the left when the conversations are hidden.</span></label><input id="prefs-rail" type="checkbox"></div>
         <div class="set"><div class="what" id="prefs-reset-label"><span>Where the panels go</span><span>Conversations on the left, what Pi did on the right, the rest as tabs in the middle. The header's buttons hide or show each side; drag a side's edge to widen it.</span></div><button id="prefs-reset" aria-labelledby="prefs-reset-label" class="secondary">Reset layout</button></div>
       </div>
       </section>
 
       <section class="prefs-page" data-page="behavior" data-title="Behavior" role="tabpanel" hidden>
+      <h2>Panels</h2>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The terminal or panel under the pointer gets the keyboard, without a click.</span></label><input id="prefs-focus" type="checkbox"></div>
+      </div>
       <h2>Notifications</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-notify"><span>When a Pi finishes</span><span>A Windows notification, while Pier is in the background.</span></label><button id="prefs-notify-test" class="secondary" type="button">Send a test</button><input id="prefs-notify" type="checkbox"></div>
@@ -301,15 +308,15 @@
       </section>
 
       <section class="prefs-page needs-vm" data-page="terminals" data-offline="Terminals run on your VM: connect to it, then choose how they behave." data-title="Terminals" role="tabpanel" hidden>
-      <!-- Pi opens in Pier's conversation view: the terminals' settings matter only with tmux. -->
+      <!-- Shells use these too; the image key only with Pi in tmux (prefs.js). -->
       <div class="rows">
         <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
       </div>
-      <div id="prefs-term-more" hidden>
-      <h2>Text</h2>
+      <h2>Display</h2>
       <div class="rows">
         <div class="set"><label class="what" for="prefs-font"><span>Font size</span><span>Ctrl+ and Ctrl- change it in a terminal, Ctrl+0 resets it.</span></label><input id="prefs-font" type="number" min="8" max="28"></div>
         <div class="set"><label class="what" for="prefs-padding"><span>Space around the text</span><span>In pixels.</span></label><input id="prefs-padding" type="number" min="0" max="40"></div>
+        <div class="set"><label class="what" for="prefs-gpu"><span>Draw with the graphics card</span><span>Smooth scrolling. Turn it off if text looks wrong; terminals opened after the change use it.</span></label><input id="prefs-gpu" type="checkbox"></div>
       </div>
       <h2>Copy and paste</h2>
       <div class="rows">
@@ -317,15 +324,9 @@
           <div id="prefs-copykeys" class="seg" role="radiogroup" aria-labelledby="prefs-copykeys-label"><button role="radio" data-v="linux">Ctrl+Shift+C, V</button><button role="radio" data-v="windows">Ctrl+C, V</button></div></div>
         <div class="set"><div class="what"><span id="prefs-copymode-label">Copying</span><span>When selected text goes to the clipboard.</span></div>
           <div id="prefs-copymode" class="seg" role="radiogroup" aria-labelledby="prefs-copymode-label"><button role="radio" data-v="key">With the keys</button><button role="radio" data-v="select">On selecting</button></div></div>
-      </div>
-      <h2>Behaviour</h2>
-      <div class="rows">
-        <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The terminal or panel under the pointer gets the keyboard, without a click.</span></label><input id="prefs-focus" type="checkbox"></div>
-        <div class="set"><label class="what" for="prefs-shortcut"><span>Ctrl+Alt+V sends the clipboard's image</span><span>From anywhere, typed into the prompt of the Pi in use (in tmux; the conversation view takes Ctrl+V).</span></label><input id="prefs-shortcut" type="checkbox"></div>
-        <div class="set"><label class="what" for="prefs-gpu"><span>Draw with the graphics card</span><span>Smooth scrolling. Turn it off if text looks wrong; terminals opened after the change use it.</span></label><input id="prefs-gpu" type="checkbox"></div>
+        <div class="set" id="prefs-shortcut-row"><label class="what" for="prefs-shortcut"><span>Ctrl+Alt+V sends the clipboard's image</span><span>From anywhere, typed into the prompt of the Pi in use (in tmux; the conversation view takes Ctrl+V).</span></label><input id="prefs-shortcut" type="checkbox"></div>
       </div>
       <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an older Pier still in the tray?), then turn this off and on again.</p>
-      </div>
       </section>
 
 

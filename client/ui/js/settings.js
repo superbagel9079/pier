@@ -222,19 +222,20 @@ function drawAgents(again) {
     const knows = el("div", { className: "setting-row" }, el("div", { className: "setting-head" }, el("span", { textContent: "Models Pi knows" }), refresh), models);
     out.push(el("h2", { textContent: "Providers" }), providersBlock());
     out.push(el("h2", { textContent: "Models" }), knows, defRow,
-      modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
-      modelRow("worker_model", "Workers", "The model of the workers a Pi starts, when it names none. A cheaper model does.", "Pi's default"),
-      workerModelsRow(),
-      modelRow("helper_model", "Helpers", "The model of the read-only helpers (scout, reviewer, critic, checker) any Pi consults. A fast, cheap model.", "Pi's default"));
-    out.push(el("h2", { textContent: "Several Pis" }),
-      toggleRow("workers", "Workers", "A Pi may start worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
+      modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"));
+    out.push(el("h2", { textContent: "Workers" }),
+      toggleRow("workers", "A Pi may start workers", "Worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
       (() => {
         const input = el("input", { type: "number", min: 1, max: 12, value: configValue("workers_max") ?? 4 });
         const row = settingRow("workers_max", "At most, at once", Object.assign(stepper(input), { input }), "Workers one Pi may have running at the same time (1 to 12).", "agents");
         input.addEventListener("change", () => setConfig("workers_max", Math.round(Number(input.value)), "agents", row.say));
         return row;
       })(),
-      toggleRow("helpers", "Helpers", "Every Pi may consult read-only helpers: short Pis that only read the project, and answer.", "agents"));
+      modelRow("worker_model", "Their model", "When a Pi names none for a worker. A cheaper model does.", "Pi's default"),
+      workerModelsRow());
+    out.push(el("h2", { textContent: "Helpers" }),
+      toggleRow("helpers", "Every Pi may consult helpers", "Read-only helpers (scout, reviewer, critic, checker): short Pis that only read the project, and answer.", "agents"),
+      modelRow("helper_model", "Their model", "A fast, cheap model does.", "Pi's default"));
     out.push(el("h2", { textContent: "What Pier gives each Pi" }),
       toggleRow("checkpoints", "Restore points", "The project saved before each prompt: Undo last prompt, Activity > Restore.", "agents",
         { confirmOff: "Turn restore points off? What Pi does can then no longer be undone from Pier." }),
@@ -372,8 +373,6 @@ function drawProjects() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(STORE)) || {}; } catch { /* none */ }
   const looks = saved.looks || {};
-  const host = el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: "Host" }),
-    el("span", { className: "host-line" }, el("span", { className: "host-dot ok", "aria-hidden": "true" }), el("span", { textContent: settings ? describe(settings).replace(/:22(?= via|$)/g, "") : "" }))));
   const projects = [...data.projects].sort((a, b) => a.label.localeCompare(b.label));
   const p = projects.find((x) => x.project === projectsOpen);
   if (!p) {
@@ -385,8 +384,7 @@ function drawProjects() {
       b.addEventListener("click", () => { projectsOpen = x.project; drawProjects(); });
       return b;
     });
-    section.replaceChildren(el("h2", { textContent: "Connected to" }), el("div", { className: "rows" }, host),
-      el("h2", { textContent: "Projects" }), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
+    section.replaceChildren(el("h2", { textContent: "Projects" }), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
     return;
   }
   const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: projectsSub ? p.label : "All projects" }));
