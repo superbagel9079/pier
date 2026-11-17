@@ -373,6 +373,9 @@ function makeConversations(tab) {
       tip: `A read-only helper of Pi #${pi.n}: it reads the project and answers its Pi` });
   }
 
+  /** A pinned conversation's row: a pin after its title. */
+  const pinned = (li, s) => { if (s?.pinned) $(".title", li)?.after(el("span", { className: "pin-mark", title: "Pinned to the top" }, svgIcon("pin"))); return li; };
+
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   /** A running Pi with its conversation (or a new one, nothing said yet): a click opens its
    *  terminal. Its mark says what it does: working, waiting for you, or done (reported). */
@@ -382,23 +385,25 @@ function makeConversations(tab) {
     // when it waits for you; its age, under the pointer.
     const meta = state === "reported" && s ? ago(s.modified) : "";
     const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
-    const own = [["Open its terminal", open, false, { icon: "terminal" }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
-    return conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${state === "working" ? "" : " unread"}${openConv.slot === pi.slot ? " current" : ""}`,
+    // Its own screen in tmux, or Pier's conversation view (a Pi in RPC mode).
+    const openWords = prefs.piTerminal || !/-r\d+$/.test(pi.slot || "") ? ["Open its terminal", "terminal"] : ["Open this conversation", "message-square"];
+    const own = [[openWords[0], open, false, { icon: openWords[1] }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
+    return pinned(conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${state === "working" ? "" : " unread"}${openConv.slot === pi.slot ? " current" : ""}`,
       mark: state === "reported" ? null : el("span", { className: `state ${state === "working" ? "working" : "need"}`, title: state === "working" ? "Working" : "Waiting for you" }),
       title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta,
       tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
-      run: open, menu: s ? menuOf(p, s, own) : (anchor, at) => showMenu(anchor, own, at) });
+      run: open, menu: s ? menuOf(p, s, own) : (anchor, at) => showMenu(anchor, own, at) }), s);
   }
 
   /** A conversation no Pi runs: a click starts a Pi on it. Pinned ones carry a pin. */
   function row(p, s, inFolder = false) {
     const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
     const stopped = s.path === p.interrupted; // Pi stopped mid-work (the VM restarted?)
-    return conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : "", stopped ? "unread" : "", openConv.file === s.path ? "current" : ""].filter(Boolean).join(" "),
-      mark: stopped ? el("span", { className: "state need", title: "Stopped mid-work" }) : s.pinned ? svgIcon("pin") : null, title: conversationTitle(s), meta: ago(s.modified),
+    return pinned(conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : "", stopped ? "unread" : "", openConv.file === s.path ? "current" : ""].filter(Boolean).join(" "),
+      mark: stopped ? el("span", { className: "state need", title: "Stopped mid-work" }) : null, title: conversationTitle(s), meta: ago(s.modified),
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
-      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) });
+      run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) }), s);
   }
 
   /** A folder: a category of the project (or its sub-agents), with how many it holds;
@@ -476,7 +481,7 @@ function makeConversations(tab) {
       ["Continue the last conversation", () => openPiTerminal(p.project, p.label, ["--continue"]), !p.sessions.length, { icon: "history" }],
       ["New orchestrator (it splits the work between worker Pis)", () => openPiTerminal(p.project, p.label, ["--orchestrator"]), false, { icon: "network" }],
       null,
-      ["Instructions and what Pi loads here", () => workspace.find("setup")?.openProject?.(p.project), false, { icon: "folder-cog" }],
+      ["Instructions and what Pi loads here", () => { const t = workspace.find("setup") || workspace.add("setup", "center"); workspace.show(t); t?.openProject?.(p.project); }, false, { icon: "folder-cog" }],
       ["Change its mark…", () => projectLookDialog(p.project, p.label, view.looks[p.project] || {}, (look) => { view.looks[p.project] = look; keep(); redraw(); }), false, { icon: "palette" }],
       ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e))), false, { icon: "copy" }],
       ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null), false, { icon: "square" }]] : []),
@@ -525,7 +530,7 @@ function makeConversations(tab) {
     drawRail(projects, inUse);
     for (const [index, p] of projects.entries()) {
       if (alone() && p.project !== alone()) continue;
-      const matches = p.sessions.filter((s) => (archived || !s.archived || query || s.slot) && conversationMatches(s, query));
+      const matches = p.sessions.filter((s) => (archived || !s.archived || query) && conversationMatches(s, query));
       const pis = p.pis || [];
       if (query && !matches.length) continue;
       if (!query && !matches.length && !pis.length) continue;
@@ -645,7 +650,9 @@ function makeConversations(tab) {
     render();
   });
   // Followed while the rail's squares show too (a narrow window), the list closed or not.
-  tab.onVisible = (on) => { vm.follow({ conversations: on || Boolean(workspace.docks.left.over) }); render(); };
+  // Followed also while the rail's squares show (a narrow window) or the New tab lists the
+  // recent ones (nothing open in the middle), the list itself hidden or not.
+  tab.onVisible = (on) => { vm.follow({ conversations: on || Boolean(workspace.docks.left.over) || (online && !workspace.docks.center.tabs.length) }); render(); };
   tab.onShownTab = render; // the open conversation's row is marked
   tab.onClose = () => { unlisten(); vm.follow({ conversations: false }); };
   vm.follow({ conversations: tab.shown !== false });

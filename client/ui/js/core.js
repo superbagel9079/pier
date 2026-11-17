@@ -345,12 +345,8 @@ function flashStatus(text, near) {
   const toast = $("#toast");
   toast.textContent = "";
   requestAnimationFrame(() => { toast.textContent = text; }); // shown, then filled: read out
-  // In the top right corner of the terminal (or panel) it is about; else at the bottom
-  // right of the window, where it covers no tab bar ("picker installed" at a connection).
-  const pane = near || document.activeElement?.closest?.(".pane");
-  const box = pane && pane.offsetParent !== null ? pane.getBoundingClientRect() : { top: innerHeight - 64, right: innerWidth };
-  toast.style.top = `${Math.round(box.top + 8)}px`;
-  toast.style.right = `${Math.round(innerWidth - box.right + 14)}px`;
+  // Always at the bottom right of the window, where Windows puts its notifications (CSS).
+  toast.style.top = toast.style.right = "";
   toast.hidden = false;
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => { toast.hidden = true; }, 2000);

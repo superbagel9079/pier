@@ -241,6 +241,8 @@ document.addEventListener("click", (event) => {
   const hint = el("div", { className: "hint-card", role: "tooltip", hidden: true });
   document.body.append(hint);
   let over = null, timer = 0, watch = 0;
+  const pointer = { x: 0, y: 0 };
+  document.addEventListener("pointermove", (e) => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true, capture: true });
   const SHORTCUT = /\s*[(,]?\s*((?:Ctrl|Alt|Shift|Win|Cmd)(?:\+[A-Za-z0-9,.\/;'\[\]=-]+)+|F\d{1,2}|Esc)\)?\s*$/;
   /** Name and words of an element: its label (else its text, else the tip's first part),
    *  the tip for the words when it says more; a shortcut at the end of either, apart. */
@@ -271,7 +273,9 @@ document.addEventListener("click", (event) => {
     // replaceChildren writes a null out as "null": only what there is.
     hint.replaceChildren(...[el("b", {}, el("span", { textContent: name }), keys ? el("kbd", { textContent: keys }) : null),
       words ? el("span", { className: "hint-words", textContent: words }) : null].filter(Boolean));
-    const box = node.getBoundingClientRect();
+    let box = node.getBoundingClientRect();
+    // A big area (a list, a tree): by the pointer, not under the whole area.
+    if (box.height > 64) box = { left: pointer.x - 8, width: 16, top: pointer.y - 8, bottom: pointer.y + 12 };
     hint.hidden = false;
     const w = hint.offsetWidth, h = hint.offsetHeight;
     const x = Math.min(Math.max(8, box.left + box.width / 2 - w / 2), innerWidth - w - 8);

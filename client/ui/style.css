@@ -1900,3 +1900,17 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
    not lit a faint tint of it; lost, all faint. */
 .bars i { background: var(--fg); }
 [data-state="slow"] .bars i:nth-child(3), [data-state="lost"] .bars i { background: color-mix(in srgb, var(--fg) 28%, transparent); }
+/* Pier's notices (flashStatus: "copied", "connect first"…) at the bottom right of the window,
+   where notifications are on Windows; they rise in from there. */
+.toast { top: auto; bottom: 18px; right: 18px; transform-origin: bottom right; }
+/* The message field's "/" list: Pier's menu, above the field, the name then what it does. */
+.composer { position: relative; }
+.slash-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); max-height: 260px; overflow-y: auto; z-index: 20; padding: var(--s1); display: flex; flex-direction: column; }
+.slash-menu[hidden] { display: none; }
+.slash-menu button { display: flex; align-items: baseline; gap: var(--s3); min-height: 30px; padding: 0 var(--s3); text-align: left; background: none; border: 0; color: var(--fg); }
+.slash-menu button .label { font-weight: 600; white-space: nowrap; }
+.slash-menu button .k { color: var(--dim); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.slash-menu button.on, .slash-menu button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+/* A pinned conversation: a small pin after its title. */
+.pin-mark { flex: none; display: grid; place-items: center; color: var(--dim); }
+.pin-mark .i { width: 12px; height: 12px; }

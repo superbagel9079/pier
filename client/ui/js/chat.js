@@ -41,7 +41,7 @@ function makeChat(tab) {
   pane.classList.add("chat-pane");
   const col = el("div", { className: "chat-col" });
   const scroller = el("div", { className: "chat" }, col);
-  const input = el("textarea", { placeholder: "Message Pi. / for commands, @ for files", spellcheck: true });
+  const input = el("textarea", { placeholder: "Message Pi. / for skills and commands, @ for files", spellcheck: true });
   input.setAttribute("aria-label", "Message Pi");
   const send = el("button", { className: "send", title: "Send", type: "button" });
   send.setAttribute("aria-label", "Send");
@@ -117,6 +117,14 @@ function makeChat(tab) {
 
   function you(text) {
     col.append(el("div", { className: "you", textContent: text }));
+    // The tab named after the conversation (its first words), not the project every tab
+    // of it shares; a name given to the session wins (showState).
+    if (!tab.named && !state.sessionName) {
+      const words = text.replace(/\s+/g, " ").trim();
+      tab.title = words.length > 28 ? `${words.slice(0, 27).trimEnd()}…` : words || tab.title;
+      tab.named = true;
+      workspace.retitle(tab);
+    }
   }
 
   /** A new run, after what you asked: its timeline, then Pi's answers. */
@@ -446,7 +454,7 @@ function makeChat(tab) {
     const m = state.model;
     modelBtn.textContent = `${m ? m.id || m.name || m : "model"} ▾`;
     thinkBtn.textContent = `thinking: ${state.thinkingLevel || "default"} ▾`;
-    if (state.sessionName) { tab.title = state.sessionName; workspace.show(tab); }
+    if (state.sessionName && tab.title !== state.sessionName) { tab.title = state.sessionName; tab.named = true; workspace.retitle(tab); }
     showContext();
   }
 
@@ -513,8 +521,71 @@ function makeChat(tab) {
       }
       input.focus();
     }, false, { icon: "paperclip" }],
-    ["Mention a project file (@)", () => { input.value += "@"; input.focus(); }, false, { icon: "at-sign" }],
+    ["Use a skill…", () => { if (!input.value.startsWith("/")) input.value = `/${input.value}`; input.focus(); input.setSelectionRange(1, 1); slash.update(); }, false, { icon: "gift" }],
   ]));
+
+  // "/" at the start of the message: the project's skills (/skill:name) and prompt templates
+  // (/name), each with its description; arrows and Enter (or Tab) to choose, Escape to leave.
+  const slash = (() => {
+    const box = el("div", { className: "menu slash-menu", role: "listbox", hidden: true });
+    composer.append(box);
+    let items = null, shown = [], at = 0, asked = false;
+    const load = async () => {
+      if (asked) return;
+      asked = true;
+      try {
+        const r = await backend.api(["resources", project]);
+        items = [...(r.skills || []).filter((s) => s.enabled !== false).map((s) => ({ insert: `/skill:${s.name} `, name: `skill:${s.name}`, about: s.description || "" })),
+          ...(r.prompts || []).filter((p) => p.enabled !== false).map((p) => ({ insert: `/${p.name} `, name: p.name, about: p.description || "" }))];
+      } catch { items = []; }
+      update();
+    };
+    const close = () => { box.hidden = true; shown = []; };
+    const choose = (i) => {
+      const it = shown[i];
+      if (!it) return;
+      const caret = input.selectionStart;
+      input.value = it.insert + input.value.slice(caret).replace(/^\S*\s?/, "");
+      input.setSelectionRange(it.insert.length, it.insert.length);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      close();
+      input.focus();
+    };
+    const draw = () => {
+      box.replaceChildren(...shown.map((it, i) => {
+        const b = el("button", { type: "button", role: "option", className: i === at ? "on" : "" },
+          el("span", { className: "label", textContent: `/${it.name}` }), el("span", { className: "k", textContent: it.about }));
+        b.setAttribute("aria-selected", String(i === at));
+        b.addEventListener("mousedown", (e) => { e.preventDefault(); choose(i); });
+        return b;
+      }));
+      box.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+    };
+    function update() {
+      const word = input.value.slice(0, input.selectionStart);
+      if (!/^\/[\w:.-]*$/.test(word)) { close(); return; }
+      if (!items) { load(); return; }
+      const q = word.slice(1).toLowerCase();
+      shown = items.filter((it) => it.name.toLowerCase().includes(q)).slice(0, 12);
+      if (!shown.length) { close(); return; }
+      at = Math.min(at, shown.length - 1);
+      box.hidden = false;
+      draw();
+    }
+    input.addEventListener("input", () => { at = 0; update(); });
+    input.addEventListener("blur", () => setTimeout(close, 100));
+    // Before the composer's own keys (Enter sends): captured on the composer.
+    composer.addEventListener("keydown", (e) => {
+      if (box.hidden || e.target !== input) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length; draw(); }
+      else if (e.key === "Enter" || e.key === "Tab") choose(at);
+      else if (e.key === "Escape") close();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+    return { update };
+  })();
   // The model: the palette of Settings (ui.js), above the composer: search, the name, its
   // provider, a check on the one in use.
   modelBtn.addEventListener("click", () => command({ type: "get_available_models" }, (data) => {

@@ -265,6 +265,7 @@ const workspace = (() => {
   }
 
 
+  let emptyAsked = false; // the conversations asked for the New tab's recent ones
   /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
    *  latest conversations. */
   function emptyDock(name) {
@@ -280,6 +281,13 @@ const workspace = (() => {
       line("square-pen", "New conversation", project ? projectLabel(project) : "", () => (project ? openPiTerminal(project, projectLabel(project), ["--new"]) : openFolderPicker())),
       line("folder", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()),
       line("terminal", "New shell", "on the VM", () => add("shell", name)));
+    // The recent ones even with the conversations' side folded (it follows them only while
+    // shown): asked once here, the page drawn again when they come.
+    if (!emptyAsked) {
+      emptyAsked = true;
+      vm.on("conversations", () => { if (!docks.center.tabs.length) render("center"); });
+    }
+    vm.follow({ conversations: true });
     const recent = (vm.latest("conversations")?.data?.projects || []).flatMap((p) => p.sessions.filter((s) => !s.archived && !s.subagent).map((s) => [p, s]))
       .sort((a, b) => b[1].modified - a[1].modified).slice(0, 5);
     if (recent.length) {
@@ -314,7 +322,7 @@ const workspace = (() => {
   function addChoices(name) {
     const items = [
       ["New shell", () => add("shell", name), false, { icon: "terminal" }],
-      ["New picker", () => add("picker", name), false, { icon: "folder" }],
+      ...(prefs.piTerminal ? [["New picker", () => add("picker", name), false, { icon: "folder" }]] : []), // tmux's picker
     ];
     const ICONS = { setup: "folder-cog", repository: "git-branch", labs: "flask-conical", conversations: "message-square", project: "activity" };
     // The panels of the middle, and the sides' two when closed. Labs once they are on
@@ -696,7 +704,7 @@ const workspace = (() => {
   $(".add", docks.center.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices("center")));
   $("#toggle-left").addEventListener("click", () => toggle("left"));
   $("#toggle-right").addEventListener("click", () => toggle("right"));
-  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, redrawEmpty, dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
+  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, redrawEmpty, retitle: (tab) => render(tab.dock), dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
 })();
 
 // Focus follows the mouse (a setting): the tab under the pointer gets the keyboard, on its

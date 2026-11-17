@@ -363,6 +363,8 @@ function makeProject(tab) {
       if (problem) { hint.textContent = problem; hint.classList.add("bad"); input.setAttribute("aria-invalid", "true"); }
     });
     input.addEventListener("input", () => { hint.textContent = "Enter to save"; hint.classList.remove("bad"); input.removeAttribute("aria-invalid"); });
+    // A click elsewhere: an empty name is given up (a name typed waits for Enter or Escape).
+    input.addEventListener("blur", () => setTimeout(() => { if (input.isConnected && !busy && !input.value.trim()) cancel(); }, 120));
     input.focus();
     // A file's name chosen up to its extension, as in every file manager.
     const dot = kind === "file" ? value.lastIndexOf(".") : -1;

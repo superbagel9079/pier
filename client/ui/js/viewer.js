@@ -11,7 +11,7 @@ function openFile(rel, project) {
     open.reload();
     return;
   }
-  workspace.add("file", "center", { params: { rel, project }, replace: true });
+  workspace.add("file", "center", { params: { rel, project } }); // a tab of its own, the others kept
 }
 
 const VIEW_HIGHLIGHT_MAX = 400 * 1024; // past this, plain text: coloring would freeze the page
@@ -74,8 +74,15 @@ function tokenizer(lang) {
 
 /** text in spans of the syntax's classes, into parent (no HTML parsed: text nodes only). */
 function highlight(parent, text, lang) {
-  if (!lang || !LANGS[lang] || text.length > VIEW_HIGHLIGHT_MAX) {
+  if (!lang || !LANGS[lang]) {
     parent.append(document.createTextNode(text));
+    return;
+  }
+  // A big file: its beginning in colour (a whole number of lines), the rest as it is.
+  if (text.length > VIEW_HIGHLIGHT_MAX) {
+    const cut = text.lastIndexOf("\n", VIEW_HIGHLIGHT_MAX) + 1 || VIEW_HIGHLIGHT_MAX;
+    highlight(parent, text.slice(0, cut), lang);
+    parent.append(document.createTextNode(text.slice(cut)));
     return;
   }
   const { re, keywords, nocase } = tokenizer(lang);
