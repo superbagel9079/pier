@@ -47,7 +47,7 @@ function makeDiff(tab) {
   mention.hidden = !prefs.piTerminal;
   const whole = iconButton("file-text", "The whole file, as it is now");
   whole.addEventListener("click", () => openFile(rel, project));
-  head.append(el("span", { className: "file-facts", textContent: rel, title: `${project}/${rel}` }), el("span", { className: "file-acts" }, whole, refresh, mention));
+  head.append(el("span", { className: "file-facts", title: `${project}/${rel}` }), el("span", { className: "file-acts" }, whole, refresh, mention)); // its name is the tab's
   const error = el("p", { className: "error", hidden: true });
   const body = el("div");
   tab.pane.append(head, error, body);

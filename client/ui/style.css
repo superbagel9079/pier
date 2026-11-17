@@ -1994,7 +1994,9 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .tab .tab-actions .icon { height: 18px; width: 18px; padding: 0; border-radius: var(--r); }
 .tab .tab-actions .icon:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
 /* A code block's bottom: a thin sideways scrollbar, not a wide grey band. */
-.code-scroll { scrollbar-width: thin; }
+/* (no scrollbar-width here: it would replace Pier's own scrollbar by the system's) */
+.code-scroll::-webkit-scrollbar { height: 10px; }
+.code-scroll::-webkit-scrollbar-thumb { border-width: 3px; }
 .code-view { cursor: text; }
 .code-view .gutter { cursor: default; }
 /* Markdown shown as a page: in the middle of the tab. */

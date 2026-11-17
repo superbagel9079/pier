@@ -361,7 +361,8 @@ function makeFile(tab) {
     error.hidden = true;
     last = result;
     const lines = result.binary ? "" : `${(result.text.match(/\n/g)?.length || 0) + (result.text && !result.text.endsWith("\n") ? 1 : 0)} lines · `;
-    facts.textContent = `${lines}${humanSize(result.size)}`;
+    // Past what Pier shows (1 MB), its beginning only, and not typed in: a whole save would cut it.
+    facts.textContent = `${lines}${humanSize(result.size)}${result.truncated ? ` · read only: the first ${humanSize(result.text.length)} shown` : ""}`;
     const top = body.scrollTop;
     draw();
     body.scrollTop = top;
