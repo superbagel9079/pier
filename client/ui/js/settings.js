@@ -436,7 +436,7 @@ function systemPrompts(project) {
         showError(problem, "");
         saved = area.value;
         info.exists = Boolean(area.value.trim()); // emptied: the file is removed, the global one applies
-        label.textContent = `${WORDS[which][0]}: ${info.name}${info.exists ? "" : " (not created yet)"}`;
+        label.textContent = `${info.name}${info.exists ? "" : " · not created yet"}`;
         update();
         flashStatus(`${info.name} saved: new sessions read it`);
       };
@@ -449,10 +449,12 @@ function systemPrompts(project) {
       versions.addEventListener("click", () => showMenu(versions, info.history.slice().reverse().map((v) => [
         `${new Date(v.at * 1000).toLocaleString()} · ${(v.text.split("\n").find((l) => l.trim()) || "(empty)").slice(0, 48)}`,
         () => { area.value = v.text; update(); }, false, { icon: "history" }])));
-      const label = el("span", { textContent: `${WORDS[which][0]}: ${info.name}${info.exists ? "" : " (not created yet)"}` });
+      const label = el("span", { className: "when", textContent: `${info.name}${info.exists ? "" : " · not created yet"}` });
+      area.placeholder = WORDS[which][1];
       update();
-      return el("div", { className: "prompt-block" },
-        el("div", { className: "what" }, label, el("span", { textContent: WORDS[which][1] })),
+      // A card as the diff tab's: its head (what it does, its file), the text, its foot.
+      return el("section", { className: "diff-card prompt-block" },
+        el("div", { className: "diff-card-head" }, svgIcon(which === "system" ? "file-code" : "file-plus"), el("span", { textContent: WORDS[which][0] }), label),
         area, problem, el("div", { className: "prompt-foot" }, facts, versions, revert, save));
     }));
   }).catch((e) => box.replaceChildren(el("p", { className: "error", textContent: String(e) })));

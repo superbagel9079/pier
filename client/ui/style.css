@@ -2025,3 +2025,9 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 /* The tree's row with the keyboard: no frame (it showed after typing elsewhere, as focus
    came back to the list), its background as under the pointer. */
 .tree .node:focus-visible { outline: none; background: var(--hover); }
+/* Settings > Projects: each system prompt a card (the diff tab's), its field borderless inside. */
+.prompt-block { display: block; gap: 0; margin: 0; }
+.prompt-block .prompt-edit { display: block; border: 0 !important; border-radius: 0; background: transparent !important; min-height: 140px; padding: var(--s3); }
+.prompt-block .prompt-edit::placeholder { color: var(--dim); font-family: var(--ui); }
+.prompt-block .prompt-foot { padding: 6px var(--s3); border-top: 1px solid var(--line); }
+.prompt-block > .error { margin: 0 var(--s3) var(--s2); }
