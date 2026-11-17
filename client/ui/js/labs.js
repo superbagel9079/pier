@@ -153,7 +153,9 @@ function renderLabsPrefs() {
     input.id = `labs-${key}`;
     input.value = s.settings[key];
     input.addEventListener("change", () => saveLabsSettings({ [key]: type === "number" ? Math.round(Number(input.value)) : input.value.trim() }));
-    grid.append(el("div", { className: "set" }, el("label", { className: "what", htmlFor: input.id }, el("span", { textContent: label })), input));
+    const control = type === "number" ? el("span") : input; // a number: − and + on its sides, as everywhere
+    grid.append(el("div", { className: "set" }, el("label", { className: "what", htmlFor: input.id }, el("span", { textContent: label })), control));
+    if (type === "number") { control.append(input); control.replaceWith(stepper(input)); }
   }
 
   const list = $("#labs-machines");
@@ -315,13 +317,6 @@ async function saveLabsSettings(changes) {
 
 $("#labs-enabled").addEventListener("change", (e) => saveLabsSettings({ enabled: e.target.checked }));
 $("#labs-turn-on").addEventListener("click", () => saveLabsSettings({ enabled: true }));
-// The settings' tabs: Hosts, Limits, Networks, Machines.
-function showLabsPane(pane) {
-  for (const b of $("#labs-tabs").children) b.setAttribute("aria-selected", String(b.dataset.pane === pane));
-  for (const p of document.querySelectorAll(".labs-pane")) p.hidden = p.dataset.pane !== pane;
-}
-for (const b of $("#labs-tabs").children) b.addEventListener("click", () => showLabsPane(b.dataset.pane));
-showLabsPane("hosts");
 $("#labs-host-local").addEventListener("click", async () => {
   if (!(await ask("Make labs on Pi's own VM too? They are Incus containers there, beside Pi, cut off from its files. Incus must be installed on it."))) return;
   try { await backend.hostLocal(true, ""); fillLabsPrefs(); } catch (e) { showError($("#labs-error"), String(e)); }

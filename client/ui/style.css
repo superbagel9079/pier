@@ -2079,13 +2079,6 @@ button.switch-hint { padding: 0; background: none; border: 0; cursor: pointer; }
 /* The texts for Pi in Pier's own font, growing with their text: no grip in the corner. */
 .prompt-body .prompt-edit { font: 13px/1.6 var(--ui); resize: none; overflow: hidden; }
 textarea { resize: none; }
-/* Tabs inside a settings page (Labs): words on a line, the chosen one in the
-   text's colour over the accent, as the side panels' tabs; no box around them. */
-.tabline { display: flex; gap: var(--s5); border-bottom: 1px solid var(--line); }
-.tabline > button { height: 34px; padding: 0; margin-bottom: -1px; background: none !important; border: 0; border-bottom: 2px solid transparent; color: var(--dim); display: inline-flex; align-items: center; gap: 6px; }
-.tabline > button:hover { color: var(--fg); }
-.tabline > button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
-.tabline .n { font-size: 11px; color: var(--dim); }
 /* The scrollbars' thumb follows Settings > Appearance > Corners (inside its clear border). */
 ::-webkit-scrollbar-thumb { border-radius: calc(var(--r) + 4px); }
 .code-scroll::-webkit-scrollbar-thumb { border-radius: calc(var(--r) + 3px); }
