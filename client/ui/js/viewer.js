@@ -213,14 +213,21 @@ function makeFile(tab) {
   const lang = languageOf(rel);
   const markdown = lang === "md";
   let asPage = markdown;
-  const head = el("div", { className: "diff-head" });
-  const path = el("span", { className: "path", textContent: rel, title: `${project}/${rel}` });
-  const facts = el("span", { className: "dim small" });
-  const view = el("button", { className: "link", textContent: "source", hidden: !markdown });
-  const changes = el("button", { className: "link", textContent: "changes", title: "What changed in it: git, and Pi's edits" });
-  const refresh = el("button", { className: "link", textContent: "refresh" });
-  const mention = el("button", { className: "link", textContent: "mention in Pi" });
-  head.append(path, facts, view, changes, refresh, mention);
+  // Its name (its folder dim before it), what it weighs, then its actions as icons; "mention
+  // in Pi" types into Pi's prompt in tmux, so only with Pi in tmux.
+  const head = el("div", { className: "file-head" });
+  const slash = rel.lastIndexOf("/");
+  const path = el("span", { className: "file-path", title: `${project}/${rel}` },
+    slash >= 0 ? el("span", { className: "dir", textContent: rel.slice(0, slash + 1) }) : null, el("span", { textContent: rel.slice(slash + 1) }));
+  const facts = el("span", { className: "file-facts" });
+  const iconButton = (icon, title) => el("button", { type: "button", className: "icon-btn", title, ariaLabel: title }, svgIcon(icon));
+  const view = el("button", { type: "button", className: "file-mode", textContent: "Source", hidden: !markdown });
+  const copy = iconButton("copy", "Copy its text");
+  const changes = iconButton("git-compare", "What changed in it: git, and Pi's edits");
+  const refresh = iconButton("refresh-cw", "Read it again");
+  const mention = iconButton("at-sign", "Mention it in Pi's prompt");
+  mention.hidden = !prefs.piTerminal;
+  head.append(path, facts, view, el("span", { className: "file-acts" }, copy, changes, refresh, mention));
   const error = el("p", { className: "error", hidden: true });
   const body = el("div", { className: "file-body" });
   tab.pane.append(head, error, body);
@@ -270,8 +277,15 @@ function makeFile(tab) {
 
   view.addEventListener("click", () => {
     asPage = !asPage;
-    view.textContent = asPage ? "source" : "page";
+    view.textContent = asPage ? "Source" : "Page";
     draw();
+  });
+  copy.addEventListener("click", async () => {
+    if (!last || last.binary) return;
+    try { await navigator.clipboard.writeText(last.text); } catch (e) { showError(error, `Could not copy: ${e}`); return; }
+    const use = $("use", copy);
+    use.setAttribute("href", "#i-check");
+    setTimeout(() => use.setAttribute("href", "#i-copy"), 1200);
   });
   changes.addEventListener("click", () => openDiff(rel, project));
   refresh.addEventListener("click", reload);

@@ -1697,3 +1697,16 @@ html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(> .panes > .p
 html:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--bg); }
 html.mica:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--mica-mid); }
 html:not(.grad-off) .settings-nav { background: transparent; }
+/* A file's view: its name in the interface's font (the folder dim), its size, its actions
+   as icons, level with the code under it; the code in one frame, square inside it. */
+.file-head { display: flex; align-items: center; gap: var(--s3); min-height: 36px; margin-bottom: var(--s2); }
+.file-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui); font-weight: 600; font-size: 13px; }
+.file-path .dir { font-weight: 400; color: var(--dim); }
+.file-facts { flex: none; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.file-acts { display: inline-flex; gap: 2px; flex: none; }
+.file-acts .icon-btn .i { width: 15px; height: 15px; }
+.file-mode { height: 26px; padding: 0 var(--s2); font-size: 12px; background: none; border: 1px solid var(--line); color: var(--dim); }
+.file-mode:hover { color: var(--fg); background: var(--hover); }
+.code-view { border-radius: var(--r); overflow: auto; }
+.code-view pre { background: none; border-radius: 0; }
+.code-view .gutter { background: transparent; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
