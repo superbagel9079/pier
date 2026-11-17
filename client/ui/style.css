@@ -1760,3 +1760,5 @@ body { -webkit-user-select: none; user-select: none; }
 :is(.chat-col, .code-view, .md-page, .diff, .log-lines, .trust-print, .vr-text code, input, textarea, [contenteditable="true"], .xterm, .selectable) { -webkit-user-select: text; user-select: text; }
 /* A selection in the theme's colours, not the system's blue. */
 ::selection { background: color-mix(in srgb, var(--accent) 38%, transparent); color: inherit; }
+/* A <pre> scrolls by default (long code): the mark never does, its glyphs taller than its lines. */
+.pier-mark { overflow: visible; }
