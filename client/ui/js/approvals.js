@@ -49,6 +49,12 @@ function approvalSentence(a) {
   return `Pi asks: ${visibleText(String(a.kind))}.`;
 }
 
+/** A line of a command to approve: its words kept whole (a line breaks between words,
+ *  never after "--"), the spaces as they are, so what is copied is the command itself. */
+function commandLine(line) {
+  return el("span", { className: "cl" }, ...(line ? line.split(/(\s+)/).filter(Boolean).map((part) => (/^\s+$/.test(part) ? part : el("span", { className: "w", textContent: part }))) : [" "]));
+}
+
 /** One request, in a list: what it asks, what exactly will be done, what Pi says, then
  *  Refuse and Approve. answer(yes) does it; both buttons wait for it. */
 function approvalItem(a, answer) {
@@ -103,7 +109,7 @@ function approvalItem(a, answer) {
     el("div", { className: "approval-what", textContent: `Pi asks to ${visibleText(what)}` }),
     ...facts.filter(Boolean).map((text) => el("div", { className: "approval-fact", textContent: visibleText(text) })),
     whole === null ? null : a.kind === "lab"
-      ? el("pre", { className: "approval-whole command", textContent: commandShown(whole) })
+      ? el("pre", { className: "approval-whole command" }, ...commandShown(whole).split("\n").map(commandLine))
       : el("pre", { className: "approval-whole", textContent: visibleText(whole, { lines: true }) }),
     size && a.kind === "lab" ? el("div", { className: "dim small", textContent: size }) : null,
     note ? el("div", { className: "error small", textContent: note }) : null,

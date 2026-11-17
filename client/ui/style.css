@@ -522,7 +522,8 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .approval-exact summary { color: var(--dim); cursor: pointer; }
 .approval-exact .approval-fact { font-family: var(--ui); }
 /* Files: the project's name above its tree, as the mock-up's group label. */
-.tree-root { margin: var(--s4) 0 var(--s1); padding: 0 var(--s3); font-size: var(--t-small); line-height: 16px; color: var(--dim); }
+/* The project is in the middle's header: the tree starts under the bar (the proposals' 2A). */
+.view-files .tree { margin-top: var(--s2); }
 .view-files .files-bar { height: 36px; margin: calc(-1 * var(--s3)) calc(-1 * var(--s3)) 0; /* right under the header, level with the middle's tab bar */ padding: 0 var(--s2) 0 var(--s3); border-bottom: 1px solid var(--line); }
 .card > ul { list-style: none; margin: 0 calc(-1 * var(--s2)); padding: 0; }
 .card > ul > li { display: flex; gap: var(--s2); padding: 2px var(--s2); white-space: nowrap; cursor: default; border-radius: var(--r); }
@@ -1274,3 +1275,24 @@ button.row-main:hover { background: none; }
 /* Every floating surface: menus, the model palette, the context card, the command palette,
    Pier's notifications and their preview. */
 .menus-blur :is(.menu, .pop-card, .palette-box, .toast, .toast-preview) { background: color-mix(in srgb, var(--raise) 55%, transparent); -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); border-color: color-mix(in srgb, var(--fg) 16%, transparent); }
+/* Waiting for you, as a list (the proposals' 1C) */
+.wait-list { display: flex; flex-direction: column; margin: 0 calc(-1 * var(--s4)); }
+.wait-row + .wait-row { border-top: 1px solid var(--line); }
+.wait-line { display: flex; align-items: center; gap: var(--s1); padding: var(--s2) var(--s3) var(--s2) var(--s4); }
+.wait-head { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: var(--s3); padding: 0; background: none; border: 0; color: var(--fg); text-align: left; }
+.wait-head:hover { background: none; }
+.wait-head .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wait-head .what > :first-child { overflow-wrap: anywhere; }
+.wait-head .what > :last-child { font-size: 12px; line-height: 16px; color: var(--dim); }
+.wait-dot { width: 8px; height: 8px; margin-top: 6px; flex: none; border-radius: 50%; background: var(--yellow, #d29922); }
+.wait-answer { border: 1px solid var(--line); flex: none; }
+.wait-answer:last-child { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.wait-answer:last-child:hover { background: color-mix(in srgb, var(--fg) 85%, var(--bg)); color: var(--bg); }
+.wait-detail { padding: 0 var(--s4) var(--s3) calc(var(--s4) + 8px + var(--s3)); font-size: 12px; }
+.wait-detail .approval-whole { margin-top: 0; }
+.wait-detail .approval-reason { font-style: normal; color: var(--dim); }
+/* A command shown for approval: every line whole; one too long goes on under itself,
+   indented, broken at a space (never hidden: what is approved is all on screen). */
+.approval-whole.command { white-space: normal; padding: var(--s2) var(--s3); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); }
+.approval-whole.command .cl { display: block; white-space: pre-wrap; word-break: normal; overflow-wrap: break-word; padding-left: 2ch; text-indent: -2ch; }
+.approval-whole.command .cl .w { display: inline-block; max-width: 100%; overflow-wrap: anywhere; text-indent: 0; }
