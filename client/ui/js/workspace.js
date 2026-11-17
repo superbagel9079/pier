@@ -60,6 +60,7 @@ const workspace = (() => {
       dock.el.hidden = empty && !dragging;
       dock.splitter.hidden = empty || dock.collapsed;
       dock.el.classList.toggle("collapsed", dock.collapsed && !empty);
+      dock.el.classList.toggle("single", dock.tabs.length === 1);
       // While a tab is dragged, an empty side shows as a wide drop target.
       dock.el.classList.toggle("drop-target", empty && Boolean(dragging));
       dock.el.style.setProperty("--width", `${dock.width}px`);
@@ -142,7 +143,8 @@ const workspace = (() => {
       requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
     });
     node.title = tab.pinned ? "picker: the main terminal (cannot be closed)" : tab.title;
-    const icon = dock.side && KINDS[tab.kind].icon;
+    // On a side, a panel's tab is its icon; alone there (not folded), its name, as a title.
+    const icon = dock.side && (dock.tabs.length > 1 || dock.collapsed) ? KINDS[tab.kind].icon : null;
     if (icon) {
       node.classList.add("icon-tab");
       node.setAttribute("aria-label", tab.title);

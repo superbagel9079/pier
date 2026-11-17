@@ -12,25 +12,25 @@
 /* The theme's colours (themes.js sets them on :root); the rest is derived from them,
    so every theme gets the same surfaces. */
 :root {
-  --bg: #0c0c0c;
-  --panel: #111;
-  --fg: #f2f2f2;
-  --dim: #8a8a8a;
-  --line: #2c2c2c;
-  --field: #161616;
-  --hover: #1c1c1c;
+  --bg: #141414;
+  --panel: #101010;
+  --fg: #ececec;
+  --dim: #9a9a9a;
+  --line: #2a2a2a;
+  --field: #1b1b1b;
+  --hover: #222;
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --bg: #fafafa; --panel: #f3f3f3; --fg: #111; --dim: #6a6a6a;
-    --line: #d4d4d4; --field: #fff; --hover: #e9e9e9;
+    --bg: #fbfbfa; --panel: #f3f3f1; --fg: #1c1c1c; --dim: #646464;
+    --line: #e2e2df; --field: #fff; --hover: #ebebe8;
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
-  --bg: #fafafa; --panel: #f3f3f3; --fg: #111; --dim: #6a6a6a;
-  --line: #d4d4d4; --field: #fff; --hover: #e9e9e9;
+  --bg: #fbfbfa; --panel: #f3f3f1; --fg: #1c1c1c; --dim: #646464;
+  --line: #e2e2df; --field: #fff; --hover: #ebebe8;
   color-scheme: light;
 }
 :root {
@@ -208,10 +208,11 @@ button { transition: transform .1s ease-out; }
 button:active:not(:disabled) { transform: scale(.97); }
 
 /* Switches and page tabs: chips side by side, the chosen one filled. */
+/* Page tabs (Activity, Files…): words side by side, the chosen one on the selection's tone. */
 .switch { display: inline-flex; gap: 2px; flex-wrap: wrap; }
-.switch .mode { background: var(--chip); color: var(--dim); border: none; padding: 2px var(--s2); }
+.switch .mode { background: none; color: var(--dim); border: none; padding: 0 var(--s2); min-height: 28px; }
 .switch .mode:hover { color: var(--fg); background: var(--hover); }
-.switch .mode.active, .switch .mode.active:hover { background: var(--fg); color: var(--bg); }
+.switch .mode.active, .switch .mode.active:hover { background: var(--raise); color: var(--fg); }
 
 /* Forms */
 form { display: flex; flex-direction: column; gap: var(--s3); }
@@ -358,8 +359,12 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 /* Under the pointer, a squeezed tab takes the room its × needs. */
 .tab:hover { min-width: min-content; }
 .tab:hover { color: var(--fg); }
-.tab.active { color: var(--fg); background: var(--surface); box-shadow: inset 0 -2px 0 var(--accent); flex-shrink: 0; }
-#dock-center .tab.active { background: var(--bg); }
+.tab.active { color: var(--fg); background: var(--raise); flex-shrink: 0; }
+.tabs { gap: 2px; padding: 0 var(--s1); }
+.tab { margin: var(--s1) 0; border-radius: var(--r); }
+/* A side holding one panel: its name as the side's title, as the mock-up's headers. */
+.side.single .tab.active { background: none; font-weight: 600; cursor: default; }
+.side.single .tab .tab-actions { display: none; }
 .tab.pinned > span:first-child { font-weight: 600; }
 /* Six letters and the ellipsis at least, in the name's own font: "Conver…", never "Con…". */
 .tab > span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 7ch; }
@@ -389,6 +394,10 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 .side.drop-target .empty, .side.drop-target .dock-head button { display: none; }
 
 .panes { position: relative; flex: 1; min-height: 0; background: var(--surface); }
+/* The sides (and the rail) a step below the middle, as the theme's panels; a line between. */
+.side .panes, .side .dock-head, .side .dock-foot, #rail { background: var(--panel); }
+#dock-left { border-right: 1px solid var(--line); }
+#dock-right { border-left: 1px solid var(--line); }
 #dock-center .panes { background: var(--bg); }
 .pane { position: absolute; inset: 0; overflow: auto; padding: var(--s4); }
 .pane:focus { outline: none; }
@@ -457,6 +466,11 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 
 .toolbar { display: flex; align-items: center; gap: var(--s3); margin-bottom: var(--s2); flex-wrap: wrap; }
 .toolbar .root { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-project > .toolbar { gap: var(--s2) var(--s3); }
+.pane-project > .toolbar .switch { order: -1; flex: 1 0 100%; padding-bottom: var(--s2); border-bottom: 1px solid var(--line); }
+.pane-project > .toolbar .agent { font-size: var(--t-small); }
+/* The project's path on its own line, whole as far as it goes; its Pi and Undo under it. */
+.pane-project > .toolbar .root { flex: 1 0 100%; }
 
 /* One way to title a section, in every panel: bold, plain, a line under it. */
 .pane-setup h2, .group h3, .sessions li.category {
@@ -773,8 +787,7 @@ body.own-titlebar #workspace .dock-head, body.own-titlebar #rail { user-select: 
 
 .pane-conversations { overflow-x: hidden; }
 .pane-conversations .toolbar { display: flex; gap: var(--s2); align-items: center; margin-bottom: 0; }
-.pane-conversations .conversation-filter { flex: 1 1 auto; min-width: 0; }
-.pane-conversations .count { margin: var(--s2) 0 0; }
+.pane-conversations .search-field { flex: 1 1 auto; min-width: 0; }
 
 .sessions { list-style: none; padding: 0; margin: var(--s2) calc(-1 * var(--s2)) 0; display: flex; flex-direction: column; }
 /* A row: its mark, its title on one line, a detail on the right; ⋯ (and + on a project)

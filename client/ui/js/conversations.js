@@ -520,7 +520,10 @@ function makeConversations(tab) {
         el("li", { className: "toolbar" }, start, ready));
     }
     const count = all.length;
-    $$(".count").textContent = `${count} conversation${count === 1 ? "" : "s"} in ${data.projects.length} project${data.projects.length === 1 ? "" : "s"}${data.truncated ? " (the latest 2000)" : ""}`;
+    // How many, in the search field; said aloud only when the list is cut short.
+    $$(".conversation-filter").placeholder = `Search ${count} conversation${count === 1 ? "" : "s"} in ${data.projects.length} project${data.projects.length === 1 ? "" : "s"}`;
+    $$(".count").hidden = !data.truncated;
+    $$(".count").textContent = data.truncated ? "Only the latest 2000 conversations are listed." : "";
   }
 
   /** From elsewhere (Setup): this project open and in view. */
@@ -540,7 +543,13 @@ function makeConversations(tab) {
     clearTimeout(filterTimer);
     filterTimer = setTimeout(() => { query = event.target.value.trim().toLowerCase(); render(); }, 150);
   });
-  $$(".show-archived").addEventListener("change", (event) => { archived = event.target.checked; render(); });
+  $$(".show-archived").addEventListener("click", (event) => {
+    archived = !archived;
+    const b = event.currentTarget;
+    b.setAttribute("aria-pressed", String(archived));
+    b.title = archived ? "Hide the archived ones" : "Show the archived ones";
+    render();
+  });
 
   const unlisten = vm.on("conversations", (message) => {
     if (message.error) { showError(error, message.error); return; }

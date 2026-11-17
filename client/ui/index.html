@@ -424,10 +424,10 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   <template id="tpl-conversations">
     <div class="pane-conversations">
       <div class="toolbar">
-        <input class="conversation-filter" type="search" aria-label="Search every conversation" placeholder="search every conversation" spellcheck="false">
-        <label class="check small"><input class="show-archived" type="checkbox"> archived</label>
+        <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input class="conversation-filter" type="search" aria-label="Search every conversation" placeholder="Search conversations" spellcheck="false"></label>
+        <button class="icon-btn show-archived" aria-pressed="false" title="Show the archived ones" aria-label="Show the archived conversations"><svg class="i" aria-hidden="true"><use href="#i-archive"/></svg></button>
       </div>
-      <p class="hint count"></p>
+      <p class="hint count" hidden></p>
       <p class="error" hidden></p>
       <ul class="sessions all-conversations"></ul>
     </div>
