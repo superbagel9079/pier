@@ -53,12 +53,22 @@ const workspace = (() => {
   // A narrow window, as the mock-up: a side the middle has no room for leaves the row and
   // opens over the middle from its header button (closed again by a click in the middle).
   const CENTRE_MIN = { left: 400, right: 480 };
+  let lastOpened = null; // the side opened last: when both do not fit, it goes over the middle
   function layoutSides() {
     const room = $("#workspace").clientWidth - ($("#rail").offsetWidth || 44);
     const { left, right } = docks;
+    const wasOver = { left: left.over, right: right.over };
+    // A side the middle has no room for even alone: over the middle.
     left.over = room - left.width < CENTRE_MIN.left;
-    const leftIn = !left.over && !left.collapsed && left.tabs.length;
-    right.over = room - (leftIn ? left.width : 0) - right.width < CENTRE_MIN.right;
+    right.over = room - right.width < CENTRE_MIN.right;
+    // Each fits alone, not both: the one opened last goes over, the other stays in its place
+    // (opening the conversations no longer closes Details, closing them no longer reopens it).
+    const wants = (d) => !d.collapsed && d.tabs.length;
+    if (!left.over && !right.over && wants(left) && wants(right) && room - left.width - right.width < CENTRE_MIN.right) {
+      const over = lastOpened === "left" ? left : right;
+      if (!wasOver[over.name]) over.overOpen = true; // pushed out of the row while shown: it stays shown
+      over.over = true;
+    }
   }
   /** A side out of sight: hidden by its toggle, or over the middle and not opened. */
   const folded = (dock) => dock.side && (dock.over ? !dock.overOpen : dock.collapsed);
@@ -133,6 +143,7 @@ const workspace = (() => {
     const dock = docks[name];
     if (dock.over) dock.overOpen = !dock.overOpen; // over the middle: for a look, not saved
     else dock.collapsed = !dock.collapsed;
+    if (!folded(dock)) { lastOpened = name; dock.overOpen = true; }
     renderAll();
     if (!folded(dock)) dock.active?.onShow?.();
     save();
