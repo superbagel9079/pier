@@ -257,8 +257,9 @@ function loginCard() {
 }
 
 /** The VM's form in the quick start's first step (G): the user, the address, the password;
- *  under "Options", opened in place: the port, a bastion, the picker's path. from: the VM
- *  known (its options open), or none. */
+ *  an "Advanced" line unfolds the port, the picker's path and a bastion, in the same frame
+ *  (the proposals' A). from: the VM known (Advanced open), or none. form.back: the way back
+ *  to "Your VM", for the step's header, when a VM is known. */
 function firstVmForm(from = null) {
   const input = (props) => el("input", { spellcheck: false, ...props });
   const user = input({ name: "user", required: true, autocomplete: "username", value: from?.user || "" });
@@ -266,43 +267,43 @@ function firstVmForm(from = null) {
   const pw = input({ type: "password", name: "password", required: true, autocomplete: "current-password" });
   const port = input({ type: "number", name: "port", min: 1, max: 65535, required: true, value: from?.port || 22 });
   const picker = input({ name: "remote_command", placeholder: "~/bin/pi-pick", value: from?.remote_command || "~/bin/pi-pick" });
-  const viaBastion = el("input", { type: "checkbox", checked: Boolean(from?.bastion) });
-  const bHost = input({ name: "bastion_host", placeholder: "bastion.example.org", value: from?.bastion?.host || "" });
-  const bPort = input({ type: "number", name: "bastion_port", min: 1, max: 65535, value: from?.bastion?.port || 22 });
-  const bUser = input({ name: "bastion_user", value: from?.bastion?.user || "" });
+  // The bastion in one field, as ssh writes it: user@host, :port if not 22.
+  const b = from?.bastion;
+  // Only the switch flips it, not its words (as in Settings).
+  const viaBastion = el("input", { type: "checkbox", checked: Boolean(b), "aria-labelledby": "qs-bastion-label" });
+  const bWhere = input({ name: "bastion", placeholder: "user@bastion.example.org", pattern: "[^@\\s]+@[^:\\s]+(:[0-9]+)?",
+    value: b ? `${b.user}@${b.host}${b.port && b.port !== 22 ? `:${b.port}` : ""}` : "" });
   const bPw = input({ type: "password", name: "bastion_password", autocomplete: "off" });
-  const bastion = el("div", { className: "qs-bastion" },
-    el("div", { className: "lc-row" }, lcField("Bastion user", bUser), lcField("Bastion address", bHost), lcField("Port", bPort)),
-    lcField("Bastion password", bPw));
+  const bastion = el("div", { className: "lc-row" }, lcField("Bastion", bWhere), lcField("Bastion password", bPw));
   const showBastion = () => {
     bastion.hidden = !viaBastion.checked;
-    for (const f of [bHost, bUser, bPw]) f.required = viaBastion.checked;
+    for (const f of [bWhere, bPw]) f.required = viaBastion.checked;
   };
   viaBastion.addEventListener("change", showBastion);
   showBastion();
-  const opts = el("div", { className: "qs-options", hidden: !from },
+  const sub = el("div", { className: "qs-sub", hidden: !from },
     el("div", { className: "lc-row" }, lcField("Port", port), lcField("Pier's picker on the VM", picker)),
-    el("label", { className: "check" }, viaBastion, el("span", { textContent: "Go through a bastion (jump host)" })), bastion);
-  const toggle = el("button", { type: "button", className: "link qs-more" });
-  const label = () => {
-    toggle.textContent = opts.hidden ? "Options: port, bastion, picker" : "Fewer options";
-    toggle.setAttribute("aria-expanded", String(!opts.hidden));
-  };
-  toggle.addEventListener("click", () => { opts.hidden = !opts.hidden; label(); if (!opts.hidden) port.focus(); });
-  label();
+    el("div", { className: "qs-switch" }, el("span", { id: "qs-bastion-label", textContent: "Through a bastion (jump host)" }), viaBastion), bastion);
+  const advanced = el("button", { type: "button", className: "qs-advanced" }, svgIcon("chevron-right"), el("span", { textContent: "Advanced" }));
+  const shown = () => advanced.setAttribute("aria-expanded", String(!sub.hidden));
+  advanced.addEventListener("click", () => { sub.hidden = !sub.hidden; shown(); if (!sub.hidden) port.focus(); });
+  shown();
   const note = el("p", { className: "lc-error", role: "alert", hidden: true });
   const go = el("button", { type: "submit", textContent: "Connect" });
-  const back = settings ? el("button", { type: "button", className: "link", textContent: "Back" }) : null;
-  back?.addEventListener("click", () => { vmForm = null; workspace.redrawEmpty(); });
   const form = el("form", { className: "qs-form" },
     el("div", { className: "lc-row" }, lcField("User", user), lcField("Address", host)),
-    el("div", { className: "qs-links" }, toggle, back), opts,
+    el("div", { className: "qs-adv" }, advanced, sub),
     el("div", { className: "lc-row end" }, lcField("Password", pw), go), note);
+  if (settings) {
+    form.back = el("button", { type: "button", className: "qs-back", title: "Back to your VM" }, svgIcon("arrow-left"), el("span", { textContent: "Your VM" }));
+    form.back.addEventListener("click", () => { vmForm = null; workspace.redrawEmpty(); });
+  }
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const [, bUser, bHost, bPort] = bWhere.value.trim().match(/^([^@\s]+)@([^:\s]+)(?::(\d+))?$/) || [];
     const next = {
       host: host.value.trim(), port: Number(port.value) || 22, user: user.value.trim(),
-      bastion: viaBastion.checked ? { host: bHost.value.trim(), port: Number(bPort.value) || 22, user: bUser.value.trim() } : null,
+      bastion: viaBastion.checked ? { host: bHost, port: Number(bPort) || 22, user: bUser } : null,
       remote_command: picker.value.trim() || "~/bin/pi-pick",
     };
     try { await backend.saveSettings(next); settings = next; } catch (error) { showError(note, String(error)); return; }

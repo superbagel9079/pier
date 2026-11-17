@@ -294,7 +294,9 @@ const workspace = (() => {
     // The first step open in place, its fields in it (the proposals' G): no window.
     const first = step(1, false, true, "Add your VM", "Its address and your user on it.");
     first.classList.add("open");
-    first.append(firstVmForm(vmForm === "edit" ? settings : null));
+    const vmFields = firstVmForm(vmForm === "edit" ? settings : null);
+    if (vmFields.back) $(".what", first).after(vmFields.back); // back to "Your VM", in the step's header
+    first.append(vmFields);
     return el("div", { className: "empty launcher quick-start" }, el("div", { className: "qs" },
       el("h2", { textContent: "Run Pi on your Linux VM" }),
       el("p", { textContent: "Pier talks to it over SSH: Pi works there, you follow it from here." }),
