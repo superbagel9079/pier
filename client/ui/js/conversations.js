@@ -58,7 +58,7 @@ function conversationRow({ key, className = "", mark = null, title, fresh = fals
   const main = el(run ? "button" : "div", { className: "row-main", title: tip });
   main.append(el("span", { className: "mark" }, ...(mark ? [mark] : [])),
     el("span", { className: fresh ? "title fresh" : "title", textContent: title }),
-    el("span", { className: "row-meta", textContent: meta }));
+    el("span", { className: "row-meta" }, ...(meta ? [meta] : [])));
   if (run) main.addEventListener("click", run);
   const li = keyed(key, el("li", { className }, main));
   if (menu && dots) {
@@ -179,6 +179,32 @@ function stopIdlePi(tab) {
     uiLog("info", "stop-pi", { project: p.project, slot, why: "tab closed, idle" });
     return;
   }
+}
+
+/** A new project: a folder made on the VM (by default beside the latest project), then a
+ *  conversation started in it. */
+function newProjectDialog() {
+  const recent = lastProjects?.recent?.[0]?.path || target?.path || "";
+  const parent = recent ? projectLabel(recent).replace(/\/[^/]+\/?$/, "") || "~" : "~";
+  const name = el("input", { spellcheck: false, placeholder: "my-site" });
+  const where = el("input", { spellcheck: false, value: parent });
+  const problem = dialogError();
+  const field = (label, input, hint) => el("label", { className: "provider-field" }, el("span", { textContent: label }), input, hint ? el("small", { textContent: hint }) : null);
+  const create = el("button", { type: "button", textContent: "Create and start" });
+  const dialog = resourceDialog("New project", [field("Name", name, "A folder of that name, made on the VM."), field("In", where), problem], [create]);
+  dialog.box.classList.add("provider-dialog");
+  const go = async () => {
+    const n = name.value.trim();
+    if (!n) { name.focus(); return; }
+    let made;
+    try { made = await backend.api(["fs-new", where.value.trim() || "~", n, "dir"]); } catch (e) { showError(problem, String(e)); return; }
+    dialog.close();
+    const path = made?.created;
+    if (path) openPiTerminal(path, projectLabel(path), ["--new"]);
+  };
+  create.addEventListener("click", go);
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+  setTimeout(() => name.focus(), 0);
 }
 
 async function deleteConversation(project, session, { changed, failed }) {
@@ -402,6 +428,14 @@ function makeConversations(tab) {
   /** A pinned conversation's row: a pin after its title. */
   const pinned = (li, s) => { if (s?.pinned) $(".title", li)?.after(el("span", { className: "pin-mark", title: "Pinned to the top" }, svgIcon("pin"))); return li; };
 
+  // A reply not read yet: the conversation moved since you last had it open (each one's
+  // time then kept here; those older than the first look count as read).
+  view.seen ||= {};
+  view.seenFrom ||= Math.floor(Date.now() / 1000);
+  const unread = (s) => Boolean(s) && openConv.file !== s.path && s.modified > (view.seen[s.path] ?? view.seenFrom) + 1;
+  const sideNote = (text, dot) => el("span", { className: "side-note" }, el("span", { textContent: text }), dot ? el("i", { className: "unread-dot", title: "A reply you have not read" }) : null);
+  const ring = () => el("i", { className: "work-ring", title: "Working" });
+
   /** A running Pi: its conversation (or a new one, nothing said yet), open and stop. */
   /** A running Pi with its conversation (or a new one, nothing said yet): a click opens its
    *  terminal. Its mark says what it does: working, waiting for you, or done (reported). */
@@ -416,9 +450,9 @@ function makeConversations(tab) {
     const shown = workspace.tabs().some((t) => t.slot === pi.slot || t.params?.args?.[1] === pi.slot);
     const own = [[openWords[0], open, false, { icon: openWords[1] }],
       ...(state === "working" || !shown ? [["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]] : [])];
-    return pinned(conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${state === "working" ? "" : " unread"}${openConv.slot === pi.slot ? " current" : ""}`,
-      mark: state === "reported" ? null : el("span", { className: `state ${state === "working" ? "working" : "need"}`, title: state === "working" ? "Working" : "Waiting for you" }),
-      title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta,
+    return pinned(conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${openConv.slot === pi.slot ? " current" : ""}`,
+      title: s ? conversationTitle(s) : "New conversation", fresh: !s,
+      meta: state === "working" ? ring() : unread(s) ? sideNote(ago(s.modified), true) : meta,
       tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
       run: open, menu: s ? menuOf(p, s, own) : (anchor, at) => showMenu(anchor, own, at) }), s);
   }
@@ -427,8 +461,8 @@ function makeConversations(tab) {
   function row(p, s, inFolder = false) {
     const resume = () => openPiTerminal(p.project, p.label, ["--session", s.path]);
     const stopped = s.path === p.interrupted; // Pi stopped mid-work (the VM restarted?)
-    return pinned(conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : "", stopped ? "unread" : "", openConv.file === s.path ? "current" : ""].filter(Boolean).join(" "),
-      mark: stopped ? el("span", { className: "state need", title: "Stopped mid-work" }) : null, title: conversationTitle(s), meta: ago(s.modified),
+    return pinned(conversationRow({ key: s.path, className: [s.archived ? "archived" : "", inFolder ? "in-folder" : "", openConv.file === s.path ? "current" : ""].filter(Boolean).join(" "),
+      title: conversationTitle(s), meta: stopped ? sideNote("stopped", true) : unread(s) ? sideNote(ago(s.modified), true) : "",
       // In its folder, its category goes without saying.
       tip: factLine(facts(s).filter((f) => !inFolder || f !== s.category)) + (s.prompt ? `\n${s.prompt}` : ""),
       run: resume, menu: menuOf(p, s, [["Continue: start a Pi on it", resume, false, { icon: "play" }]]) }), s);
@@ -549,6 +583,8 @@ function makeConversations(tab) {
 
   function draw() {
     const all = data.projects.flatMap((x) => x.sessions);
+    const open = openConv.file && all.find((s) => s.path === openConv.file);
+    if (open && view.seen[open.path] !== open.modified) { view.seen[open.path] = open.modified; keep(); }
     categories = [...new Set(all.map((x) => x.category).filter(Boolean))].sort();
     list.replaceChildren();
     let shown = 0;
@@ -570,9 +606,35 @@ function makeConversations(tab) {
       // Running Pis first, each with its conversation, an orchestrator's workers right
       // under it; then pinned, then the latest.
       const held = new Set(matches.filter((s) => s.slot).map((s) => s.slot));
+      // Forks (1B): under the conversation they came from, folded in it ("2 forks"); open
+      // by a click, or by themselves when one of them works or is open.
+      const byPath = new Set(p.sessions.map((s) => s.path));
+      const isFork = (s) => !query && s?.parent && byPath.has(s.parent) && s.parent !== s.path;
+      const forksOf = (path) => matches.filter((x) => isFork(x) && x.parent === path);
+      view.forksOpen ||= {};
+      const withForks = (li, s) => {
+        const kids = s ? forksOf(s.path) : [];
+        if (!kids.length) return;
+        const live = kids.some((k) => k.slot || openConv.file === k.path);
+        const opened = Boolean(view.forksOpen[s.path]) || live;
+        const toggle = el("button", { type: "button", className: "forks-toggle", title: opened ? "Fold its forks" : "Show its forks" },
+          el("span", { textContent: `${kids.length} fork${kids.length === 1 ? "" : "s"}` }), svgIcon(opened ? "chevron-down" : "chevron-right"));
+        toggle.addEventListener("click", (e) => { e.stopPropagation(); if (view.forksOpen[s.path]) delete view.forksOpen[s.path]; else view.forksOpen[s.path] = true; keep(); render(); });
+        $(".row-main", li).after(toggle);
+        li.classList.add("has-forks");
+        if (!opened) return;
+        for (const k of kids) {
+          const pi = k.slot && pis.find((x) => x.slot === k.slot);
+          const kid = pi ? piRow(p, pi, k) : row(p, k);
+          kid.classList.add("fork-child");
+          $(".title", kid)?.before(svgIcon("git-branch"));
+          list.append(kid);
+          withForks(kid, k);
+        }
+      };
       const fresh = (pi) => !p.sessions.some((s) => s.slot === pi.slot);
       const ordered = [...pis.filter((pi) => fresh(pi) && pi.role !== "worker"),
-        ...matches.filter((s) => s.slot).map((s) => pis.find((x) => x.slot === s.slot) || s).filter((x) => query || x.role !== "worker")];
+        ...matches.filter((s) => s.slot && !isFork(s)).map((s) => pis.find((x) => x.slot === s.slot) || s).filter((x) => query || x.role !== "worker")];
       // A search lists what matches, flat; otherwise each worker follows its orchestrator.
       const workersOf = (pi) => query ? [] : pis.filter((w) => w.role === "worker" && w.orchestrator === pi.n);
       const orphans = query ? [] : pis.filter((w) => w.role === "worker" && !pis.some((o) => o.role === "orchestrator" && o.n === w.orchestrator));
@@ -586,11 +648,12 @@ function makeConversations(tab) {
           const li = piRow(p, pi, s || null);
           if (pi.role === "worker" && item !== pi) li.classList.add("in-team");
           list.append(li);
+          withForks(li, s);
           if (!query && view.helpers) (pi.helpers || []).forEach((h, i) => list.append(helperRow(pi, h, i)));
           if (s) shown += 1;
         }
       }
-      const idle = matches.filter((s) => !s.slot && !s.deleted);
+      const idle = matches.filter((s) => !s.slot && !s.deleted && !isFork(s));
       const first = (s) => s.path === p.interrupted || s.pinned;
       const pinnedFirst = (xs) => [...xs.filter(first), ...xs.filter((s) => !first(s))];
       // Outside any folder: the latest few, the rest behind "show all".
@@ -598,7 +661,9 @@ function makeConversations(tab) {
       const room = Math.max(PER_PROJECT - held.size, rest.filter((s) => s.pinned).length);
       const visible = query || view.expanded[p.project] ? rest : rest.slice(0, room);
       for (const s of visible) {
-        list.append(row(p, s));
+        const li = row(p, s);
+        list.append(li);
+        withForks(li, s);
         shown += 1;
       }
       const tools = el("li", { className: "small more" });
@@ -665,6 +730,10 @@ function makeConversations(tab) {
     if (on) $$(".conversation-filter").focus();
     else if (query) { $$(".conversation-filter").value = ""; query = ""; render(); }
   };
+  $$(".new-btn").addEventListener("click", (event) => showMenu(event.currentTarget, [
+    ["New project…", () => newProjectDialog(), !online, { icon: "folder-plus" }],
+    ["Open a folder…", () => openFolderPicker(), !online, { icon: "folder" }],
+  ]));
   $$(".display-btn").addEventListener("click", (event) => showMenu(event.currentTarget, [
     [$$(".toolbar").hidden ? "Search" : "Close the search", () => searching($$(".toolbar").hidden), false, { icon: "search" }],
     null,

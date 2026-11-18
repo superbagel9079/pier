@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.66"
+VERSION = "4.67"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -5229,6 +5229,17 @@ def save_labels(home, labels, file):
 _SESSION_INFO = {}  # path -> ((size, mtime), info): a session file is read again only when it changed
 
 
+def session_parent(path):
+    """The conversation a fork came from (its header's parentSession), else None."""
+    try:
+        with open(path, "rb") as handle:
+            head = json.loads(handle.readline(64 * 1024).decode("utf-8", "replace") or "{}")
+    except (OSError, ValueError):
+        return None
+    parent = head.get("parentSession") if isinstance(head, dict) and head.get("type") == "session" else None
+    return os.path.realpath(parent) if isinstance(parent, str) and parent else None
+
+
 def session_info(path, st):
     """A conversation for the lists: name, first question, and its token use (files up
     to 8 MB), read again only when the file changed."""
@@ -5240,7 +5251,9 @@ def session_info(path, st):
     info = {"path": path, "file": os.path.basename(path), "modified": int(st.st_mtime),
             "name": session_name_of(path),
             # The first prompt does not change once there is one.
-            "prompt": first["prompt"] if first and first["prompt"] else first_prompt(path), "usage": None}
+            "prompt": first["prompt"] if first and first["prompt"] else first_prompt(path), "usage": None,
+            # A fork names the conversation it came from in its first line (Pi's header).
+            "parent": first["parent"] if first else session_parent(path)}
     if st.st_size <= 8 * 1024 * 1024:
         try:
             _, _, usage, _ = read_session(path)

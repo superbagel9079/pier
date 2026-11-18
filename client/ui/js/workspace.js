@@ -285,6 +285,7 @@ const workspace = (() => {
     const project = target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
     const group = el("div", { className: "lgroup" },
       line("square-pen", "New conversation", project ? projectLabel(project) : "", () => (project ? openPiTerminal(project, projectLabel(project), ["--new"]) : openFolderPicker())),
+      line("folder-plus", "New project…", "a new folder on the VM", () => newProjectDialog()),
       line("folder", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()),
       line("terminal", "New shell", "on the VM", () => add("shell", name)));
     // The recent ones even with the conversations' side folded (it follows them only while
@@ -328,7 +329,8 @@ const workspace = (() => {
   function addChoices(name) {
     const items = [
       // As the rail's pen: in the project of the Pi in use, else the last one.
-      ...(online ? [["New conversation", () => $("#rail-new").click(), false, { icon: "square-pen" }]] : []),
+      ...(online ? [["New conversation", () => $("#rail-new").click(), false, { icon: "square-pen" }],
+        ["New project…", () => newProjectDialog(), false, { icon: "folder-plus" }]] : []),
       ["New shell", () => add("shell", name), false, { icon: "terminal" }],
       ...(prefs.piTerminal ? [["New picker", () => add("picker", name), false, { icon: "folder" }]] : []), // tmux's picker
     ];

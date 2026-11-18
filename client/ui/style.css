@@ -2147,3 +2147,19 @@ textarea { resize: none; }
 .chat-col > .you.editing { align-self: stretch; max-width: none; padding: var(--s2); border: 1px solid var(--accent); }
 .you-field { display: block; width: 100%; min-height: 60px; padding: var(--s2); font: inherit; color: var(--fg); background: transparent !important; border: 0 !important; resize: none; }
 .you-edit-bar { display: flex; justify-content: flex-end; align-items: center; gap: var(--s3); margin-top: var(--s2); }
+/* The list (2C): no mark on the left, titles aligned; on the right a ring while Pi works,
+   the time and a dot for a reply not read yet. Forks (1B): folded in their conversation. */
+.sessions .row-main .mark:empty { display: none; }
+.sessions .side-note { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 11px; }
+.sessions .unread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+.sessions .work-ring { display: inline-block; width: 10px; height: 10px; border: 1.5px solid var(--dim); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .sessions .work-ring { animation: spin 2s linear infinite; } }
+.sessions .row-meta:has(.side-note, .work-ring) { opacity: 1; visibility: visible; display: inline-flex; }
+.sessions li.has-forks { display: flex; align-items: center; }
+.sessions .forks-toggle { flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 0 6px; height: 22px; font-size: 11px; color: var(--dim); background: none; border: 0; }
+.sessions .forks-toggle:hover { color: var(--fg); }
+.sessions .forks-toggle .i { width: 12px; height: 12px; }
+.sessions li.fork-child > .row-main { padding-left: 28px; }
+.sessions li.fork-child .row-main > .i { width: 12px; height: 12px; color: var(--dim); flex: none; margin-right: 6px; }
+/* (over the rule that hides a row's right side) the ring and the unread time with its dot show. */
+.sessions li:not(.project-head):not(.folder-head) > .row-main .row-meta:has(.side-note, .work-ring) { display: inline-flex; align-items: center; }
