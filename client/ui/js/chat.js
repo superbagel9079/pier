@@ -107,6 +107,7 @@ function makeChat(tab) {
 
   function setWorking(on) {
     working = on;
+    tab.working = on; // closing the tab stops the Pi only while it waits (stopIdlePi)
     send.title = on && !input.value.trim() ? "Stop" : on ? "Steer: tell Pi this now" : "Send";
     send.setAttribute("aria-label", send.title);
     send.classList.toggle("stop", on && !input.value.trim());

@@ -164,6 +164,23 @@ function projectLookDialog(project, label, look, save) {
 }
 
 /** Deletes a conversation for good, once the user said so. */
+/** A conversation's tab closed: its Pi stopped if it only waits for you (its conversation
+ *  stays saved, to continue); one still working goes on, as do an orchestrator, a worker and
+ *  a Pi consulting helpers. The conversation view knows itself whether Pi works. */
+function stopIdlePi(tab) {
+  if (tab.kind !== "chat" && tab.kind !== "pi") return;
+  const slot = tab.slot || (tab.params?.args?.[0] === "--slot" ? tab.params.args[1] : null);
+  if (!slot || tab.working || tab.keepPi) return;
+  for (const p of vm.latest("conversations")?.data?.projects || []) {
+    const pi = (p.pis || []).find((x) => x.slot === slot);
+    if (!pi) continue;
+    if (pi.working || pi.role === "orchestrator" || pi.role === "worker" || pi.helpers?.length) return;
+    backend.stopPi(p.project, slot).then(() => vm.poke()).catch(() => {});
+    uiLog("info", "stop-pi", { project: p.project, slot, why: "tab closed, idle" });
+    return;
+  }
+}
+
 async function deleteConversation(project, session, { changed, failed }) {
   const running = session.slot ? " Its Pi is stopped first, and its tab closed." : "";
   if (!(await ask(`Delete "${conversationTitle(session)}" for good? The whole conversation is erased from the VM; it cannot be undone. (Archive only hides it.)${running}`))) return;
@@ -396,7 +413,9 @@ function makeConversations(tab) {
     const open = () => openPiTerminal(p.project, p.label, ["--slot", pi.slot], pi.n);
     // Its own screen in tmux, or Pier's conversation view (a Pi in RPC mode).
     const openWords = prefs.piTerminal || !/-r\d+$/.test(pi.slot || "") ? ["Open its terminal", "terminal"] : ["Open this conversation", "message-square"];
-    const own = [[openWords[0], open, false, { icon: openWords[1] }], ["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]];
+    const shown = workspace.tabs().some((t) => t.slot === pi.slot || t.params?.args?.[1] === pi.slot);
+    const own = [[openWords[0], open, false, { icon: openWords[1] }],
+      ...(state === "working" || !shown ? [["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]] : [])];
     return pinned(conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${state === "working" ? "" : " unread"}${openConv.slot === pi.slot ? " current" : ""}`,
       mark: state === "reported" ? null : el("span", { className: `state ${state === "working" ? "working" : "need"}`, title: state === "working" ? "Working" : "Waiting for you" }),
       title: s ? conversationTitle(s) : "New conversation", fresh: !s, meta,

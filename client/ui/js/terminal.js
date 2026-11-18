@@ -532,6 +532,7 @@ function makeTerminal(tab, kind) {
       if (event.key === "d" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
         flashStatus("detached: Pi keeps running", tab.pane);
+        tab.keepPi = true; // detached on purpose: not stopped with its tab
         workspace.close(tab);
         return true;
       }

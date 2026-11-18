@@ -76,6 +76,7 @@ async function switchPiView(tab) {
     await new Promise((r) => setTimeout(r, 800)); // its session gone from the VM's list
   }
   const label = tab.params.label?.replace(/ · new$| #\d+$/, "") || projectLabel(project);
+  tab.keepPi = true; // stopped above already; its name may go to the Pi opened next
   workspace.close(tab);
   if (toChat) openChat(project, label, ["--session", file]);
   else workspace.add("pi", workspace.find("main")?.dock || "center", { params: { project, label, args: ["--session", file] } });

@@ -427,6 +427,7 @@ const workspace = (() => {
     if (tab.pinned) return;
     if (currentTab === tab) setCurrentTab(null);
     detach(tab);
+    stopIdlePi(tab);
     tab.onClose?.();
     tab.pane.remove();
     save();
