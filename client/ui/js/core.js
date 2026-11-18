@@ -30,7 +30,21 @@ const FT_EXT = {
   zip: "zip", tar: "zip", gz: "zip", tgz: "zip", xz: "zip", bz2: "zip", "7z": "zip", rar: "zip",
   db: "database", sqlite: "database", sqlite3: "database", sql: "database", lock: "lock",
   ini: "config", cfg: "config", conf: "config", env: "env", exe: "binary", bin: "binary", so: "binary", dll: "binary", o: "binary",
+  // Built and debug files (a build's output: .pdb, .exp, .lib beside the .exe and .dll), packages.
+  pdb: "binary", exp: "binary", lib: "binary", a: "binary", obj: "binary", ilk: "binary", dylib: "binary", wasm: "binary",
+  pyc: "binary", pyd: "binary", class: "binary", node: "binary", msi: "binary", rlib: "binary", rmeta: "binary", d: "text",
+  jar: "zip", war: "zip", whl: "zip", deb: "zip", rpm: "zip", apk: "zip", nupkg: "zip", crate: "zip", zst: "zip", iso: "zip", dmg: "zip",
+  bat: "bash", cmd: "bash", psm1: "bash", psd1: "bash", nu: "bash",
+  properties: "config", editorconfig: "config", reg: "config", service: "config", desktop: "config", plist: "xml", csproj: "xml", vcxproj: "xml",
+  sln: "config", props: "xml", targets: "xml", hcl: "config", tf: "config", nix: "config", gradle: "java", scala: "java", groovy: "java",
+  jpe: "image", avif: "image", tif: "image", tiff: "image", heic: "image", psd: "image",
+  markdown: "markdown", org: "text", tex: "text", diff: "text", patch: "text", out: "log", err: "log",
+  parquet: "database", duckdb: "database", mdb: "database", ndjson: "json", geojson: "json", ipynb: "json", yarnrc: "yaml",
 };
+// Dotfiles by their name: the shell's, the tools' settings.
+const FT_NAME = { ".bashrc": "bash", ".zshrc": "bash", ".profile": "bash", ".bash_profile": "bash", ".inputrc": "config",
+  ".npmrc": "config", ".nvmrc": "config", ".editorconfig": "config", ".prettierrc": "json", ".eslintrc": "json", ".babelrc": "json",
+  ".dockerignore": "docker", "cargo.lock": "lock", "go.sum": "lock", "go.mod": "go", "requirements.txt": "python", "pyproject.toml": "python" };
 function fileTypeIcon(path) {
   const name = String(path).split("/").pop().toLowerCase();
   if (/^\.env(\.|$)/.test(name)) return "ft-env";
@@ -38,6 +52,7 @@ function fileTypeIcon(path) {
   if (/^(dockerfile|containerfile|docker-compose\.ya?ml|compose\.ya?ml)$/.test(name)) return "ft-docker";
   if (/^(makefile|gnumakefile|justfile)$/.test(name)) return "ft-makefile";
   if (/^(license|licence|copying)(\.|$)/.test(name)) return "ft-license";
+  if (FT_NAME[name]) return `ft-${FT_NAME[name]}`;
   const ext = name.includes(".", 1) ? name.split(".").pop() : "";
   return `ft-${FT_EXT[ext] || (ext ? "file" : "text")}`;
 }
