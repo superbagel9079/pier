@@ -11,6 +11,15 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export default function (pi: any) {
+  // Pier's "edit this message": back to just before it, in the same conversation (what
+  // followed stays a branch of its tree, as /tree does); Pier then sends the changed text.
+  pi.registerCommand("pier-edit", {
+    description: "Pier: back to just before one of your messages, to send it changed",
+    handler: async (args: string, ctx: any) => {
+      const id = String(args || "").trim();
+      if (id) await ctx.navigateTree(id, { summarize: false });
+    },
+  });
   const target = process.env.PIER_STATE;
   if (!target) return;
   let file: string | null = null;

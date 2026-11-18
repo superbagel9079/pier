@@ -145,8 +145,55 @@ function makeChat(tab) {
     });
   }
 
-  /** Your message changed and sent again: Pi goes back to before it (fork: the conversation
-   *  as it was stays saved as it is, this one goes on from there), its text in the field. */
+  /** Your message changed in place, as Claude's edit: the conversation goes back to just
+   *  before it (Pier's /pier-edit, Pi's tree: what followed stays a branch of the same file)
+   *  and the changed text is sent. A Pi without the command (started before) forks instead. */
+  function editInPlace(box, text) {
+    if (working) { flashStatus("Pi is working: stop it first, or wait"); return; }
+    const at = [...col.querySelectorAll(":scope > .you")].indexOf(box);
+    command({ type: "get_commands" }, (cmds) => {
+      const known = (cmds?.commands || []).some((c) => c.name === "pier-edit");
+      command({ type: "get_fork_messages" }, (data) => {
+        const entry = (data?.messages || [])[at];
+        if (!entry) { flashStatus("This message cannot be changed"); return; }
+        if (!known) {
+          // An older Pi: a new conversation from this point, the changed text sent there.
+          command({ type: "fork", entryId: entry.entryId }, (r) => {
+            if (r?.cancelled) return;
+            redraw(() => { command({ type: "prompt", message: text }); vm.poke(); });
+          });
+          return;
+        }
+        command({ type: "prompt", message: `/pier-edit ${entry.entryId}` }, () => {
+          redraw(() => command({ type: "prompt", message: text }));
+        });
+      });
+    });
+  }
+
+  /** The bubble becomes its text in a field (Cancel, Send), as Claude's edit. */
+  function openEditor(box, text) {
+    if (box.classList.contains("editing")) return;
+    const field = el("textarea", { className: "you-field", value: text, spellcheck: true, rows: Math.min(12, text.split("\n").length + 1) });
+    const cancel = el("button", { type: "button", className: "link", textContent: "Cancel" });
+    const save = el("button", { type: "button", className: "secondary", textContent: "Send" });
+    const kept = [...box.childNodes];
+    box.classList.add("editing");
+    box.replaceChildren(field, el("div", { className: "you-edit-bar" }, cancel, save));
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+    const close = () => { box.classList.remove("editing"); box.replaceChildren(...kept); };
+    cancel.addEventListener("click", close);
+    const go = () => { const t = field.value.trim(); if (!t) return; close(); editInPlace(box, t); };
+    save.addEventListener("click", go);
+    field.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); close(); }
+      else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); }
+    });
+  }
+
+  /** A new conversation from just before this message (Pi's fork): this one stays as it is,
+   *  the new one goes on from there with the message's text in the field. */
   function editMessage(box) {
     if (working) { flashStatus("Pi is working: stop it first, or wait"); return; }
     const at = [...col.querySelectorAll(":scope > .you")].indexOf(box);
@@ -168,12 +215,16 @@ function makeChat(tab) {
   }
 
   function you(text) {
+    const original = text; // the whole message, its @references too: what Edit opens
     const refs = [...text.matchAll(GIVEN)].map((m) => m[2]);
     const words = text.replace(GIVEN, "$1").trim();
     const box = el("div", { className: "you" });
-    const change = el("button", { type: "button", className: "you-edit icon-btn", title: "Change this message and send it again", ariaLabel: "Change this message" }, svgIcon("pencil"));
-    change.addEventListener("click", () => editMessage(box));
-    box.append(change);
+    // Beside it under the pointer: change it here (as Claude's edit), or fork from it.
+    const change = el("button", { type: "button", className: "icon-btn", title: "Edit: change this message and send it again, here", ariaLabel: "Edit this message" }, svgIcon("pencil"));
+    change.addEventListener("click", () => openEditor(box, original));
+    const fork = el("button", { type: "button", className: "icon-btn", title: "Fork from here: a new conversation from this point; this one stays as it is", ariaLabel: "Fork from here" }, svgIcon("git-branch"));
+    fork.addEventListener("click", () => editMessage(box));
+    box.append(el("span", { className: "you-acts" }, change, fork));
     if (refs.length) box.append(el("div", { className: "you-given" }, ...refs.map(given)));
     if (words) box.append(el("div", { className: "you-words", textContent: words }));
     col.append(box);

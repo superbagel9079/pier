@@ -2136,9 +2136,14 @@ textarea { resize: none; }
 #window-buttons .caption-glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 10px; line-height: 1; font-weight: 400; -webkit-font-smoothing: antialiased; }
 /* Air between the conversation's last line and the message field. */
 .chat-col { padding-bottom: var(--s6, 32px); }
-/* Your message: a pencil on its left under the pointer, to change it and send it again. */
 .chat-col > .you { position: relative; }
-.you .you-edit { position: absolute; left: -36px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; opacity: 0; color: var(--dim); }
-.you:hover .you-edit, .you .you-edit:focus-visible { opacity: 1; }
-.you .you-edit:hover { color: var(--fg); }
-.you .you-edit .i { width: 14px; height: 14px; }
+/* Your message's actions on its left under the pointer: edit here, fork from here. */
+.chat-col > .you .you-acts { position: absolute; right: calc(100% + 6px); top: 50%; transform: translateY(-50%); display: flex; gap: 2px; opacity: 0; }
+.chat-col > .you:hover .you-acts, .chat-col > .you .you-acts:focus-within { opacity: 1; }
+.chat-col > .you .you-acts .icon-btn { width: 28px; height: 28px; color: var(--dim); }
+.chat-col > .you .you-acts .icon-btn:hover { color: var(--fg); }
+.chat-col > .you .you-acts .i { width: 14px; height: 14px; }
+/* Editing it: the bubble is its text in a field, as wide as the column, Cancel and Send. */
+.chat-col > .you.editing { align-self: stretch; max-width: none; padding: var(--s2); border: 1px solid var(--accent); }
+.you-field { display: block; width: 100%; min-height: 60px; padding: var(--s2); font: inherit; color: var(--fg); background: transparent !important; border: 0 !important; resize: none; }
+.you-edit-bar { display: flex; justify-content: flex-end; align-items: center; gap: var(--s3); margin-top: var(--s2); }
