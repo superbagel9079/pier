@@ -2165,3 +2165,13 @@ textarea { resize: none; }
 .sessions li:not(.project-head):not(.folder-head) > .row-main .row-meta:has(.side-note, .work-ring) { display: inline-flex; align-items: center; }
 /* An existing conversation shown from its file while its Pi starts. */
 .chat-starting { text-align: center; }
+/* A long name fades out to the right instead of ending in "…": only when it is cut, which a
+   scroll timeline knows without script (no overflow, an inactive timeline, no fade). */
+.row-main .title, .tab > .tab-icon + span, .head-title {
+  text-overflow: clip;
+  --fade: 0px;
+  mask-image: linear-gradient(to right, #000 calc(100% - var(--fade)), transparent);
+  animation: fade-when-cut linear both;
+  animation-timeline: scroll(self inline);
+}
+@keyframes fade-when-cut { from, to { --fade: 2.5em; } }

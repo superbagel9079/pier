@@ -450,7 +450,7 @@ function makeConversations(tab) {
     const shown = workspace.tabs().some((t) => t.slot === pi.slot || t.params?.args?.[1] === pi.slot);
     const own = [[openWords[0], open, false, { icon: openWords[1] }],
       ...(state === "working" || !shown ? [["Stop this Pi (its conversation stays saved)", () => stop(p, pi), false, { icon: "square" }]] : [])];
-    return pinned(conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${openConv.slot === pi.slot ? " current" : ""}`,
+    return pinned(conversationRow({ key: `pi:${pi.slot}`, className: `running ${state}${s?.archived ? " archived" : ""}${openConv.slot === pi.slot ? " current" : ""}`,
       title: s ? conversationTitle(s) : "New conversation", fresh: !s,
       meta: state === "working" ? ring() : unread(s) ? sideNote(ago(s.modified), true) : meta,
       tip: factLine([`${piRole(pi)} ${state}`, ...(s ? facts(s) : ["nothing said yet"])]) + (s?.prompt ? `\n${s.prompt}` : ""),
