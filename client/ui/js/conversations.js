@@ -186,10 +186,9 @@ async function deleteConversation(project, session, { changed, failed }) {
   if (!(await ask(`Delete "${conversationTitle(session)}" for good? The whole conversation is erased from the VM; it cannot be undone. (Archive only hides it.)${running}`))) return;
   try {
     if (session.slot) {
-      // A Pi still writing the file would make it again: stopped, its tab closed, then erased.
-      for (const t of workspace.tabs()) if (t.slot === session.slot || t.params?.args?.[1] === session.slot) workspace.close(t);
-      await backend.stopPi(project, session.slot);
-      await new Promise((r) => setTimeout(r, 800));
+      // Its tab closed; its Pi is stopped by the picker, which waits for it to end before
+      // erasing the file (it would write it again).
+      for (const t of workspace.tabs()) if (t.slot === session.slot || t.params?.args?.[1] === session.slot) { t.keepPi = true; workspace.close(t); }
     }
     await backend.sessionDelete(project, session.path);
     vm.forget({ path: session.path, slot: session.slot });
@@ -197,7 +196,7 @@ async function deleteConversation(project, session, { changed, failed }) {
     uiLog("info", "session-delete", {});
     flashStatus("Conversation deleted");
     changed();
-  } catch (e) { failed(String(e)); }
+  } catch (e) { failed(String(e)); flashStatus(`Not deleted: ${e}`); }
 }
 
 /** In place of a row: a conversation's name and category, kept by Pier. */

@@ -2123,3 +2123,5 @@ textarea { resize: none; }
 .you .you-file { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r); }
 .you .you-file .i { width: 14px; height: 14px; color: var(--dim); }
 .setting-row.warn .hint { color: var(--yellow, #e0af68); }
+/* The provider's models: no grip (the field is tall enough for a few, it scrolls past). */
+.provider-field textarea { resize: none; }

@@ -880,16 +880,36 @@ class Conversations(Home):
         with self.assertRaises(m.ApiError):
             m.api_session_delete(self.home, self.project, self.write("work/test/notes.jsonl", "{}"))
 
-    def test_delete_refused_while_a_pi_runs_it(self):
+    def test_delete_refused_while_its_pi_does_not_stop(self):
+        # Its Pi is stopped and waited for; one that never ends leaves the file in place.
         path = self.session("a.jsonl", 1000)
-        saved = m.pi_infos
+        saved, wait = m.pi_infos, m.SESSION_DELETE_WAIT
         m.pi_infos = lambda project, home, pis: [{"file": path}]
+        m.SESSION_DELETE_WAIT = 0.3
         try:
             with self.assertRaises(m.ApiError):
                 m.api_session_delete(self.home, self.project, path)
         finally:
-            m.pi_infos = saved
+            m.pi_infos, m.SESSION_DELETE_WAIT = saved, wait
         self.assertTrue(os.path.exists(path))
+
+    def test_delete_stops_its_pi_first(self):
+        # A Pi holding the conversation is stopped, then the file goes once it has ended.
+        path = self.session("a.jsonl", 1000)
+        saved = (m.pi_infos, m.project_pis, m.stop_pi)
+        state = {"running": True, "stopped": []}
+        m.pi_infos = lambda project, home, pis: [{"file": path, "slot": "pi-x"}] if state["running"] else []
+        m.project_pis = lambda sessions, project: [{"name": "pi-x"}]
+        def stop(pi, env=None):
+            state["stopped"].append(pi["name"])
+            state["running"] = False
+        m.stop_pi = stop
+        try:
+            self.assertTrue(m.api_session_delete(self.home, self.project, path)["deleted"])
+        finally:
+            m.pi_infos, m.project_pis, m.stop_pi = saved
+        self.assertEqual(state["stopped"], ["pi-x"])
+        self.assertFalse(os.path.exists(path))
 
     def test_category_rename_and_remove(self):
         a, b, c = (self.session(f"{n}.jsonl", 1000) for n in "abc")

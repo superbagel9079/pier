@@ -302,14 +302,31 @@ def api_mark(home, path, file, what, value):
     return {"file": file, what: entry[what]}
 
 
+SESSION_DELETE_WAIT = 8  # seconds a Pi stopped for its conversation's deletion may take to end
+
+
 def api_session_delete(home, path, file):
     """Deletes a conversation for good: its file in Pi's sessions, and Pier's name, folder,
-    pin for it. Refused while a Pi runs it (stop it first): it would write it again."""
+    pin for it. A Pi running it is stopped first, and waited for (it would write the file
+    again as it ends); the file written once more by it is deleted again."""
     project = resolve_inside(home, path)
     file = label_key(project, file)
-    held = {i["file"] for i in pi_infos(project, home, project_pis(pi_sessions(), project)) if i["file"]}
-    if file in held:
-        raise ApiError("a Pi runs this conversation: stop it first")
+
+    def holders():
+        forget_pi_sessions()
+        return [i for i in pi_infos(project, home, project_pis(pi_sessions(), project)) if i["file"] == file]
+    running = holders()
+    if running:
+        sessions = {p["name"]: p for p in project_pis(pi_sessions(), project)}
+        for pi in running:
+            if pi.get("slot") in sessions:
+                stop_pi(sessions[pi["slot"]])
+        deadline = time.monotonic() + SESSION_DELETE_WAIT
+        while holders() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if holders():
+            raise ApiError("its Pi did not stop in time: try again in a moment")
+        time.sleep(0.3)  # its last write, as it ended
     try:
         st = os.lstat(file)
     except FileNotFoundError:
@@ -318,6 +335,12 @@ def api_session_delete(home, path, file):
         raise ApiError("not a conversation file")
     with labels_lock(home):
         os.unlink(file)
+        if running:
+            time.sleep(0.5)
+            try:
+                os.unlink(file)  # written again by the Pi as it ended
+            except FileNotFoundError:
+                pass
         labels = load_labels(home)
         labels.pop(file, None)
         save_labels(home, labels, file)

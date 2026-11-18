@@ -771,7 +771,17 @@ def api_provider_save(home, name, data):
         raise ApiError("the address: http:// or https://, then the host")
     if api not in PROVIDER_APIS:
         raise ApiError(f"the API: one of {', '.join(PROVIDER_APIS)}")
-    ids = [str(m).strip() for m in given.get("models") or [] if str(m).strip()]
+    # A model as "id", or {"id", "contextWindow"} with its size typed by the user.
+    typed_sizes = {}
+    ids = []
+    for m in given.get("models") or []:
+        mid = str(m.get("id") if isinstance(m, dict) else m).strip()
+        if not mid:
+            continue
+        ids.append(mid)
+        size = m.get("contextWindow") if isinstance(m, dict) else None
+        if isinstance(size, (int, float)) and 1000 <= size <= 100_000_000:
+            typed_sizes[mid] = int(size)
     whole = read_models_json()
     providers = whole.setdefault("providers", {})
     entry = providers.get(name) if isinstance(providers.get(name), dict) else {}
@@ -781,12 +791,10 @@ def api_provider_save(home, name, data):
     known = {m.get("id"): m for m in entry.get("models") or [] if isinstance(m, dict)}
     entry["models"] = [known.get(i) or {"id": i} for i in ids]
     sizes = provider_model_sizes(base, entry.get("apiKey"))
-    typed = given.get("contextWindow")
-    typed = int(typed) if isinstance(typed, (int, float)) and 1000 <= typed <= 100_000_000 else None
     for model in entry["models"]:
         context, output = sizes.get(model["id"], (None, None))
-        if context or typed:
-            model["contextWindow"] = context or typed
+        if typed_sizes.get(model["id"]) or context:
+            model["contextWindow"] = typed_sizes.get(model["id"]) or context
         if output and output < (model.get("contextWindow") or 10**12):
             model["maxTokens"] = output
     providers[name] = entry

@@ -352,8 +352,14 @@ function providerDialog(p) {
   PROVIDER_APIS.forEach((a) => api.add(new Option(a, a)));
   api.value = p?.api || "openai-completions";
   const key = el("input", { type: "password", autocomplete: "off", spellcheck: false, placeholder: p?.key ? "set: leave empty to keep it" : "its API key, or an environment variable's NAME" });
-  const models = el("textarea", { rows: 4, spellcheck: false, placeholder: "one model id a line, as the provider names it", value: (p?.models || []).join("\n") });
-  const contextField = el("input", { type: "number", min: 1000, step: 1000, spellcheck: false, placeholder: "asked of the provider, else 128000" });
+  // A model a line, its context in tokens after it (as known, or typed: 1048576, 1M, 200k).
+  const models = el("textarea", { rows: 5, spellcheck: false, placeholder: "deepseek-v4-pro  1048576\nkimi-k3", value: (p?.models || []).map((m, i) => (p.contexts?.[i] ? `${m}  ${p.contexts[i]}` : m)).join("\n") });
+  const size = (word) => {
+    const m = /^(\d+(?:\.\d+)?)([kKmM]?)$/.exec(word || "");
+    if (!m) return null;
+    const n = Number(m[1]) * ({ k: 1e3, m: 1e6 }[m[2].toLowerCase()] || 1);
+    return n >= 1000 ? Math.round(n) : null;
+  };
   const problem = dialogError();
   preset.addEventListener("change", () => {
     const [, n, url, kind] = PROVIDER_PRESETS[Number(preset.value)];
@@ -370,18 +376,17 @@ function providerDialog(p) {
     field("Address", base),
     field("API", api),
     field("Key", key, "Kept on the VM, in Pi's models.json (readable by your user only); never logged."),
-    field("Models", models),
-    field("Context window", contextField, "In tokens. Pier asks the provider for each model's own; this is for those it does not tell (else Pi takes 128 000)."),
+    field("Models", models, "One a line, as the provider names it, then its context in tokens. Pier asks the provider for it on Save; type it where the provider does not tell (else Pi takes 128 000)."),
     problem], [save]);
   dialog.box.classList.add("provider-dialog");
   save.addEventListener("click", async () => {
-    const body = { baseUrl: base.value.trim(), api: api.value, models: models.value.split(/[\n,]+/).map((m) => m.trim()).filter(Boolean) };
+    const lines = models.value.split(/[\n,]+/).map((l) => l.trim().split(/\s+/)).filter((w) => w[0]);
+    const body = { baseUrl: base.value.trim(), api: api.value, models: lines.map(([id, n]) => (size(n) ? { id, contextWindow: size(n) } : id)) };
     if (key.value.trim()) body.apiKey = key.value.trim();
-    if (Number(contextField.value) >= 1000) body.contextWindow = Math.round(Number(contextField.value));
     let saved;
     try { saved = await backend.api(["provider-save", (p?.name || name.value).trim(), JSON.stringify(body)]); } catch (e) { showError(problem, String(e)); return; }
     const sized = saved?.sized?.length ?? 0;
-    flashStatus(!body.models.length ? "Provider saved" : sized ? `Saved: the context of ${sized} of ${body.models.length} model${body.models.length === 1 ? "" : "s"} known` : "Saved: the provider did not tell its models' context; type it in Context window, else Pi takes 128K");
+    flashStatus(!body.models.length ? "Provider saved" : sized ? (sized < body.models.length ? `Saved: the context of ${sized} of ${body.models.length} models known; type the others after them (Edit…)` : "Saved: every model's context known") : "Saved: the provider did not tell its models' context; type it after each model (Edit…), else Pi takes 128K");
     dialog.close();
     await afterProviders();
   });
