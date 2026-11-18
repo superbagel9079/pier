@@ -741,7 +741,7 @@ async function drawExtensions() {
     };
     const packs = el("div", { className: "loads-packages" }, el("h3", { className: "loads-group", textContent: "Packages" }), $("#ext-packages"));
     const manager = makeResourceManager($("#ext-manager"), current,
-      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); counts(); }, packs,
+      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages, manager.data()?.skills); counts(); }, packs,
       { scope: whereTo, browse: () => showTab("browse") });
     const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load(), whereTo);
     extParts = { manager, tools, showTab };

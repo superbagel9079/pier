@@ -963,6 +963,14 @@ class Conversations(Home):
         self.assertNotIn("bad name!", media)
         self.assertNotIn("http://x.test/plain.png", asked)
 
+    def test_skill_sources_are_plain_names_only(self):
+        # skills:OWNER/REPO/SKILL, nothing a shell or npx would read as more.
+        ok = m.SKILL_SOURCE_RE.fullmatch("skills:vercel-labs/agent-skills/vercel-react-best-practices")
+        self.assertEqual(ok.groups(), ("vercel-labs", "agent-skills", "vercel-react-best-practices"))
+        for bad in ("skills:a/b", "skills:a/b/c d", "skills:a/b/c;rm", "npm:x", "skills:a/b/--global", "skills:-a/b/c", "skills:a/.b/c"):
+            self.assertIsNone(m.SKILL_SOURCE_RE.fullmatch(bad), bad)
+        self.assertEqual(m.api_skills_search(self.home, "a"), {"query": "a", "skills": [], "short": True})
+
     def test_rpc_light_keeps_the_delta_only(self):
         # A streamed piece without the message so far; a tool call's pieces dropped.
         partial = {"role": "assistant", "content": [{"type": "text", "text": "x" * 5000}]}

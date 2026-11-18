@@ -367,6 +367,11 @@ function showPackageMedia(tiles) {
   loadPackageMedia(tiles.map((t) => t.dataset.name)).then(() => tiles.forEach((t) => t.refresh()));
 }
 
+const SKILL_WARNING = "A skill can tell Pi to do anything: read it (its page shows its SKILL.md) before installing it. "
+  + "npx skills add runs in Pi's sandbox on the VM and puts it in .agents/skills, where Pi finds it.";
+/** "911.7K installs", as `npx skills find` says it. */
+const installsText = (n) => (typeof n !== "number" ? "" : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M installs` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}K installs` : `${n} installs`);
+
 /** Browse (as Paseo's plugins): pi.dev's packages, filtered by kind and sorted, searched as
  *  you type; the most installed with a picture as featured cards, then the list with Install
  *  on each row. A click opens the package's own page (Back to packages): its facts, its
@@ -375,6 +380,17 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
   const KINDS = [["", "All kinds"], ["extension", "Extensions"], ["skill", "Skills"], ["prompt", "Prompts"], ["theme", "Themes"]];
   const SORTS = [["installs", "Most installed"], ["recent", "Recently updated"], ["name", "Name"]];
   let kind = "", sort = "installs";
+  // Where from: pi.dev's packages (pi install), or skills.sh's skills (npx skills add, for Pi).
+  let from = "packages";
+  const fromSeg = el("span", { className: "seg pkg-from-seg", role: "tablist", "aria-label": "Where from" });
+  const fromTab = (key, text, tip) => {
+    const b = el("button", { type: "button", role: "tab", title: tip, textContent: text });
+    b.addEventListener("click", () => { if (from === key) return; from = key; drawFrom(); all = []; search(); });
+    b.dataset.key = key;
+    return b;
+  };
+  fromSeg.append(fromTab("packages", "Packages", "pi.dev's packages: extensions, skills, prompts, themes (pi install)"),
+    fromTab("skills", "Skills", "skills.sh's skills (npx skills add, for Pi)"));
   const input = el("input", { type: "search", placeholder: "Search packages, or type a source: npm:…, git:…, https://…", spellcheck: false });
   input.setAttribute("aria-label", "Search the packages");
   const kindBtn = el("button", { type: "button", className: "pkg-filter" });
@@ -384,31 +400,43 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     sortBtn.replaceChildren(el("span", { textContent: SORTS.find(([k]) => k === sort)[1] }), svgIcon("chevron-down"));
   };
   label();
+  function drawFrom() {
+    for (const b of fromSeg.children) b.setAttribute("aria-selected", String(b.dataset.key === from));
+    kindBtn.hidden = from === "skills";
+    input.placeholder = from === "skills" ? "Search skills.sh's skills (two letters at least)" : "Search packages, or type a source: npm:…, git:…, https://…";
+    warning.textContent = from === "skills" ? SKILL_WARNING : PACKAGE_WARNING;
+    allHead.textContent = from === "skills" ? "Skills" : "All packages";
+  }
   kindBtn.addEventListener("click", () => showMenu(kindBtn, KINDS.map(([k, name]) => [name, () => { kind = k; label(); render(); }, false, { icon: k === kind ? "check" : null }])));
   sortBtn.addEventListener("click", () => showMenu(sortBtn, SORTS.map(([k, name]) => [name, () => { sort = k; label(); render(); }, false, { icon: k === sort ? "check" : null }])));
+  const warning = el("p", { className: "hint" });
+  const allHead = el("h3", { className: "loads-group", textContent: "All packages" });
   const featured = el("div", { className: "pkg-featured" });
   const featuredHead = el("h3", { className: "loads-group", textContent: "Featured" });
   const results = el("div", { className: "pkg-list" });
   const where = el("p", { className: "hint pkg-from" });
   const listView = el("div", { className: "pkg-view" },
-    el("div", { className: "pkg-tools" }, kindBtn, sortBtn, input),
-    el("p", { className: "hint", textContent: PACKAGE_WARNING }),
+    el("div", { className: "pkg-tools" }, fromSeg, kindBtn, sortBtn, input),
+    warning,
     featuredHead, featured,
-    el("h3", { className: "loads-group", textContent: "All packages" }),
+    allHead,
     results, where);
   const pageView = el("div", { className: "pkg-page", hidden: true });
   box.replaceChildren(listView, pageView);
   let installed = new Set();
+  let installedSkills = new Set(); // the names of the skills Pi loads here
   let searched = false;
   let timer = null;
   let all = [];
   let query = "";
 
   const facts = (pkg) => [pkg.publisher, pkg.downloads].filter(Boolean).join(" · ");
-  /** pi install, in a tab: for the project whose settings these are (else for you). */
-  const installPackage = (source) => openPackageTerminal("install", scope() === "project" ? currentProject() : "user", source, source.replace(/^npm:/, ""), onDone);
+  /** pi install (a skill of skills.sh: npx skills add), in a tab: for the project whose
+   *  settings these are (else for you). */
+  const installPackage = (source) => openPackageTerminal(source.startsWith("skills:") ? "skill" : "install", scope() === "project" ? currentProject() : "user",
+    source, source.replace(/^npm:/, "").replace(/^skills:.*\//, ""), onDone);
   const installButton = (pkg) => {
-    const there = installed.has(pkg.source);
+    const there = pkg.isSkill ? installedSkills.has(pkg.name) : installed.has(pkg.source);
     const b = el("button", { type: "button", className: there ? "secondary pkg-installed" : "secondary", textContent: there ? "Installed" : "Install", disabled: there });
     b.addEventListener("click", (e) => { e.stopPropagation(); installPackage(pkg.source); });
     return b;
@@ -444,7 +472,7 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     if (!shown.length) results.append(el("p", { className: "dim small", textContent: all.length ? "No package of this kind here." : "Nothing found." }));
     rows.forEach(([, t]) => t.refresh());
     showPackageMedia(rows.map(([, t]) => t));
-    const plain = !query && !kind;
+    const plain = !query && !kind && from === "packages";
     featured.hidden = featuredHead.hidden = !plain;
     if (plain) {
       const top = [...all].sort((a, b) => (b.monthly || 0) - (a.monthly || 0)).slice(0, 16);
@@ -459,6 +487,7 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
   async function search() {
     searched = true;
     query = input.value.trim();
+    if (from === "skills") { searchSkills(); return; }
     // A source typed: one row to install it, nothing searched.
     if (/^(npm:|git:|https:\/\/)/.test(query)) {
       featured.hidden = featuredHead.hidden = true;
@@ -481,6 +510,28 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     if (input.value.trim() !== query) return; // typed again meanwhile
     all = answer.results || [];
     where.textContent = answer.from === "npm" ? "From the npm registry (pi.dev did not answer), asked from the VM." : "From pi.dev/packages, asked from the VM.";
+    render();
+  }
+  /** skills.sh's search (as `npx skills find`): two letters at least, no list without them. */
+  async function searchSkills() {
+    featured.hidden = featuredHead.hidden = true;
+    where.textContent = "From skills.sh, asked from the VM. Installed with npx skills add, for Pi (.agents/skills).";
+    if (query.length < 2) {
+      all = [];
+      results.replaceChildren(el("p", { className: "dim small", textContent: "Type what you look for: skills.sh searches from two letters." }));
+      return;
+    }
+    results.replaceChildren(el("p", { className: "dim small", textContent: "Asking skills.sh, from the VM…" }));
+    let answer;
+    try {
+      answer = await backend.api(["skills-search", query]);
+    } catch (e) {
+      results.replaceChildren(el("p", { className: "error", textContent: String(e) }));
+      return;
+    }
+    if (input.value.trim() !== query || from !== "skills") return;
+    all = (answer.skills || []).map((s) => ({ name: s.name, description: "", publisher: s.repo, downloads: installsText(s.installs), monthly: s.installs, types: ["skill"],
+      source: s.source, repo: `https://github.com/${s.repo}`, page: s.page, isSkill: true }));
     render();
   }
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 400); });
@@ -523,6 +574,18 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
       if (url) { picture.replaceChildren(el("img", { src: url, alt: "" })); picture.hidden = false; }
     });
     links.append(...(pkg.repo ? [link("github", "GitHub", pkg.repo)] : []), el("span", { className: "pkg-src" }, el("code", { textContent: pkg.source }), copy));
+    if (pkg.isSkill) {
+      backend.api(["skill-page", pkg.source]).then((info) => {
+        if (pageView.hidden) return;
+        if (info.description) pageView.querySelector(".pkg-desc").textContent = info.description;
+        const command = `npx skills add ${pkg.publisher} --skill ${pkg.source.split("/").pop()} --agent pi`;
+        const copyCommand = linkButton("copy", "Copy the command", () => backend.copyText(command).then(() => flashStatus("copied")).catch((e) => flashStatus(String(e))));
+        links.replaceChildren(link("github", "GitHub", info.repo), link("globe", "skills.sh", info.page),
+          el("span", { className: "pkg-src" }, el("code", { textContent: command }), copyCommand));
+        overview.replaceChildren(info.readme ? markdownPage(readable(info.readme)) : el("p", { className: "dim small", textContent: "Its SKILL.md was not found in its repository." }));
+      }).catch((e) => overview.replaceChildren(el("p", { className: "error", textContent: String(e) })));
+      return;
+    }
     backend.api(["gallery-package", pkg.name]).then((info) => {
       if (pageView.hidden) return;
       meta.textContent = [pkg.publisher, pkg.downloads, ...(pkg.types || []), info.version && `v${info.version}`, info.license].filter(Boolean).join(" · ");
@@ -535,12 +598,15 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     }).catch((e) => overview.replaceChildren(el("p", { className: "error", textContent: String(e) })));
   }
 
+  drawFrom();
   return {
     shown() { if (!searched) search(); },
-    installed(packages) {
+    installed(packages, skills = []) {
       const next = new Set((packages || []).map((p) => p.source.replace(/@[^@/]*$/, "")));
-      const changed = next.size !== installed.size || [...next].some((x) => !installed.has(x));
+      const names = new Set((skills || []).map((s) => s.name));
+      const changed = next.size !== installed.size || [...next].some((x) => !installed.has(x)) || names.size !== installedSkills.size || [...names].some((x) => !installedSkills.has(x));
       installed = next;
+      installedSkills = names;
       if (searched && changed) render(); // its Install buttons say Installed
     },
   };

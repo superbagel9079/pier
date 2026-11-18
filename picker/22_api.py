@@ -1,7 +1,7 @@
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "file", "image-read", "session-messages", "config", "models", "pi-default-read", "providers", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
-             "skill-read", "gallery", "gallery-media", "gallery-package", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
+             "skill-read", "gallery", "gallery-media", "gallery-package", "skills-search", "skill-page", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -113,6 +113,8 @@ API_COMMANDS = {
     "gallery": lambda home, config, a: api_gallery(home, a[0]),
     "gallery-media": lambda home, config, a: api_gallery_media(home, a),
     "gallery-package": lambda home, config, a: api_gallery_package(home, a[0]),
+    "skills-search": lambda home, config, a: api_skills_search(home, a[0]),
+    "skill-page": lambda home, config, a: api_skill_page(home, a[0]),
     "forges": lambda home, config, a: api_forges(home),
     "forge-add": lambda home, config, a: api_forge_add(home, a[0], a[1], stdin_bytes(4096)),
     "forge-remove": lambda home, config, a: api_forge_remove(home, a[0]),

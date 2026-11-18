@@ -2291,3 +2291,6 @@ textarea { resize: none; }
 .pkg-readme .md-page { max-width: none; }
 /* A tab's count: no room kept when it has none (Browse sat off centre). */
 .seg .n:empty { display: none; }
+/* Browse: Packages or Skills, first on the left. */
+.pkg-from-seg { flex: none; }
+.pkg-tools .pkg-filter[hidden] { display: none; }

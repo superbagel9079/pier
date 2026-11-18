@@ -76,14 +76,25 @@ pub(crate) fn update_command(args: &[String]) -> Result<String, String> {
 pub(crate) fn package_command(args: &[String]) -> Result<String, String> {
     match args {
         [action, scope, source]
-            if (action == "install" || action == "remove")
+            if (action == "install" || action == "remove" || action == "skill")
                 && (scope == "user" || (scope.starts_with('/') && scope.len() < 4096 && !scope.chars().any(char::is_control)))
-                && package_source(source) =>
+                && (if action == "skill" { skill_source(source) } else { package_source(source) }) =>
         {
             Ok(format!("--pi-package {} {} {}", sh_quote(action), sh_quote(scope), sh_quote(source)))
         }
         _ => Err("unsupported package command".into()),
     }
+}
+
+/// A skill of skills.sh as Pier installs it: skills:OWNER/REPO/SKILL, plain names only
+/// (the picker checks it again).
+fn skill_source(source: &str) -> bool {
+    let Some(rest) = source.strip_prefix("skills:") else { return false };
+    let parts: Vec<&str> = rest.split('/').collect();
+    // Each part begins with a letter or a digit: never read as an option (--global) by npx.
+    let plain = |s: &str, extra: &str| s.len() <= 200 && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c) || extra.contains(c));
+    parts.len() == 3 && plain(parts[0], "") && plain(parts[1], "") && plain(parts[2], ":")
 }
 
 /// A terminal in a lab or on a machine (the picker's --lab-shell): only a name.

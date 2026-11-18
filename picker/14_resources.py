@@ -457,6 +457,104 @@ def gallery_card_facts(attrs):
             "updated": int(attr("date")) // 1000 if attr("date").isdigit() else None}
 
 
+_SKILLS_SEARCH = {}  # query -> (when, answer)
+SKILL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
+REPO_PART_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+
+
+def api_skills_search(home, query):
+    """Skills of skills.sh (the `npx skills` directory) matching query: its search API, as
+    `npx skills find` asks it (two letters at least). Each: its name, its repository, its
+    installs, and the source Pier installs it by (skills:OWNER/REPO/SKILL)."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    query = " ".join((query or "").split())[:100]
+    if len(query) < 2:
+        return {"query": query, "skills": [], "short": True}
+    cached = _SKILLS_SEARCH.get(query)
+    if cached and time.monotonic() - cached[0] < 600:
+        return cached[1]
+    url = "https://skills.sh/api/search?" + urllib.parse.urlencode({"q": query})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"pier-picker/{VERSION}", "Accept": "application/json"}), timeout=10) as answer:
+            data = json.loads(answer.read(4 * 1024 * 1024))
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
+        raise ApiError(f"skills.sh did not answer ({exc})")
+    skills = []
+    for item in (data.get("skills") if isinstance(data, dict) else None) or []:
+        if not isinstance(item, dict):
+            continue
+        source, skill = str(item.get("source") or ""), str(item.get("skillId") or item.get("name") or "")
+        owner, _, repo = source.partition("/")
+        if not (REPO_PART_RE.fullmatch(owner) and REPO_PART_RE.fullmatch(repo) and SKILL_NAME_RE.fullmatch(skill)):
+            continue
+        skills.append({"name": str(item.get("name") or skill)[:200], "repo": f"{owner}/{repo}", "skill": skill,
+                       "installs": item.get("installs") if isinstance(item.get("installs"), int) else None,
+                       "page": f"https://skills.sh/{owner}/{repo}/{skill}", "source": f"skills:{owner}/{repo}/{skill}"})
+        if len(skills) >= GALLERY_SIZE:
+            break
+    reply = {"query": query, "skills": skills}
+    remember(_SKILLS_SEARCH, query, (time.monotonic(), reply), 50)
+    return reply
+
+
+def api_skill_page(home, source):
+    """A skill of skills.sh: its SKILL.md, read from its GitHub repository where such a
+    repository keeps it (skills/NAME, NAME, .claude/skills/NAME, or the root)."""
+    import urllib.error
+    import urllib.request
+    found = SKILL_SOURCE_RE.fullmatch(source or "")
+    if not found:
+        raise ApiError("not a skill of skills.sh")
+    owner, repo, skill = found.groups()
+    agent = {"User-Agent": f"pier-picker/{VERSION}"}
+
+    def fetch(url, limit):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=10) as answer:
+                return answer.read(limit + 1)[:limit]
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
+            return None
+
+    # Its SKILL.md: the one whose folder is its name, else the one declaring its name (a
+    # folder may differ: vercel-react-best-practices is in skills/react-best-practices).
+    paths = []
+    tree = fetch(f"https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD?recursive=1", 8 * 1024 * 1024)
+    try:
+        paths = [t["path"] for t in json.loads(tree).get("tree", []) if isinstance(t, dict) and str(t.get("path", "")).endswith("SKILL.md")] if tree else []
+    except (ValueError, AttributeError):
+        paths = []
+    folder = lambda path: path.rsplit("/", 2)[-2] if "/" in path else ""
+    paths.sort(key=lambda path: (folder(path) != skill, not (folder(path) and skill.endswith(folder(path))), len(path)))
+    if not paths:
+        paths = [f"skills/{skill}/SKILL.md", f"{skill}/SKILL.md", "SKILL.md"]
+    text = first = None
+    for path in paths[:6]:
+        data = fetch(f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}", PACKAGE_README_MAX)
+        if not data:
+            continue
+        candidate = data.decode("utf-8", "replace")
+        first = first or candidate
+        named = re.search(r"(?m)^name:\s*[\"']?([^\"'\n]+)", candidate[:2000])
+        if folder(path) == skill or (named and named.group(1).strip() == skill):
+            text = candidate
+            break
+    text = text or first
+    description = None
+    if text and text.startswith("---"):
+        head, _, body = text[3:].partition("\n---")
+        said = re.search(r"(?m)^description:\s*(.+)$", head)
+        description = said.group(1).strip().strip("\"'")[:500] if said else None
+        text = body.lstrip("-\n")
+    return {"source": source, "repo": f"https://github.com/{owner}/{repo}", "page": f"https://skills.sh/{owner}/{repo}/{skill}",
+            "description": description, "readme": text}
+
+
 PACKAGE_README_MAX = 200 * 1024
 _GALLERY_PACKAGE = {}  # name -> (when, answer)
 
@@ -655,18 +753,54 @@ def run_in_pi_sandbox(command, project, home, config, env):
     return status, network
 
 
+SKILLS_CLI = "skills@1.9.0"  # vercel-labs/skills (skills.sh), pinned: a newer one is chosen, not taken
+# Each part begins with a letter or a digit: never read as an option (--global) by npx.
+SKILL_SOURCE_RE = re.compile(r"skills:([A-Za-z0-9][A-Za-z0-9._-]{0,99})/([A-Za-z0-9][A-Za-z0-9._-]{0,99})/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})")
+
+
 def pi_package(args):
-    """--pi-package install|remove user|PROJECT SOURCE: `pi install` or `pi remove`
-    (-l for a project) in a terminal of Pier. npm runs the packages' install scripts:
-    with the sandbox on, it all runs in Pi's sandbox, network limited as Pi's is, so a
-    package cannot read your keys or the rest of home while it installs."""
-    if len(args) != 3 or args[0] not in ("install", "remove") or not PI_UPDATE_TARGET.fullmatch(args[2]):
-        print("usage: --pi-package install|remove user|PROJECT SOURCE")
+    """--pi-package install|remove|skill user|PROJECT SOURCE: `pi install` or `pi remove`
+    (-l for a project), or a skill of skills.sh (skills:OWNER/REPO/SKILL: `npx skills add`
+    for Pi, into .agents/skills, ~/.agents/skills for yours), in a terminal of Pier. npm runs
+    the packages' install scripts: with the sandbox on, it all runs in Pi's sandbox, network
+    limited as Pi's is, so a package cannot read your keys or the rest of home meanwhile."""
+    if len(args) != 3 or args[0] not in ("install", "remove", "skill") \
+            or not (SKILL_SOURCE_RE.fullmatch(args[2]) if args[0] == "skill" else PI_UPDATE_TARGET.fullmatch(args[2])):
+        print("usage: --pi-package install|remove|skill user|PROJECT SOURCE")
         return 2
     action, scope, source = args
     home = home_dir()
     config, _ = load_config(home)
     env = child_env(home)
+    if action == "skill":
+        owner, repo, skill = SKILL_SOURCE_RE.fullmatch(source).groups()
+        npx = shutil.which("npx", path=env.get("PATH"))
+        if not npx:
+            print("npx not found on PATH: install Node.js on the VM (Pi needs it too)")
+            pause_for_enter("press Enter to close ")
+            return 1
+        if scope == "user":
+            project = os.path.join(home, ".agents")
+            os.makedirs(project, exist_ok=True)
+        else:
+            project = resolve_inside(home, scope)
+        glob = ["-g"] if scope == "user" else []
+        command = [npx, "-y", SKILLS_CLI, "add", f"{owner}/{repo}", "--skill", skill, "--agent", "pi", "--yes", "--copy", *glob]
+        env = {**env, "DISABLE_TELEMETRY": "1", "DO_NOT_TRACK": "1"}
+        print(f"$ npx {SKILLS_CLI} add {owner}/{repo} --skill {skill} --agent pi --yes --copy {' '.join(glob)}".rstrip(), flush=True)
+        log("info", "skill.add", source=source, scope="user" if glob else project)
+        status, network = run_in_pi_sandbox(command, project, home, config, env)
+        if status is None:
+            pause_for_enter("press Enter to close ")
+            return 1
+        log("warn" if status else "info", "skill.add-done", source=source, status=status)
+        print("\n" + ("done" if not status else f"npx skills add failed (status {status})")
+              + ". Pis load the skill when they next start.")
+        if status and network:
+            print("If it needed another site, look for net.blocked in the picker's log (Settings > Diagnostics), "
+                  "and add it to network_allow in ~/.config/pier-picker/config.toml.")
+        pause_for_enter("press Enter to close ")
+        return status
     argv = pi_argv(config, env)
     if argv is None:
         print("pi not found on PATH: install it or set PI_BIN")
