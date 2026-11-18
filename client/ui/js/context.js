@@ -425,6 +425,9 @@ backend.onDragDrop((kind, paths, position) => {
   const name = position ? workspace.dockAtPoint(x, y) : null;
   for (const d of DOCKS) workspace.docks[d].el.classList.toggle("drop-over", kind === "over" && d === name);
   if (kind !== "drop" || !paths.length || $("#workspace").hidden) return;
-  // Everything dropped goes through Context, which asks about folders.
+  // On a conversation shown in the middle: to it (its project, mentioned in its message).
+  // Elsewhere, through Context, which asks about folders.
+  const shown = workspace.docks.center.active;
+  if (name === "center" && shown?.kind === "chat" && shown.give) { shown.give(paths); return; }
   contextTab({ reveal: true }).give(paths);
 });

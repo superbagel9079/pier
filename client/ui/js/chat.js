@@ -66,7 +66,8 @@ function makeChat(tab) {
   ringSvg.append(svgNode("circle", { class: "track", cx: 8, cy: 8, r: 6 }),
     svgNode("circle", { class: "used", cx: 8, cy: 8, r: 6, pathLength: 100, "stroke-dasharray": "0 100" }));
   ring.append(ringSvg);
-  const composer = el("div", { className: "composer" }, input, el("div", { className: "bar" }, plus, modelBtn, thinkBtn, el("span", { className: "head-gap" }), ring, send));
+  const shots = el("div", { className: "composer-shots", hidden: true }); // images pasted, above the text
+  const composer = el("div", { className: "composer" }, shots, input, el("div", { className: "bar" }, plus, modelBtn, thinkBtn, el("span", { className: "head-gap" }), ring, send));
   // Before the first message: what this tab is, where Pi starts.
   const empty = el("div", { className: "chat-empty" }, el("p", { textContent: `New conversation in ${label || projectLabel(project)}` }),
     el("p", { textContent: "Ask Pi something. It starts in this folder, in its sandbox." }));
@@ -496,11 +497,15 @@ function makeChat(tab) {
   });
 
   function submit() {
-    const text = input.value.trim();
+    // The pictures pasted go first, by their reference (Pi reads them from the project).
+    const refs = [...shots.children].map((s) => s.dataset.ref).filter(Boolean);
+    const text = [refs.join(" "), input.value.trim()].filter(Boolean).join("\n");
     if (!text) { if (working) command({ type: "abort" }); return; }
     // While Pi works, a message steers it (taken at its next step); otherwise a prompt.
     command({ type: working ? "steer" : "prompt", message: text });
     input.value = "";
+    shots.replaceChildren();
+    shots.hidden = true;
     setWorking(working);
   }
   send.addEventListener("click", submit);
@@ -514,6 +519,52 @@ function makeChat(tab) {
     input.focus();
   }
   tab.mention = mention;
+
+  // Ctrl+V of an image: saved in the project (.pi-images), shown above the text and sent with
+  // the message (by its reference, not typed in the text); × takes it back (the file off the VM).
+  input.addEventListener("paste", async (e) => {
+    const images = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (!images.length) return;
+    e.preventDefault();
+    for (const file of images) {
+      let result;
+      try { result = await backend.pasteImage(file, project); } catch (err) { notice(String(err), "error"); continue; }
+      if (!result?.reference) continue;
+      const url = URL.createObjectURL(file);
+      const drop = el("button", { type: "button", className: "shot-x", title: "Take it back", ariaLabel: "Take this image back" }, svgIcon("x"));
+      const shot = el("span", { className: "shot", title: result.reference }, el("img", { src: url, alt: "" }), drop);
+      shot.dataset.ref = result.reference; // added to the message when it is sent (submit)
+      drop.addEventListener("click", () => {
+        backend.removeUpload(result.saved).catch(() => {});
+        URL.revokeObjectURL(url);
+        shot.remove();
+        shots.hidden = !shots.childElementCount;
+        input.focus();
+      });
+      shots.append(shot);
+      shots.hidden = false;
+    }
+  });
+
+  /** Files and folders dropped on this conversation (context.js routes them here): saved in
+   *  its project and mentioned; a folder asks first, as everywhere (share live, or copy). */
+  tab.give = async (paths) => {
+    const results = (await backend.pasteFiles(paths, project).catch((e) => { notice(String(e), "error"); return []; })) || [];
+    for (const r of results) {
+      if (r.error) notice(r.error, "error");
+      else if (r.folder) {
+        const choice = await askFolder(r.folder);
+        if (choice === "copy") {
+          const copied = await backend.copyFolder(r.folder, project).catch((e) => { notice(String(e), "error"); });
+          if (copied?.reference) mention(copied.reference);
+        } else if (choice) {
+          const share = await backend.shareStart(r.folder, choice === "live-rw", project).catch((e) => { notice(String(e), "error"); });
+          if (share?.relative) mention(`@${share.relative}`);
+        }
+      } else if (r.reference) mention(r.reference);
+    }
+    input.focus();
+  };
 
   // +: a file from this PC (saved in the project, then mentioned), or a file of the project.
   plus.addEventListener("click", () => showMenu(plus, [
