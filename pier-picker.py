@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.59"
+VERSION = "4.60"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -1879,6 +1879,8 @@ def exec_pi(path, extra):
     team_extension = pier_team_extension() if config["workers"] or config["helpers"] or image_model else None
     if role:
         tracked = tracked + pi_model_args(config, role, os.environ.get("PIER_MODEL"))
+    elif not set(extra) & {"--session", "--continue", "-c", "--resume", "-r", "--model"}:
+        tracked = tracked + pi_default_args(home)
     if team_extension:
         env["PIER_WORKERS"] = "1" if config["workers"] and role != "worker" else ""
         env["PIER_HELPERS"] = "1" if config["helpers"] else ""
@@ -6030,6 +6032,20 @@ def pi_default_model(home):
     if isinstance(model, str) and model:
         return f"{provider}/{model}" if isinstance(provider, str) and provider else model
     return ""
+
+
+def pi_default_args(home):
+    """--model (and --thinking) for a new conversation: Pi's default by name. Left to itself
+    at startup, Pi silently takes another model when it judges the default's key missing
+    (a provider of models.json, in Pier's sandbox), where by name it uses it."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    settings = settings if isinstance(settings, dict) else {}
+    model = pi_default_model(home)
+    args = ["--model", model] if model and "/" in model and MODEL_RE.fullmatch(model) else []
+    level = settings.get("defaultThinkingLevel")
+    if args and level in ("off", "minimal", "low", "medium", "high", "xhigh", "max"):
+        args += ["--thinking", level]
+    return args
 
 
 def api_models(home):

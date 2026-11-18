@@ -530,6 +530,8 @@ def exec_pi(path, extra):
     team_extension = pier_team_extension() if config["workers"] or config["helpers"] or image_model else None
     if role:
         tracked = tracked + pi_model_args(config, role, os.environ.get("PIER_MODEL"))
+    elif not set(extra) & {"--session", "--continue", "-c", "--resume", "-r", "--model"}:
+        tracked = tracked + pi_default_args(home)
     if team_extension:
         env["PIER_WORKERS"] = "1" if config["workers"] and role != "worker" else ""
         env["PIER_HELPERS"] = "1" if config["helpers"] else ""

@@ -590,6 +590,20 @@ def pi_default_model(home):
     return ""
 
 
+def pi_default_args(home):
+    """--model (and --thinking) for a new conversation: Pi's default by name. Left to itself
+    at startup, Pi silently takes another model when it judges the default's key missing
+    (a provider of models.json, in Pier's sandbox), where by name it uses it."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    settings = settings if isinstance(settings, dict) else {}
+    model = pi_default_model(home)
+    args = ["--model", model] if model and "/" in model and MODEL_RE.fullmatch(model) else []
+    level = settings.get("defaultThinkingLevel")
+    if args and level in ("off", "minimal", "low", "medium", "high", "xhigh", "max"):
+        args += ["--thinking", level]
+    return args
+
+
 def api_models(home):
     """The models Pi knows (`pi --list-models`: its providers and models.json's, a
     gateway such as Bifrost included), and its default."""
