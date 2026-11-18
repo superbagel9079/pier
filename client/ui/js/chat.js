@@ -350,8 +350,9 @@ function makeChat(tab) {
     run.fold.hidden = !any;
     $(".what", run.fold).textContent = runSummary(run.counts);
     $(".meta", run.fold).textContent = run.started ? runTime(Date.now() - run.started) : "";
-    run.fold.setAttribute("aria-expanded", "false");
-    run.tl.hidden = true;
+    const open = prefs.foldRuns === false; // Settings > Conversations
+    run.fold.setAttribute("aria-expanded", String(open));
+    run.tl.hidden = !open;
     if (run.started) {
       const took = runTime(Date.now() - run.started).replace(" min ", "m ").replace(/ s$/, "s");
       col.append(el("div", { className: "foot-note", textContent: `Worked for ${took}${model ? ` · ${model}` : ""}` }));
@@ -536,7 +537,7 @@ function makeChat(tab) {
           if (e.fresh && !tab.params.file && state.model) {
             const now = `${state.model.provider}/${state.model.id}`;
             backend.api(["pi-default-read"]).then((r) => {
-              if (r?.default && r.default !== now) notice(`Pi started on ${now}: your default model, ${r.default}, is unknown to Pi or has no key for its provider. Choose another in Settings > Agents.`, "error");
+              if (r?.default && r.default !== now) notice(`Pi started on ${now}: your default model, ${r.default}, is unknown to Pi or has no key for its provider. Choose another in Settings > Models.`, "error");
             }).catch(() => {});
           }
         });
@@ -681,7 +682,7 @@ function makeChat(tab) {
         // instead (its traceback, line by line). Said once, plainly, with the way out.
         if (!saidOld) {
           saidOld = true;
-          notice("The picker on the VM is too old for this view. Reconnect: Pier offers to update it (or Settings > Connection). Until then, Settings > Terminals > Pi in tmux works.", "error");
+          notice("The picker on the VM is too old for this view. Reconnect: Pier offers to update it (or Settings > Overview). Until then, Settings > Terminals > Pi in tmux works.", "error");
         }
         continue;
       }
@@ -867,7 +868,7 @@ function makeChat(tab) {
         const m = models.find((x) => key(x) === v);
         if (!m) return;
         // For this conversation only: Pi would make it every Pi's default too, so the default
-        // of Settings > Agents is put back once switched.
+        // of Settings > Models is put back once switched.
         let before = "";
         try { before = (await backend.api(["pi-default-read"]))?.default || ""; } catch { /* left as Pi makes it */ }
         command({ type: "set_model", provider: m.provider, modelId: m.id }, () => {

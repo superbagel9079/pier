@@ -73,7 +73,7 @@ function describe(s) {
 
 /** The connection's words: in the top bar before connecting, then at the foot of the left
  *  side (or the rail's, the left side closed) with the signal bars; a click opens
- *  Settings > Connection. */
+ *  Settings > Overview. */
 function setStatus(text) {
   $("#status").textContent = text;
   const state = /^connected/.test(text) ? (/attention/.test(text) ? "slow" : "ok")
@@ -83,7 +83,7 @@ function setStatus(text) {
   // Connected: who and where, as "leo@vm" in the mock-up; otherwise the words that matter.
   $("#status-foot span:last-child").textContent = state === "ok" && settings ? `${settings.user}@${settings.host}` : text;
     // Not connected, no hint: the first page asks for the VM already.
-  $("#status-foot").title = online ? `${text}: Settings > Connection` : "";
+  $("#status-foot").title = online ? `${text}: Settings > Overview` : "";
 }
 for (const id of ["#status", "#status-foot"]) $(id).addEventListener("click", () => {
   if (!online) { closePrefs(); if (settings) toLogin(); return; } // the first page: its password, or Add your VM

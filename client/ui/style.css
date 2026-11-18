@@ -824,7 +824,7 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 /* A row: its mark, its title on one line, a detail on the right; ⋯ (and + on a project)
    under the pointer. The whole row is the button that does its main thing. */
 .sessions li { position: relative; display: flex; align-items: center; min-width: 0; border-radius: var(--r); }
-.sessions li:hover, .sessions li:focus-within { background: var(--hover); }
+.sessions li:hover, .sessions li:has(:focus-visible) { background: var(--hover); }
 .sessions li.current { background: var(--raise); }
 /* Unread, or waiting for you: the title bold, its detail bright, as an unread mail. */
 .sessions li.unread > .row-main .title { font-weight: 600; }
@@ -843,9 +843,9 @@ button.row-main:hover { background: none; }
 /* Under the pointer or the keyboard only: faded, not hidden, so the keyboard reaches them. */
 .row-more { width: 24px; height: 24px; flex: none; margin-right: var(--s1); padding: 0; display: grid; place-items: center; background: none; color: var(--dim); opacity: 0; }
 .row-more .i { width: 14px; height: 14px; }
-.sessions li:hover .row-more, .sessions li:focus-within .row-more { opacity: 1; }
+.sessions li:hover .row-more, .sessions li:has(:focus-visible) .row-more { opacity: 1; }
 .row-more:hover { background: var(--raise); color: var(--fg); }
-.sessions li:has(.row-more):hover .row-meta, .sessions li:has(.row-more):focus-within .row-meta { display: none; }
+.sessions li:has(.row-more):hover .row-meta, .sessions li:has(.row-more):has(:focus-visible) .row-meta { display: none; }
 .sessions li.project-head:hover .row-meta { display: none; }
 /* A running Pi: its mark bright while it works, waiting for you in the text's colour too. */
 .sessions li.running.working .mark, .sessions li.running.waiting .mark { color: var(--fg); }
@@ -1607,7 +1607,7 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .sessions li.unread > .row-main .row-meta { color: var(--dim); }
 .sessions li:not(.project-head):not(.folder-head) > .row-main .row-meta { display: none; }
 .sessions li:not(.project-head):not(.folder-head):is(:hover, :focus-within) > .row-main .row-meta:not(:empty) { display: block; }
-.sessions li:has(.row-more):hover .row-meta, .sessions li:has(.row-more):focus-within .row-meta { display: block; }
+.sessions li:has(.row-more):hover .row-meta, .sessions li:has(.row-more):has(:focus-visible) .row-meta { display: block; }
 .row-main .mark .state { display: block; width: 7px; height: 7px; border-radius: 50%; }
 .row-main .mark .state.need { background: var(--yellow, #d29922); }
 .row-main .mark .state.working { width: 10px; height: 10px; border: 1.5px solid var(--dim); border-top-color: transparent; background: none; animation: spin 1s linear infinite; }
@@ -2249,3 +2249,24 @@ textarea { resize: none; }
 .split-hint { position: fixed; z-index: 40; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 2px solid var(--accent); border-radius: var(--r); }
 .split-hint[hidden] { display: none; }
 .tab .attn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warn, #d29922); flex: none; margin-left: 2px; }
+
+/* Settings: an icon before each entry, a sentence under the page's title (the reworked settings). */
+.prefs-tabs button { display: flex; align-items: center; gap: var(--s2); }
+.prefs-tabs button .i { width: 16px; height: 16px; flex: none; color: var(--dim); }
+.prefs-tabs button[aria-selected="true"] .i { color: var(--fg); }
+.prefs-head { margin-bottom: var(--s4); }
+.prefs-head h1 { margin-bottom: 2px; }
+#prefs-lede { color: var(--dim); }
+#prefs-lede:empty, .settings.searching #prefs-lede { display: none; }
+#prefs-danger:has(#btn-disconnect[hidden]) { display: none; }
+/* Outlined: a list of the same action (Popular's Connect), and Disconnect in red. */
+#prefs .prefs-page button.secondary.quiet, #prefs #btn-disconnect.danger { background: none; border-color: var(--line); color: var(--fg); font-weight: 400; }
+#prefs .prefs-page button.secondary.quiet:hover, #prefs #btn-disconnect.danger:hover { background: var(--hover); }
+#prefs #btn-disconnect.danger { color: var(--red, #f85149); border-color: color-mix(in srgb, var(--red, #f85149) 40%, var(--line)); }
+.model-group { margin-bottom: var(--s2); }
+.model-group > summary { list-style: none; display: flex; align-items: center; gap: var(--s2); min-height: 32px; cursor: pointer; font-weight: 600; }
+.model-group > summary::-webkit-details-marker { display: none; }
+.model-group > summary .i { width: 14px; height: 14px; color: var(--dim); transition: transform .12s; }
+.model-group[open] > summary .i { transform: rotate(90deg); }
+.model-group > summary .n { font-size: 11px; font-weight: 400; color: var(--dim); background: var(--raise); padding: 0 6px; }
+@media (max-width: 720px) { .prefs-tabs button .i { display: none; } }

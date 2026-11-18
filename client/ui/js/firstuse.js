@@ -53,7 +53,7 @@ function drawVmReady() {
  *  back even if it was closed, and "all there" is said. */
 async function checkVmReady(asked = false) {
   try { vmChecks = (await backend.api(["version"])).checks; } catch (e) { flashStatus(`could not ask the VM: ${e}`); return; }
-  if (!Array.isArray(vmChecks)) { flashStatus("this picker does not say what the VM has: update it (Settings > Connection)"); return; }
+  if (!Array.isArray(vmChecks)) { flashStatus("this picker does not say what the VM has: update it (Settings > Overview)"); return; }
   if (asked) { try { localStorage.removeItem(READY_SEEN); } catch { /* fine */ } }
   drawVmReady();
   if (!vmChecks.some((c) => !c.ok)) flashStatus("Everything Pier needs is on the VM");

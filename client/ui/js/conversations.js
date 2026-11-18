@@ -617,9 +617,20 @@ function makeConversations(tab) {
           withForks(kid, k);
         }
       };
+      const idle = matches.filter((s) => !s.slot && !s.deleted && !isFork(s));
+      // Pinned: on top of the project, above the Pis at work.
+      const pinnedIdle = idle.filter((s) => s.pinned && !s.category && !s.subagent);
+      for (const s of pinnedIdle) {
+        const li = row(p, s);
+        list.append(li);
+        withForks(li, s);
+        shown += 1;
+      }
       const fresh = (pi) => !p.sessions.some((s) => s.slot === pi.slot);
+      const isPinned = (x) => Boolean(matches.find((s) => s.slot && s.slot === x.slot)?.pinned);
       const ordered = [...pis.filter((pi) => fresh(pi) && pi.role !== "worker"),
-        ...matches.filter((s) => s.slot && !isFork(s)).map((s) => pis.find((x) => x.slot === s.slot) || s).filter((x) => query || x.role !== "worker")];
+        ...matches.filter((s) => s.slot && !isFork(s)).map((s) => pis.find((x) => x.slot === s.slot) || s).filter((x) => query || x.role !== "worker")]
+        .sort((a, b) => isPinned(b) - isPinned(a));
       // A search lists what matches, flat; otherwise each worker follows its orchestrator.
       const workersOf = (pi) => query ? [] : pis.filter((w) => w.role === "worker" && w.orchestrator === pi.n);
       const orphans = query ? [] : pis.filter((w) => w.role === "worker" && !pis.some((o) => o.role === "orchestrator" && o.n === w.orchestrator));
@@ -638,12 +649,11 @@ function makeConversations(tab) {
           if (s) shown += 1;
         }
       }
-      const idle = matches.filter((s) => !s.slot && !s.deleted && !isFork(s));
       const first = (s) => s.path === p.interrupted || s.pinned;
       const pinnedFirst = (xs) => [...xs.filter(first), ...xs.filter((s) => !first(s))];
       // Outside any folder: the latest few, the rest behind "show all".
-      const rest = pinnedFirst(idle.filter((s) => !s.category && !s.subagent));
-      const room = Math.max(PER_PROJECT - held.size, rest.filter((s) => s.pinned).length);
+      const rest = pinnedFirst(idle.filter((s) => !s.category && !s.subagent && !s.pinned));
+      const room = Math.max(0, PER_PROJECT - held.size - pinnedIdle.length);
       const visible = query || view.expanded[p.project] ? rest : rest.slice(0, room);
       for (const s of visible) {
         const li = row(p, s);

@@ -1,4 +1,4 @@
-// Updating Pier: Settings > Updates, and a word in the top bar. Check, download, signature
+// Updating Pier: Settings > About, and a word in the top bar. Check, download, signature
 // and install are Tauri's updater (update_check, update_install in lib.rs).
 
 const UPDATE_EVERY = 6 * 3600 * 1000;
@@ -71,7 +71,7 @@ $("#prefs-updatecheck").addEventListener("change", (e) => {
 });
 for (const button of document.querySelectorAll("[data-update]")) button.addEventListener("click", () => {
   openPrefs();
-  showPrefsPage("updates");
+  showPrefsPage("about");
 });
 
 const mb = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;

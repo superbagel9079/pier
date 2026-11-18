@@ -1,5 +1,6 @@
-// Settings > Agents and Network & sandbox: keys of the picker's config.toml on the VM
-// (and Pi's own default model), read and written through the picker, which checks each.
+// Settings > Models, Providers, Agents, Sandbox, Git & forges, Projects, Extensions: keys
+// of the picker's config.toml on the VM (and Pi's own default model, its models.json),
+// read and written through the picker, which checks each.
 
 // The picker's config, from Pier
 
@@ -24,13 +25,16 @@ function loadPiModels(again = false) {
 /** A page of settings shown: drawn from the VM's config each time (another Pier, or a
  *  hand edit of config.toml, may have changed it). */
 function settingsPageShown(page) {
-  if (page === "agents") {
-    drawAgents();
+  if (page === "models") {
+    drawModels();
     // Pi's default as it is now (a model picked in Pi's own screen changes it).
     backend.api(["pi-default-read"]).then((r) => {
-      if (piModels && r?.default !== undefined && r.default !== piModels.default) { piModels.default = r.default; drawAgents(false); }
+      if (piModels && r?.default !== undefined && r.default !== piModels.default) { piModels.default = r.default; drawModels(false); }
     }).catch(() => {});
   }
+  else if (page === "providers") drawProviders();
+  else if (page === "agents") drawAgents();
+  else if (page === "conversations") drawImageModel();
   else if (page === "network") drawNetwork();
   else if (page === "git") drawForges();
   else if (page === "extensions") drawExtensions();
@@ -50,9 +54,7 @@ async function setConfig(key, value, page, note) {
     note?.(String(error));
     return false;
   }
-  if (page === "agents") drawAgents(false);
-  else if (page === "git") drawForges();
-  else drawNetwork(false);
+  ({ agents: drawAgents, git: drawForges, network: drawNetwork, "conv-image": drawImageModel })[page]?.(false);
   return true;
 }
 
@@ -138,18 +140,18 @@ function imageModelRow() {
   const value = configValue(key);
   let row;
   const picker = modelPicker(value, "None", async (v) => {
-    if (!(await setConfig(key, v || null, "agents", row.say))) return;
+    if (!(await setConfig(key, v || null, "conv-image", row.say))) return;
     if (v) {
       try { await backend.api(["model-images", v]); } catch { /* a built-in provider's: Pi knows */ }
       await loadPiModels(true);
-      drawAgents(false);
+      drawImageModel(false);
     }
   }, { emptyChoice: true });
   const sees = piModels?.images;
   const hint = !value || !sees ? "A model that sees images: a Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at)."
     : sees.includes(value) ? "Pi knows it sees images. A Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at)."
       : `Pi lists ${value} as text only: it cannot read images. Choose one that sees them (Claude, GPT, Gemini…): ${sees.slice(0, 3).join(", ") || "none listed yet"}.`;
-  row = settingRow(key, "For images", picker, hint, "agents");
+  row = settingRow(key, "Image model", picker, hint, "conv-image");
   if (value && sees && !sees.includes(value)) row.classList.add("warn");
   return row;
 }
@@ -201,22 +203,21 @@ async function drawSettingsPage(page, again, draw) {
     try {
       await loadPickerConfig();
     } catch (error) {
-      section.replaceChildren(online ? el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}. An older picker? Settings > Connection updates it.` })
+      section.replaceChildren(online ? el("p", { className: "error", textContent: `The picker on the VM did not answer: ${error}. An older picker? Settings > Overview updates it.` })
         : el("p", { className: "dim", textContent: "These settings live on the VM: connect to it to see and change them." }));
       return;
     }
   }
   const scroll = $("#prefs .prefs-pages").scrollTop;
-  section.replaceChildren(pageIntro(page), ...draw());
+  section.replaceChildren(...(page === "conv-image" ? [] : [pageIntro(page)]), ...draw());
   $("#prefs .prefs-pages").scrollTop = scroll;
   if ($("#prefs-search").value.trim()) searchSettings($("#prefs-search").value);
 }
 
 // --- Agents ------------------------------------------------------------------------
 
-function drawAgents(again) {
-  drawSettingsPage("agents", again, () => {
-    const out = [];
+function drawModels(again) {
+  drawSettingsPage("models", again, () => {
     // Pi's default model: in Pi's own settings, for every Pi Pier starts.
     const defError = el("p", { className: "error", hidden: true });
     const def = modelPicker(piModels?.default || "", "Pi chooses (its first signed-in provider)", async (value) => {
@@ -231,49 +232,114 @@ function drawAgents(again) {
     def.setAttribute("aria-labelledby", "setting-pi-default-label");
     const defRow = el("div", { className: "setting-row" },
       el("div", { className: "setting-head" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), def),
-      el("p", { className: "hint", textContent: "Every Pi's model, unless a role below says otherwise. Written in Pi's own settings (~/.pi/agent/settings.json), as /model does." }),
+      el("p", { className: "hint", textContent: "Every new conversation starts on it, unless a role of Agents says otherwise. Written in Pi's own settings (~/.pi/agent/settings.json), as /model does." }),
       defError);
     const models = el("p", { className: "hint" });
     const refresh = el("button", { className: "secondary", title: "Ask Pi for its models again (pi --list-models)" }, svgIcon("refresh-cw"), el("span", { textContent: "Refresh" }));
     refresh.addEventListener("click", async () => {
       models.textContent = "Asking Pi…";
       await loadPiModels(true);
-      drawAgents(false);
+      drawModels(false);
     });
     if (!piModels) {
       models.textContent = "Asking Pi…";
-      loadPiModels().then(() => drawAgents(false));
+      loadPiModels().then(() => drawModels(false));
     } else if (piModels.problem && !piModels.models.length) {
       models.textContent = `Pi did not list them (${piModels.problem}): type them as provider/id.`;
     } else {
       const providers = piModels.providers.join(" and ");
-      models.textContent = `${piModels.models.length}, from ${providers || "no provider"}. A gateway such as Bifrost lists its own as one provider's. Type a few letters in a field to choose.`;
+      models.textContent = `${piModels.models.length}, from ${providers || "no provider"}. A gateway such as Bifrost lists its own as one provider's.`;
     }
     const knows = el("div", { className: "setting-row" }, el("div", { className: "setting-head" }, el("span", { textContent: "Models Pi knows" }), refresh), models);
-    out.push(el("h2", { textContent: "Providers" }), providersBlock());
-    out.push(el("h2", { textContent: "Models" }), knows, defRow,
-      modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
-      imageModelRow());
-    out.push(el("h2", { textContent: "Workers" }),
-      toggleRow("workers", "A Pi may start workers", "Worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
-      (() => {
-        const input = el("input", { type: "number", min: 1, max: 12, value: configValue("workers_max") ?? 4 });
-        const row = settingRow("workers_max", "At most, at once", Object.assign(stepper(input), { input }), "Workers one Pi may have running at the same time (1 to 12).", "agents");
-        input.addEventListener("change", () => setConfig("workers_max", Math.round(Number(input.value)), "agents", row.say));
-        return row;
-      })(),
-      modelRow("worker_model", "Their model", "When a Pi names none for a worker. A cheaper model does.", "Pi's default"),
-      workerModelsRow());
-    out.push(el("h2", { textContent: "Helpers" }),
-      toggleRow("helpers", "Every Pi may consult helpers", "Read-only helpers (scout, reviewer, critic, checker): short Pis that only read the project, and answer.", "agents"),
-      modelRow("helper_model", "Their model", "A fast, cheap model does.", "Pi's default"));
-    out.push(el("h2", { textContent: "What Pier gives each Pi" }),
-      toggleRow("checkpoints", "Restore points", "The project saved before each prompt: Undo last prompt, Activity > Restore.", "agents",
-        { confirmOff: "Turn restore points off? What Pi does can then no longer be undone from Pier." }),
-      toggleRow("worktrees", "A worktree for each extra Pi", "A second Pi in a git project works in a worktree of its own (.pi-worktrees), on its own branch.", "agents"),
-      toggleRow("track_sessions", "Which conversation each Pi holds", "A small extension tells Pier; without it, Pier guesses from the newest file.", "agents"));
+    return [defRow, el("h2", { textContent: "Models Pi knows" }), knows, ...(piModels?.models.length ? [modelList()] : [])];
+  });
+}
+
+/** Pi's models, grouped by where they come from, a search above (as OpenCode's). */
+function modelList() {
+  const groups = new Map();
+  for (const m of piModels.models) {
+    const parts = m.split("/");
+    const name = parts.pop();
+    const from = parts.join(" · ") || "other";
+    if (!groups.has(from)) groups.set(from, []);
+    groups.get(from).push([m, name]);
+  }
+  const sees = piModels.images || [];
+  const blocks = [...groups].map(([from, list]) => {
+    const rows = list.map(([m, name]) => {
+      const row = el("div", { className: "set tight" }, el("div", { className: "what" }, el("span", { textContent: name, title: m })),
+        sees.includes(m) ? el("span", { className: "origin", textContent: "sees images" }) : null);
+      row.dataset.model = m.toLowerCase();
+      return row;
+    });
+    const box = el("details", { className: "model-group", open: groups.size === 1 },
+      el("summary", {}, svgIcon("chevron-right"), el("span", { textContent: from }), el("span", { className: "n", textContent: String(list.length) })),
+      el("div", { className: "rows" }, ...rows));
+    box.rows = rows;
+    return box;
+  });
+  const field = el("input", { type: "search", placeholder: "Search models", spellcheck: false, autocomplete: "off" });
+  field.setAttribute("aria-label", "Search Pi's models");
+  field.addEventListener("input", () => {
+    const needle = field.value.trim().toLowerCase();
+    for (const box of blocks) {
+      let any = false;
+      for (const row of box.rows) { row.hidden = Boolean(needle) && !row.dataset.model.includes(needle); any ||= !row.hidden; }
+      box.hidden = !any;
+      if (needle) box.open = true;
+    }
+  });
+  return el("div", { className: "model-list" }, el("div", { className: "toolbar host-bar" }, field), ...blocks);
+}
+
+/** Conversations' image model, drawn under the page's own settings. */
+function drawImageModel(again) {
+  drawSettingsPage("conv-image", again, () => {
+    if (!piModels) loadPiModels().then(() => { if (prefsPage === "conversations") drawImageModel(false); });
+    return [el("h2", { textContent: "Images" }), imageModelRow()];
+  });
+}
+
+function drawProviders(again) {
+  drawSettingsPage("providers", again, () => {
+    const out = [el("h2", { textContent: "Connected" }), providersBlock()];
+    // The well-known ones not added yet, a Connect each (the dialog filled in for it).
+    const have = (piProviders?.providers || []).map((p) => p.name.toLowerCase());
+    const popular = PROVIDER_PRESETS.map((p, i) => [...p, i]).filter(([, name]) => name && !have.includes(name));
+    if (piProviders && popular.length) {
+      out.push(el("h2", { textContent: "Popular" }), el("div", { className: "rows" }, ...popular.map(([label, , url, , i]) => {
+        const go = el("button", { type: "button", className: "secondary quiet" }, svgIcon("plus"), el("span", { textContent: "Connect" }));
+        go.setAttribute("aria-label", `Connect ${label}`);
+        go.addEventListener("click", () => providerDialog(null, i));
+        return el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: label }), el("span", { className: "code", textContent: url })), go);
+      })));
+    }
     return out;
   });
+}
+
+function drawAgents(again) {
+  drawSettingsPage("agents", again, () => [
+    el("h2", { textContent: "Workers" }),
+    toggleRow("workers", "A Pi may start workers", "Worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
+    (() => {
+      const input = el("input", { type: "number", min: 1, max: 12, value: configValue("workers_max") ?? 4 });
+      const row = settingRow("workers_max", "At most, at once", Object.assign(stepper(input), { input }), "Workers one Pi may have running at the same time (1 to 12).", "agents");
+      input.addEventListener("change", () => setConfig("workers_max", Math.round(Number(input.value)), "agents", row.say));
+      return row;
+    })(),
+    modelRow("worker_model", "Their model", "When a Pi names none for a worker. A cheaper model does.", "Pi's default"),
+    workerModelsRow(),
+    modelRow("orchestrator_model", "Orchestrator's model", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
+    el("h2", { textContent: "Helpers" }),
+    toggleRow("helpers", "Every Pi may consult helpers", "Read-only helpers (scout, reviewer, critic, checker): short Pis that only read the project, and answer.", "agents"),
+    modelRow("helper_model", "Their model", "A fast, cheap model does.", "Pi's default"),
+    el("h2", { textContent: "Each Pi" }),
+    toggleRow("checkpoints", "Restore points", "The project saved before each prompt: Undo last prompt, Activity > Restore.", "agents",
+      { confirmOff: "Turn restore points off? What Pi does can then no longer be undone from Pier." }),
+    toggleRow("track_sessions", "Which conversation each Pi holds", "A small extension tells Pier; without it, Pier guesses from the newest file.", "agents"),
+  ]);
 }
 
 // --- Providers (the proposals' 1B): Pi's models.json on the VM -----------------------
@@ -304,7 +370,7 @@ function providersBlock() {
   const box = el("div", { className: "provider-list" });
   if (!piProviders) {
     box.append(el("p", { className: "hint", textContent: "Asking the VM…" }));
-    loadProviders().then(() => drawAgents(false));
+    loadProviders().then(() => drawProviders(false));
     return box;
   }
   if (piProviders.problem) box.append(el("p", { className: "error", textContent: piProviders.problem }));
@@ -337,12 +403,12 @@ function providersBlock() {
 async function afterProviders() {
   await loadProviders();
   await loadPiModels(true);
-  drawAgents(false);
+  drawProviders(false);
 }
 
 /** A provider added (from a well-known one or by hand) or changed: its name, address, API,
  *  key (left empty, the one set stays) and models, one per line. */
-function providerDialog(p) {
+function providerDialog(p, from = null) {
   const field = (label, input, hint) => el("label", { className: "provider-field" }, el("span", { textContent: label }), input, hint ? el("small", { textContent: hint }) : null);
   const preset = el("select", {});
   PROVIDER_PRESETS.forEach(([label], i) => preset.add(new Option(label, String(i))));
@@ -369,6 +435,7 @@ function providerDialog(p) {
     api.dispatchEvent(new Event("change"));
     name.focus();
   });
+  if (from !== null) { preset.value = String(from); preset.dispatchEvent(new Event("change")); }
   const save = el("button", { type: "button", textContent: p ? "Save" : "Add" });
   const dialog = resourceDialog(p ? `Provider ${p.name}` : "Add a provider", [
     ...(p ? [] : [field("Start from", preset)]),
@@ -668,7 +735,8 @@ async function drawForges() {
     (() => {
       // A key of config.toml: drawn as on Agents, once the config is known.
       const row = el("div");
-      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "Push, pull requests and tasks for the connected forge, through the picker. Off: Pi has git, nothing more.", "git"))).catch(() => row.remove());
+      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "Push, pull requests and tasks for the connected forge, through the picker. Off: Pi has git, nothing more.", "git"),
+        toggleRow("worktrees", "A worktree for each extra Pi", "A second Pi in a git project works in a worktree of its own (.pi-worktrees), on its own branch.", "git"))).catch(() => row.remove());
       return row;
     })());
   if ($("#prefs-search").value.trim()) searchSettings($("#prefs-search").value);

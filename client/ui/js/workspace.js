@@ -412,7 +412,7 @@ const workspace = (() => {
     if (isCenterDock(tab.dock)) {
       const alone = dock.tabs.length < 2;
       items.push(null, ["Split right", () => splitWith(tab, tab.dock, "right"), alone, { icon: "panel-right" }],
-        ["Split down", () => splitWith(tab, tab.dock, "bottom"), alone, { icon: "panel-left" }]);
+        ["Split down", () => splitWith(tab, tab.dock, "bottom"), alone, { icon: "panel-bottom" }]);
     }
     const others = dock.tabs.filter((t) => t !== tab);
     items.push(null, ["Close", () => close(tab)], ["Close the other tabs here", () => others.forEach(close), !others.length]);

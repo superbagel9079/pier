@@ -1,5 +1,5 @@
 // Settings: the whole window, categories on the left, a search over all of them;
-// layout, themes, behavior, the picker, diagnostics (Agents and Network: settings.js).
+// layout, themes, notifications, the picker, diagnostics (what lives on the VM: settings.js).
 
 // Preferences dialog
 
@@ -24,6 +24,7 @@ function openPrefs() {
   showTerminalPage();
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   showCopy();
+  showFold();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
   $("#prefs-updatecheck").checked = prefs.updateCheck;
@@ -56,27 +57,29 @@ function closePrefs() {
 }
 
 /** One category of the settings at a time; the one last shown comes back next time. */
-let prefsPage = "agents";
+let prefsPage = "general";
 // A category shows its pages one under the other. A page asked by its own name or an older
-// one ("picker", "layout", "general") opens its category.
-const PREFS_GROUPS = { appearance: ["appearance", "layout"], updates: ["updates", "picker"] }; // the picker's version with the updates
-const PREFS_OLD = { general: "connection" };
+// one ("picker", "behavior", "connection") opens its category.
+const PREFS_GROUPS = { conversations: ["conversations", "conv-image"], overview: ["overview", "picker"] };
+const PREFS_OLD = { behavior: "general", layout: "general", connection: "overview", updates: "about" };
 const prefsTabOf = (page) => PREFS_OLD[page] || Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
 const prefsTabs = () => [...document.querySelectorAll("#prefs .prefs-tabs button")];
 
 function showSettingsPage(page) {
   closeMenu(false); // a menu of the page left goes with it
   page = prefsTabOf(page);
-  if (!prefsTabs().some((t) => t.dataset.page === page)) page = "agents";
+  if (!prefsTabs().some((t) => t.dataset.page === page)) page = "general";
   prefsPage = page;
   const shown = PREFS_GROUPS[page] || [page];
   const tabs = prefsTabs();
   for (const tab of tabs) {
-    const on = tab.dataset.page === (page === "extensions" ? "projects" : page);
+    const on = tab.dataset.page === (page === "extensions" && extFromProject ? "projects" : page);
     tab.setAttribute("aria-selected", String(on));
     tab.tabIndex = on ? 0 : -1;
   }
-  $("#prefs-title").textContent = tabs.find((t) => t.dataset.page === page)?.textContent || "Settings";
+  const tab = tabs.find((t) => t.dataset.page === page);
+  $("#prefs-title").textContent = tab?.textContent || "Settings";
+  $("#prefs-lede").textContent = tab?.dataset.lede || "";
   if ($("#prefs-search").value.trim()) return; // the search shows what matches, wherever it is
   for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = !shown.includes(section.dataset.page);
   settingsPageShown(page);
@@ -94,7 +97,10 @@ function showPrefsPage(page) {
   searchSettings("");
   showSettingsPage(page);
 }
-for (const tab of prefsTabs()) tab.addEventListener("click", () => showPrefsPage(tab.dataset.page));
+for (const tab of prefsTabs()) tab.addEventListener("click", () => {
+  if (tab.dataset.page === "extensions") extFromProject = false; // from the menu: yours, any project
+  showPrefsPage(tab.dataset.page);
+});
 // The categories, a vertical tab list: arrows move, Home and End go to the ends.
 $("#prefs .prefs-tabs").addEventListener("keydown", (e) => {
   const tabs = prefsTabs().filter((t) => !t.hidden);
@@ -563,6 +569,11 @@ function showCopy() {
 for (const [id, key] of [["prefs-copykeys", "copyKeys"], ["prefs-copymode", "copyMode"]]) {
   for (const b of $(`#${id}`).children) b.addEventListener("click", () => { prefs[key] = b.dataset.v; savePrefs(); showCopy(); });
 }
+/** When a Pi finishes: its steps folded behind one line, or left open (chat.js). */
+function showFold() {
+  for (const b of $("#prefs-fold").children) b.setAttribute("aria-checked", String(b.dataset.v === (prefs.foldRuns === false ? "open" : "fold")));
+}
+for (const b of $("#prefs-fold").children) b.addEventListener("click", () => { prefs.foldRuns = b.dataset.v === "fold"; savePrefs(); showFold(); });
 // Text: − and + beside the numbers.
 stepper($("#prefs-font"));
 stepper($("#prefs-padding"));
