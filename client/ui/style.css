@@ -2094,3 +2094,10 @@ textarea { resize: none; }
 /* A big file being typed in: the field's own text, seen at once (viewer.js). */
 .code-edit.plain { color: var(--fg); }
 .code-edit.plain::selection { color: var(--fg); }
+/* While Pi works: only the message field's frame moves in the gradient, its inside stays as it
+   is (its see-through ground let the gradient fill it all). */
+.grad-in-working .composer.working { background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(var(--bg), var(--bg)) padding-box, linear-gradient(90deg, var(--g1), var(--g2), var(--g1)) border-box; background-size: 100% 100%, 100% 100%, 200% 100%; }
+@keyframes composer-work { to { background-position: 0 0, 0 0, -200% 0; } }
+/* The / suggestions: each line centred, on a solid ground (the text behind no longer shows). */
+.slash-menu button { align-items: center; }
+.menu.slash-menu, html.menus-blur .menu.slash-menu { background: var(--panel); }
