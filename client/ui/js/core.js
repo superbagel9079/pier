@@ -125,7 +125,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 // Preferences (this computer only)
 
-const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
+const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: true, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
   termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false, railAlways: true,
   gradStyle: "aurora", gradIntensity: 22, gradCustom: false, gradC1: "#4c8dff", gradC2: "#a371f7", gradGrain: false,
@@ -137,6 +137,12 @@ const prefs = (() => {
 if (!prefs.paddingDefault8) {
   if (prefs.termPadding === 6) prefs.termPadding = 8;
   prefs.paddingDefault8 = true;
+}
+// What was given to a Pi (pasted images, files, copies) deleted when it ends: on by default
+// now, and turned on once where it was saved off before.
+if (!prefs.clearDefaultOn) {
+  prefs.clearOnEnd = true;
+  prefs.clearDefaultOn = true;
 }
 // Before themes, the choice was "dark" or "light".
 prefs.theme = { dark: "devbox-dark", light: "devbox-light" }[prefs.theme] || prefs.theme;
