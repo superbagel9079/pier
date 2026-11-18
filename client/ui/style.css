@@ -2125,3 +2125,10 @@ textarea { resize: none; }
 .setting-row.warn .hint { color: var(--yellow, #e0af68); }
 /* The provider's models: no grip (the field is tall enough for a few, it scrolls past). */
 .provider-field textarea { resize: none; }
+/* Spinners keep turning when Windows asks for less motion (its "Animation effects" off): they
+   are the only sign that Pi is at work. Calmer there; every other motion stays off. */
+@media (prefers-reduced-motion: reduce) {
+  .chat .step:has(.node use[href="#i-loader-circle"]) .node .i { animation: spin 2s linear infinite !important; }
+  .row-main .mark .state.working { animation: spin 2s linear infinite; border-top-color: transparent; }
+  .tree .node .badge.is-being-read .i { animation: spin 2s linear infinite; }
+}

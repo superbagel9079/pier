@@ -335,6 +335,7 @@ function makeChat(tab) {
       case "pier_attached":
         if (tab.params.args?.[0] === "--session") tab.params.file = tab.params.args[1]; // still its row in the list
         tab.params.args = ["--slot", e.slot]; // a reconnection comes back to this Pi
+        if (e.fresh) vm.poke(); // the list shows this new Pi at once, not at its next look
         if (currentTab === tab) for (const t of workspace.tabs()) t.onShownTab?.(); // the list and Details follow it
         command({ type: "get_state" }, (data) => { state = data || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); setWorking(Boolean(state.isStreaming)); });
         command({ type: "get_messages" }, (data) => {
@@ -523,6 +524,7 @@ function makeChat(tab) {
     popCard(ring, card);
   });
 
+  let sentOnce = false;
   function submit() {
     // The pictures pasted go first, by their reference (Pi reads them from the project).
     const refs = [...shots.children].map((s) => s.dataset.ref).filter(Boolean);
@@ -530,6 +532,8 @@ function makeChat(tab) {
     if (!text) { if (working) command({ type: "abort" }); return; }
     // While Pi works, a message steers it (taken at its next step); otherwise a prompt.
     command({ type: working ? "steer" : "prompt", message: text });
+    // The first message makes the conversation's file: the list asked again once it is there.
+    if (!sentOnce) { sentOnce = true; setTimeout(() => vm.poke(), 1500); }
     input.value = "";
     shots.replaceChildren();
     shots.hidden = true;
