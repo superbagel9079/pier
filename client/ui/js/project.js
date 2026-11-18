@@ -199,7 +199,8 @@ function makeProject(tab) {
     restore.append(svgIcon("history"), el("span", { textContent: "Restore points" }));
     activityView.append(card("Changes", "this session",
       ...(rows.length ? rows : [el("p", { className: "dim", textContent: activity.session ? "Pi has not touched a file yet." : "No Pi session for this project yet." })]),
-      el("div", { className: "card-links" }, undo, restore)));
+      // Undo and the restore points mean something once Pi changed files.
+      ...(mine.length || outside.length ? [el("div", { className: "card-links" }, undo, restore)] : [])));
     drawContext();
     activityView.append(ctxSlot);
   }

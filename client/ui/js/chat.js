@@ -130,10 +130,50 @@ function makeChat(tab) {
     else backend.api(["image-read", project, ref]).then((r) => { if (r?.data) img.src = `data:${r.mime};base64,${r.data}`; }).catch(() => img.replaceWith(el("span", { className: "you-file", title: ref }, svgIcon("ft-image"), el("span", { textContent: name }))));
     return el("span", { className: "you-shot" }, img);
   }
+  /** The conversation drawn again from Pi's messages; then, once drawn, `after`. */
+  function redraw(after) {
+    command({ type: "get_messages" }, (data) => {
+      col.replaceChildren();
+      steps.clear();
+      run = null;
+      spent = 0;
+      (data?.messages || []).forEach(drawMessage);
+      if (run) endRun(null);
+      showContext();
+      scroller.scrollTop = scroller.scrollHeight;
+      after?.();
+    });
+  }
+
+  /** Your message changed and sent again: Pi goes back to before it (fork: the conversation
+   *  as it was stays saved as it is, this one goes on from there), its text in the field. */
+  function editMessage(box) {
+    if (working) { flashStatus("Pi is working: stop it first, or wait"); return; }
+    const at = [...col.querySelectorAll(":scope > .you")].indexOf(box);
+    command({ type: "get_fork_messages" }, (data) => {
+      const entry = (data?.messages || [])[at];
+      if (!entry) { flashStatus("This message cannot be changed"); return; }
+      command({ type: "fork", entryId: entry.entryId }, (r) => {
+        if (r?.cancelled) { flashStatus("An extension kept the conversation as it is"); return; }
+        command({ type: "get_state" }, (d) => { state = d || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); });
+        redraw(() => {
+          input.value = r?.text ?? entry.text ?? "";
+          input.dispatchEvent(new Event("input"));
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+          vm.poke(); // the new conversation in the list
+        });
+      });
+    });
+  }
+
   function you(text) {
     const refs = [...text.matchAll(GIVEN)].map((m) => m[2]);
     const words = text.replace(GIVEN, "$1").trim();
     const box = el("div", { className: "you" });
+    const change = el("button", { type: "button", className: "you-edit icon-btn", title: "Change this message and send it again", ariaLabel: "Change this message" }, svgIcon("pencil"));
+    change.addEventListener("click", () => editMessage(box));
+    box.append(change);
     if (refs.length) box.append(el("div", { className: "you-given" }, ...refs.map(given)));
     if (words) box.append(el("div", { className: "you-words", textContent: words }));
     col.append(box);
@@ -338,15 +378,7 @@ function makeChat(tab) {
         if (e.fresh) vm.poke(); // the list shows this new Pi at once, not at its next look
         if (currentTab === tab) for (const t of workspace.tabs()) t.onShownTab?.(); // the list and Details follow it
         command({ type: "get_state" }, (data) => { state = data || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); setWorking(Boolean(state.isStreaming)); });
-        command({ type: "get_messages" }, (data) => {
-          col.replaceChildren();
-          steps.clear();
-          run = null;
-          spent = 0;
-          (data?.messages || []).forEach(drawMessage);
-          if (run) endRun(null);
-          showContext();
-          scroller.scrollTop = scroller.scrollHeight;
+        redraw(() => {
           // A new conversation not on the default model: Pi could not use it (unknown to it, or
           // no key for its provider) and took another without a word. Said once drawn.
           if (e.fresh && !tab.params.file && state.model) {
@@ -372,6 +404,9 @@ function makeChat(tab) {
         break;
       }
       case "agent_start": setWorking(true); break;
+      case "agent_end": setWorking(false); break; // its end, also without agent_settled (an older Pi)
+      case "auto_retry_start": notice(`The model failed (${String(e.errorMessage || "").slice(0, 200)}): trying again, ${e.attempt} of ${e.maxAttempts}…`, "dim"); break;
+      case "auto_retry_end": if (e.success === false) notice(`The model failed ${e.attempt} times: ${e.finalError || "no answer"}`, "error"); break;
       case "agent_settled": setWorking(false); endRun(state.model?.id || state.model?.name || ""); break;
       case "message_start":
         if (e.message?.role === "user") {
@@ -384,13 +419,21 @@ function makeChat(tab) {
       case "message_update": {
         const a = e.assistantMessageEvent || {};
         const m = message || startMessage(true);
-        if (a.type === "text_delta") { m.raw += a.delta; endThinking(m, true); m.text.textContent = m.raw; }
+        if (a.type === "text_delta") {
+          m.raw += a.delta;
+          endThinking(m, true);
+          if (!m.paint) m.paint = setTimeout(() => { m.paint = 0; if (message === m) { const was = atBottom(); answer(m.text, m.raw); keepDown(was); } }, 120);
+        }
         else if (a.type === "thinking_delta") thinking(m, a.delta);
         else if (a.type === "toolcall_end" && a.toolCall) { endThinking(m, true); toolStep(a.toolCall); }
         break;
       }
       case "message_end":
+        if (e.message?.role === "assistant" && (e.message.stopReason === "error" || e.message.stopReason === "aborted") && e.message.errorMessage) {
+          notice(`The model stopped: ${e.message.errorMessage}`, "error");
+        }
         if (e.message?.role === "assistant" && message) {
+          clearTimeout(message.paint);
           const text = (e.message.content || []).filter((c) => c.type === "text").map((c) => c.text).join("");
           endThinking(message, true);
           if (text) answer(message.text, text);

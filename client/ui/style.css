@@ -2134,3 +2134,11 @@ textarea { resize: none; }
 }
 /* The window's buttons: Windows' own glyphs, at its size. */
 #window-buttons .caption-glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 10px; line-height: 1; font-weight: 400; -webkit-font-smoothing: antialiased; }
+/* Air between the conversation's last line and the message field. */
+.chat-col { padding-bottom: var(--s6, 32px); }
+/* Your message: a pencil on its left under the pointer, to change it and send it again. */
+.chat-col > .you { position: relative; }
+.you .you-edit { position: absolute; left: -36px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; opacity: 0; color: var(--dim); }
+.you:hover .you-edit, .you .you-edit:focus-visible { opacity: 1; }
+.you .you-edit:hover { color: var(--fg); }
+.you .you-edit .i { width: 14px; height: 14px; }
