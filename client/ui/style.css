@@ -1851,7 +1851,7 @@ input[type="checkbox"]::before { background:
     linear-gradient(-45deg, transparent calc(50% - .8px), var(--accent) calc(50% - .8px), var(--accent) calc(50% + .8px), transparent calc(50% + .8px)); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"] { border-color: color-mix(in srgb, var(--fg) 30%, transparent); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"]::before { background: color-mix(in srgb, var(--fg) 45%, transparent); }
-:is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+:is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input, .switch-hint > input)[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"]:checked::before { background: var(--bg); }
 .qs-step.on { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
 .look-choice[aria-pressed="true"] { outline-color: var(--accent); }
@@ -2200,7 +2200,7 @@ textarea { resize: none; }
 .loads-group .n { font-weight: 400; }
 .pkg-tile { width: 28px; height: 28px; flex: none; display: grid; place-items: center; overflow: hidden; color: #fff; font-weight: 700; font-size: 13px; border-radius: var(--r); }
 .pkg-tile.pic { background: var(--field); }
-.pkg-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pkg-tile img { width: 100%; height: 100%; object-fit: contain; display: block; } /* a logo whole, never cut */
 .pkg-tile.big { width: 100%; height: 120px; font-size: 32px; }
 .pkg-tile.shot { width: 100%; height: 96px; font-size: 28px; border-radius: 0; }
 #ext-packages li > .pkg-tile { align-self: center; margin-right: var(--s1); }
@@ -2246,7 +2246,7 @@ textarea { resize: none; }
 .mark-edit:hover .pbadge { outline: 1px solid var(--fg); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .mark-edit .mark-pen { transition: none; } }
 /* The New tab's message field (the proposals' 3A, as Paseo's New workspace). */
-.nt-start { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s4); }
+.nt-start { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s2); }
 .nt-start h2 { margin: 0 0 var(--s2); font-size: 20px; line-height: 28px; font-weight: 600; color: var(--fg); }
 .nt-bar { display: flex; align-items: center; gap: var(--s2); }
 .nt-project { display: inline-flex; align-items: center; gap: var(--s2); height: 28px; padding: 0 var(--s2); background: none; border: 0; color: var(--fg); border-radius: var(--r); }
@@ -2256,3 +2256,16 @@ textarea { resize: none; }
 /* The New tab's composer is the conversation's (.composer): only its place differs. */
 .nt-start .composer.nt-composer { margin: 0; width: 100%; max-width: none; }
 .menu-icon .pbadge { width: 16px; height: 16px; font-size: 9px; }
+/* Pier's own extensions: the same switch as the others, on no button frame of its own. */
+#prefs .prefs-page button.switch-hint { height: auto; padding: 0; background: none; border: 0; }
+/* Browse: a package's detail in the room on the right of the list, beside the row clicked;
+   under 1400 px, a column beside it as before. */
+.pkg-browse { position: relative; }
+@media (min-width: 1400px) {
+  .pkg-browse:has(> .pkg-detail:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+  .pkg-detail { position: absolute; left: calc(100% + var(--s3)); width: 300px; }
+}
+@media (max-width: 1399px) { .pkg-detail { top: 0 !important; } }
+/* A new skill, typed in place first in Skills. */
+.set.new-skill { align-items: center; }
+.new-skill-fields { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--s2); }

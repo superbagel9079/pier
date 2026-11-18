@@ -35,26 +35,12 @@ function resourceDialog(title, body, actions, wide = false) {
   return Object.assign(api, { close, box });
 }
 
-/** "for you / for this project": where a new skill or a package goes. */
-function scopeChoice(value = "user") {
-  const select = el("select", { title: "Where it goes" });
-  select.add(new Option("You, in every project", "user"));
-  select.add(new Option("This project only", "project"));
-  select.value = value;
-  return select;
-}
-
-/** A dialog's field as Pier's others (Start a project, a provider): its name above, a hint under. */
-function dialogField(label, control, hint = "") {
-  return el("label", { className: "provider-field" }, el("span", { textContent: label }), control, hint ? el("small", { textContent: hint }) : null);
-}
-
 function dialogError() {
   return el("p", { className: "error", role: "alert", hidden: true });
 }
 
 /** The Skills page. onChange: after each load or change (the summary counts follow). */
-function makeResourceManager(box, currentProject, onChange, top = null) {
+function makeResourceManager(box, currentProject, onChange, top = null, { scope = () => "user", browse = null } = {}) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
   const filter = el("input", { type: "search", placeholder: "Filter skills", spellcheck: false });
@@ -73,11 +59,13 @@ function makeResourceManager(box, currentProject, onChange, top = null) {
   let kind = "skills"; // the tab shown (settings.js): skills, extensions or prompts
   const say = noticeSetter(notice);
 
+  // Added in place (the proposals' 2B): a new skill is a row to fill first in Skills, a
+  // skill of this computer is imported at once, a package is found in Browse. Where it goes:
+  // the project whose settings these are (scope).
   add.addEventListener("click", () => showMenu(add, [
-    ["New skill…", () => newSkill()],
-    ["Import a skill from this computer…", () => importSkill()],
-    null,
-    ["Install a package…", () => installDialog(currentProject, () => load())],
+    ["New skill", () => newSkill(), false, { icon: "plus" }],
+    ["Import a skill from this computer…", () => importSkill(), false, { icon: "upload" }],
+    ...(browse ? [null, ["Find a package", () => browse(), false, { icon: "search" }]] : []),
   ]));
   refresh.addEventListener("click", () => load());
   let filterTimer = null;
@@ -112,6 +100,7 @@ function makeResourceManager(box, currentProject, onChange, top = null) {
       // settings; shown, not toggled here (each has its setting in the picker's config).
       const pier = k === "extensions" ? (data?.pier || []).filter(shown) : [];
       const rows = el("div", { className: "rows" },
+        ...(k === "skills" && adding ? [adding] : []),
         ...items.filter((i) => i.scope === "user").map((i) => row(k, i)),
         ...items.filter((i) => i.scope === "project").map((i) => row(k, i)),
         ...pier.map(pierRow));
@@ -190,29 +179,40 @@ function makeResourceManager(box, currentProject, onChange, top = null) {
     } catch (e) { showError(error, String(e)); }
   }
 
+  /** A new skill: a row first in Skills, its name and what it does typed there; Create makes
+   *  it and opens its SKILL.md. Escape or × puts the row away. */
+  let adding = null;
   function newSkill() {
-    const scope = scopeChoice();
-    const name = el("input", { placeholder: "my-skill", spellcheck: false });
-    const description = el("input", { placeholder: "what it does, and when Pi should use it", spellcheck: false });
-    const problem = dialogError();
-    const create = el("button", { textContent: "Create" });
-    const dialog = resourceDialog("New skill", [
-      dialogField("Name", name, "Lowercase letters, digits and single hyphens. It opens to edit once made."),
-      dialogField("Description", description),
-      dialogField("For", scope),
-      problem], [create]);
-    dialog.box.classList.add("provider-dialog");
-    const go = async () => {
-      try {
-        const made = await backend.skillCreate(scope.value, currentProject(), name.value.trim(), description.value.trim());
-        dialog.close();
-        await load();
-        editSkill(scope.value, made.name);
-      } catch (e) { showError(problem, String(e)); }
-    };
-    create.addEventListener("click", go);
-    for (const input of [name, description]) input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-    name.focus();
+    if (!adding) {
+      const name = el("input", { placeholder: "skill-name", spellcheck: false, "aria-label": "The new skill's name: lowercase letters, digits and single hyphens" });
+      const description = el("input", { placeholder: "What it does, and when Pi should use it", spellcheck: false, "aria-label": "What the new skill does" });
+      const create = el("button", { type: "button", className: "secondary", textContent: "Create" });
+      const cancel = el("button", { type: "button", className: "icon-btn", title: "Put it away" }, svgIcon("x"));
+      cancel.setAttribute("aria-label", "Put the new skill away");
+      adding = el("div", { className: "set new-skill" }, el("div", { className: "new-skill-fields" }, name, description), cancel, create);
+      const away = () => { adding = null; render(); };
+      const go = async () => {
+        create.disabled = true;
+        try {
+          const made = await backend.skillCreate(scope(), currentProject(), name.value.trim(), description.value.trim());
+          adding = null;
+          await load();
+          editSkill(scope(), made.name);
+        } catch (e) { showError(error, String(e)); } finally { create.disabled = false; }
+      };
+      create.addEventListener("click", go);
+      cancel.addEventListener("click", away);
+      for (const input of [name, description]) {
+        input.dataset.ownEscape = ""; // Escape puts the row away, not the settings
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") { e.preventDefault(); go(); }
+          if (e.key === "Escape") { e.preventDefault(); away(); }
+        });
+      }
+    }
+    filter.value = "";
+    render();
+    $("input", adding).focus();
   }
 
   async function editSkill(where, name) {
@@ -240,25 +240,16 @@ function makeResourceManager(box, currentProject, onChange, top = null) {
     area.focus();
   }
 
-  function importSkill() {
-    const scope = scopeChoice();
-    const problem = dialogError();
-    const choose = el("button", { textContent: "Choose a folder…" });
-    const dialog = resourceDialog("Import a skill", [
-      el("p", { className: "hint", textContent: "A folder of this computer that holds a SKILL.md: it is copied into the skills, under the name it declares." }),
-      dialogField("For", scope),
-      problem], [choose]);
-    dialog.box.classList.add("provider-dialog");
-    choose.addEventListener("click", async () => {
-      const folder = await backend.pickFolder();
-      if (!folder) return;
-      try {
-        const done = await backend.skillImport(scope.value, currentProject(), folder);
-        dialog.close();
-        say(`${done.name} imported ${scope.value === "project" ? "into this project" : "for you"}.`);
-        load();
-      } catch (e) { showError(problem, String(e)); }
-    });
+  /** A folder of this computer holding a SKILL.md, chosen at once: copied into the skills,
+   *  under the name it declares. */
+  async function importSkill() {
+    const folder = await backend.pickFolder();
+    if (!folder) return;
+    try {
+      const done = await backend.skillImport(scope(), currentProject(), folder);
+      say(`${done.name} imported ${scope() === "project" ? "into this project" : "for you"}.`);
+      load();
+    } catch (e) { showError(error, String(e)); }
   }
 
   // Read again when the project changes; otherwise on "refresh" and after an action
@@ -375,36 +366,11 @@ function showPackageMedia(tiles) {
   loadPackageMedia(tiles.map((t) => t.dataset.name)).then(() => tiles.forEach((t) => t.refresh()));
 }
 
-/** Installing a package: a source, for you or the project, then pi install in a tab. */
-function installDialog(currentProject, onDone, source = "") {
-  const scope = scopeChoice();
-  const input = el("input", { placeholder: "npm:pi-hindsight", spellcheck: false, value: source });
-  const problem = dialogError();
-  const install = el("button", { textContent: "Install" });
-  const dialog = resourceDialog("Install a package", [
-    dialogField("Source", input, "npm:, git: or https://"),
-    dialogField("For", scope),
-    el("p", { className: "hint", textContent: PACKAGE_WARNING }),
-    problem], [install]);
-  dialog.box.classList.add("provider-dialog");
-  const go = () => {
-    const value = input.value.trim();
-    if (!/^(npm:|git:|https:\/\/)[A-Za-z0-9@/._:+~-]{1,200}$/.test(value)) { showError(problem, "A source starts with npm:, git: or https://"); return; }
-    dialog.close();
-    openPackageTerminal("install", scope.value === "project" ? currentProject() : "user", value, value.replace(/^npm:/, ""), onDone);
-  };
-  install.addEventListener("click", go);
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-  input.focus();
-}
-
 /** Browse (the proposals' 1A, as Paseo's plugins): pi.dev's packages searched as you type,
  *  the first ones with a picture as featured cards, then the list; a click shows a package's
  *  detail beside the list, Install on its row and there. */
-function makePackageTools(box, currentProject, onDone) {
-  const install = el("button", { className: "secondary", title: "pi install npm:… / git:… / https://…, in Pi's sandbox on the VM" }, svgIcon("plus"), el("span", { textContent: "Install from a source…" }));
-  install.addEventListener("click", () => installDialog(currentProject, onDone));
-  const input = el("input", { type: "search", placeholder: "Search pi.dev's packages", spellcheck: false });
+function makePackageTools(box, currentProject, onDone, scope = () => "user") {
+  const input = el("input", { type: "search", placeholder: "Search pi.dev's packages, or type a source: npm:…, git:…, https://…", spellcheck: false });
   input.setAttribute("aria-label", "Search the packages");
   const featured = el("div", { className: "pkg-featured" });
   const featuredHead = el("h3", { className: "loads-group", textContent: "Featured" });
@@ -412,7 +378,8 @@ function makePackageTools(box, currentProject, onDone) {
   const detail = el("aside", { className: "pkg-detail", hidden: true });
   const where = el("p", { className: "hint pkg-from" });
   box.replaceChildren(
-    el("div", { className: "toolbar resource-bar" }, input, install),
+    el("div", { className: "toolbar resource-bar" }, input),
+    el("p", { className: "hint", textContent: PACKAGE_WARNING }),
     featuredHead, featured,
     el("h3", { className: "loads-group", textContent: "All packages" }),
     el("div", { className: "pkg-browse" }, results, detail),
@@ -426,12 +393,16 @@ function makePackageTools(box, currentProject, onDone) {
   const installButton = (pkg) => {
     const there = installed.has(pkg.source);
     const b = el("button", { type: "button", className: there ? "secondary pkg-installed" : "secondary", textContent: there ? "Installed" : "Install", disabled: there });
-    b.addEventListener("click", (e) => { e.stopPropagation(); installDialog(currentProject, onDone, pkg.source); });
+    b.addEventListener("click", (e) => { e.stopPropagation(); installPackage(pkg.source); });
     return b;
   };
+  /** pi install, in a tab: for the project whose settings these are (else for you). */
+  const installPackage = (source) => openPackageTerminal("install", scope() === "project" ? currentProject() : "user", source, source.replace(/^npm:/, ""), onDone);
 
-  function showDetail(pkg) {
+  function showDetail(pkg, from = null) {
     shownName = pkg.name;
+    // Beside the row clicked (or the card), in the room on the right when there is some.
+    detail.style.top = `${from ? Math.max(0, from.offsetTop) : 0}px`;
     for (const r of results.children) r.classList.toggle("on", r.dataset.name === pkg.name);
     const close = el("button", { type: "button", className: "icon-btn", title: "Close" }, svgIcon("x"));
     close.addEventListener("click", () => { detail.hidden = true; shownName = null; for (const r of results.children) r.classList.remove("on"); });
@@ -459,7 +430,7 @@ function makePackageTools(box, currentProject, onDone) {
         el("span", { className: "by", textContent: facts(pkg) })),
       installButton(pkg), svgIcon("chevron-right"));
     r.dataset.name = pkg.name;
-    r.addEventListener("click", () => showDetail(pkg));
+    r.addEventListener("click", () => showDetail(pkg, r));
     return [r, tile];
   }
 
@@ -474,6 +445,17 @@ function makePackageTools(box, currentProject, onDone) {
   async function search() {
     searched = true;
     const query = input.value.trim();
+    // A source typed: one row to install it, nothing searched.
+    if (/^(npm:|git:|https:\/\/)/.test(query)) {
+      featured.hidden = featuredHead.hidden = true;
+      const ok = /^(npm:|git:|https:\/\/)[A-Za-z0-9@/._:+~-]{1,200}$/.test(query);
+      const b = el("button", { type: "button", className: "secondary", textContent: "Install", disabled: !ok });
+      b.addEventListener("click", () => installPackage(query));
+      results.replaceChildren(el("div", { className: "pkg-row" }, packageTile(query.replace(/^(npm:|git:|https:\/\/)/, "")),
+        el("span", { className: "tx" }, el("span", { className: "name" }, el("b", { textContent: query })),
+          el("span", { className: "desc", textContent: ok ? "Installed as typed, in Pi's sandbox on the VM, in a tab." : "Not a source Pi installs: npm:name, git:host/user/repo or https://…" })), b));
+      return;
+    }
     results.replaceChildren(el("p", { className: "dim small", textContent: "Asking pi.dev, from the VM…" }));
     let answer;
     try {

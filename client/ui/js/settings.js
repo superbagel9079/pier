@@ -699,6 +699,8 @@ async function drawExtensions() {
   select.value = extProject || "";
   if (!extParts) {
     const current = () => extProject;
+    // What is added from a project's settings is that project's; from anywhere else, yours.
+    const whereTo = () => (extFromProject ? "project" : "user");
     // The tabs: Skills, Extensions, Prompts (the manager), Packages (the list and the gallery).
     // Installed (what Pi loads, by kind, its packages first) and Browse (pi.dev's): the proposals' 1A.
     const TABS = [["installed", "Installed"], ["browse", "Browse"]];
@@ -724,8 +726,9 @@ async function drawExtensions() {
     };
     const packs = el("div", { className: "loads-packages" }, el("h3", { className: "loads-group", textContent: "Packages" }), $("#ext-packages"));
     const manager = makeResourceManager($("#ext-manager"), current,
-      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); counts(); }, packs);
-    const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load());
+      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); counts(); }, packs,
+      { scope: whereTo, browse: () => showTab("browse") });
+    const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load(), whereTo);
     extParts = { manager, tools, showTab };
     select.addEventListener("change", () => { extProject = select.value; extParts.manager.load(); });
   }
