@@ -318,7 +318,8 @@ function makeFile(tab) {
         area.addEventListener("input", () => {
           dirty = true;
           say("");
-          if (!paint) paint = setTimeout(repaint, 60);
+          // A big file is coloured again less often (its first 400 KB take a moment).
+          if (!paint) paint = setTimeout(repaint, area.value.length > VIEW_HIGHLIGHT_MAX ? 300 : 60);
           clearTimeout(saveTimer);
           saveTimer = setTimeout(save, 700);
         });
@@ -361,7 +362,7 @@ function makeFile(tab) {
     error.hidden = true;
     last = result;
     const lines = result.binary ? "" : `${(result.text.match(/\n/g)?.length || 0) + (result.text && !result.text.endsWith("\n") ? 1 : 0)} lines · `;
-    // Past what Pier shows (1 MB), its beginning only, and not typed in: a whole save would cut it.
+    // Past what Pier shows (4 MB), its beginning only, and not typed in: a whole save would cut it.
     facts.textContent = `${lines}${humanSize(result.size)}${result.truncated ? ` · read only: the first ${humanSize(result.text.length)} shown` : ""}`;
     const top = body.scrollTop;
     draw();

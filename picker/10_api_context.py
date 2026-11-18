@@ -506,7 +506,7 @@ def api_fs_delete(home, project, rel):
     return {"deleted": full}
 
 
-FILE_VIEW_MAX = 1024 * 1024  # what Pier shows of a file: a 50 MB log would freeze it
+FILE_VIEW_MAX = 4 * 1024 * 1024  # what Pier shows (and saves) of a file: a 50 MB log would freeze it
 BINARY_PROBE = 8192
 
 

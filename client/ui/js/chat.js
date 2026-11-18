@@ -391,11 +391,14 @@ function makeChat(tab) {
     keepDown(was);
   }
 
-  /** What an extension of Pi asks (a choice, a yes or no, a text): answered here.
-   *  shortcut: the fields (method, title, message, options) are read from Pi's docs, not
-   *  yet checked against a real Pi; check them once it runs on the VM. */
+  /** What an extension of Pi asks (a choice, a yes or no, a text): answered here. Pi's RPC
+   *  doc: select, confirm, input and editor wait for an answer; notify, setStatus,
+   *  setWidget, setTitle and set_editor_text do not (a note, a status line, a title: never
+   *  a card, which showed as an empty "Pi asks"). */
   function askFromExtension(e) {
-    if (e.method === "notify") { flashStatus(e.message || e.title || ""); return; }
+    if (e.method === "notify") { if (e.message || e.title) flashStatus(e.message || e.title); return; }
+    if (e.method === "set_editor_text") { input.value = e.text || ""; input.dispatchEvent(new Event("input")); return; }
+    if (!["select", "confirm", "input", "editor"].includes(e.method)) return;
     const card = el("div", { className: "card chat-ask" }, el("h2", { textContent: e.title || "Pi asks" }), e.message ? el("p", { textContent: e.message }) : null);
     const reply = (fields) => { backend.termWrite(id, `${JSON.stringify({ type: "extension_ui_response", id: e.id, ...fields })}\n`); card.remove(); };
     const actions = el("div", { className: "btns" });
@@ -407,7 +410,7 @@ function makeChat(tab) {
         actions.append(b);
       }
     } else if (e.method === "input" || e.method === "editor") {
-      const field = el("input", { value: e.value || "" });
+      const field = e.method === "editor" ? el("textarea", { value: e.prefill || "", rows: 6 }) : el("input", { value: e.value || "", placeholder: e.placeholder || "" });
       const ok = el("button", { textContent: "Send" });
       ok.addEventListener("click", () => reply({ value: field.value }));
       card.append(field);
@@ -424,6 +427,8 @@ function makeChat(tab) {
     actions.prepend(cancel);
     card.append(actions);
     col.append(card);
+    // Past its timeout Pi answers by itself: the card goes.
+    if (Number(e.timeout) > 0) setTimeout(() => card.remove(), Number(e.timeout));
   }
 
   let saidOld = false; // the old-picker notice, once
