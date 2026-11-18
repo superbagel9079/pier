@@ -64,6 +64,7 @@ const PASSTHROUGH: &[&str] = &[
     "provider-delete",
     "config",
     "models",
+    "pi-default-read",
     "type",
     "diff",
     "log",

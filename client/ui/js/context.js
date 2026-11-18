@@ -409,7 +409,14 @@ document.addEventListener("paste", async (event) => {
   event.preventDefault();
   event.stopPropagation();
   const focused = document.activeElement;
+  // In a conversation's message field: to that conversation (as chips above its text).
+  const chat = workspace.tabs().find((t) => t.kind === "chat" && t.give && t.pane.contains(focused));
   const paths = hasFiles ? await backend.clipboardPaths() : [];
+  if (chat) {
+    if (paths.length) await chat.give(paths);
+    else if (image) await chat.attachImage(image.getAsFile());
+    return;
+  }
   if (paths.length) await contextTab().give(paths);
   else if (image) await contextTab().sendImage(image.getAsFile());
   focused?.focus?.();

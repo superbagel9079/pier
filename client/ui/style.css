@@ -2109,3 +2109,8 @@ textarea { resize: none; }
 .composer-shots .shot-x { position: absolute; top: 2px; right: 2px; width: 20px; height: 20px; padding: 0; display: grid; place-items: center; border: 0; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--fg); opacity: 0; }
 .composer-shots .shot:hover .shot-x, .composer-shots .shot-x:focus-visible { opacity: 1; }
 .composer-shots .shot-x .i { width: 12px; height: 12px; }
+/* A file or folder given to a message: a chip with its icon and name, × on it. */
+.composer-shots .shot.file { width: auto; max-width: 240px; height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 0 28px 0 10px; font-size: 12px; color: var(--fg); }
+.composer-shots .shot.file > .i { width: 14px; height: 14px; flex: none; color: var(--dim); }
+.composer-shots .shot.file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-shots .shot.file .shot-x { top: 50%; transform: translateY(-50%); opacity: 1; background: none; color: var(--dim); }

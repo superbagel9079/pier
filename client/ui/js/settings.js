@@ -24,7 +24,13 @@ function loadPiModels(again = false) {
 /** A page of settings shown: drawn from the VM's config each time (another Pier, or a
  *  hand edit of config.toml, may have changed it). */
 function settingsPageShown(page) {
-  if (page === "agents") drawAgents();
+  if (page === "agents") {
+    drawAgents();
+    // Pi's default as it is now (a model picked in Pi's own screen changes it).
+    backend.api(["pi-default-read"]).then((r) => {
+      if (piModels && r?.default !== undefined && r.default !== piModels.default) { piModels.default = r.default; drawAgents(false); }
+    }).catch(() => {});
+  }
   else if (page === "network") drawNetwork();
   else if (page === "git") drawForges();
   else if (page === "extensions") drawExtensions();
@@ -222,7 +228,8 @@ function drawAgents(again) {
     const knows = el("div", { className: "setting-row" }, el("div", { className: "setting-head" }, el("span", { textContent: "Models Pi knows" }), refresh), models);
     out.push(el("h2", { textContent: "Providers" }), providersBlock());
     out.push(el("h2", { textContent: "Models" }), knows, defRow,
-      modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"));
+      modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
+      modelRow("image_model", "For images", "A model that sees images: a Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at). For the Pis started from now on.", "None"));
     out.push(el("h2", { textContent: "Workers" }),
       toggleRow("workers", "A Pi may start workers", "Worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
       (() => {

@@ -102,6 +102,7 @@ CONFIG_EDITABLE = {
     # key: (what the value must be, a check of each item for a list, or of the value)
     "workers": (bool, None), "helpers": (bool, None), "workers_max": (int, lambda n: 1 <= n <= 12),
     "orchestrator_model": (str, _model_ok), "worker_model": (str, _model_ok), "helper_model": (str, _model_ok),
+    "image_model": (str, _model_ok),
     "worker_models": (list, _model_ok),
     "sandbox": (bool, None), "network_limit": (bool, None), "network_allow": (list, _allow_ok),
     "network_off": (list, lambda v: v in NETWORK_ALLOW or _allow_ok(v)),

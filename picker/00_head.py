@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.57"
+VERSION = "4.59"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -81,6 +81,7 @@ DEFAULTS = {
     "worker_model": "",                # the workers' model by default; "" Pi's default
     "worker_models": [],               # the models an orchestrator may choose for a worker, besides worker_model
     "helper_model": "",                # the read-only helpers' model by default (see consult); "" Pi's default
+    "image_model": "",                 # the model that reads images for a Pi (look_at); "" none
 }
 
 # Where Pi may connect in its sandbox when network_limit is on: model providers, npm,

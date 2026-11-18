@@ -520,48 +520,55 @@ function makeChat(tab) {
   }
   tab.mention = mention;
 
-  // Ctrl+V of an image: saved in the project (.pi-images), shown above the text and sent with
-  // the message (by its reference, not typed in the text); × takes it back (the file off the VM).
-  input.addEventListener("paste", async (e) => {
-    const images = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
-    if (!images.length) return;
-    e.preventDefault();
-    for (const file of images) {
-      let result;
-      try { result = await backend.pasteImage(file, project); } catch (err) { notice(String(err), "error"); continue; }
-      if (!result?.reference) continue;
-      const url = URL.createObjectURL(file);
-      const drop = el("button", { type: "button", className: "shot-x", title: "Take it back", ariaLabel: "Take this image back" }, svgIcon("x"));
-      const shot = el("span", { className: "shot", title: result.reference }, el("img", { src: url, alt: "" }), drop);
-      shot.dataset.ref = result.reference; // added to the message when it is sent (submit)
-      drop.addEventListener("click", () => {
-        backend.removeUpload(result.saved).catch(() => {});
-        URL.revokeObjectURL(url);
-        shot.remove();
-        shots.hidden = !shots.childElementCount;
-        input.focus();
-      });
-      shots.append(shot);
-      shots.hidden = false;
-    }
-  });
+  // What is given to this conversation (an image pasted, files and folders dropped or added):
+  // saved in its project, shown above the text, sent with the message by its reference (not
+  // typed in the text); × takes it back (the file off the VM).
+  function addChip(reference, { saved = null, image = null, name = "", icon = "file" } = {}) {
+    const url = image ? URL.createObjectURL(image) : null;
+    const back = el("button", { type: "button", className: "shot-x", title: "Take it back", ariaLabel: `Take ${name || "it"} back` }, svgIcon("x"));
+    const chip = url
+      ? el("span", { className: "shot", title: reference }, el("img", { src: url, alt: "" }), back)
+      : el("span", { className: "shot file", title: reference }, svgIcon(icon), el("span", { className: "name", textContent: name || reference.replace(/^@/, "").split("/").pop() }), back);
+    chip.dataset.ref = reference; // added to the message when it is sent (submit)
+    back.addEventListener("click", () => {
+      if (saved) backend.removeUpload(saved).catch(() => {});
+      if (url) URL.revokeObjectURL(url);
+      chip.remove();
+      shots.hidden = !shots.childElementCount;
+      input.focus();
+    });
+    shots.append(chip);
+    shots.hidden = false;
+  }
 
-  /** Files and folders dropped on this conversation (context.js routes them here): saved in
-   *  its project and mentioned; a folder asks first, as everywhere (share live, or copy). */
+  /** An image pasted (context.js routes a Ctrl+V in this message field here). */
+  tab.attachImage = async (file) => {
+    let result;
+    try { result = await backend.pasteImage(file, project); } catch (err) { notice(String(err), "error"); return; }
+    if (result?.reference) addChip(result.reference, { saved: result.saved, image: file });
+    input.focus();
+  };
+
+  /** Files and folders dropped, pasted or added to this conversation: saved in its project,
+   *  as chips; a folder asks first, as everywhere (share live, or copy). */
   tab.give = async (paths) => {
     const results = (await backend.pasteFiles(paths, project).catch((e) => { notice(String(e), "error"); return []; })) || [];
     for (const r of results) {
       if (r.error) notice(r.error, "error");
       else if (r.folder) {
+        const name = r.folder.split(/[\\/]/).filter(Boolean).pop();
         const choice = await askFolder(r.folder);
         if (choice === "copy") {
           const copied = await backend.copyFolder(r.folder, project).catch((e) => { notice(String(e), "error"); });
-          if (copied?.reference) mention(copied.reference);
+          if (copied?.reference) addChip(copied.reference, { name, icon: "folder" });
         } else if (choice) {
           const share = await backend.shareStart(r.folder, choice === "live-rw", project).catch((e) => { notice(String(e), "error"); });
-          if (share?.relative) mention(`@${share.relative}`);
+          if (share?.relative) addChip(`@${share.relative}`, { name, icon: "folder" });
         }
-      } else if (r.reference) mention(r.reference);
+      } else if (r.reference) {
+        const name = r.reference.split("/").pop().replace(/^\d{8}-\d{4,6}-(?:[0-9a-f]{2,6}-)?/, ""); // its own name, without the date Pier gives it
+        addChip(r.reference, { saved: r.saved, name, icon: fileTypeIcon(name) });
+      }
     }
     input.focus();
   };
@@ -571,11 +578,7 @@ function makeChat(tab) {
     ["Add a file from this PC", async () => {
       const paths = await backend.pickFiles();
       if (!paths.length) return;
-      const results = (await backend.pasteFiles(paths, project).catch((e) => { notice(String(e), "error"); return []; })) || [];
-      for (const r of results) {
-        if (r.error) notice(r.error, "error");
-        else if (r.reference) mention(r.reference);
-      }
+      await tab.give(paths); // as chips, as a drop
       input.focus();
     }, false, { icon: "paperclip" }],
     ["Use a skill…", () => { if (!input.value.startsWith("/")) input.value = `/${input.value}`; input.focus(); input.setSelectionRange(1, 1); slash.update(); }, false, { icon: "gift" }],
@@ -652,9 +655,17 @@ function makeChat(tab) {
       items: models.map((m) => ({ value: key(m), label: m.id, detail: m.provider })),
       current: state.model ? `${state.model.provider}/${state.model.id}` : null,
       placeholder: "Search models",
-      onPick: (v) => {
+      onPick: async (v) => {
         const m = models.find((x) => key(x) === v);
-        if (m) command({ type: "set_model", provider: m.provider, modelId: m.id }, () => command({ type: "get_state" }, (d) => { state = d || {}; showState(); }));
+        if (!m) return;
+        // For this conversation only: Pi would make it every Pi's default too, so the default
+        // of Settings > Agents is put back once switched.
+        let before = "";
+        try { before = (await backend.api(["pi-default-read"]))?.default || ""; } catch { /* left as Pi makes it */ }
+        command({ type: "set_model", provider: m.provider, modelId: m.id }, () => {
+          if (before && before !== v) backend.piDefault(before).catch(() => {});
+          command({ type: "get_state" }, (d) => { state = d || {}; showState(); });
+        });
       },
     });
   }));

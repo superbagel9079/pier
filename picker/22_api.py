@@ -1,5 +1,5 @@
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
-API_READS = {"version", "projects", "ls", "file", "config", "models", "providers", "shares", "activity", "diff", "contexts",
+API_READS = {"version", "projects", "ls", "file", "config", "models", "pi-default-read", "providers", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
              "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
@@ -66,6 +66,8 @@ API_COMMANDS = {
     "config": lambda home, config, a: api_config(home),
     "config-set": lambda home, config, a: config_set(home, a[0], config_value(read_stdin_text())),
     "models": lambda home, config, a: api_models(home),
+    # Pi's default model alone, at once (not `pi --list-models`): Settings shows the true one.
+    "pi-default-read": lambda home, config, a: {"default": pi_default_model(home)},
     "providers": lambda home, config, a: api_providers(home),
     "provider-save": lambda home, config, a: api_provider_save(home, a[0], stdin_bytes(PROVIDER_MAX_BYTES)),
     "provider-delete": lambda home, config, a: api_provider_delete(home, a[0]),

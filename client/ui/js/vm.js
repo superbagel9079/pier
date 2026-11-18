@@ -19,13 +19,17 @@ const vm = (() => {
   // late answer of the VM still has them (a Pi takes a moment to end): path or slot -> when.
   const gone = new Map();
   const GONE_FOR = 60000;
+  const piKey = (pi) => `${pi.slot}@${pi.last_attached ?? ""}`;
   function shown(message) {
     if (message.kind !== "conversations" || !message.data || !gone.size) return message;
     const now = Date.now();
     for (const [key, at] of gone) if (now - at > GONE_FOR) gone.delete(key);
+    // A Pi by its name and start: names come back (-r1…), and a new Pi under a stopped one's
+    // name must show.
+    const hidden = new Set((message.data.projects || []).flatMap((p) => (p.pis || []).filter((pi) => gone.has(piKey(pi))).map((pi) => pi.slot)));
     const projects = (message.data.projects || []).map((p) => ({ ...p,
-      sessions: (p.sessions || []).filter((s) => !gone.has(s.path)).map((s) => (s.slot && gone.has(s.slot) ? { ...s, slot: null } : s)),
-      pis: (p.pis || []).filter((pi) => !gone.has(pi.slot)) }));
+      sessions: (p.sessions || []).filter((s) => !gone.has(s.path)).map((s) => (s.slot && hidden.has(s.slot) ? { ...s, slot: null } : s)),
+      pis: (p.pis || []).filter((pi) => !hidden.has(pi.slot)) }));
     return { ...message, data: { ...message.data, projects } };
   }
   function dispatch(message) {
@@ -152,7 +156,9 @@ const vm = (() => {
    *  VM asked again at once. */
   function forget({ path, slot }) {
     if (path) gone.set(path, Date.now());
-    if (slot) gone.set(slot, Date.now());
+    // The Pi of that name now (its start tells it from a later one of the same name).
+    const pi = slot && (raw.conversations?.data?.projects || []).flatMap((p) => p.pis || []).find((x) => x.slot === slot);
+    if (pi) gone.set(piKey(pi), Date.now());
     if (raw.conversations) dispatch(shown(raw.conversations));
     poke();
   }

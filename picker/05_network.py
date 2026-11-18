@@ -526,7 +526,8 @@ def exec_pi(path, extra):
     # Workers and helpers (see workers): every Pi may start workers (a worker none) and
     # consult helpers; an orchestrator or a worker gets its model.
     role = pi_role()[0] if config["workers"] else None
-    team_extension = pier_team_extension() if config["workers"] or config["helpers"] else None
+    image_model = config["image_model"] if MODEL_RE.fullmatch(config["image_model"] or "") else ""
+    team_extension = pier_team_extension() if config["workers"] or config["helpers"] or image_model else None
     if role:
         tracked = tracked + pi_model_args(config, role, os.environ.get("PIER_MODEL"))
     if team_extension:
@@ -536,6 +537,7 @@ def exec_pi(path, extra):
         env["PIER_SESSIONS"] = session_dir(os.path.realpath(path))
         env["PIER_HELPER_MODELS"] = ",".join(helper_models(config))
         env["PIER_HELPER_MODEL"] = config["helper_model"] if MODEL_RE.fullmatch(config["helper_model"] or "") else ""
+        env["PIER_IMAGE_MODEL"] = image_model  # look_at: images read by this model
     if git_extension or labs_extension or team_extension:
         try:
             broker = GitBroker(os.path.realpath(path))
