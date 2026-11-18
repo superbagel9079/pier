@@ -175,7 +175,7 @@ function stopIdlePi(tab) {
     const pi = (p.pis || []).find((x) => x.slot === slot);
     if (!pi) continue;
     if (pi.working || pi.role === "orchestrator" || pi.role === "worker" || pi.helpers?.length) return;
-    backend.stopPi(p.project, slot).then(() => vm.poke()).catch(() => {});
+    backend.stopPi(p.project, slot).then(() => vm.forget({ slot })).catch(() => {});
     uiLog("info", "stop-pi", { project: p.project, slot, why: "tab closed, idle" });
     return;
   }
@@ -192,6 +192,7 @@ async function deleteConversation(project, session, { changed, failed }) {
       await new Promise((r) => setTimeout(r, 800));
     }
     await backend.sessionDelete(project, session.path);
+    vm.forget({ path: session.path, slot: session.slot });
     session.deleted = true;
     uiLog("info", "session-delete", {});
     flashStatus("Conversation deleted");
@@ -326,7 +327,7 @@ function makeConversations(tab) {
     try {
       await backend.stopPi(project.project, pi?.slot || null);
       uiLog("info", "stop-pi", { project: project.project, slot: pi?.slot || "all" });
-      vm.poke();
+      if (pi?.slot) vm.forget({ slot: pi.slot }); else vm.poke();
     } catch (e) { showError(error, String(e)); }
   }
 
