@@ -202,7 +202,10 @@ function makeChat(tab) {
       if (!entry) { flashStatus("This message cannot be changed"); return; }
       command({ type: "fork", entryId: entry.entryId }, (r) => {
         if (r?.cancelled) { flashStatus("An extension kept the conversation as it is"); return; }
-        command({ type: "get_state" }, (d) => { state = d || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); });
+        command({ type: "get_state" }, (d) => {
+          state = d || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; tab.params.file = tab.sessionFile; showState();
+          for (const t of workspace.tabs()) t.onShownTab?.(); // the list marks the new one, not its parent
+        });
         redraw(() => {
           input.value = r?.text ?? entry.text ?? "";
           input.dispatchEvent(new Event("input"));

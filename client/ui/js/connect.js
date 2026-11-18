@@ -620,7 +620,8 @@ function setCurrentTab(tab) {
 /** The conversation of the tab shown in the middle: its Pi (slot) or its file. */
 function shownConversation() {
   const args = currentTab?.params?.args || [];
-  return { slot: currentTab?.slot || (args[0] === "--slot" ? args[1] : null), file: args[0] === "--session" ? args[1] : currentTab?.params?.file || null };
+  // Its file as Pi says it now (a fork moved it to a new one), else as it was opened.
+  return { slot: currentTab?.slot || (args[0] === "--slot" ? args[1] : null), file: currentTab?.sessionFile || (args[0] === "--session" ? args[1] : currentTab?.params?.file) || null };
 }
 
 function renderSessionBadge() {
