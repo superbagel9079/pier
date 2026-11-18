@@ -312,14 +312,17 @@ function applyTheme() {
   // themes): then a blue that reads on the theme.
   const neutral = !own && String(theme.ui.accent).toLowerCase() === String(theme.ui.fg).toLowerCase();
   root.style.setProperty("--link", own || (neutral ? (theme.dark ? "#8cc4ff" : "#0b5cad") : theme.ui.accent));
-  // The gradient's colours: only the theme's own palette, as its card shows it (Appearance >
-  // Gradient > Colours: Accent): its accent and its text, and blends of the two. A black and
-  // white theme gets a grey gradient, never a colour it does not have. Two chosen apart
-  // (Custom) replace the first two (applyGradient).
+  // The gradient's colours: only the theme's own palette. A coloured theme: its accent, then
+  // its terminal's magenta, cyan, yellow (the warm one of dusk and dawn) and blue. A black and
+  // white theme (its accent its text): its accent and text and blends of them, grey, never a
+  // colour it does not have. Two chosen apart (Custom) replace the first two (applyGradient).
   const accent = own || theme.ui.accent;
   const fg = theme.ui.fg;
   const blend = (a, b, p) => `color-mix(in srgb, ${a} ${p}%, ${b})`;
-  const tones = [accent, fg, blend(accent, fg, 60), blend(accent, theme.ui.bg, 70), blend(fg, accent, 60)];
+  const t = theme.terminal || {};
+  const tones = !neutral && t.magenta && t.cyan && t.yellow && t.blue
+    ? [accent, t.magenta, t.cyan, t.yellow, t.blue]
+    : [accent, fg, blend(accent, fg, 60), blend(accent, theme.ui.bg, 70), blend(fg, accent, 60)];
   tones.forEach((c, i) => root.style.setProperty(`--tg${i + 1}`, c));
   // The file viewer's syntax colors: the terminal's, when the theme has them.
   for (const key of ["magenta", "green", "yellow", "blue", "cyan"]) {
