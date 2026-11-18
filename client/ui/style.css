@@ -2254,8 +2254,39 @@ textarea { resize: none; }
 .prefs-tabs button { display: flex; align-items: center; gap: var(--s2); }
 .prefs-tabs button .i { width: 16px; height: 16px; flex: none; color: var(--dim); }
 .prefs-tabs button[aria-selected="true"] .i { color: var(--fg); }
-.prefs-head { margin-bottom: var(--s4); }
+.prefs-head { display: flex; align-items: flex-start; gap: var(--s4); margin-bottom: var(--s4); }
+.prefs-head > div { flex: 1; min-width: 0; }
 .prefs-head h1 { margin-bottom: 2px; }
+#prefs-act:empty, .settings.searching #prefs-act { display: none; }
+#prefs-act { flex: none; }
+/* No scrollbar in the settings: the wheel and the keys still scroll. */
+.settings-nav, .prefs-pages { scrollbar-width: none; }
+.settings-nav::-webkit-scrollbar, .prefs-pages::-webkit-scrollbar { display: none; }
+/* General: where the panels go, two small windows to choose from. */
+.layout-tiles { display: flex; gap: var(--s2); flex: none; }
+.layout-tiles button { display: flex; flex-direction: column; gap: 4px; width: 112px; padding: 6px; background: none; border: 1px solid var(--line); border-radius: var(--r); color: var(--dim); font-size: 12px; text-align: left; }
+.layout-tiles button:hover { background: var(--hover); color: var(--fg); }
+.layout-tiles button[aria-checked="true"] { border-color: var(--accent); color: var(--fg); }
+.lay { display: block; height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.lay.both { background: linear-gradient(90deg, var(--raise) 0 22%, var(--bg) 22% 72%, var(--raise) 72%); }
+.lay.details { background: linear-gradient(90deg, var(--bg) 0 72%, var(--raise) 72%); }
+/* Overview: the state in pills. */
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--s4); }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; background: var(--raise); color: var(--dim); font-size: 12px; border-radius: var(--r); }
+.pill:empty { display: none; }
+.pill.state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--red, #f85149); }
+.pill.state[data-state="ok"]::before { background: var(--green, #3fb950); }
+.pill.state[data-state="slow"]::before { background: var(--yellow, #d29922); }
+.set > .value { flex: none; color: var(--dim); }
+.set.warn .what > :nth-child(2) { color: var(--yellow, #d29922); }
+/* Projects: each a line, its page on a click, ⋯ beside. */
+.project-line { display: flex; align-items: center; gap: var(--s2); padding-right: var(--s3); border-bottom: 1px solid var(--line); }
+.project-line:last-child { border-bottom: 0; }
+.project-line .project-pick { flex: 1; min-width: 0; border-bottom: 0; }
+.project-line > .i { width: 14px; height: 14px; color: var(--dim); flex: none; }
+.project-line > .icon-btn { width: 28px; height: 28px; visibility: hidden; }
+.project-line:hover > .icon-btn, .project-line > .icon-btn:focus-visible, .project-line > .icon-btn[aria-expanded="true"] { visibility: visible; }
+.more-providers { margin-top: var(--s2); }
 #prefs-lede { color: var(--dim); }
 #prefs-lede:empty, .settings.searching #prefs-lede { display: none; }
 #prefs-danger:has(#btn-disconnect[hidden]) { display: none; }
@@ -2270,3 +2301,7 @@ textarea { resize: none; }
 .model-group[open] > summary .i { transform: rotate(90deg); }
 .model-group > summary .n { font-size: 11px; font-weight: 400; color: var(--dim); background: var(--raise); padding: 0 6px; }
 @media (max-width: 720px) { .prefs-tabs button .i { display: none; } }
+.project-title > .what { display: flex; flex-direction: column; min-width: 0; }
+.project-tabs { margin-bottom: var(--s3); }
+.seg.project-tabs button[aria-selected="true"] { background: var(--raise); color: var(--fg); }
+#prefs .prefs-page button.page-act, #prefs-act .page-act { display: inline-flex; align-items: center; gap: 6px; }

@@ -25,7 +25,9 @@ function openPrefs() {
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   showCopy();
   showFold();
+  showLayoutChoice();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
+  $("#prefs-address").textContent = settings?.host || "";
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
   $("#prefs-updatecheck").checked = prefs.updateCheck;
   $("#prefs-debug").checked = prefs.debugLogs;
@@ -60,7 +62,7 @@ function closePrefs() {
 let prefsPage = "general";
 // A category shows its pages one under the other. A page asked by its own name or an older
 // one ("picker", "behavior", "connection") opens its category.
-const PREFS_GROUPS = { conversations: ["conversations", "conv-image"], overview: ["overview", "picker"] };
+const PREFS_GROUPS = { overview: ["overview", "picker"] };
 const PREFS_OLD = { behavior: "general", layout: "general", connection: "overview", updates: "about" };
 const prefsTabOf = (page) => PREFS_OLD[page] || Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
 const prefsTabs = () => [...document.querySelectorAll("#prefs .prefs-tabs button")];
@@ -80,6 +82,7 @@ function showSettingsPage(page) {
   const tab = tabs.find((t) => t.dataset.page === page);
   $("#prefs-title").textContent = tab?.textContent || "Settings";
   $("#prefs-lede").textContent = tab?.dataset.lede || "";
+  $("#prefs-act").replaceChildren(...(PAGE_ACTIONS[page] ? [PAGE_ACTIONS[page]()] : [])); // settings.js
   if ($("#prefs-search").value.trim()) return; // the search shows what matches, wherever it is
   for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = !shown.includes(section.dataset.page);
   settingsPageShown(page);
@@ -164,7 +167,17 @@ document.addEventListener("keydown", (e) => {
 function placePanels() {
   workspace.arrange(defaultLayout()); // moves tabs, never restarts a terminal
 }
-$("#prefs-reset").addEventListener("click", placePanels);
+/** Where the panels go (General): both sides, or Details only (the conversations folded). */
+function showLayoutChoice() {
+  const both = !workspace.docks.left.collapsed;
+  for (const b of $("#prefs-layout").children) b.setAttribute("aria-checked", String((b.dataset.v === "both") === both));
+}
+for (const b of $("#prefs-layout").children) b.addEventListener("click", () => {
+  const layout = defaultLayout();
+  if (b.dataset.v === "details") layout.left = { ...layout.left, collapsed: true };
+  workspace.arrange(layout); // moves tabs, never restarts a terminal
+  showLayoutChoice();
+});
 $("#prefs-theme").addEventListener("change", (e) => {
   closeThemeEditor();
   prefs.theme = e.target.value;
@@ -584,6 +597,7 @@ async function fillPickerInfo() {
     const remote = info.remote ? `version ${info.remote.version} (API ${info.remote.api})` : "not checked yet";
     $("#prefs-picker").textContent = `On the VM, at ${info.command}: ${remote}. This Pier carries ${info.bundled}.`;
     $("#prefs-reinstall").hidden = !info.installable;
+    $("#prefs-pill-picker").textContent = info.remote ? `picker ${info.remote.version}` : "";
   } catch (error) {
     $("#prefs-picker").textContent = String(error);
   }
@@ -616,6 +630,8 @@ $("#prefs-debug").addEventListener("change", (e) => {
   prefsLogs.onLogLevel?.();
 });
 
+$("#prefs-picker-logcopy").addEventListener("click", () => backend.copyText("~/.local/state/pier-picker/picker.log").then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
+$("#prefs-picker-logs").addEventListener("click", () => showPrefsPage("diagnostics"));
 $("#prefs-logfolder").addEventListener("click", () => backend.openLogFolder().catch((error) => prefsNote($("#prefs-diag-note"), String(error))));
 
 /** The report: what Pier knows (Rust side), and what only the interface knows. */

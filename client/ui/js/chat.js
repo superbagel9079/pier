@@ -861,7 +861,9 @@ function makeChat(tab) {
     const models = data?.models || [];
     const key = (m) => `${m.provider}/${m.id}`;
     pickPalette(modelBtn, {
-      items: models.map((m) => ({ value: key(m), label: m.id, detail: m.provider })),
+      // Those hidden in Settings > Models left out, unless in use.
+      items: models.filter((m) => shownModel(key(m)) || (state.model && key(m) === `${state.model.provider}/${state.model.id}`))
+        .map((m) => ({ value: key(m), label: m.id, detail: m.provider })),
       current: state.model ? `${state.model.provider}/${state.model.id}` : null,
       placeholder: "Search models",
       onPick: async (v) => {

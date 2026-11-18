@@ -80,6 +80,7 @@ function setStatus(text) {
     : /^(connecting|installing)/.test(text) ? "slow" : "lost";
   $("#status-foot").dataset.state = state;
   $("#prefs-status-row").dataset.state = state;
+  $("#prefs-status-row").textContent = { ok: "Online", slow: online ? "Slow" : "Connecting", lost: "Offline" }[state];
   // Connected: who and where, as "leo@vm" in the mock-up; otherwise the words that matter.
   $("#status-foot span:last-child").textContent = state === "ok" && settings ? `${settings.user}@${settings.host}` : text;
     // Not connected, no hint: the first page asks for the VM already.

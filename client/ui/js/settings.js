@@ -93,9 +93,12 @@ function toggleRow(key, label, hint, page, { confirmOff } = {}) {
   return row;
 }
 
+/** A model hidden from the pickers (Settings > Models), kept in Pier's preferences. */
+const shownModel = (m) => !(prefs.hiddenModels || []).includes(m);
+
 /** Pi's models as the palette's items: "claude-opus-5-5", and "bifrost · anthropic". */
 function modelItems() {
-  return (piModels?.models || []).map((m) => {
+  return (piModels?.models || []).filter(shownModel).map((m) => {
     const parts = m.split("/");
     const label = parts.pop();
     return { value: m, label, detail: parts.join(" · ") };
@@ -138,22 +141,23 @@ function modelRow(key, label, hint, empty) {
 function imageModelRow() {
   const key = "image_model";
   const value = configValue(key);
-  let row;
+  const error = el("p", { className: "error", hidden: true });
+  const say = noticeSetter(error);
   const picker = modelPicker(value, "None", async (v) => {
-    if (!(await setConfig(key, v || null, "conv-image", row.say))) return;
+    if (!(await setConfig(key, v || null, "conv-image", say))) return;
     if (v) {
       try { await backend.api(["model-images", v]); } catch { /* a built-in provider's: Pi knows */ }
       await loadPiModels(true);
       drawImageModel(false);
     }
   }, { emptyChoice: true });
+  picker.setAttribute("aria-labelledby", "setting-image-label");
   const sees = piModels?.images;
-  const hint = !value || !sees ? "A model that sees images: a Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at)."
-    : sees.includes(value) ? "Pi knows it sees images. A Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at)."
-      : `Pi lists ${value} as text only: it cannot read images. Choose one that sees them (Claude, GPT, Gemini…): ${sees.slice(0, 3).join(", ") || "none listed yet"}.`;
-  row = settingRow(key, "Image model", picker, hint, "conv-image");
-  if (value && sees && !sees.includes(value)) row.classList.add("warn");
-  return row;
+  const blind = value && sees && !sees.includes(value);
+  const hint = blind ? `Pi lists ${value} as text only: it cannot read images. Choose one that sees them: ${sees.slice(0, 3).join(", ") || "none listed yet"}.`
+    : "Reads pasted images when the conversation's model cannot.";
+  return el("div", { className: blind ? "set warn" : "set" },
+    el("div", { className: "what" }, el("span", { id: "setting-image-label", textContent: "Image model" }), el("span", { textContent: hint }), error), picker);
 }
 
 /** The workers' other models, as the proposals' 2B: one line each (its name, where it
@@ -189,8 +193,6 @@ function workerModelsRow() {
 function pageIntro(page) {
   const box = el("div");
   if (!pickerConfig) return box;
-  box.append(el("div", { className: "banner", title: `Saved on the VM in ${pickerConfig.path}.` },
-    svgIcon("info"), el("span", { textContent: "For the Pis started from now on; running ones keep what they had." })));
   if (pickerConfig.warning) box.append(el("p", { className: "notice", textContent: pickerConfig.warning }));
   if (!pickerConfig.writable) box.append(el("p", { className: "notice", textContent: "The VM's Python is older than 3.11: config.toml can only be changed by hand." }));
   return box;
@@ -209,10 +211,27 @@ async function drawSettingsPage(page, again, draw) {
     }
   }
   const scroll = $("#prefs .prefs-pages").scrollTop;
-  section.replaceChildren(...(page === "conv-image" ? [] : [pageIntro(page)]), ...draw());
+  section.replaceChildren(pageIntro(page), ...draw());
   $("#prefs .prefs-pages").scrollTop = scroll;
   if ($("#prefs-search").value.trim()) searchSettings($("#prefs-search").value);
 }
+
+// --- Each page's action, on the right of its title ----------------------------------
+
+function pageAction(icon, text, run) {
+  const b = el("button", { type: "button", className: "secondary page-act" }, svgIcon(icon), el("span", { textContent: text }));
+  b.addEventListener("click", () => run(b));
+  return b;
+}
+const PAGE_ACTIONS = {
+  models: () => pageAction("refresh-cw", "Refresh", async () => { await loadPiModels(true); drawModels(false); }),
+  providers: () => pageAction("plus", "Add a provider", () => providerDialog(null)),
+  git: () => pageAction("plus", "Add an account", (b) => showMenu(b, Object.entries(FORGE_LABELS).map(([kind, label]) => [label, () => forgeAccountDialog(kind, (forge) => {
+    flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
+    drawForges();
+  }), false, { icon: FORGE_ICONS[kind] || "git-branch" }]))),
+  projects: () => pageAction("plus", "Add project", () => { closePrefs(); openFolderPicker(); }),
+};
 
 // --- Agents ------------------------------------------------------------------------
 
@@ -230,28 +249,16 @@ function drawModels(again) {
     });
     def.input.id = "setting-pi-default";
     def.setAttribute("aria-labelledby", "setting-pi-default-label");
-    const defRow = el("div", { className: "setting-row" },
-      el("div", { className: "setting-head" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), def),
-      el("p", { className: "hint", textContent: "Every new conversation starts on it, unless a role of Agents says otherwise. Written in Pi's own settings (~/.pi/agent/settings.json), as /model does." }),
-      defError);
-    const models = el("p", { className: "hint" });
-    const refresh = el("button", { className: "secondary", title: "Ask Pi for its models again (pi --list-models)" }, svgIcon("refresh-cw"), el("span", { textContent: "Refresh" }));
-    refresh.addEventListener("click", async () => {
-      models.textContent = "Asking Pi…";
-      await loadPiModels(true);
-      drawModels(false);
-    });
+    const out = [el("div", { className: "rows" }, el("div", { className: "set" },
+      el("div", { className: "what" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), el("span", { textContent: "Every new conversation starts on it." }), defError), def)),
+      el("h2", { textContent: "Shown in the pickers" })];
     if (!piModels) {
-      models.textContent = "Asking Pi…";
+      out.push(el("p", { className: "hint", textContent: "Asking Pi…" }));
       loadPiModels().then(() => drawModels(false));
-    } else if (piModels.problem && !piModels.models.length) {
-      models.textContent = `Pi did not list them (${piModels.problem}): type them as provider/id.`;
-    } else {
-      const providers = piModels.providers.join(" and ");
-      models.textContent = `${piModels.models.length}, from ${providers || "no provider"}. A gateway such as Bifrost lists its own as one provider's.`;
-    }
-    const knows = el("div", { className: "setting-row" }, el("div", { className: "setting-head" }, el("span", { textContent: "Models Pi knows" }), refresh), models);
-    return [defRow, el("h2", { textContent: "Models Pi knows" }), knows, ...(piModels?.models.length ? [modelList()] : [])];
+    } else if (!piModels.models.length) {
+      out.push(el("p", { className: "hint", textContent: piModels.problem ? `Pi did not list them (${piModels.problem}): type them as provider/id.` : "Pi lists no model yet: add a provider." }));
+    } else out.push(modelList());
+    return out;
   });
 }
 
@@ -268,8 +275,15 @@ function modelList() {
   const sees = piModels.images || [];
   const blocks = [...groups].map(([from, list]) => {
     const rows = list.map(([m, name]) => {
+      const sw = el("input", { type: "checkbox", checked: shownModel(m) });
+      sw.setAttribute("aria-label", `Show ${name} in the pickers`);
+      sw.addEventListener("change", () => {
+        const hidden = (prefs.hiddenModels || []).filter((x) => x !== m);
+        prefs.hiddenModels = sw.checked ? hidden : [...hidden, m];
+        savePrefs();
+      });
       const row = el("div", { className: "set tight" }, el("div", { className: "what" }, el("span", { textContent: name, title: m })),
-        sees.includes(m) ? el("span", { className: "origin", textContent: "sees images" }) : null);
+        sees.includes(m) ? el("span", { className: "origin", textContent: "sees images" }) : null, sw);
       row.dataset.model = m.toLowerCase();
       return row;
     });
@@ -293,27 +307,40 @@ function modelList() {
   return el("div", { className: "model-list" }, el("div", { className: "toolbar host-bar" }, field), ...blocks);
 }
 
-/** Conversations' image model, drawn under the page's own settings. */
-function drawImageModel(again) {
-  drawSettingsPage("conv-image", again, () => {
-    if (!piModels) loadPiModels().then(() => { if (prefsPage === "conversations") drawImageModel(false); });
-    return [el("h2", { textContent: "Images" }), imageModelRow()];
-  });
+/** Conversations' image model: a row of the page's card, once the VM's config is known. */
+async function drawImageModel(again) {
+  const slot = $("#conv-image-slot");
+  try { if (again !== false || !pickerConfig) await loadPickerConfig(); } catch { slot.hidden = true; return; }
+  if (!piModels) loadPiModels().then(() => { if (prefsPage === "conversations") drawImageModel(false); });
+  slot.replaceChildren(imageModelRow());
+  slot.hidden = false;
 }
 
+const PROVIDER_WORDS = { anthropic: "Claude, with an API key.", openai: "GPT, with an API key.", deepseek: "DeepSeek's own API.", openrouter: "Every model through one key.",
+  google: "Gemini, with an API key.", groq: "Open models, fast.", mistral: "Mistral's own API.", together: "Open models, hosted.", ollama: "Models running on the VM.", lmstudio: "LM Studio's server." };
+const PROVIDER_FIRST = ["anthropic", "openai", "deepseek", "openrouter"];
+let providersMore = false;
 function drawProviders(again) {
   drawSettingsPage("providers", again, () => {
     const out = [el("h2", { textContent: "Connected" }), providersBlock()];
     // The well-known ones not added yet, a Connect each (the dialog filled in for it).
     const have = (piProviders?.providers || []).map((p) => p.name.toLowerCase());
-    const popular = PROVIDER_PRESETS.map((p, i) => [...p, i]).filter(([, name]) => name && !have.includes(name));
+    const rank = (name) => (PROVIDER_FIRST.includes(name) ? PROVIDER_FIRST.indexOf(name) : 99);
+    const popular = PROVIDER_PRESETS.map((p, i) => [...p, i]).filter(([, name]) => name && !have.includes(name)).sort((a, b) => rank(a[1]) - rank(b[1]));
     if (piProviders && popular.length) {
-      out.push(el("h2", { textContent: "Popular" }), el("div", { className: "rows" }, ...popular.map(([label, , url, , i]) => {
+      const shown = providersMore ? popular : popular.slice(0, 4);
+      out.push(el("h2", { textContent: "Popular" }), el("div", { className: "rows" }, ...shown.map(([label, name, url, , i]) => {
         const go = el("button", { type: "button", className: "secondary quiet" }, svgIcon("plus"), el("span", { textContent: "Connect" }));
         go.setAttribute("aria-label", `Connect ${label}`);
         go.addEventListener("click", () => providerDialog(null, i));
-        return el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: label }), el("span", { className: "code", textContent: url })), go);
+        return el("div", { className: "set" }, el("span", { className: "avatar", "aria-hidden": "true", textContent: label[0] }),
+          el("div", { className: "what" }, el("span", { textContent: label }), el("span", { textContent: PROVIDER_WORDS[name] || url })), go);
       })));
+      if (popular.length > 4) {
+        const more = el("button", { type: "button", className: "link more-providers", textContent: providersMore ? "Show fewer providers" : "Show more providers" });
+        more.addEventListener("click", () => { providersMore = !providersMore; drawProviders(false); });
+        out.push(more);
+      }
     }
     return out;
   });
@@ -322,23 +349,23 @@ function drawProviders(again) {
 function drawAgents(again) {
   drawSettingsPage("agents", again, () => [
     el("h2", { textContent: "Workers" }),
-    toggleRow("workers", "A Pi may start workers", "Worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
+    toggleRow("workers", "Workers", "A Pi may start worker Pis, each in its own worktree (the first one waits for your approval).", "agents"),
     (() => {
       const input = el("input", { type: "number", min: 1, max: 12, value: configValue("workers_max") ?? 4 });
-      const row = settingRow("workers_max", "At most, at once", Object.assign(stepper(input), { input }), "Workers one Pi may have running at the same time (1 to 12).", "agents");
+      const row = settingRow("workers_max", "At most", Object.assign(stepper(input), { input }), "Workers running at once.", "agents");
       input.addEventListener("change", () => setConfig("workers_max", Math.round(Number(input.value)), "agents", row.say));
       return row;
     })(),
-    modelRow("worker_model", "Their model", "When a Pi names none for a worker. A cheaper model does.", "Pi's default"),
+    modelRow("worker_model", "Their model", "When a Pi names none. A cheaper model does.", "Pi's default"),
     workerModelsRow(),
-    modelRow("orchestrator_model", "Orchestrator's model", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
-    el("h2", { textContent: "Helpers" }),
-    toggleRow("helpers", "Every Pi may consult helpers", "Read-only helpers (scout, reviewer, critic, checker): short Pis that only read the project, and answer.", "agents"),
+    modelRow("orchestrator_model", "Orchestrator's model", "The one that plans, splits and merges.", "Pi's default"),
+    el("h2", { textContent: "Helpers (consult)" }),
+    toggleRow("helpers", "Helpers", "Read-only Pis a Pi asks at once: scout, reviewer, critic, checker.", "agents"),
     modelRow("helper_model", "Their model", "A fast, cheap model does.", "Pi's default"),
     el("h2", { textContent: "Each Pi" }),
-    toggleRow("checkpoints", "Restore points", "The project saved before each prompt: Undo last prompt, Activity > Restore.", "agents",
+    toggleRow("checkpoints", "Restore points", "Undo a prompt and what it changed.", "agents",
       { confirmOff: "Turn restore points off? What Pi does can then no longer be undone from Pier." }),
-    toggleRow("track_sessions", "Which conversation each Pi holds", "A small extension tells Pier; without it, Pier guesses from the newest file.", "agents"),
+    toggleRow("track_sessions", "Which conversation each Pi holds", "So the list and the tabs follow Pi.", "agents"),
   ]);
 }
 
@@ -367,15 +394,17 @@ const PROVIDER_APIS = ["openai-completions", "openai-responses", "anthropic-mess
 /** The providers of models.json, a row each (its address, kind of API, models, key), ⋯ to
  *  change or remove it; Add a provider below. */
 function providersBlock() {
-  const box = el("div", { className: "provider-list" });
+  const box = el("div", { className: "rows provider-list" });
   if (!piProviders) {
-    box.append(el("p", { className: "hint", textContent: "Asking the VM…" }));
+    box.append(el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: "Asking the VM…" }))));
     loadProviders().then(() => drawProviders(false));
     return box;
   }
   if (piProviders.problem) box.append(el("p", { className: "error", textContent: piProviders.problem }));
   for (const p of piProviders.providers) {
     const more = el("button", { className: "icon-btn", type: "button", title: `${p.name}: more` }, svgIcon("ellipsis"));
+    more.setAttribute("aria-label", more.title);
+    more.setAttribute("aria-haspopup", "menu");
     more.addEventListener("click", () => showMenu(more, [
       ["Edit…", () => providerDialog(p), false, { icon: "pencil" }],
       ["Remove", async () => {
@@ -387,15 +416,12 @@ function providersBlock() {
     // Its models' context: as the provider said it (or as typed), else Pi's 128K by default.
     const sized = (p.contexts || []).filter(Boolean);
     const tokens = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}K`);
-    const context = !p.models.length ? "" : sized.length ? `context ${[...new Set(sized.map(tokens))].join(", ")}` : "context unknown: Pi takes 128K";
-    const facts = [p.baseUrl, p.api, `${p.models.length} model${p.models.length === 1 ? "" : "s"}`, context, p.key ? (p.keyEnv ? `key from ${p.keyEnv}` : "key set") : "no key"];
-    box.append(el("div", { className: "setting-row provider-row" },
-      el("div", { className: "setting-head" }, el("span", { className: "provider-name", textContent: p.name }), more),
-      el("p", { className: "hint", textContent: facts.filter(Boolean).join(" · ") })));
+    const context = !p.models.length ? "" : sized.length ? `${[...new Set(sized.map(tokens))].join(", ")} context` : "context unknown: Pi takes 128K";
+    const facts = [p.baseUrl, `${p.models.length} model${p.models.length === 1 ? "" : "s"}`, context, p.key ? "" : "no key"];
+    box.append(el("div", { className: "set" }, el("span", { className: "avatar", "aria-hidden": "true", textContent: p.name[0]?.toUpperCase() || "?" }),
+      el("div", { className: "what" }, el("span", { textContent: p.name }), el("span", { textContent: facts.filter(Boolean).join(" · "), title: `${p.api}${p.keyEnv ? ` · key from ${p.keyEnv}` : ""}` })), more));
   }
-  const add = el("button", { type: "button", className: "add-row" }, svgIcon("plus"), el("span", { textContent: "Add a provider" }));
-  add.addEventListener("click", () => providerDialog(null));
-  box.append(el("div", { className: "setting-row add-line" }, add));
+  if (!piProviders.providers.length) box.append(el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: "None of your own yet" }), el("span", { textContent: "Connect a popular one below, or add your own." }))));
   return box;
 }
 
@@ -492,10 +518,22 @@ function drawProjects() {
     projectsOpen = null;
     const rows = projects.map((x) => {
       const b = el("button", { type: "button", className: "project-pick" }, projectBadge(x.project, looks[x.project]),
-        el("span", { className: "what" }, el("span", { textContent: x.label }), el("span", { textContent: `${x.sessions.length} conversation${x.sessions.length === 1 ? "" : "s"}` })),
-        svgIcon("chevron-right"));
+        el("span", { className: "what" }, el("span", { textContent: x.label }), el("span", { textContent: `${x.sessions.length} conversation${x.sessions.length === 1 ? "" : "s"}` })));
       b.addEventListener("click", () => { projectsOpen = x.project; drawProjects(); });
-      return b;
+      const more = el("button", { className: "icon-btn", type: "button", title: `${x.label}: more` }, svgIcon("ellipsis"));
+      more.setAttribute("aria-label", more.title);
+      more.setAttribute("aria-haspopup", "menu");
+      more.addEventListener("click", () => showMenu(more, [
+        ["Change its mark", () => projectLookDialog(x.project, x.label, looks[x.project] || {}, (look) => {
+          try { saved.looks = { ...looks, [x.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
+          workspace.find("conversations")?.reloadLooks?.();
+          drawProjects();
+        }), false, { icon: "palette" }],
+        ["Copy its path", () => backend.copyText(x.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))), false, { icon: "copy" }],
+      ]));
+      const line = el("div", { className: "project-line" }, b, more, svgIcon("chevron-right"));
+      line.dataset.name = `${x.label} ${x.project}`.toLowerCase();
+      return line;
     });
     const create = () => { closePrefs(); openFolderPicker(); };
     if (!rows.length) {
@@ -510,42 +548,50 @@ function drawProjects() {
         el("div", { className: "actions" }, go)));
       return;
     }
-    // Last in the list, as a row of it: Create a project (a folder of the VM, or a new one).
-    const add = el("button", { type: "button", className: "project-pick project-add" }, el("span", { className: "pbadge add-mark" }, svgIcon("plus")),
-      el("span", { className: "what" }, el("span", { textContent: "Create a project" }), el("span", { textContent: "A folder of the VM, or a new one" })));
-    add.addEventListener("click", create);
-    section.replaceChildren(el("div", { className: "rows project-list" }, ...rows, add));
+    const field = el("input", { type: "search", placeholder: "Search projects", spellcheck: false, autocomplete: "off" });
+    field.setAttribute("aria-label", "Search projects");
+    field.addEventListener("input", () => {
+      const needle = field.value.trim().toLowerCase();
+      for (const r of rows) r.hidden = Boolean(needle) && !r.dataset.name.includes(needle);
+    });
+    section.replaceChildren(el("div", { className: "toolbar host-bar" }, field), el("div", { className: "rows project-list" }, ...rows));
     return;
   }
-  const back = el("button", { type: "button", className: "link back-to", title: projectsSub ? `Back to ${p.label}` : "Back to all projects" }, svgIcon("arrow-left"), el("span", { textContent: "Back" }));
-  back.addEventListener("click", () => { if (projectsSub) projectsSub = null; else projectsOpen = null; drawProjects(); });
+  const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: "Back to projects" }));
+  back.addEventListener("click", () => { projectsSub = null; projectsOpen = null; drawProjects(); });
   // Its mark: a click changes it (a pencil over it under the pointer, as Edit's).
   const mark = el("button", { type: "button", className: "mark-edit", title: "Change its mark: a colour, a letter, an icon or a picture", "aria-label": "Change its mark" },
     projectBadge(p.project, looks[p.project]), el("span", { className: "mark-pen" }, svgIcon("pencil")));
   mark.addEventListener("click", () => openMark());
-  const title = el("div", { className: "project-title" }, mark, el("h2", { textContent: projectsSub ? "Instructions" : p.label }));
-  if (projectsSub === "instructions") {
-    section.replaceChildren(back, title, promptCards(p.project));
-    return;
-  }
-  const action = (text, run, primary = false) => {
-    const b = el("button", { type: "button", className: primary ? "primary" : "secondary", textContent: text });
-    b.addEventListener("click", run);
-    return b;
-  };
+  const title = el("div", { className: "project-title" }, mark, el("div", { className: "what" }, el("h2", { textContent: p.label }), el("span", { className: "dim small code", textContent: p.project })));
   const toTab = (kind, then) => () => { closePrefs(); const t = workspace.find(kind) || workspace.add(kind, "center"); workspace.show(t); then?.(t); };
-  const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
+  // Its pages, as tabs: General and Instructions here, Extensions and Repository where they live.
+  const tabs = el("span", { className: "seg project-tabs", role: "tablist" });
+  for (const [key, label, go] of [["general", "General"], ["instructions", "Instructions"],
+    ["extensions", "Extensions", () => { extProject = p.project; extFromProject = true; showPrefsPage("extensions"); }],
+    ["repository", "Repository", toTab("repository", (t) => t.openProject?.(p.project))]]) {
+    const b = el("button", { type: "button", role: "tab", textContent: label });
+    b.setAttribute("aria-selected", String((projectsSub || "general") === key));
+    b.addEventListener("click", go || (() => { projectsSub = key === "general" ? null : key; drawProjects(); }));
+    tabs.append(b);
+  }
   const openMark = () => projectLookDialog(p.project, p.label, looks[p.project] || {}, (look) => {
     try { saved.looks = { ...looks, [p.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
     workspace.find("conversations")?.reloadLooks?.();
     drawProjects();
   }, (look) => $(".pbadge", title)?.replaceWith(projectBadge(p.project, look)));
-  const copy = action("Copy", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
-  section.replaceChildren(back, title,
+  if (projectsSub === "instructions") {
+    section.replaceChildren(back, title, tabs, promptCards(p.project));
+    return;
+  }
+  const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
+  const markBtn = el("button", { type: "button", className: "mark-edit", title: "Change its mark", "aria-label": "Change its mark" }, projectBadge(p.project, looks[p.project]), el("span", { className: "mark-pen" }, svgIcon("pencil")));
+  markBtn.addEventListener("click", openMark);
+  const copy = el("button", { type: "button", className: "secondary quiet", textContent: "Copy" });
+  copy.addEventListener("click", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
+  section.replaceChildren(back, title, tabs,
     el("div", { className: "rows" },
-      row("Instructions", "AGENTS.md and Pi's system prompt: what Pi reads first in every session here.", action("Edit", () => { projectsSub = "instructions"; drawProjects(); })),
-      row("What Pi loads", "Its skills, extensions, prompt templates and packages, the project's and yours.", action("Open", () => { extProject = p.project; extFromProject = true; showPrefsPage("extensions"); })),
-      row("Repository", "Its git repository and forge: branches, pull requests, what Pi pushed.", action("Open", toTab("repository", (t) => t.openProject?.(p.project)))),
+      row("Its mark", "A colour, a letter, an icon or a picture: click it to change.", markBtn),
       row("Its path", p.project, copy)));
 }
 
@@ -620,10 +666,10 @@ function promptCards(project) {
 function drawNetwork(again) {
   drawSettingsPage("network", again, () => {
     const out = [];
-    out.push(el("h2", { textContent: "Sandbox" }),
-      toggleRow("sandbox", "Run Pi in a sandbox", "Pi sees its project, its own settings and little else of the VM (bubblewrap).", "network",
+    out.push(
+      toggleRow("sandbox", "Sandbox", "Pi sees its project and ~/.pi only.", "network",
         { confirmOff: "Run Pi without its sandbox? It then sees and may change everything your account can on the VM." }),
-      toggleRow("network_limit", "Limit where Pi may connect", "In the sandbox, Pi reaches only the places below; the rest is refused and written to the picker's log (net.blocked).", "network",
+      toggleRow("network_limit", "Limit the network", "Only the places below.", "network",
         { confirmOff: "Let Pi connect anywhere? It could then send what it reads to any address." }));
     // Every place in one list (the mock-up's option C): yours, then the picker's own, each
     // with a switch (off: still listed, Pi no longer reaches it: network_off); yours also
@@ -650,7 +696,7 @@ function drawNetwork(again) {
       sw.addEventListener("change", () => setOff(entry, sw.checked));
       const row = el("div", { className: isOff(entry) ? "set tight off" : "set tight" },
         el("div", { className: "what" }, el("span", { className: "code", textContent: entry })),
-        el("span", { className: "origin", textContent: mine ? "yours" : "built in" }));
+        el("span", { className: "origin", textContent: mine ? "yours" : "Pier's" }));
       // The switches stay in one column; yours have ⋯ after theirs (Remove), the others room.
       row.append(sw);
       if (mine) {
@@ -677,10 +723,9 @@ function drawNetwork(again) {
     const allowed = [...own, ...builtin].filter((h) => !isOff(h)).length;
     const limited = configValue("network_limit");
     box.classList.toggle("inactive", !limited);
-    out.push(el("h2", {}, el("span", { textContent: "Where Pi may connect" }), el("span", { className: "aside", textContent: `${own.length + builtin.length} places, ${allowed} allowed` })));
-    if (!limited) out.push(el("p", { className: "notice", textContent: "Limit where Pi may connect is off: Pi may connect anywhere, and this list does not apply." }));
-    out.push(el("div", { className: "toolbar host-bar" }, field, add), error, box,
-      el("p", { className: "hint", textContent: "Built in: model providers, npm, GitHub, PyPI. A gateway such as Bifrost carries every model: the providers' own hosts can then be turned off." }));
+    out.push(el("h2", {}, el("span", { textContent: "Allowed places" }), el("span", { className: "aside", textContent: `${own.length + builtin.length} places, ${allowed} allowed` })));
+    if (!limited) out.push(el("p", { className: "notice", textContent: "Limit the network is off: Pi may connect anywhere, and this list does not apply." }));
+    out.push(el("div", { className: "toolbar host-bar" }, field, add), error, box);
     if (!piModels) loadPiModels().then(() => { if (!$("#prefs").hidden && prefsPage === "network") drawNetwork(false); });
     return out;
   });
@@ -708,26 +753,23 @@ async function drawForges() {
   // One row per account (its initial, the forge, the address), then Add an account.
   const rows = el("div", { className: "rows" });
   for (const f of forges) {
-    const remove = el("button", { className: "secondary", textContent: "Remove", title: "Forget this account (its token is deleted on the VM)" });
-    remove.addEventListener("click", async () => {
+    const more = el("button", { className: "icon-btn", type: "button", title: `${f.login}: more` }, svgIcon("ellipsis"));
+    more.setAttribute("aria-label", more.title);
+    more.setAttribute("aria-haspopup", "menu");
+    more.addEventListener("click", () => showMenu(more, [["Forget this account", async () => {
       if (!(await ask(`Forget the ${FORGE_LABELS[f.kind]} account ${f.login}? Its token is deleted on the VM; revoke it on ${FORGE_LABELS[f.kind]} too. Repositories connected through it can no longer be pushed to.`))) return;
       try { await backend.forgeRemove(f.id); drawForges(); } catch (e) { showError(error, String(e)); }
-    });
+    }, false, { icon: "trash", danger: true }]]));
+    let host = f.url;
+    try { host = new URL(f.url).host; } catch { /* as written */ }
     rows.append(el("div", { className: "set" },
       el("span", { className: "avatar", "aria-hidden": "true" }, svgIcon(FORGE_ICONS[f.kind] || "git-branch")),
-      el("div", { className: "what" }, el("span", { textContent: f.login }), el("span", { textContent: `${FORGE_LABELS[f.kind] || f.kind} · ${f.url}` })),
-      remove));
+      el("div", { className: "what" }, el("span", { textContent: `${host} · ${f.login}` }), el("span", { textContent: "Token kept on the VM, never in Pi's sandbox." })),
+      more));
   }
-  const add = el("button", { className: "pick", type: "button" }, el("span", { textContent: "Add…" }));
-  add.setAttribute("aria-haspopup", "menu");
-  add.addEventListener("click", () => showMenu(add, Object.entries(FORGE_LABELS).map(([kind, label]) => [label, () => forgeAccountDialog(kind, (forge) => {
-    flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
-    drawForges();
-  }), false, { icon: FORGE_ICONS[kind] || "git-branch" }])));
-  rows.append(el("div", { className: "set" },
-    el("div", { className: "what" }, el("span", { textContent: forges.length ? "Add an account" : "No account yet" }),
-      el("span", { textContent: "Where Pi pushes its pi/… branches and opens pull requests; each project picks one in Repository. The token stays on the VM: Pi never sees it." })),
-    add));
+  if (!forges.length) rows.append(el("div", { className: "set" },
+    el("div", { className: "what" }, el("span", { textContent: "No account yet" }),
+      el("span", { textContent: "Pi pushes its pi/… branches and opens pull requests through one; each project picks one in Repository." }))));
   section.replaceChildren(
     el("h2", { textContent: "Accounts" }),
     rows, error,
@@ -735,8 +777,8 @@ async function drawForges() {
     (() => {
       // A key of config.toml: drawn as on Agents, once the config is known.
       const row = el("div");
-      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "Push, pull requests and tasks for the connected forge, through the picker. Off: Pi has git, nothing more.", "git"),
-        toggleRow("worktrees", "A worktree for each extra Pi", "A second Pi in a git project works in a worktree of its own (.pi-worktrees), on its own branch.", "git"))).catch(() => row.remove());
+      loadPickerConfig().then(() => row.replaceWith(toggleRow("git_tools", "Git tools", "Push, pull requests, tasks, through Pier.", "git"),
+        toggleRow("worktrees", "Worktrees", "A worker works in a worktree of its own.", "git"))).catch(() => row.remove());
       return row;
     })());
   if ($("#prefs-search").value.trim()) searchSettings($("#prefs-search").value);

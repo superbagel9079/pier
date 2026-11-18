@@ -182,7 +182,7 @@
         <button role="tab" data-page="conversations" data-lede="What the conversation view shows and does."><svg class="i" aria-hidden="true"><use href="#i-message-square"/></svg><span>Conversations</span></button>
         <button role="tab" data-page="notifications" data-lede="When Pier tells you something, and how."><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></button>
         <p class="settings-group">Pi</p>
-        <button role="tab" data-page="models" data-lede="Pi's default model, and the ones it knows."><svg class="i" aria-hidden="true"><use href="#i-brain"/></svg><span>Models</span></button>
+        <button role="tab" data-page="models" data-lede="Pi's default, and which models the pickers show."><svg class="i" aria-hidden="true"><use href="#i-brain"/></svg><span>Models</span></button>
         <button role="tab" data-page="providers" data-lede="Where Pi's models come from: their address and key, kept on the VM."><svg class="i" aria-hidden="true"><use href="#i-cloud"/></svg><span>Providers</span></button>
         <button role="tab" data-page="agents" data-lede="Several Pis at once: workers, helpers, an orchestrator."><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg><span>Agents</span></button>
         <button role="tab" data-page="extensions" data-lede="Skills, extensions, prompts and packages Pi loads."><svg class="i" aria-hidden="true"><use href="#i-puzzle"/></svg><span>Extensions</span></button>
@@ -200,7 +200,7 @@
     </nav>
 
     <div class="prefs-pages">
-      <div class="prefs-head"><h1 id="prefs-title">Settings</h1><p id="prefs-lede"></p></div>
+      <div class="prefs-head"><div><h1 id="prefs-title">Settings</h1><p id="prefs-lede"></p></div><span id="prefs-act"></span></div>
       <p id="prefs-nothing" class="dim" hidden>No setting matches.</p>
       <section class="prefs-page" data-page="models" data-title="Models" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="providers" data-title="Providers" role="tabpanel" hidden></section>
@@ -294,31 +294,35 @@
       <section class="prefs-page" data-page="general" data-title="General" role="tabpanel" hidden>
       <h2>Layout</h2>
       <div class="rows">
-        <div class="set"><div class="what" id="prefs-reset-label"><span>Where the panels go</span><span>Conversations on the left, what Pi did on the right, the rest as tabs in the middle. The header's buttons hide or show each side; drag a side's edge to widen it.</span></div><button id="prefs-reset" aria-labelledby="prefs-reset-label" class="secondary">Reset layout</button></div>
-        <div class="set"><label class="what" for="prefs-rail"><span>Keep the rail</span><span>Its icons (new conversation, search, waiting, settings) stay on the left when the conversations are hidden.</span></label><input id="prefs-rail" type="checkbox"></div>
-        <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The terminal or panel under the pointer gets the keyboard, without a click.</span></label><input id="prefs-focus" type="checkbox"></div>
+        <div class="set"><div class="what"><span id="prefs-layout-label">Where the panels go</span><span>The conversations, the middle, Details: which side, which order.</span></div>
+          <div id="prefs-layout" class="layout-tiles" role="radiogroup" aria-labelledby="prefs-layout-label">
+            <button type="button" role="radio" data-v="both"><i class="lay both" aria-hidden="true"></i><span>Conversations left</span></button>
+            <button type="button" role="radio" data-v="details"><i class="lay details" aria-hidden="true"></i><span>Details only</span></button>
+          </div></div>
+        <div class="set"><label class="what" for="prefs-rail"><span>Keep the rail</span><span>Its icons stay on the left when the conversations are folded.</span></label><input id="prefs-rail" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The panel under the pointer takes the keyboard.</span></label><input id="prefs-focus" type="checkbox"></div>
       </div>
       <h2>Files given to Pi</h2>
       <div class="rows">
-        <div class="set"><label class="what" for="prefs-autostop"><span>Stop a share when its Pi ends</span><span>The folder shared with the project's Pi stops being shared.</span></label><input id="prefs-autostop" type="checkbox"></div>
-        <div class="set"><label class="what" for="prefs-resume"><span>Resume shares after reconnecting</span><span>For projects whose Pi still runs; otherwise they wait, paused.</span></label><input id="prefs-resume" type="checkbox"></div>
-        <div class="set"><label class="what" for="prefs-clear"><span>Delete what was given when a Pi ends</span><span>The images, files and folder copies given to the project's Pi.</span></label><input id="prefs-clear" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-autostop"><span>Stop a share when its Pi ends</span><span>A folder shared live is closed with the conversation.</span></label><input id="prefs-autostop" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-resume"><span>Resume shares after reconnecting</span><span>Shares come back by themselves once Pier is connected again.</span></label><input id="prefs-resume" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-clear"><span>Delete what was given when a Pi ends</span><span>Pasted images and copied files leave the VM with the conversation.</span></label><input id="prefs-clear" type="checkbox"></div>
       </div>
       </section>
 
       <section class="prefs-page" data-page="conversations" data-title="Conversations" role="tabpanel" hidden>
       <div class="rows">
-        <div class="set"><div class="what"><span id="prefs-fold-label">When a Pi finishes</span><span>Its steps fold into one line: "Thought twice, ran 3 commands". A click opens them.</span></div>
+        <div class="set"><div class="what"><span id="prefs-fold-label">When a Pi finishes</span><span>Its steps fold into one line: "Thought twice, ran 3 commands".</span></div>
           <div id="prefs-fold" class="seg" role="radiogroup" aria-labelledby="prefs-fold-label"><button role="radio" data-v="fold">Fold them</button><button role="radio" data-v="open">Keep them open</button></div></div>
+        <div id="conv-image-slot" hidden></div>
       </div>
       </section>
-      <section class="prefs-page" data-page="conv-image" data-title="Conversations: images" role="tabpanel" hidden></section>
 
       <section class="prefs-page" data-page="notifications" data-title="Notifications" role="tabpanel" hidden>
       <div class="rows">
-        <div class="set"><label class="what" for="prefs-notify"><span>When a Pi finishes</span><span>A Windows notification, while Pier is in the background.</span></label><button id="prefs-notify-test" class="secondary" type="button">Send a test</button><input id="prefs-notify" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-notify"><span>When a Pi finishes</span><span>A Windows notification, unless Pier is in front.</span></label><button id="prefs-notify-test" class="secondary" type="button">Send a test</button><input id="prefs-notify" type="checkbox"></div>
         <!-- What it looks like (the proposals' 6B), as connect.js sends it. -->
-        <div class="set notify-preview" aria-hidden="true"><span class="what"><span>Preview</span><span>As Windows shows it, in the corner of the screen.</span></span>
+        <div class="set notify-preview" aria-hidden="true"><span class="what"><span>Preview</span><span>What it looks like, in the corner of the screen.</span></span>
           <div class="toast-preview"><div class="app"><span class="mark">P</span>Pier<span class="when">now</span></div><div class="t">Pi finished</div><div class="b">~/work is waiting for you</div></div></div>
       </div>
       </section>
@@ -454,18 +458,19 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
 
       <section class="prefs-page needs-vm" data-page="projects" data-title="Projects" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="overview" data-title="Overview" role="tabpanel" hidden>
+      <div class="pills"><span class="pill state" id="prefs-status-row" data-state="lost"></span><span class="pill" id="prefs-connection"></span><span class="pill" id="prefs-pill-picker"></span></div>
       <h2>Connection</h2>
       <div class="rows">
-        <div class="set" id="prefs-status-row" data-state="lost"><div class="what"><span>Status</span><span id="prefs-connection"></span></div><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span></div>
-        <div class="set"><div class="what"><span>Address</span><span>To change the address, port or bastion: disconnect, then "change connection" on the login screen.</span></div></div>
+        <div class="set"><div class="what"><span>Address</span><span>To change it: disconnect, then "change connection" on the login screen.</span></div><span id="prefs-address" class="value code"></span></div>
       </div>
       </section>
 
       <section class="prefs-page" data-page="picker" data-title="The picker" role="tabpanel" hidden>
       <h2>Picker</h2>
       <div class="rows">
-        <div class="set"><div class="what"><span>Version</span><span id="prefs-picker"></span></div><button id="prefs-reinstall" class="secondary">Install again</button></div>
-        <div class="set"><label class="what" for="prefs-autoupdate"><span>Update it by itself</span><span>When this Pier carries a newer one. The picker is the program on the VM that Pier talks to (pi-pick).</span></label><input id="prefs-autoupdate" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-autoupdate"><span>Update it by itself</span><span>A newer picker is installed at the next connection.</span></label><input id="prefs-autoupdate" type="checkbox"></div>
+        <div class="set"><div class="what"><span>Its log</span><span class="code">~/.local/state/pier-picker/picker.log</span></div><div class="btns"><button id="prefs-picker-logcopy" class="secondary quiet" type="button">Copy path</button><button id="prefs-picker-logs" class="secondary quiet" type="button">Open logs</button></div></div>
+        <div class="set"><div class="what"><span>Install it again</span><span id="prefs-picker"></span></div><button id="prefs-reinstall" class="secondary quiet">Install again</button></div>
       </div>
       <p id="prefs-picker-note" class="notice" hidden></p>
       <div id="prefs-danger">
