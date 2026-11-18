@@ -179,13 +179,14 @@
         <button role="tab" data-page="labs" title="Disposable machines where Pi may do anything">Labs</button>
         <p class="settings-group">Pier</p>
         <button role="tab" data-page="appearance" title="Theme, fonts, where the panels go">Appearance</button>
-        <button role="tab" data-page="terminals">Terminals</button>
         <button role="tab" data-page="behavior" title="What Pier does by itself: shares, notifications, the shortcut">Behavior</button>
         <p class="settings-group">The VM</p>
         <button role="tab" data-page="projects" title="Each project of the VM: its instructions, what Pi loads, its mark, its repository">Projects</button>
         <button role="tab" data-page="connection" title="The VM, the picker on it">Connection</button>
         <button role="tab" data-page="updates">Updates</button>
         <button role="tab" data-page="diagnostics">Diagnostics</button>
+        <p class="settings-group">Advanced</p>
+        <button role="tab" data-page="terminals" title="Pi in its own screen in tmux, as before 2.0">Terminals</button>
       </div>
     </nav>
 
@@ -197,6 +198,7 @@
       <section class="prefs-page needs-vm" data-page="extensions" data-title="Extensions &amp; skills" role="tabpanel" hidden>
         <!-- As the mock-up's option A: what to show, then the project whose own are listed with yours. -->
         <button type="button" id="ext-back" class="link back-to" hidden></button>
+        <div id="ext-title" class="project-title" hidden></div>
         <div class="toolbar ext-bar">
           <span id="ext-tabs" class="seg" role="tablist" aria-label="What to show"></span>
           <span class="head-gap"></span>
@@ -308,8 +310,18 @@
       </section>
 
       <section class="prefs-page needs-vm" data-page="terminals" data-offline="Terminals run on your VM: connect to it, then choose how they behave." data-title="Terminals" role="tabpanel" hidden>
-      <!-- The terminals' options only with Pi in tmux (prefs.js). -->
-      <div class="rows">
+      <!-- Off: what tmux gives, and one button, as Labs. On: the switch, then the terminals' options (prefs.js). -->
+      <div id="term-welcome" class="labs-welcome" hidden>
+        <svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg>
+        <h2>Pi in its own screen</h2>
+        <ul>
+          <li>Conversations open in Pi's own terminal interface, in tmux, instead of Pier's conversation view (as before 2.0).</li>
+          <li>Pi keeps running in tmux when Pier closes; you come back to the same screen.</li>
+          <li>The terminal's options come with it: font, copy and paste, the clipboard shortcut.</li>
+        </ul>
+        <div class="actions"><button id="term-turn-on" class="secondary">Use tmux</button><span class="dim small">tmux must be on the VM.</span></div>
+      </div>
+      <div id="term-on" class="rows" hidden>
         <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
       </div>
       <div id="prefs-term-more" hidden>

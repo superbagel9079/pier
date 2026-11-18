@@ -22,7 +22,7 @@ function openPrefs() {
   $("#prefs-resume").checked = prefs.resume;
   $("#prefs-focus").checked = prefs.focusFollowsMouse;
   $("#prefs-pi-terminal").checked = prefs.piTerminal;
-  $("#prefs-term-more").hidden = !prefs.piTerminal;
+  showTerminalPage();
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   showCopy();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
@@ -549,8 +549,19 @@ $("#prefs-rail").addEventListener("change", (e) => { prefs.railAlways = e.target
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
-  $("#prefs-term-more").hidden = !prefs.piTerminal; // the terminals' options, only with Pi in tmux
+  showTerminalPage(); // the terminals' options, only with Pi in tmux
   backend.setShortcut(shortcutOn()).catch(() => {});
+});
+/** Terminals: off, what tmux gives and Use tmux (as Labs); on, the switch and the options. */
+function showTerminalPage() {
+  $("#term-welcome").hidden = prefs.piTerminal;
+  $("#term-on").hidden = !prefs.piTerminal;
+  $("#prefs-term-more").hidden = !prefs.piTerminal;
+}
+$("#term-turn-on").addEventListener("click", () => {
+  const box = $("#prefs-pi-terminal");
+  box.checked = true;
+  box.dispatchEvent(new Event("change"));
 });
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
 /** Copy and paste: the keys and when copying happens, the ones in use pressed. */

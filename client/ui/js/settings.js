@@ -433,7 +433,7 @@ function drawProjects() {
     section.replaceChildren(el("h2", { textContent: "Projects" }), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
     return;
   }
-  const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: projectsSub ? p.label : "All projects" }));
+  const back = el("button", { type: "button", className: "link back-to", title: projectsSub ? `Back to ${p.label}` : "Back to all projects" }, svgIcon("arrow-left"), el("span", { textContent: "Back" }));
   back.addEventListener("click", () => { if (projectsSub) projectsSub = null; else projectsOpen = null; drawProjects(); });
   const title = el("div", { className: "project-title" }, projectBadge(p.project, looks[p.project]), el("h2", { textContent: projectsSub ? "Instructions" : p.label }));
   if (projectsSub === "instructions") {
@@ -676,9 +676,14 @@ async function drawExtensions() {
   $(".ext-bar").classList.toggle("from-project", extFromProject);
   const back = $("#ext-back");
   back.hidden = !extFromProject;
+  $("#ext-title").hidden = !extFromProject;
   if (extFromProject) {
-    back.replaceChildren(svgIcon("arrow-left"), el("span", { textContent: projectLabel(extProject) }));
+    back.replaceChildren(svgIcon("arrow-left"), el("span", { textContent: "Back" }));
+    back.title = `Back to ${projectLabel(extProject)}`;
     back.onclick = () => { extFromProject = false; projectsOpen = extProject; projectsSub = null; showPrefsPage("projects"); };
+    let looks = {};
+    try { looks = JSON.parse(localStorage.getItem("devbox.conversations.v1"))?.looks || {}; } catch { /* none */ }
+    $("#ext-title").replaceChildren(projectBadge(extProject, looks[extProject]), el("h2", { textContent: projectLabel(extProject) }));
   }
   const projects = lastProjects || await fetchProjects().catch(() => null);
   const options = [];

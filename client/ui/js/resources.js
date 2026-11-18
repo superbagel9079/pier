@@ -37,10 +37,15 @@ function resourceDialog(title, body, actions, wide = false) {
 /** "for you / for this project": where a new skill or a package goes. */
 function scopeChoice(value = "user") {
   const select = el("select", { title: "Where it goes" });
-  select.add(new Option("for you (every project)", "user"));
-  select.add(new Option("for this project only", "project"));
+  select.add(new Option("You, in every project", "user"));
+  select.add(new Option("This project only", "project"));
   select.value = value;
   return select;
+}
+
+/** A dialog's field as Pier's others (Start a project, a provider): its name above, a hint under. */
+function dialogField(label, control, hint = "") {
+  return el("label", { className: "provider-field" }, el("span", { textContent: label }), control, hint ? el("small", { textContent: hint }) : null);
 }
 
 function dialogError() {
@@ -183,12 +188,11 @@ function makeResourceManager(box, currentProject, onChange) {
     const problem = dialogError();
     const create = el("button", { textContent: "Create" });
     const dialog = resourceDialog("New skill", [
-      el("div", { className: "grid fields" },
-        el("label", { textContent: "Where" }), scope,
-        el("label", { textContent: "Name" }), name,
-        el("label", { textContent: "Description" }), description),
-      el("p", { className: "hint", textContent: "A name: lowercase letters, digits and single hyphens. It opens to edit once made." }),
+      dialogField("Name", name, "Lowercase letters, digits and single hyphens. It opens to edit once made."),
+      dialogField("Description", description),
+      dialogField("For", scope),
       problem], [create]);
+    dialog.box.classList.add("provider-dialog");
     const go = async () => {
       try {
         const made = await backend.skillCreate(scope.value, currentProject(), name.value.trim(), description.value.trim());
@@ -232,9 +236,10 @@ function makeResourceManager(box, currentProject, onChange) {
     const problem = dialogError();
     const choose = el("button", { textContent: "Choose a folder…" });
     const dialog = resourceDialog("Import a skill", [
-      el("div", { className: "grid fields" }, el("label", { textContent: "Where" }), scope),
       el("p", { className: "hint", textContent: "A folder of this computer that holds a SKILL.md: it is copied into the skills, under the name it declares." }),
+      dialogField("For", scope),
       problem], [choose]);
+    dialog.box.classList.add("provider-dialog");
     choose.addEventListener("click", async () => {
       const folder = await backend.pickFolder();
       if (!folder) return;
@@ -319,15 +324,15 @@ function renderPackageList(list, r, project, reload) {
 /** Installing a package: a source, for you or the project, then pi install in a tab. */
 function installDialog(currentProject, onDone, source = "") {
   const scope = scopeChoice();
-  const input = el("input", { placeholder: "npm:package, git:github.com/user/repo, https://…", spellcheck: false, value: source });
+  const input = el("input", { placeholder: "npm:pi-hindsight", spellcheck: false, value: source });
   const problem = dialogError();
   const install = el("button", { textContent: "Install" });
   const dialog = resourceDialog("Install a package", [
-    el("div", { className: "grid fields" },
-      el("label", { textContent: "Where" }), scope,
-      el("label", { textContent: "Source" }), input),
+    dialogField("Source", input, "npm:, git: or https://"),
+    dialogField("For", scope),
     el("p", { className: "hint", textContent: PACKAGE_WARNING }),
     problem], [install]);
+  dialog.box.classList.add("provider-dialog");
   const go = () => {
     const value = input.value.trim();
     if (!/^(npm:|git:|https:\/\/)[A-Za-z0-9@/._:+~-]{1,200}$/.test(value)) { showError(problem, "A source starts with npm:, git: or https://"); return; }
