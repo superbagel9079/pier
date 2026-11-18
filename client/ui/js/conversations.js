@@ -616,10 +616,11 @@ function makeConversations(tab) {
         const kids = s ? forksOf(s.path) : [];
         if (!kids.length) return;
         const live = kids.some((k) => k.slot || openConv.file === k.path);
-        const opened = Boolean(view.forksOpen[s.path]) || live;
+        // Your fold or unfold wins; until you choose, open while one of them works or is open.
+        const opened = view.forksOpen[s.path] ?? live;
         const toggle = el("button", { type: "button", className: "forks-toggle", title: opened ? "Fold its forks" : "Show its forks" },
           el("span", { textContent: `${kids.length} fork${kids.length === 1 ? "" : "s"}` }), svgIcon(opened ? "chevron-down" : "chevron-right"));
-        toggle.addEventListener("click", (e) => { e.stopPropagation(); if (view.forksOpen[s.path]) delete view.forksOpen[s.path]; else view.forksOpen[s.path] = true; keep(); render(); });
+        toggle.addEventListener("click", (e) => { e.stopPropagation(); view.forksOpen[s.path] = !opened; keep(); render(); });
         $(".row-main", li).after(toggle);
         li.classList.add("has-forks");
         if (!opened) return;
