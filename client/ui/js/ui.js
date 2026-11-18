@@ -264,7 +264,8 @@ document.addEventListener("click", (event) => {
   /** Name and words of an element: its label (else its text, else the tip's first part),
    *  the tip for the words when it says more; a shortcut at the end of either, apart. */
   function parts(node, tip) {
-    let name = node.getAttribute("aria-label") || (node.textContent || "").trim() || "";
+    // A row's name, not all its text (a project's mark letter, a conversation's age).
+    let name = node.getAttribute("aria-label") || (node.querySelector(":scope > .title, :scope > .row-main > .title")?.textContent || node.textContent || "").trim() || "";
     let keys = "";
     const pull = (text) => { const m = text.match(SHORTCUT); if (!m) return text; keys ||= m[1]; return text.slice(0, m.index).trim(); };
     let words = pull(tip);

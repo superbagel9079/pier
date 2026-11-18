@@ -1741,7 +1741,7 @@ html:not(.grad-off) .settings-nav { background: transparent; }
 .hint-card[hidden] { display: none; }
 .hint-card b { display: flex; align-items: center; gap: var(--s3); justify-content: space-between; font-weight: 600; font-size: 12px; }
 .hint-card kbd { font: 11px/16px var(--ui); padding: 0 4px; color: var(--dim); background: none; border: 1px solid var(--line); border-radius: min(var(--r), 3px); white-space: nowrap; }
-.hint-card .hint-words { color: var(--dim); }
+.hint-card .hint-words { color: var(--dim); white-space: pre-line; } /* a tip's lines kept */
 @keyframes hint-in { from { opacity: 0; transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .hint-card { animation: none; } }
 

@@ -548,9 +548,15 @@ function makeConversations(tab) {
       ["Copy its path", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => showError(error, String(e))), false, { icon: "copy" }],
       ...(pis.length ? [null, [`Stop its Pis (${pis.length})`, () => stop(p, null), false, { icon: "square" }]] : []),
     ];
+    // Counted as listed: the archived ones (unless shown), the helpers' and the Pis with
+    // nothing said yet are not in the list, so not in its number either.
+    const listed = p.sessions.filter((s) => !s.subagent && !s.deleted && (archived || !s.archived));
+    const hiddenArchived = archived ? 0 : p.sessions.filter((s) => !s.subagent && !s.deleted && s.archived).length;
+    const running = pis.filter((pi) => pi.role || p.sessions.some((s) => s.slot === pi.slot)).length;
     const li = conversationRow({ key: `project:${p.project}`, className: "project-head" + (folded ? " folded" : "") + (inUse ? " in-use" : ""),
-      mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(p.sessions.length) : "",
-      tip: [p.project, factLine([pis.length ? `${pis.length} running` : "", `${p.sessions.length} conv.`]), projectTotals(p.sessions),
+      mark: projectBadge(p.project, view.looks[p.project]), title: p.label, meta: folded ? String(listed.length) : "",
+      tip: [p.project, factLine([running ? `${running} running` : "", `${listed.length} conversation${listed.length === 1 ? "" : "s"}`,
+        hiddenArchived ? `${hiddenArchived} archived` : ""]), projectTotals(p.sessions),
         inUse ? "the project of the Pi in use" : ""].filter(Boolean).join("\n"),
       run: () => { view.folded[p.project] = !folded; keep(); render(); },
       menu: (anchor, at) => showMenu(anchor, items, at), more: true });
