@@ -105,9 +105,12 @@ def session_file_in(project, file):
 
 
 def pi_file(pi, project, count):
-    """The session file of a running Pi: known, else (a lone Pi) the newest one."""
+    """The session file of a running Pi: known, else (a lone Pi) the newest one; none for a
+    Pi started on a new conversation, which has no file yet (the newest is another's)."""
     if pi.get("file"):
         return pi["file"]
+    if pi.get("fresh"):
+        return None
     return latest_session_file(project) if count == 1 else None
 
 

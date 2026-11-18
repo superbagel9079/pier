@@ -296,7 +296,7 @@ function makeConversations(tab) {
    *  many of its Pis wait for you on it. */
   function drawRail(projects, inUse) {
     $("#rail-projects").replaceChildren(...projects.filter((p) => (p.pis || []).length || p.sessions.some((s) => !s.archived)).map((p) => {
-      const waiting = (p.pis || []).filter((pi) => !pi.working && !pi.reported).length;
+      const waiting = (p.pis || []).filter((pi) => !pi.working && !pi.reported && pi.file).length; // a Pi with nothing said yet waits for no one
       const on = p.project === (alone() || inUse);
       const b = el("button", { className: "rail-btn rail-proj" + (on ? " on" : ""), type: "button", title: p.label },
         projectBadge(p.project, view.looks[p.project]), waiting ? el("span", { className: "badge", textContent: String(waiting) }) : null);
@@ -580,7 +580,9 @@ function makeConversations(tab) {
         for (const pi of item.slot && pis.includes(item) ? [item, ...(item.role === "orchestrator" ? workersOf(item) : [])] : [item]) {
           const s = matches.find((x) => x.slot === pi.slot);
           if (!pis.includes(pi)) { list.append(row(p, pi)); shown += 1; continue; } // a session whose Pi just went
-          if (!s && (query || !fresh(pi))) continue;
+          // A Pi with nothing said yet is not a conversation: listed once you wrote in it (an
+          // orchestrator or a worker starting shows, its team follows it).
+          if (!s && (query || !pi.role || !fresh(pi))) continue;
           const li = piRow(p, pi, s || null);
           if (pi.role === "worker" && item !== pi) li.classList.add("in-team");
           list.append(li);

@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.64"
+VERSION = "4.65"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -2109,9 +2109,12 @@ def session_file_in(project, file):
 
 
 def pi_file(pi, project, count):
-    """The session file of a running Pi: known, else (a lone Pi) the newest one."""
+    """The session file of a running Pi: known, else (a lone Pi) the newest one; none for a
+    Pi started on a new conversation, which has no file yet (the newest is another's)."""
     if pi.get("file"):
         return pi["file"]
+    if pi.get("fresh"):
+        return None
     return latest_session_file(project) if count == 1 else None
 
 
@@ -10835,8 +10838,10 @@ def rpc_sessions():
                 meta = json.load(f)
         except (OSError, ValueError):
             continue
+        # Started on a new conversation (no --session/--continue): never the newest file's.
+        fresh = not set(meta.get("args") or []) & {"--session", "--continue"}
         sessions[name] = {"name": name, "path": meta.get("project"), "attached": False,
-                          "last_attached": int(meta.get("started") or 0), "file": None, "rpc": True}
+                          "last_attached": int(meta.get("started") or 0), "file": None, "rpc": True, "fresh": fresh}
     return sessions
 
 

@@ -49,8 +49,10 @@ def rpc_sessions():
                 meta = json.load(f)
         except (OSError, ValueError):
             continue
+        # Started on a new conversation (no --session/--continue): never the newest file's.
+        fresh = not set(meta.get("args") or []) & {"--session", "--continue"}
         sessions[name] = {"name": name, "path": meta.get("project"), "attached": False,
-                          "last_attached": int(meta.get("started") or 0), "file": None, "rpc": True}
+                          "last_attached": int(meta.get("started") or 0), "file": None, "rpc": True, "fresh": fresh}
     return sessions
 
 
