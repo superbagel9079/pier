@@ -308,20 +308,25 @@ function makeFile(tab) {
         area = el("textarea", { className: "code-edit", spellcheck: false, value: text, ariaLabel: `${rel}: type to change it, saved by itself` });
         const wrap = el("div", { className: "code-wrap" }, src, area);
         code.append(gutter, el("div", { className: "code-scroll" }, wrap)); // only the code scrolls sideways, under no number
-        let paint = 0;
+        let paint = 0, lines = count;
+        // A big file (past what is coloured): typed in, the field shows its own text at once and
+        // the copy under it only keeps the size, uncoloured (colouring 2 MB at each pause lagged).
+        const big = text.length > VIEW_HIGHLIGHT_MAX;
         const repaint = () => {
           paint = 0;
-          src.replaceChildren();
-          highlight(src, area.value + (area.value.endsWith("\n") || !area.value ? " " : ""), markdown ? null : lang);
-          gutter.textContent = Array.from({ length: area.value.split("\n").length }, (_, n) => n + 1).join("\n");
+          const value = area.value + (area.value.endsWith("\n") || !area.value ? " " : "");
+          if (big) src.textContent = value;
+          else { src.replaceChildren(); highlight(src, value, markdown ? null : lang); }
+          const n = area.value.split("\n").length;
+          if (n !== lines) { lines = n; gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n"); }
         };
         area.addEventListener("input", () => {
           dirty = true;
           say("");
-          // A big file is coloured again less often (its first 400 KB take a moment).
-          if (!paint) paint = setTimeout(repaint, area.value.length > VIEW_HIGHLIGHT_MAX ? 300 : 60);
+          if (big && !area.classList.contains("plain")) { area.classList.add("plain"); src.style.visibility = "hidden"; }
+          if (!paint) paint = setTimeout(repaint, big ? 250 : 60);
           clearTimeout(saveTimer);
-          saveTimer = setTimeout(save, 700);
+          saveTimer = setTimeout(save, big ? 1500 : 700); // a big one sent less often
         });
         area.addEventListener("keydown", (e) => {
           if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }

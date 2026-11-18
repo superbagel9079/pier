@@ -47,7 +47,7 @@ function conversationMenu(anchor, project, session, { edit, changed, failed, mov
     ["Give to a colleague…", () => giveDialog(project, session), false, { icon: "send" }],
     null,
     // Disabled while a Pi runs it: the picker refuses, Pi would write it again.
-    ["Delete…", () => deleteConversation(project, session, { changed, failed }), Boolean(session.slot), { icon: "trash", danger: true }],
+    ["Delete…", () => deleteConversation(project, session, { changed, failed }), false, { icon: "trash", danger: true }],
   ], at);
 }
 
@@ -165,8 +165,15 @@ function projectLookDialog(project, label, look, save) {
 
 /** Deletes a conversation for good, once the user said so. */
 async function deleteConversation(project, session, { changed, failed }) {
-  if (!(await ask(`Delete "${conversationTitle(session)}" for good? The whole conversation is erased from the VM; it cannot be undone. (Archive only hides it.)`))) return;
+  const running = session.slot ? " Its Pi is stopped first, and its tab closed." : "";
+  if (!(await ask(`Delete "${conversationTitle(session)}" for good? The whole conversation is erased from the VM; it cannot be undone. (Archive only hides it.)${running}`))) return;
   try {
+    if (session.slot) {
+      // A Pi still writing the file would make it again: stopped, its tab closed, then erased.
+      for (const t of workspace.tabs()) if (t.slot === session.slot || t.params?.args?.[1] === session.slot) workspace.close(t);
+      await backend.stopPi(project, session.slot);
+      await new Promise((r) => setTimeout(r, 800));
+    }
     await backend.sessionDelete(project, session.path);
     session.deleted = true;
     uiLog("info", "session-delete", {});
