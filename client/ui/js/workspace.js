@@ -16,7 +16,10 @@ const KINDS = {
   labs: { title: "Labs", single: true, make: (tab) => makeLabs(tab) },
   lab: { title: "lab", terminal: true },
 };
+// The docks: the two sides and the middle's groups of tabs ("center", then "center-2"...,
+// added and removed as the middle is split: see the panes below).
 const DOCKS = ["left", "center", "right"];
+const isCenterDock = (name) => name === "center" || String(name || "").startsWith("center-");
 // A tab's icon: a file's or a diff's by its type, else by what the tab is.
 const TAB_ICON = { chat: "message-square", project: "activity", repository: "git-branch",
   conversations: "inbox", takeback: "undo-2", labs: "flask-conical" };
@@ -37,8 +40,10 @@ function defaultLayout() {
 
 const workspace = (() => {
   const docks = {};
+  const centerEl = $("#dock-center");
+  const grid = $(".center-grid", centerEl);
   for (const name of DOCKS) {
-    const node = $(`#dock-${name}`);
+    const node = name === "center" ? $('.group[data-dock="center"]', centerEl) : $(`#dock-${name}`);
     docks[name] = {
       name, el: node, side: name !== "center", tabs: [], active: null, collapsed: false,
       width: defaultLayout()[name]?.width || 320, splitter: $(`.splitter[data-dock="${name}"]`),
@@ -49,6 +54,189 @@ const workspace = (() => {
   const keyOf = (tab) => tab.kind;
   const tabs = () => DOCKS.flatMap((name) => docks[name].tabs);
   const find = (key) => tabs().find((t) => keyOf(t) === key);
+
+  // --- the middle's panes (as tmux's): a tree of rows and columns of groups of tabs ---
+  // A leaf {g: name}; a split {dir: "row"|"col", items, sizes} (sizes: the items' shares).
+  // "center" is always there: when it empties, the next group takes its place; any other
+  // group goes away with its last tab.
+  let tree = { g: "center" };
+  let focusGroup = "center"; // the group a new tab goes to, whose tab the header names
+  let groupSeq = 1;
+  const centerNames = (node = tree) => (node.g ? [node.g] : node.items.flatMap((n) => centerNames(n)));
+  const locate = (name, node = tree, parent = null) => {
+    if (node.g === name) return { node, parent };
+    for (const child of node.items || []) { const found = locate(name, child, node); if (found) return found; }
+    return null;
+  };
+  /** Where a tab of `name` goes: a side's own dock; in the middle, the group asked if it
+   *  exists, else the one in focus ("center" means the middle, wherever). */
+  const target = (kind, name) => (homeOf(kind) !== "center" ? homeOf(kind)
+    : isCenterDock(name) && name !== "center" && docks[name] ? name : focusGroup);
+
+  function newGroup() {
+    const name = `center-${++groupSeq}`;
+    const node = el("div", { className: "group" });
+    node.dataset.dock = name;
+    const plus = el("button", { className: "icon add", title: "Add a tab", "aria-label": "Add a tab", "aria-haspopup": "menu" }, svgIcon("plus"));
+    plus.addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));
+    node.append(el("div", { className: "dock-head" }, el("div", { className: "tabs", role: "tablist" }), plus), el("div", { className: "panes" }));
+    node.addEventListener("pointerdown", () => focusOn(name), true);
+    docks[name] = { name, el: node, side: false, tabs: [], active: null, collapsed: false, width: 0 };
+    DOCKS.splice(DOCKS.indexOf("right"), 0, name);
+    return name;
+  }
+
+  /** A new group beside `name` (side: left, right, top or bottom): its name. */
+  function splitAt(name, side) {
+    const fresh = newGroup();
+    const dir = side === "left" || side === "right" ? "row" : "col";
+    const before = side === "left" || side === "top";
+    const { node, parent } = locate(name);
+    const leaf = { g: fresh };
+    if (parent && parent.dir === dir) {
+      const i = parent.items.indexOf(node);
+      const half = parent.sizes[i] / 2;
+      parent.sizes[i] = half;
+      parent.items.splice(before ? i : i + 1, 0, leaf);
+      parent.sizes.splice(before ? i : i + 1, 0, half);
+    } else {
+      const same = { g: node.g };
+      delete node.g;
+      Object.assign(node, { dir, items: before ? [leaf, same] : [same, leaf], sizes: [1, 1] });
+    }
+    return fresh;
+  }
+
+  /** The tree without the leaf `name` (its share to its neighbour; a split of one, gone). */
+  function removeLeaf(name) {
+    const found = locate(name);
+    if (!found?.parent) return;
+    const { node, parent } = found;
+    const i = parent.items.indexOf(node);
+    parent.items.splice(i, 1);
+    const [share] = parent.sizes.splice(i, 1);
+    parent.sizes[Math.max(0, i - 1)] += share;
+    if (parent.items.length === 1) {
+      const only = parent.items[0];
+      for (const key of Object.keys(parent)) delete parent[key];
+      Object.assign(parent, only);
+    }
+  }
+
+  function dropGroup(name) {
+    docks[name].el.remove();
+    delete docks[name];
+    DOCKS.splice(DOCKS.indexOf(name), 1);
+    if (focusGroup === name) focusGroup = "center";
+  }
+
+  /** A group left empty: gone (its neighbour takes the room); "center" takes the tabs of
+   *  the next group, which goes, so that "center" stays. */
+  function collapse(name) {
+    if (tree.g) return; // the only group: its New tab page
+    if (name !== "center") {
+      removeLeaf(name);
+      dropGroup(name);
+    } else {
+      const other = centerNames().find((n) => n !== "center");
+      const from = docks[other];
+      for (const t of from.tabs) { t.dock = "center"; $(".panes", docks.center.el).append(t.pane); }
+      docks.center.tabs = from.tabs;
+      docks.center.active = from.active;
+      removeLeaf("center");
+      locate(other).node.g = "center";
+      dropGroup(other);
+    }
+    renderGrid();
+    render("center");
+    frame();
+  }
+
+  function focusOn(name) {
+    if (!docks[name]) return;
+    if (docks[name].active?.attention) attention(docks[name].active, false); // seen
+    if (focusGroup === name) return;
+    focusGroup = name;
+    for (const n of centerNames()) docks[n].el.classList.toggle("focus", n === focusGroup);
+    frame();
+  }
+
+  /** The middle drawn from the tree: groups in rows and columns, a gutter between two. */
+  function renderGrid() {
+    const build = (node) => {
+      if (node.g) return docks[node.g].el;
+      const box = el("div", { className: `split ${node.dir}` });
+      node.items.forEach((child, i) => {
+        if (i) box.append(gutter(node, i));
+        const cell = el("div", { className: "cell" }, build(child));
+        cell.style.flex = `${node.sizes[i]} 1 0`;
+        box.append(cell);
+      });
+      return box;
+    };
+    grid.replaceChildren(build(tree));
+    grid.classList.toggle("many", !tree.g);
+    for (const n of centerNames()) docks[n].el.classList.toggle("focus", n === focusGroup);
+  }
+
+  /** Between two items of a split: dragged, it moves the line; a double click, halves. */
+  function gutter(node, i) {
+    const line = el("div", { className: "gutter", role: "separator", title: "Drag to resize; double-click for halves" });
+    line.setAttribute("aria-orientation", node.dir === "row" ? "vertical" : "horizontal");
+    line.addEventListener("pointerdown", (down) => {
+      const cells = [...line.parentElement.children].filter((c) => c.classList.contains("cell"));
+      const a = cells[i - 1], b = cells[i];
+      const across = node.dir === "row";
+      const sizeA = across ? a.offsetWidth : a.offsetHeight;
+      const both = sizeA + (across ? b.offsetWidth : b.offsetHeight);
+      const total = node.sizes[i - 1] + node.sizes[i];
+      line.setPointerCapture(down.pointerId);
+      line.classList.add("dragging");
+      const onMove = (e) => {
+        const now = Math.max(120, Math.min(both - 120, sizeA + (across ? e.clientX - down.clientX : e.clientY - down.clientY)));
+        node.sizes[i - 1] = (total * now) / both;
+        node.sizes[i] = total - node.sizes[i - 1];
+        a.style.flex = `${node.sizes[i - 1]} 1 0`;
+        b.style.flex = `${node.sizes[i]} 1 0`;
+      };
+      const onUp = () => {
+        line.classList.remove("dragging");
+        line.removeEventListener("pointermove", onMove);
+        line.removeEventListener("pointerup", onUp);
+        line.removeEventListener("pointercancel", onUp);
+      };
+      line.addEventListener("pointermove", onMove);
+      line.addEventListener("pointerup", onUp);
+      line.addEventListener("pointercancel", onUp);
+    });
+    line.addEventListener("dblclick", () => {
+      node.sizes[i - 1] = node.sizes[i] = (node.sizes[i - 1] + node.sizes[i]) / 2;
+      renderGrid();
+    });
+    return line;
+  }
+
+  /** A tab in a new pane beside its group (or beside `name`'s): Ctrl+\, the tab's menu, a
+   *  drop on a pane's edge. A group's only tab goes nowhere: there would be nothing left. */
+  function splitWith(tab, name = tab.dock, side = "right") {
+    if (!isCenterDock(tab.dock) || (name === tab.dock && docks[name].tabs.length < 2)) {
+      flashStatus("Open a second tab here first: a pane needs a tab of its own");
+      return;
+    }
+    const fresh = splitAt(name, side);
+    renderGrid();
+    move(tab, fresh);
+    focusOn(fresh);
+  }
+
+  /** A tab that wants you (its Pi finished, or waits for an answer): a dot on it, a ring
+   *  around its pane, until it is shown. */
+  function attention(tab, on) {
+    if (Boolean(tab.attention) === Boolean(on)) return;
+    tab.attention = Boolean(on);
+    if (!docks[tab.dock]) return;
+    render(tab.dock);
+  }
 
   // --- rendering ---
 
@@ -117,6 +305,7 @@ const workspace = (() => {
     const panes = $(".panes", dock.el);
     $(":scope > .empty", panes)?.remove();
     if (!dock.tabs.length) panes.append(emptyDock(name));
+    if (!dock.side) dock.el.classList.toggle("attn", dock.tabs.some((t) => t.attention));
     frame();
   }
 
@@ -144,7 +333,7 @@ const workspace = (() => {
       ws.classList.toggle("left-over", Boolean(docks.left.over));
       for (const t of docks.left.tabs) t.onVisible?.(Boolean(t.shown));
     }
-    $("#head-title").textContent = docks.center.active?.title || "New tab";
+    $("#head-title").textContent = (docks[focusGroup] || docks.center).active?.title || "New tab";
     $("#btn-conversations").setAttribute("aria-pressed", String(ws.classList.contains("left-open")));
   }
 
@@ -188,7 +377,8 @@ const workspace = (() => {
       requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
     });
     node.title = tab.title;
-    node.append(el("span", { className: "tab-icon" }, svgIcon(tabIcon(tab))), el("span", { textContent: tab.title }));
+    node.append(el("span", { className: "tab-icon" }, svgIcon(tabIcon(tab))), el("span", { textContent: tab.title }),
+      ...(tab.attention ? [el("i", { className: "attn-dot", title: "Pi finished or waits for you" })] : []));
     const actions = el("span");
     actions.className = "tab-actions";
     // Only ×: moving, renaming and the rest are in the tab's right-click menu.
@@ -219,6 +409,11 @@ const workspace = (() => {
     // A conversation: on in the other view (switchPiView, setup.js).
     if (tab.kind === "pi") items.push(null, ["Continue in the conversation view", () => switchPiView(tab), false, { icon: "message-square" }]);
     if (tab.kind === "chat") items.push(null, ["Continue in Pi's screen (tmux)", () => switchPiView(tab), false, { icon: "terminal" }]);
+    if (isCenterDock(tab.dock)) {
+      const alone = dock.tabs.length < 2;
+      items.push(null, ["Split right", () => splitWith(tab, tab.dock, "right"), alone, { icon: "panel-right" }],
+        ["Split down", () => splitWith(tab, tab.dock, "bottom"), alone, { icon: "panel-left" }]);
+    }
     const others = dock.tabs.filter((t) => t !== tab);
     items.push(null, ["Close", () => close(tab)], ["Close the other tabs here", () => others.forEach(close), !others.length]);
     showMenu(null, items, { x, y });
@@ -427,7 +622,7 @@ const workspace = (() => {
   /** Opens a tab where its kind lives (homeOf: the dock asked is only a wish kept for
    *  callers); a single-instance panel already open is shown instead. */
   function add(kind, name, { reveal = true, params = null, replace = false } = {}) {
-    name = homeOf(kind);
+    name = target(kind, name);
     const existing = KINDS[kind].single ? find(kind) : null;
     if (existing) return move(existing, name, { reveal });
     const tab = create(kind, { params });
@@ -439,8 +634,8 @@ const workspace = (() => {
     return tab;
   }
 
-  function place(tab, name, { reveal = true, index = null } = {}) {
-    name = homeOf(tab.kind);
+  function place(tab, name, { reveal = true, index = null, exact = false } = {}) {
+    name = exact ? name : target(tab.kind, name); // exact: the group named, as a drag says
     const dock = docks[name];
     if (index === null || index > dock.tabs.length) dock.tabs.push(tab);
     else dock.tabs.splice(index, 0, tab);
@@ -451,31 +646,41 @@ const workspace = (() => {
     if (reveal) dock.collapsed = false;
     render(name);
     if (reveal) {
+      if (isCenterDock(name)) focusOn(name);
       tab.onShow?.();
       setCurrentTab(tab);
+      attention(tab, false);
     }
     save();
   }
 
-  function detach(tab) {
+  function detach(tab, { fold = true } = {}) {
     const dock = docks[tab.dock];
     const index = dock.tabs.indexOf(tab);
     dock.tabs.splice(index, 1);
     if (dock.active === tab) dock.active = dock.tabs[Math.min(index, dock.tabs.length - 1)] || null;
     render(tab.dock);
     dock.active?.onShow?.();
+    if (fold && isCenterDock(tab.dock) && !dock.tabs.length) collapse(tab.dock);
   }
 
   /** Moves a tab to a dock, at `index` in its bar (the end by default); within the
    *  same dock, an index reorders. */
   function move(tab, name, { reveal = true, index = null } = {}) {
-    if (homeOf(tab.kind) !== name) { // a panel stays in its home: shown, not moved
+    // A panel stays in its home (a side's): shown, not moved; the middle's go to any group.
+    const home = homeOf(tab.kind);
+    if (home === "center" ? !isCenterDock(name) : home !== name) {
       if (reveal) show(tab);
       return tab;
     }
+    if (home === "center") name = docks[name] ? name : focusGroup;
     if (tab.dock !== name) {
-      detach(tab);
-      place(tab, name, { reveal, index });
+      // Its group, left empty, goes once the tab is in its new place (not before: the
+      // group it goes to could be the one taking the empty one's place).
+      const from = tab.dock;
+      detach(tab, { fold: false });
+      place(tab, name, { reveal, index, exact: true });
+      if (isCenterDock(from) && docks[from] && !docks[from].tabs.length) collapse(from);
     } else if (index !== null) {
       const dock = docks[name];
       const from = dock.tabs.indexOf(tab);
@@ -502,6 +707,8 @@ const workspace = (() => {
 
   function show(tab) {
     const dock = docks[tab.dock];
+    if (isCenterDock(tab.dock)) focusOn(tab.dock);
+    attention(tab, false);
     dock.active = tab;
     if (dock.over) dock.overOpen = true;
     dock.collapsed = false;
@@ -551,9 +758,10 @@ const workspace = (() => {
           if (e.type === "pointerup") clickTab(tab);
           return;
         }
-        const target = e.type === "pointerup" ? dropTarget(e) : null;
+        const where = e.type === "pointerup" ? dropTarget(e) : null;
         dragging = null;
-        if (target) move(tab, target.dock, { index: target.index });
+        if (where?.split) splitWith(tab, where.dock, where.split);
+        else if (where) move(tab, where.dock, { index: where.index });
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", finish);
@@ -566,7 +774,19 @@ const workspace = (() => {
    *  from the tabs' middles (the end when the pointer is over the dock's content). */
   function dropTarget(event) {
     const name = dockAt(event);
-    if (!name || name !== dragging?.dock) return null; // a tab stays in its dock (homeOf)
+    if (!name || !dragging) return null;
+    // A side's tab stays in its dock (homeOf); the middle's go to any of its groups.
+    if (isCenterDock(dragging.dock) ? !isCenterDock(name) : name !== dragging.dock) return null;
+    const dock = docks[name];
+    // Over a pane's content, near an edge: a new pane there (the tab must leave a tab behind,
+    // or come from another group); elsewhere over it, the end of its tabs.
+    if (isCenterDock(name) && event.clientY > $(".dock-head", dock.el).getBoundingClientRect().bottom) {
+      const box = $(".panes", dock.el).getBoundingClientRect();
+      const fx = (event.clientX - box.left) / box.width, fy = (event.clientY - box.top) / box.height;
+      const edge = fx < 0.25 ? "left" : fx > 0.75 ? "right" : fy < 0.3 ? "top" : fy > 0.7 ? "bottom" : null;
+      if (edge && (dock.tabs.length > 1 || dragging.dock !== name)) return { dock: name, split: edge, box };
+      return { dock: name, index: dock.tabs.length };
+    }
     const elements = [...$(".tabs", docks[name].el).children];
     let index = elements.length;
     const bar = $(".dock-head", docks[name].el).getBoundingClientRect();
@@ -580,8 +800,18 @@ const workspace = (() => {
     return { dock: name, index };
   }
 
+  const splitHint = el("div", { className: "split-hint", hidden: true });
+  document.body.append(splitHint);
   function showDropTarget(target) {
-    for (const d of DOCKS) docks[d].el.classList.toggle("drop-over", target?.dock === d);
+    for (const d of DOCKS) docks[d].el.classList.toggle("drop-over", target?.dock === d && !target.split);
+    splitHint.hidden = !target?.split;
+    if (target?.split) {
+      const { box, split } = target;
+      const half = { left: [box.left, box.top, box.width / 2, box.height], right: [box.left + box.width / 2, box.top, box.width / 2, box.height],
+        top: [box.left, box.top, box.width, box.height / 2], bottom: [box.left, box.top + box.height / 2, box.width, box.height / 2] }[split];
+      Object.assign(splitHint.style, { left: `${half[0]}px`, top: `${half[1]}px`, width: `${half[2]}px`, height: `${half[3]}px` });
+      return;
+    }
     for (const node of document.querySelectorAll(".insert-before, .insert-after")) node.classList.remove("insert-before", "insert-after");
     if (!target) return;
     const elements = [...$(".tabs", docks[target.dock].el).children];
@@ -600,7 +830,7 @@ const workspace = (() => {
   }
 
   // A click in the middle closes a side open over it; a resize may move a side in or out.
-  docks.center.el.addEventListener("pointerdown", () => {
+  centerEl.addEventListener("pointerdown", () => {
     for (const name of ["left", "right"]) {
       // Closed, as by its button: a wider window does not bring it back.
       if (docks[name].over && docks[name].overOpen) { docks[name].overOpen = false; docks[name].collapsed = true; render(name); save(); }
@@ -684,9 +914,12 @@ const workspace = (() => {
 
   function snapshot() {
     const saved = {};
-    for (const name of DOCKS) {
+    for (const name of ["left", "center", "right"]) {
       const dock = docks[name];
-      saved[name] = { tabs: dock.tabs.filter((t) => KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
+      // The middle's panes are not kept (its conversations and terminals are not either):
+      // its panels come back in one group.
+      const own = name === "center" ? centerNames().flatMap((n) => docks[n].tabs) : dock.tabs;
+      saved[name] = { tabs: own.filter((t) => KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
     }
     saved.layout = 8; // what restore() keeps; below, it starts from the default layout
     // Names given by the user, for the tabs that come back at the next connection.
@@ -762,6 +995,10 @@ const workspace = (() => {
       tab.onClose?.();
       tab.pane.remove();
     }
+    for (const name of centerNames()) if (name !== "center") dropGroup(name);
+    tree = { g: "center" };
+    focusGroup = "center";
+    renderGrid();
     for (const name of DOCKS) Object.assign(docks[name], { tabs: [], active: null });
     renderAll();
   }
@@ -769,9 +1006,22 @@ const workspace = (() => {
   // The New tab page lists the latest conversations: drawn again once they are known.
   vm.on("conversations", () => { if (!docks.center.tabs.length) render("center"); });
   $(".add", docks.center.el).addEventListener("click", (event) => showMenu(event.currentTarget, addChoices("center")));
+  docks.center.el.addEventListener("pointerdown", () => focusOn("center"), true);
+  // Ctrl+\ splits the pane in focus to the right, Ctrl+Shift+\ downwards, with its tab shown
+  // (not inside a terminal: there, Ctrl+\ is the program's).
+  document.addEventListener("keydown", (e) => {
+    if (!e.ctrlKey || e.altKey || e.code !== "Backslash" || e.target.closest?.(".xterm")) return;
+    const tab = docks[focusGroup]?.active;
+    if (!tab) return;
+    e.preventDefault();
+    splitWith(tab, focusGroup, e.shiftKey ? "bottom" : "right");
+  });
+  // Back to Pier: the tab shown no longer waits for you.
+  window.addEventListener("focus", () => { if (currentTab) attention(currentTab, false); });
   $("#toggle-left").addEventListener("click", () => toggle("left"));
   $("#toggle-right").addEventListener("click", () => toggle("right"));
-  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, redrawEmpty, retitle: (tab) => render(tab.dock), dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
+  return { add, move, close, show, find, tabs, restore, arrange, save, clear, docks, toggle, redrawEmpty, attention, splitWith,
+    focused: () => focusGroup, retitle: (tab) => render(tab.dock), dockAtPoint: (x, y) => dockAt({ clientX: x, clientY: y }) };
 })();
 
 // Focus follows the mouse (a setting): the tab under the pointer gets the keyboard, on its

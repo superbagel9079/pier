@@ -443,7 +443,7 @@ backend.onDragDrop((kind, paths, position) => {
   if (kind !== "drop" || !paths.length || $("#workspace").hidden) return;
   // On a conversation shown in the middle: to it (its project, mentioned in its message).
   // Elsewhere, through Context, which asks about folders.
-  const shown = workspace.docks.center.active;
-  if (name === "center" && shown?.kind === "chat" && shown.give) { shown.give(paths); return; }
+  const shown = name ? workspace.docks[name]?.active : null; // the pane dropped on, whichever
+  if (isCenterDock(name) && shown?.kind === "chat" && shown.give) { shown.give(paths); return; }
   contextTab({ reveal: true }).give(paths);
 });

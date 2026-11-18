@@ -604,7 +604,7 @@ let currentTab = null;
 
 function setCurrentTab(tab) {
   // The tab in use is the middle's: a click in a side panel (Details, the list) leaves it.
-  if (currentTab === tab || (tab && tab.dock !== "center")) return;
+  if (currentTab === tab || (tab && !isCenterDock(tab.dock))) return;
   currentTab = tab;
   renderSessionBadge();
   for (const t of workspace.tabs()) t.onShownTab?.();

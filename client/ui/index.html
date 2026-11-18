@@ -69,11 +69,17 @@
         <span class="head-gap"></span>
         <button id="toggle-right" class="icon-btn" aria-pressed="true" title="Hide Activity" aria-label="Hide Activity"><svg class="i" aria-hidden="true"><use href="#i-panel-right-close"/></svg></button>
       </div>
-      <div class="dock-head">
-        <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab" aria-label="Add a tab" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <!-- The middle's panes (workspace.js): a group of tabs each, side by side or one above
+           the other, as tmux's; one group until a tab is dragged to a pane's edge or Ctrl+\. -->
+      <div class="center-grid">
+        <div class="group" data-dock="center">
+          <div class="dock-head">
+            <div class="tabs" role="tablist"></div>
+            <button class="icon add" title="Add a tab" aria-label="Add a tab" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          </div>
+          <div class="panes"></div>
+        </div>
       </div>
-      <div class="panes"></div>
     </section>
     <div class="splitter" data-dock="right" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
     <aside class="dock side" id="dock-right" data-dock="right">

@@ -559,7 +559,11 @@ function makeChat(tab) {
       case "agent_end": setWorking(false); break; // its end, also without agent_settled (an older Pi)
       case "auto_retry_start": notice(`The model failed (${String(e.errorMessage || "").slice(0, 200)}): trying again, ${e.attempt} of ${e.maxAttempts}…`, "dim"); break;
       case "auto_retry_end": if (e.success === false) notice(`The model failed ${e.attempt} times: ${e.finalError || "no answer"}`, "error"); break;
-      case "agent_settled": setWorking(false); endRun(state.model?.id || state.model?.name || ""); break;
+      case "agent_settled":
+        setWorking(false);
+        endRun(state.model?.id || state.model?.name || "");
+        if (currentTab !== tab || !document.hasFocus()) workspace.attention(tab, true); // finished while you looked elsewhere
+        break;
       case "message_start":
         if (e.message?.role === "user") {
           if (run) endRun(null);
@@ -630,6 +634,7 @@ function makeChat(tab) {
     if (e.method === "notify") { if (e.message || e.title) flashStatus(e.message || e.title); return; }
     if (e.method === "set_editor_text") { input.value = e.text || ""; input.dispatchEvent(new Event("input")); return; }
     if (!["select", "confirm", "input", "editor"].includes(e.method)) return;
+    if (currentTab !== tab || !document.hasFocus()) workspace.attention(tab, true); // Pi asks: its pane wants you
     const card = el("div", { className: "card chat-ask" }, el("h2", { textContent: e.title || "Pi asks" }), e.message ? el("p", { textContent: e.message }) : null);
     const reply = (fields) => { backend.termWrite(id, `${JSON.stringify({ type: "extension_ui_response", id: e.id, ...fields })}\n`); card.remove(); };
     const actions = el("div", { className: "btns" });
