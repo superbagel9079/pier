@@ -77,6 +77,7 @@ const PASSTHROUGH: &[&str] = &[
     "skill-read",
     "gallery",
     "gallery-media",
+    "gallery-package",
     "forges",
     "repo",
     "approvals",
@@ -733,6 +734,28 @@ fn open_log_folder() -> Result<(), String> {
     Ok(())
 }
 
+/// A web page in the system's browser (a package's repository, its site): https only, a
+/// plain address (no space, quote or control character), never a file or a program.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let plain = url.len() <= 2000
+        && url.starts_with("https://")
+        && url.len() > "https://".len()
+        && url.chars().all(|c| c.is_ascii_graphic() && !matches!(c, '"' | '\'' | '<' | '>' | '`' | '\\' | '^' | '|'));
+    if !plain {
+        return Err("not a web address Pier opens (https only)".into());
+    }
+    let result = if cfg!(windows) {
+        // The URL handler of Windows itself: the address is one argument, no shell reads it.
+        std::process::Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(&url).spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&url).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(&url).spawn()
+    };
+    result.map(|_| ()).map_err(|e| format!("could not open the browser: {e}"))
+}
+
 /// A report to send when something goes wrong: versions, the connection (never a
 /// password), what runs, and the end of both logs. `extra` comes from the interface.
 #[tauri::command]
@@ -1107,6 +1130,7 @@ pub fn run() {
             set_log_level,
             log_info,
             open_log_folder,
+            open_url,
             diagnostics_report,
             copy_text,
             clipboard_text,

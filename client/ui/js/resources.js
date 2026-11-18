@@ -367,73 +367,52 @@ function showPackageMedia(tiles) {
   loadPackageMedia(tiles.map((t) => t.dataset.name)).then(() => tiles.forEach((t) => t.refresh()));
 }
 
-/** Browse (the proposals' 1A, as Paseo's plugins): pi.dev's packages searched as you type,
- *  the first ones with a picture as featured cards, then the list; a click shows a package's
- *  detail beside the list, Install on its row and there. */
+/** Browse (as Paseo's plugins): pi.dev's packages, filtered by kind and sorted, searched as
+ *  you type; the most installed with a picture as featured cards, then the list with Install
+ *  on each row. A click opens the package's own page (Back to packages): its facts, its
+ *  picture, its links (GitHub, npm, its site) and its README. */
 function makePackageTools(box, currentProject, onDone, scope = () => "user") {
-  const input = el("input", { type: "search", placeholder: "Search pi.dev's packages, or type a source: npm:…, git:…, https://…", spellcheck: false });
+  const KINDS = [["", "All kinds"], ["extension", "Extensions"], ["skill", "Skills"], ["prompt", "Prompts"], ["theme", "Themes"]];
+  const SORTS = [["installs", "Most installed"], ["recent", "Recently updated"], ["name", "Name"]];
+  let kind = "", sort = "installs";
+  const input = el("input", { type: "search", placeholder: "Search packages, or type a source: npm:…, git:…, https://…", spellcheck: false });
   input.setAttribute("aria-label", "Search the packages");
+  const kindBtn = el("button", { type: "button", className: "pkg-filter" });
+  const sortBtn = el("button", { type: "button", className: "pkg-filter" });
+  const label = () => {
+    kindBtn.replaceChildren(el("span", { textContent: KINDS.find(([k]) => k === kind)[1] }), svgIcon("chevron-down"));
+    sortBtn.replaceChildren(el("span", { textContent: SORTS.find(([k]) => k === sort)[1] }), svgIcon("chevron-down"));
+  };
+  label();
+  kindBtn.addEventListener("click", () => showMenu(kindBtn, KINDS.map(([k, name]) => [name, () => { kind = k; label(); render(); }, false, { icon: k === kind ? "check" : null }])));
+  sortBtn.addEventListener("click", () => showMenu(sortBtn, SORTS.map(([k, name]) => [name, () => { sort = k; label(); render(); }, false, { icon: k === sort ? "check" : null }])));
   const featured = el("div", { className: "pkg-featured" });
   const featuredHead = el("h3", { className: "loads-group", textContent: "Featured" });
   const results = el("div", { className: "pkg-list" });
-  const detail = el("aside", { className: "pkg-detail", hidden: true });
   const where = el("p", { className: "hint pkg-from" });
-  box.replaceChildren(
-    el("div", { className: "toolbar resource-bar" }, input),
+  const listView = el("div", { className: "pkg-view" },
+    el("div", { className: "pkg-tools" }, kindBtn, sortBtn, input),
     el("p", { className: "hint", textContent: PACKAGE_WARNING }),
     featuredHead, featured,
     el("h3", { className: "loads-group", textContent: "All packages" }),
-    el("div", { className: "pkg-browse" }, results, detail),
-    where);
+    results, where);
+  const pageView = el("div", { className: "pkg-page", hidden: true });
+  box.replaceChildren(listView, pageView);
   let installed = new Set();
   let searched = false;
   let timer = null;
-  let shownName = null;
+  let all = [];
+  let query = "";
 
   const facts = (pkg) => [pkg.publisher, pkg.downloads].filter(Boolean).join(" · ");
+  /** pi install, in a tab: for the project whose settings these are (else for you). */
+  const installPackage = (source) => openPackageTerminal("install", scope() === "project" ? currentProject() : "user", source, source.replace(/^npm:/, ""), onDone);
   const installButton = (pkg) => {
     const there = installed.has(pkg.source);
     const b = el("button", { type: "button", className: there ? "secondary pkg-installed" : "secondary", textContent: there ? "Installed" : "Install", disabled: there });
     b.addEventListener("click", (e) => { e.stopPropagation(); installPackage(pkg.source); });
     return b;
   };
-  /** pi install, in a tab: for the project whose settings these are (else for you). */
-  const installPackage = (source) => openPackageTerminal("install", scope() === "project" ? currentProject() : "user", source, source.replace(/^npm:/, ""), onDone);
-
-  /** The detail over the whole room on the right of the list, from the top of the page to its
-   *  bottom, when there is room (360 px); else a column beside the list. */
-  function placeDetail() {
-    if (detail.hidden) return;
-    const list = results.parentElement.getBoundingClientRect(); // the list's whole width, the detail not beside it
-    const pages = box.closest(".prefs-pages")?.getBoundingClientRect();
-    const room = (pages?.right ?? innerWidth) - list.right - 48;
-    detail.classList.toggle("side", room >= 360);
-    if (room < 360) { detail.style.removeProperty("left"); detail.style.removeProperty("top"); return; }
-    detail.style.left = `${Math.round(list.right + 24)}px`;
-    detail.style.top = `${Math.round((pages?.top ?? 0) + 24)}px`;
-  }
-  addEventListener("resize", placeDetail);
-
-  function showDetail(pkg) {
-    shownName = pkg.name;
-    for (const r of results.children) r.classList.toggle("on", r.dataset.name === pkg.name);
-    const close = el("button", { type: "button", className: "icon-btn", title: "Close" }, svgIcon("x"));
-    close.addEventListener("click", () => { detail.hidden = true; shownName = null; for (const r of results.children) r.classList.remove("on"); });
-    const copy = (text) => { const b = linkButton("copy", `Copy ${text}`, () => backend.copyText(text).then(() => flashStatus("copied")).catch((e) => flashStatus(String(e)))); return b; };
-    const tile = packageTile(pkg.name, "big");
-    detail.replaceChildren(
-      el("div", { className: "pkg-detail-head" }, tile, close),
-      el("h3", { textContent: pkg.name }),
-      el("p", { className: "dim small", textContent: facts(pkg) }),
-      ...(pkg.types?.length ? [el("p", { className: "pkg-types" }, ...pkg.types.map((t) => el("span", { className: "chip", textContent: t })))] : []),
-      el("p", { className: "pkg-desc", textContent: pkg.description || "No description." }),
-      el("p", { className: "pkg-src" }, el("code", { textContent: pkg.source }), copy(pkg.source)),
-      ...(pkg.repo ? [el("p", { className: "pkg-src" }, el("span", { className: "dim small ellipsis", textContent: pkg.repo.replace(/^https:\/\//, "") }), copy(pkg.repo))] : []),
-      installButton(pkg));
-    detail.hidden = false;
-    placeDetail();
-    showPackageMedia([tile]);
-  }
 
   function row(pkg) {
     const tile = packageTile(pkg.name);
@@ -443,8 +422,7 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
         pkg.description ? el("span", { className: "desc", textContent: pkg.description }) : null,
         el("span", { className: "by", textContent: facts(pkg) })),
       installButton(pkg), svgIcon("chevron-right"));
-    r.dataset.name = pkg.name;
-    r.addEventListener("click", () => showDetail(pkg));
+    r.addEventListener("click", () => openPage(pkg));
     return [r, tile];
   }
 
@@ -452,13 +430,35 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     const tile = packageTile(pkg.name, "shot");
     const c = el("button", { type: "button", className: "pkg-card" }, tile,
       el("span", { className: "tx" }, el("b", { textContent: pkg.name }), el("span", { className: "desc", textContent: pkg.description || "" }), el("span", { className: "by", textContent: facts(pkg) })));
-    c.addEventListener("click", () => showDetail(pkg));
+    c.addEventListener("click", () => openPage(pkg));
     return [c, tile];
+  }
+
+  /** The list as filtered and sorted now; featured without a search or a kind. */
+  function render() {
+    const shown = all.filter((p) => !kind || (p.types || []).includes(kind));
+    const by = { installs: (a, b) => (b.monthly || 0) - (a.monthly || 0), recent: (a, b) => (b.updated || 0) - (a.updated || 0), name: (a, b) => a.name.localeCompare(b.name) }[sort];
+    if (all.some((p) => p.monthly != null || sort === "name")) shown.sort(by); // npm's answer has no counts: its own order
+    const rows = shown.map(row);
+    results.replaceChildren(...rows.map(([r]) => r));
+    if (!shown.length) results.append(el("p", { className: "dim small", textContent: all.length ? "No package of this kind here." : "Nothing found." }));
+    rows.forEach(([, t]) => t.refresh());
+    showPackageMedia(rows.map(([, t]) => t));
+    const plain = !query && !kind;
+    featured.hidden = featuredHead.hidden = !plain;
+    if (plain) {
+      const top = [...all].sort((a, b) => (b.monthly || 0) - (a.monthly || 0)).slice(0, 16);
+      loadPackageMedia(top.map((p) => p.name)).then(() => {
+        const cards = [...top.filter((p) => packageMedia.get(p.name)), ...top.filter((p) => !packageMedia.get(p.name))].slice(0, 3).map(card);
+        featured.replaceChildren(...cards.map(([c]) => c));
+        cards.forEach(([, t]) => t.refresh());
+      });
+    }
   }
 
   async function search() {
     searched = true;
-    const query = input.value.trim();
+    query = input.value.trim();
     // A source typed: one row to install it, nothing searched.
     if (/^(npm:|git:|https:\/\/)/.test(query)) {
       featured.hidden = featuredHead.hidden = true;
@@ -479,36 +479,69 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
       return;
     }
     if (input.value.trim() !== query) return; // typed again meanwhile
-    const list = answer.results || [];
-    const rows = list.map(row);
-    results.replaceChildren(...rows.map(([r]) => r));
-    if (!list.length) results.append(el("p", { className: "dim small", textContent: "Nothing found." }));
+    all = answer.results || [];
     where.textContent = answer.from === "npm" ? "From the npm registry (pi.dev did not answer), asked from the VM." : "From pi.dev/packages, asked from the VM.";
-    // Featured, without a search: the most installed that have a picture.
-    featured.replaceChildren();
-    featured.hidden = featuredHead.hidden = Boolean(query);
-    const top = list.slice(0, 16);
-    await loadPackageMedia(top.map((p) => p.name));
-    rows.forEach(([, t]) => t.refresh());
-    showPackageMedia(rows.slice(16).map(([, t]) => t));
-    if (!query && input.value.trim() === query) {
-      const withPicture = top.filter((p) => packageMedia.get(p.name));
-      const cards = [...withPicture, ...top.filter((p) => !packageMedia.get(p.name))].slice(0, 3).map(card);
-      featured.replaceChildren(...cards.map(([c]) => c));
-      cards.forEach(([, t]) => t.refresh());
-    }
-    const again = list.find((p) => p.name === shownName);
-    if (again) showDetail(again);
+    render();
   }
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 400); });
+
+  /** A README as Pier shows Markdown: its HTML tags and pictures left out (the pages load
+   *  nothing from the web), a picture's words kept. */
+  const readable = (text) => text.replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<img\b[^>]*>/gi, "").replace(/<\/?[a-z][^>]*>/gi, "").replace(/\n{3,}/g, "\n\n");
+
+  /** A package's page, in place of the list: Back, its facts and Install, its picture, its
+   *  links, its README. */
+  function openPage(pkg) {
+    const scroller = box.closest(".prefs-pages");
+    const was = scroller?.scrollTop || 0;
+    const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: "Back to packages" }));
+    back.addEventListener("click", () => { pageView.hidden = true; listView.hidden = false; if (scroller) scroller.scrollTop = was; });
+    const tile = packageTile(pkg.name, "head");
+    const meta = el("p", { className: "pkg-facts", textContent: [pkg.publisher, pkg.downloads, ...(pkg.types || [])].filter(Boolean).join(" · ") });
+    const links = el("div", { className: "pkg-links" });
+    const link = (icon, text, url) => {
+      const b = el("button", { type: "button", className: "pkg-link", title: url }, svgIcon(icon), el("span", { textContent: text }), svgIcon("external-link"));
+      b.addEventListener("click", () => backend.openUrl(url).catch((e) => flashStatus(String(e))));
+      return b;
+    };
+    const copy = linkButton("copy", `Copy ${pkg.source}`, () => backend.copyText(pkg.source).then(() => flashStatus("copied")).catch((e) => flashStatus(String(e))));
+    const picture = el("div", { className: "pkg-picture", hidden: true });
+    const overview = el("div", { className: "pkg-readme" }, el("p", { className: "dim small", textContent: "Reading its README, from the VM…" }));
+    pageView.replaceChildren(back,
+      el("div", { className: "pkg-head" }, tile, el("div", { className: "tx" }, el("h2", { textContent: pkg.name }), meta), installButton(pkg)),
+      el("p", { className: "pkg-desc", textContent: pkg.description || "" }),
+      picture,
+      links,
+      el("h3", { className: "loads-group", textContent: "Overview" }),
+      overview);
+    listView.hidden = true;
+    pageView.hidden = false;
+    if (scroller) scroller.scrollTop = 0;
+    loadPackageMedia([pkg.name]).then(() => {
+      tile.refresh();
+      const url = packageMedia.get(pkg.name);
+      if (url) { picture.replaceChildren(el("img", { src: url, alt: "" })); picture.hidden = false; }
+    });
+    links.append(...(pkg.repo ? [link("github", "GitHub", pkg.repo)] : []), el("span", { className: "pkg-src" }, el("code", { textContent: pkg.source }), copy));
+    backend.api(["gallery-package", pkg.name]).then((info) => {
+      if (pageView.hidden) return;
+      meta.textContent = [pkg.publisher, pkg.downloads, ...(pkg.types || []), info.version && `v${info.version}`, info.license].filter(Boolean).join(" · ");
+      links.replaceChildren(
+        ...((info.repo || pkg.repo) ? [link("github", "GitHub", info.repo || pkg.repo)] : []),
+        link("box", "npm", info.npm),
+        ...(info.homepage ? [link("globe", "Website", info.homepage)] : []),
+        el("span", { className: "pkg-src" }, el("code", { textContent: pkg.source }), copy));
+      overview.replaceChildren(info.readme ? markdownPage(readable(info.readme)) : el("p", { className: "dim small", textContent: "No README." }));
+    }).catch((e) => overview.replaceChildren(el("p", { className: "error", textContent: String(e) })));
+  }
 
   return {
     shown() { if (!searched) search(); },
     installed(packages) {
       const next = new Set((packages || []).map((p) => p.source.replace(/@[^@/]*$/, "")));
-      const changed = next.size !== installed.size || [...next].some((s) => !installed.has(s));
+      const changed = next.size !== installed.size || [...next].some((x) => !installed.has(x));
       installed = next;
-      if (searched && changed) search(); // its Install buttons say Installed (the picker keeps the answer 10 min)
+      if (searched && changed) render(); // its Install buttons say Installed
     },
   };
 }

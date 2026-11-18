@@ -87,7 +87,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.70" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.71" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -193,21 +193,22 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.70") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.70", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.70" };
+      if (pickerVersion !== "4.71") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.71", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.71" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.70", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.70";
-      return { status: "connected", bundled: "4.70", version: { version: "4.70", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.71", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.71";
+      return { status: "connected", bundled: "4.71", version: { version: "4.71", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.70" ? 22 : 21 }, bundled: "4.70", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.71" ? 22 : 21 }, bundled: "4.71", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
     setLogLevel: async () => {},
     openLogFolder: async () => {},
+    openUrl: async (url) => { flashStatus(`would open ${url}`); },
     report: async (extra) => `Pier diagnostic report (demo)\n${extra}\n--- Pier log ---\n${logLines.join("\n")}`,
     copyText: async (text) => { mockClipboard = text; },
     clipboardText: async () => mockClipboard,
@@ -242,12 +243,30 @@ function mockBackend() {
       }
       if (args[0] === "gallery") {
         return { query: args[1], from: "pi.dev", results: [
-          { name: "billion-context", source: "npm:billion-context", publisher: "ranxianglei", downloads: "3.5M/mo", types: [], repo: "https://github.com/ranxianglei/billion-context", description: "A context-compression plugin: small context windows, 5x fewer tokens, month-long sessions." },
-          { name: "pi-mcp-adapter", source: "npm:pi-mcp-adapter", publisher: "nicopreme", downloads: "2.1M/mo", types: ["extension"], repo: "https://github.com/nicobailon/pi-mcp-adapter", description: "MCP (Model Context Protocol) adapter extension for Pi" },
-          { name: "pi-hindsight", source: "npm:pi-hindsight", version: "0.4.2", publisher: "vectorize", downloads: "40k/mo", types: ["extension", "skill"], description: "Long-term memory for Pi" },
-          { name: "pi-mcp-extension", source: "npm:pi-mcp-extension", publisher: "irahardianto", downloads: "1M/mo", types: ["extension"], description: "Full-featured, lightweight MCP extension: stdio, SSE and HTTP transports, OAuth 2.1." },
-          { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", downloads: "2k/mo", types: ["skill"], description: "Code review skills" },
+          { name: "billion-context", source: "npm:billion-context", publisher: "ranxianglei", downloads: "3.5M/mo", monthly: 3520997, updated: 1794905865, types: [], repo: "https://github.com/ranxianglei/billion-context", description: "A context-compression plugin: small context windows, 5x fewer tokens, month-long sessions." },
+          { name: "pi-mcp-adapter", source: "npm:pi-mcp-adapter", publisher: "nicopreme", downloads: "2.1M/mo", monthly: 2079369, updated: 1793771013, types: ["extension"], repo: "https://github.com/nicobailon/pi-mcp-adapter", description: "MCP (Model Context Protocol) adapter extension for Pi" },
+          { name: "pi-hindsight", source: "npm:pi-hindsight", version: "0.4.2", publisher: "vectorize", downloads: "40k/mo", monthly: 40000, updated: 1794000000, types: ["extension", "skill"], description: "Long-term memory for Pi" },
+          { name: "pi-mcp-extension", source: "npm:pi-mcp-extension", publisher: "irahardianto", downloads: "1M/mo", monthly: 1000000, updated: 1794800000, types: ["extension"], description: "Full-featured, lightweight MCP extension: stdio, SSE and HTTP transports, OAuth 2.1." },
+          { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", downloads: "2k/mo", monthly: 2000, updated: 1794950000, types: ["skill"], description: "Code review skills" },
         ].filter((p) => !args[1] || p.name.includes(args[1]) || p.description.toLowerCase().includes(args[1].toLowerCase())) };
+      }
+      if (args[0] === "gallery-package") {
+        return { name: args[1], version: "1.2.0", license: "MIT", repo: "https://github.com/example/" + args[1], npm: "https://www.npmjs.com/package/" + args[1], homepage: null, keywords: [],
+          readme: `# ${args[1]}
+
+<p align="center"><img src="banner.png"></p>
+
+What it does, in a few lines.
+
+## Install
+
+\`\`\`sh
+pi install npm:${args[1]}
+\`\`\`
+
+- one
+- two
+` };
       }
       if (args[0] === "gallery-media") {
         // A picture drawn here for two of them, none for the others (as pi.dev).
@@ -291,7 +310,7 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.70", checks: [
+        return { version: "4.71", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },

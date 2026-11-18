@@ -412,7 +412,7 @@ def api_gallery(home, query):
 
 GALLERY_SIZE = 40
 _CARD_RE = re.compile(
-    r'(?:data-package-types="(?P<types>[a-z ]*)"[^>]*>.{0,2000}?)?'
+    r'(?:(?P<attrs>data-package-types="[a-z ]*"[^>]*)>.{0,2000}?)?'
     r'<h3 class="packages-name"><a [^>]*>(?P<name>[^<]{1,214})</a></h3>\s*'
     r'(?:<p class="packages-desc">(?P<desc>.*?)</p>\s*)?'
     r'<div class="packages-meta">(?P<meta>.*?)</div>'
@@ -440,11 +440,83 @@ def gallery_pi_dev(query, urllib):
         results.append({"name": name, "version": None, "date": None, "description": desc[:300],
                         "publisher": meta[0][:100] if meta else None,
                         "downloads": meta[1][:20] if len(meta) > 1 and meta[1].endswith("/mo") else None,
-                        "types": [t for t in (card["types"] or "").split() if t in ("extension", "skill", "prompt", "theme")],
-                        "repo": repo, "source": f"npm:{name}"})
+                        **gallery_card_facts(card["attrs"] or ""), "repo": repo, "source": f"npm:{name}"})
         if len(results) >= GALLERY_SIZE:
             break
     return results
+
+
+def gallery_card_facts(attrs):
+    """What a pi.dev card says in its attributes: its kinds, its downloads a month and its
+    date (ms), for Browse's filters and sorting."""
+    def attr(key):
+        found = re.search(rf'data-package-{key}="([^"]*)"', attrs)
+        return found.group(1) if found else ""
+    return {"types": [t for t in attr("types").split() if t in ("extension", "skill", "prompt", "theme")],
+            "monthly": int(attr("downloads")) if attr("downloads").isdigit() else None,
+            "updated": int(attr("date")) // 1000 if attr("date").isdigit() else None}
+
+
+PACKAGE_README_MAX = 200 * 1024
+_GALLERY_PACKAGE = {}  # name -> (when, answer)
+
+
+def api_gallery_package(home, name):
+    """A package's page in Browse: its npm facts (version, licence, site, repository) and its
+    README (from its GitHub repository, else npm's copy), cut at PACKAGE_README_MAX."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    if not isinstance(name, str) or not NPM_NAME_RE.fullmatch(name):
+        raise ApiError("not a package name")
+    cached = _GALLERY_PACKAGE.get(name)
+    if cached and time.monotonic() - cached[0] < 3600:
+        return cached[1]
+    agent = {"User-Agent": f"pier-picker/{VERSION}"}
+
+    def fetch(url, limit):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=10) as answer:
+                return answer.read(limit + 1)
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
+            return None
+
+    meta = {}
+    raw = fetch("https://registry.npmjs.org/" + urllib.parse.quote(name, safe="@") + "/latest", 2 * 1024 * 1024)
+    try:
+        meta = json.loads(raw) if raw else {}
+    except ValueError:
+        meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    repository = meta.get("repository")
+    repo_url = repository.get("url") if isinstance(repository, dict) else repository if isinstance(repository, str) else ""
+    github = re.search(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[#/].*)?$", repo_url or "")
+    repo = f"https://github.com/{github.group(1)}/{github.group(2)}" if github else None
+    homepage = meta.get("homepage") if isinstance(meta.get("homepage"), str) and meta["homepage"].startswith("https://") else None
+    readme = None
+    if github:
+        for file in ("README.md", "readme.md", "Readme.md"):
+            data = fetch(f"https://raw.githubusercontent.com/{github.group(1)}/{github.group(2)}/HEAD/{file}", PACKAGE_README_MAX)
+            if data:
+                readme = data[:PACKAGE_README_MAX].decode("utf-8", "replace")
+                break
+    if readme is None:
+        full = fetch("https://registry.npmjs.org/" + urllib.parse.quote(name, safe="@"), 16 * 1024 * 1024)
+        try:
+            text = json.loads(full).get("readme") if full else None
+        except (ValueError, AttributeError):
+            text = None
+        readme = text[:PACKAGE_README_MAX] if isinstance(text, str) and text.strip() else None
+    license_ = meta.get("license") if isinstance(meta.get("license"), str) else None
+    answer = {"name": name, "version": meta.get("version") if isinstance(meta.get("version"), str) else None,
+              "license": license_, "homepage": None if not homepage or (repo and homepage.split("#")[0].rstrip("/") == repo) else homepage, "repo": repo,
+              "npm": f"https://www.npmjs.com/package/{name}", "readme": readme,
+              "keywords": [k for k in meta.get("keywords") or [] if isinstance(k, str)][:12] if isinstance(meta.get("keywords"), list) else []}
+    remember(_GALLERY_PACKAGE, name, (time.monotonic(), answer), 50)
+    return answer
 
 
 def gallery_npm(query, urllib):

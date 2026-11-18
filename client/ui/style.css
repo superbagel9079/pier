@@ -2212,8 +2212,6 @@ textarea { resize: none; }
 .pkg-card .tx { display: flex; flex-direction: column; gap: 2px; padding: var(--s2) var(--s3) var(--s3); min-width: 0; }
 .pkg-card .desc { font-size: 12px; line-height: 16px; color: var(--dim); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pkg-card .by, .pkg-row .by { font-size: 12px; color: var(--dim); }
-.pkg-browse { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s3); align-items: start; }
-.pkg-browse:has(> .pkg-detail:not([hidden])) { grid-template-columns: minmax(0, 1fr) 280px; }
 .pkg-list { display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--field); border-radius: var(--r); overflow: hidden; }
 .pkg-list > p { padding: var(--s3); }
 .pkg-row { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); text-align: left; background: none; border: 0; border-top: 1px solid var(--line); color: var(--fg); min-height: 56px; }
@@ -2225,19 +2223,13 @@ textarea { resize: none; }
 .pkg-row .name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg-row .desc { font-size: 12px; line-height: 16px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg-row > .i { width: 14px; height: 14px; color: var(--dim); flex: none; }
-#prefs .prefs-page .pkg-row > button.secondary, #prefs .prefs-page .pkg-detail > button.secondary { flex: none; }
+#prefs .prefs-page .pkg-row > button.secondary { flex: none; }
 #prefs .prefs-page button.secondary.pkg-installed:disabled { background: none; color: var(--dim); border-color: var(--line); }
-.pkg-detail { position: sticky; top: 0; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); background: var(--field); border-radius: var(--r); }
-.pkg-detail-head { display: flex; align-items: flex-start; gap: var(--s2); }
-.pkg-detail-head .pkg-tile { flex: 1; }
-.pkg-detail h3 { margin: 0 !important; font-size: 15px; color: var(--fg); font-weight: 600; overflow-wrap: anywhere; }
-.pkg-detail p { margin: 0; }
-.pkg-detail .pkg-desc { font-size: 13px; line-height: 18px; color: var(--fg); }
 .pkg-types { display: flex; gap: var(--s1); flex-wrap: wrap; }
 .pkg-src { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .pkg-src code { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg-from { margin-top: var(--s2); }
-@media (max-width: 800px) { .pkg-featured { grid-template-columns: 1fr; } .pkg-browse:has(> .pkg-detail:not([hidden])) { grid-template-columns: 1fr; } }
+@media (max-width: 800px) { .pkg-featured { grid-template-columns: 1fr; } }
 /* A project's mark on its page: a button; under the pointer a pencil over it, as Edit's hover. */
 .mark-edit { position: relative; padding: 0; border: 0; background: none; display: grid; cursor: pointer; border-radius: var(--r); }
 .mark-edit .mark-pen { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--bg) 55%, transparent); color: var(--fg); opacity: 0; transition: opacity .12s; border-radius: inherit; }
@@ -2258,14 +2250,6 @@ textarea { resize: none; }
 .menu-icon .pbadge { width: 16px; height: 16px; font-size: 9px; }
 /* Pier's own extensions: the same switch as the others, on no button frame of its own. */
 #prefs .prefs-page button.switch-hint { height: auto; padding: 0; background: none; border: 0; }
-/* Browse: a package's detail over the whole room on the right of the list (placed by
-   resources.js), scrolling on its own; a column beside the list when there is no room. */
-.pkg-detail.side { position: fixed; right: 24px; bottom: 24px; z-index: 5; overflow-y: auto; gap: var(--s3); padding: var(--s5); }
-.pkg-detail.side .pkg-tile.big { height: 220px; }
-.pkg-detail.side h3 { font-size: 20px; line-height: 28px; }
-.pkg-detail.side .pkg-desc { font-size: 14px; line-height: 21px; }
-.pkg-detail.side > button.secondary { align-self: flex-start; padding: 0 var(--s5); }
-.pkg-browse:has(> .pkg-detail.side:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
 /* A new skill, typed in place first in Skills. */
 .set.new-skill { align-items: center; }
 .new-skill-fields { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--s2); }
@@ -2276,3 +2260,34 @@ textarea { resize: none; }
 /* An installed package: each piece in the middle of the row (no baseline: the smaller
    version sat higher than the name). */
 #ext-packages li { align-items: center !important; flex-wrap: nowrap; }
+/* Browse as Paseo's: its filters on the left, the search on the right. */
+.pkg-tools { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
+.pkg-tools input[type="search"] { flex: 0 1 340px; width: auto; min-width: 160px; margin-left: auto; }
+.pkg-filter { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--s3); background: none; border: 1px solid var(--line); color: var(--fg); border-radius: 999px; }
+#prefs .prefs-page button.pkg-filter { background: none; color: var(--fg); }
+#prefs .prefs-page button.pkg-filter:hover { background: var(--hover); }
+.pkg-filter:hover { background: var(--hover); }
+.pkg-filter .i { width: 12px; height: 12px; color: var(--dim); }
+/* A package's page: Back, its head (picture, name, facts, Install), its picture, its links, its README. */
+.pkg-page[hidden], .pkg-view[hidden] { display: none; }
+.pkg-head { display: flex; align-items: center; gap: var(--s3); margin: var(--s2) 0 var(--s3); }
+.pkg-head .tx { flex: 1; min-width: 0; }
+.pkg-head h2 { margin: 0 !important; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--fg); overflow-wrap: anywhere; }
+.pkg-facts { margin: 2px 0 0; font-size: 12px; color: var(--dim); }
+.pkg-tile.head { width: 48px; height: 48px; font-size: 20px; }
+.pkg-page .pkg-desc { margin: 0 0 var(--s3); font-size: 14px; line-height: 21px; color: var(--fg); }
+.pkg-picture { margin-bottom: var(--s3); border: 1px solid var(--line); background: var(--field); border-radius: var(--r); overflow: hidden; display: grid; place-items: center; max-height: 320px; }
+.pkg-picture img { max-width: 100%; max-height: 320px; object-fit: contain; display: block; }
+.pkg-picture[hidden] { display: none; }
+.pkg-links { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
+.pkg-link { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 var(--s3); background: var(--field); border: 1px solid var(--line); color: var(--fg); border-radius: var(--r); }
+#prefs .prefs-page button.pkg-link { background: var(--field); color: var(--fg); }
+#prefs .prefs-page button.pkg-link:hover { background: var(--hover); }
+.pkg-link:hover { background: var(--hover); }
+.pkg-link .i { width: 14px; height: 14px; }
+.pkg-link .i:last-child { width: 11px; height: 11px; color: var(--dim); }
+.pkg-links .pkg-src { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s2); }
+.pkg-readme { padding: var(--s4) var(--s5); border: 1px solid var(--line); background: var(--field); border-radius: var(--r); }
+.pkg-readme .md-page { max-width: none; }
+/* A tab's count: no room kept when it has none (Browse sat off centre). */
+.seg .n:empty { display: none; }

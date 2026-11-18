@@ -16,6 +16,7 @@ function realBackend() {
     logInfo: () => invoke("log_info"),
     setLogLevel: (debug) => invoke("set_log_level", { debug }),
     openLogFolder: () => invoke("open_log_folder"),
+    openUrl: (url) => invoke("open_url", { url }),
     report: (extra) => invoke("diagnostics_report", { extra }),
     copyText: (text) => invoke("copy_text", { text }),
     clipboardText: () => invoke("clipboard_text"),
