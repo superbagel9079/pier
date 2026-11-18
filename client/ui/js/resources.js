@@ -161,8 +161,9 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
       const more = el("button", { className: "icon-btn more", title: "Edit, put in the bin" }, svgIcon("ellipsis"));
       more.setAttribute("aria-label", `${item.name}: edit, put in the bin`);
       more.addEventListener("click", () => showMenu(more, [
-        ["Edit its SKILL.md…", () => editSkill(item.scope, name)],
-        ["Put it in the bin", () => binSkill(item.scope, name)],
+        ["Edit its SKILL.md…", () => editSkill(item.scope, name), false, { icon: "pencil" }],
+        null,
+        [`Remove ${item.name}`, () => binSkill(item.scope, name), false, { icon: "trash", danger: true }],
       ]));
       li.append(more);
     }
@@ -399,10 +400,22 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
   /** pi install, in a tab: for the project whose settings these are (else for you). */
   const installPackage = (source) => openPackageTerminal("install", scope() === "project" ? currentProject() : "user", source, source.replace(/^npm:/, ""), onDone);
 
-  function showDetail(pkg, from = null) {
+  /** The detail over the whole room on the right of the list, from the top of the page to its
+   *  bottom, when there is room (360 px); else a column beside the list. */
+  function placeDetail() {
+    if (detail.hidden) return;
+    const list = results.parentElement.getBoundingClientRect(); // the list's whole width, the detail not beside it
+    const pages = box.closest(".prefs-pages")?.getBoundingClientRect();
+    const room = (pages?.right ?? innerWidth) - list.right - 48;
+    detail.classList.toggle("side", room >= 360);
+    if (room < 360) { detail.style.removeProperty("left"); detail.style.removeProperty("top"); return; }
+    detail.style.left = `${Math.round(list.right + 24)}px`;
+    detail.style.top = `${Math.round((pages?.top ?? 0) + 24)}px`;
+  }
+  addEventListener("resize", placeDetail);
+
+  function showDetail(pkg) {
     shownName = pkg.name;
-    // Beside the row clicked (or the card), in the room on the right when there is some.
-    detail.style.top = `${from ? Math.max(0, from.offsetTop) : 0}px`;
     for (const r of results.children) r.classList.toggle("on", r.dataset.name === pkg.name);
     const close = el("button", { type: "button", className: "icon-btn", title: "Close" }, svgIcon("x"));
     close.addEventListener("click", () => { detail.hidden = true; shownName = null; for (const r of results.children) r.classList.remove("on"); });
@@ -418,6 +431,7 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
       ...(pkg.repo ? [el("p", { className: "pkg-src" }, el("span", { className: "dim small ellipsis", textContent: pkg.repo.replace(/^https:\/\//, "") }), copy(pkg.repo))] : []),
       installButton(pkg));
     detail.hidden = false;
+    placeDetail();
     showPackageMedia([tile]);
   }
 
@@ -430,7 +444,7 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
         el("span", { className: "by", textContent: facts(pkg) })),
       installButton(pkg), svgIcon("chevron-right"));
     r.dataset.name = pkg.name;
-    r.addEventListener("click", () => showDetail(pkg, r));
+    r.addEventListener("click", () => showDetail(pkg));
     return [r, tile];
   }
 

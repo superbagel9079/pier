@@ -430,9 +430,24 @@ function drawProjects() {
       b.addEventListener("click", () => { projectsOpen = x.project; drawProjects(); });
       return b;
     });
-    const start = el("button", { type: "button", className: "secondary" }, svgIcon("folder-plus"), el("span", { textContent: "Start a project…" }));
-    start.addEventListener("click", () => { closePrefs(); openFolderPicker(); });
-    section.replaceChildren(el("div", { className: "projects-bar" }, start), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
+    const create = () => { closePrefs(); openFolderPicker(); };
+    if (!rows.length) {
+      // None yet: what a project is, and one button (as Labs and Terminals).
+      const go = el("button", { type: "button", className: "secondary", textContent: "Create a project" });
+      go.addEventListener("click", create);
+      section.replaceChildren(el("div", { className: "labs-welcome" }, svgIcon("folder"),
+        el("h2", { textContent: "Your projects" }),
+        el("ul", {}, el("li", { textContent: "A project is a folder of the VM where Pi works: its conversations, its instructions, what it loads." }),
+          el("li", { textContent: "Pick a folder that exists, or make a new one; Pi starts in it." }),
+          el("li", { textContent: "Each gets a mark (a colour, a letter, an icon or a picture) to find it in the lists." })),
+        el("div", { className: "actions" }, go)));
+      return;
+    }
+    // Last in the list, as a row of it: Create a project (a folder of the VM, or a new one).
+    const add = el("button", { type: "button", className: "project-pick project-add" }, el("span", { className: "pbadge add-mark" }, svgIcon("plus")),
+      el("span", { className: "what" }, el("span", { textContent: "Create a project" }), el("span", { textContent: "A folder of the VM, or a new one" })));
+    add.addEventListener("click", create);
+    section.replaceChildren(el("div", { className: "rows project-list" }, ...rows, add));
     return;
   }
   const back = el("button", { type: "button", className: "link back-to", title: projectsSub ? `Back to ${p.label}` : "Back to all projects" }, svgIcon("arrow-left"), el("span", { textContent: "Back" }));

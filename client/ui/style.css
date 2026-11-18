@@ -2246,7 +2246,7 @@ textarea { resize: none; }
 .mark-edit:hover .pbadge { outline: 1px solid var(--fg); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { .mark-edit .mark-pen { transition: none; } }
 /* The New tab's message field (the proposals' 3A, as Paseo's New workspace). */
-.nt-start { display: flex; flex-direction: column; gap: var(--s2); margin-bottom: var(--s2); }
+.nt-start { display: flex; flex-direction: column; gap: var(--s2); } /* under it, the gap between the rows */
 .nt-start h2 { margin: 0 0 var(--s2); font-size: 20px; line-height: 28px; font-weight: 600; color: var(--fg); }
 .nt-bar { display: flex; align-items: center; gap: var(--s2); }
 .nt-project { display: inline-flex; align-items: center; gap: var(--s2); height: 28px; padding: 0 var(--s2); background: none; border: 0; color: var(--fg); border-radius: var(--r); }
@@ -2258,14 +2258,21 @@ textarea { resize: none; }
 .menu-icon .pbadge { width: 16px; height: 16px; font-size: 9px; }
 /* Pier's own extensions: the same switch as the others, on no button frame of its own. */
 #prefs .prefs-page button.switch-hint { height: auto; padding: 0; background: none; border: 0; }
-/* Browse: a package's detail in the room on the right of the list, beside the row clicked;
-   under 1400 px, a column beside it as before. */
-.pkg-browse { position: relative; }
-@media (min-width: 1400px) {
-  .pkg-browse:has(> .pkg-detail:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
-  .pkg-detail { position: absolute; left: calc(100% + var(--s3)); width: 300px; }
-}
-@media (max-width: 1399px) { .pkg-detail { top: 0 !important; } }
+/* Browse: a package's detail over the whole room on the right of the list (placed by
+   resources.js), scrolling on its own; a column beside the list when there is no room. */
+.pkg-detail.side { position: fixed; right: 24px; bottom: 24px; z-index: 5; overflow-y: auto; gap: var(--s3); padding: var(--s5); }
+.pkg-detail.side .pkg-tile.big { height: 220px; }
+.pkg-detail.side h3 { font-size: 20px; line-height: 28px; }
+.pkg-detail.side .pkg-desc { font-size: 14px; line-height: 21px; }
+.pkg-detail.side > button.secondary { align-self: flex-start; padding: 0 var(--s5); }
+.pkg-browse:has(> .pkg-detail.side:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
 /* A new skill, typed in place first in Skills. */
 .set.new-skill { align-items: center; }
 .new-skill-fields { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--s2); }
+/* Settings > Projects: Create a project, the list's last row. */
+.project-add .add-mark { display: grid; place-items: center; background: none; border: 1px dashed var(--dim); color: var(--dim); }
+.project-add .add-mark .i { width: 12px; height: 12px; }
+.project-add .what > span:first-child { color: var(--fg); }
+/* An installed package: each piece in the middle of the row (no baseline: the smaller
+   version sat higher than the name). */
+#ext-packages li { align-items: center !important; flex-wrap: nowrap; }

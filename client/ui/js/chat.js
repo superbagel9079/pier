@@ -17,6 +17,70 @@ function openChat(project, label, args = [], extra = {}) {
   return workspace.add("chat", "center", { params: { project, label, args, ...extra } });
 }
 
+/** "/" at the start of the message: the project's skills (/skill:name) and prompt templates
+ *  (/name), each with its description; arrows and Enter (or Tab) to choose, Escape to leave.
+ *  The conversation's composer and the New tab's. */
+function slashMenu(input, composer, projectOf) {
+  const box = el("div", { className: "menu slash-menu", role: "listbox", hidden: true });
+  composer.append(box);
+  let items = null, shown = [], at = 0, asked = false;
+  const load = async () => {
+    if (asked) return;
+    asked = true;
+    try {
+      const r = await backend.api(["resources", projectOf()]);
+      items = [...(r.skills || []).filter((s) => s.enabled !== false).map((s) => ({ insert: `/skill:${s.name} `, name: `skill:${s.name}`, about: s.description || "" })),
+        ...(r.prompts || []).filter((p) => p.enabled !== false).map((p) => ({ insert: `/${p.name} `, name: p.name, about: p.description || "" }))];
+    } catch { items = []; }
+    update();
+  };
+  const close = () => { box.hidden = true; shown = []; };
+  const choose = (i) => {
+    const it = shown[i];
+    if (!it) return;
+    const caret = input.selectionStart;
+    input.value = it.insert + input.value.slice(caret).replace(/^\S*\s?/, "");
+    input.setSelectionRange(it.insert.length, it.insert.length);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    close();
+    input.focus();
+  };
+  const draw = () => {
+    box.replaceChildren(...shown.map((it, i) => {
+      const b = el("button", { type: "button", role: "option", className: i === at ? "on" : "" },
+        el("span", { className: "label", textContent: `/${it.name}` }), el("span", { className: "k", textContent: it.about }));
+      b.setAttribute("aria-selected", String(i === at));
+      b.addEventListener("mousedown", (e) => { e.preventDefault(); choose(i); });
+      return b;
+    }));
+    box.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+  };
+  function update() {
+    const word = input.value.slice(0, input.selectionStart);
+    if (!/^\/[\w:.-]*$/.test(word)) { close(); return; }
+    if (!items) { load(); return; }
+    const q = word.slice(1).toLowerCase();
+    shown = items.filter((it) => it.name.toLowerCase().includes(q)).slice(0, 12);
+    if (!shown.length) { close(); return; }
+    at = Math.min(at, shown.length - 1);
+    box.hidden = false;
+    draw();
+  }
+  input.addEventListener("input", () => { at = 0; update(); });
+  input.addEventListener("blur", () => setTimeout(close, 100));
+  // Before the composer's own keys (Enter sends): captured on the composer.
+  composer.addEventListener("keydown", (e) => {
+    if (box.hidden || e.target !== input) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length; draw(); }
+    else if (e.key === "Enter" || e.key === "Tab") choose(at);
+    else if (e.key === "Escape") close();
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+  return { update };
+}
+
 // What a tool did, in a few words; the file it touched, when it has one.
 const STEP_WORDS = {
   read: ["Read", "path"], write: ["Wrote", "path"], edit: ["Edited", "path"], bash: ["Ran", "command"],
@@ -51,7 +115,8 @@ function makeChat(tab) {
   const col = el("div", { className: "chat-col" });
   const scroller = el("div", { className: "chat" }, col);
   const input = el("textarea", { placeholder: "Message Pi. / for skills and commands, @ for files", spellcheck: true });
-  if (tab.params.firstPrompt) input.value = tab.params.firstPrompt; // the New tab's, sent once Pi is up
+  if (tab.params.firstPrompt || tab.params.draft) input.value = tab.params.firstPrompt || tab.params.draft; // the New tab's
+  delete tab.params.draft;
   input.setAttribute("aria-label", "Message Pi");
   const send = el("button", { className: "send", title: "Send", type: "button" });
   send.setAttribute("aria-label", "Send");
@@ -460,8 +525,9 @@ function makeChat(tab) {
         if (tab.params.args?.[0] === "--session") tab.params.file = tab.params.args[1]; // still its row in the list
         tab.params.args = ["--slot", e.slot]; // a reconnection comes back to this Pi
         if (e.fresh) vm.poke(); // the list shows this new Pi at once, not at its next look
-        // Written on the New tab: sent once Pi is up (then forgotten: never sent twice).
-        if (tab.params.firstPrompt) { input.value = tab.params.firstPrompt; delete tab.params.firstPrompt; setTimeout(submit, 0); }
+        // Chosen on the New tab: its model and thinking, then its first message sent once Pi is
+        // up (each forgotten once done: never twice).
+        startAsAsked();
         if (currentTab === tab) for (const t of workspace.tabs()) t.onShownTab?.(); // the list and Details follow it
         command({ type: "get_state" }, (data) => { state = data || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); setWorking(Boolean(state.isStreaming)); });
         redraw(() => {
@@ -659,6 +725,28 @@ function makeChat(tab) {
     popCard(ring, card);
   });
 
+  function startAsAsked() {
+    const { model, thinking, firstPrompt } = tab.params;
+    delete tab.params.model;
+    delete tab.params.thinking;
+    delete tab.params.firstPrompt;
+    const steps = [];
+    if (model) {
+      steps.push((next) => backend.api(["pi-default-read"]).catch(() => null).then((r) => {
+        const [provider, ...id] = model.split("/");
+        command({ type: "set_model", provider, modelId: id.join("/") }, () => {
+          // For this conversation only: Pi makes it every Pi's default too, put back here.
+          if (r?.default && r.default !== model) backend.piDefault(r.default).catch(() => {});
+          next();
+        });
+      }));
+    }
+    if (thinking) steps.push((next) => command({ type: "set_thinking_level", level: thinking }, next));
+    if (firstPrompt) steps.push(() => { input.value = firstPrompt; submit(); });
+    const run = () => { const step = steps.shift(); if (step) step(run); else command({ type: "get_state" }, (d) => { state = d || {}; showState(); }); };
+    run();
+  }
+
   let sentOnce = false;
   function submit() {
     // The pictures pasted go first, by their reference (Pi reads them from the project).
@@ -747,6 +835,7 @@ function makeChat(tab) {
     }
     input.focus();
   };
+  if (tab.params.give?.length) { const paths = tab.params.give; delete tab.params.give; setTimeout(() => tab.give(paths), 0); }
 
   // +: a file from this PC (saved in the project, then mentioned), or a file of the project.
   plus.addEventListener("click", () => showMenu(plus, [
@@ -759,68 +848,7 @@ function makeChat(tab) {
     ["Use a skill…", () => { if (!input.value.startsWith("/")) input.value = `/${input.value}`; input.focus(); input.setSelectionRange(1, 1); slash.update(); }, false, { icon: "gift" }],
   ]));
 
-  // "/" at the start of the message: the project's skills (/skill:name) and prompt templates
-  // (/name), each with its description; arrows and Enter (or Tab) to choose, Escape to leave.
-  const slash = (() => {
-    const box = el("div", { className: "menu slash-menu", role: "listbox", hidden: true });
-    composer.append(box);
-    let items = null, shown = [], at = 0, asked = false;
-    const load = async () => {
-      if (asked) return;
-      asked = true;
-      try {
-        const r = await backend.api(["resources", project]);
-        items = [...(r.skills || []).filter((s) => s.enabled !== false).map((s) => ({ insert: `/skill:${s.name} `, name: `skill:${s.name}`, about: s.description || "" })),
-          ...(r.prompts || []).filter((p) => p.enabled !== false).map((p) => ({ insert: `/${p.name} `, name: p.name, about: p.description || "" }))];
-      } catch { items = []; }
-      update();
-    };
-    const close = () => { box.hidden = true; shown = []; };
-    const choose = (i) => {
-      const it = shown[i];
-      if (!it) return;
-      const caret = input.selectionStart;
-      input.value = it.insert + input.value.slice(caret).replace(/^\S*\s?/, "");
-      input.setSelectionRange(it.insert.length, it.insert.length);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      close();
-      input.focus();
-    };
-    const draw = () => {
-      box.replaceChildren(...shown.map((it, i) => {
-        const b = el("button", { type: "button", role: "option", className: i === at ? "on" : "" },
-          el("span", { className: "label", textContent: `/${it.name}` }), el("span", { className: "k", textContent: it.about }));
-        b.setAttribute("aria-selected", String(i === at));
-        b.addEventListener("mousedown", (e) => { e.preventDefault(); choose(i); });
-        return b;
-      }));
-      box.querySelector(".on")?.scrollIntoView({ block: "nearest" });
-    };
-    function update() {
-      const word = input.value.slice(0, input.selectionStart);
-      if (!/^\/[\w:.-]*$/.test(word)) { close(); return; }
-      if (!items) { load(); return; }
-      const q = word.slice(1).toLowerCase();
-      shown = items.filter((it) => it.name.toLowerCase().includes(q)).slice(0, 12);
-      if (!shown.length) { close(); return; }
-      at = Math.min(at, shown.length - 1);
-      box.hidden = false;
-      draw();
-    }
-    input.addEventListener("input", () => { at = 0; update(); });
-    input.addEventListener("blur", () => setTimeout(close, 100));
-    // Before the composer's own keys (Enter sends): captured on the composer.
-    composer.addEventListener("keydown", (e) => {
-      if (box.hidden || e.target !== input) return;
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") { at = (at + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length; draw(); }
-      else if (e.key === "Enter" || e.key === "Tab") choose(at);
-      else if (e.key === "Escape") close();
-      else return;
-      e.preventDefault();
-      e.stopPropagation();
-    }, true);
-    return { update };
-  })();
+  const slash = slashMenu(input, composer, () => project);
   // The model: the palette of Settings (ui.js), above the composer: search, the name, its
   // provider, a check on the one in use.
   modelBtn.addEventListener("click", () => command({ type: "get_available_models" }, (data) => {

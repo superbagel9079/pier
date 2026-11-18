@@ -274,6 +274,9 @@ const workspace = (() => {
   /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
    *  latest conversations. */
   let newTabProject = null; // the project the New tab's message field starts Pi in, once chosen
+  let newTabDraft = "";     // what is typed there, kept while the page is drawn again
+  let newTabModel = null;   // a model chosen there, for that conversation only
+  let newTabThinking = null;
   function emptyDock(name) {
     if (!settings || (!online && vmForm)) return quickStart(); // no VM yet, or its form asked for: how to begin (3A)
     if (!online) return el("div", { className: "empty launcher" }, pierMark(), loginCard()); // a VM known: its password (D)
@@ -315,19 +318,52 @@ const workspace = (() => {
       null,
       ["Start a project…", () => openFolderPicker(), false, { icon: "folder-plus" }],
     ]));
-    // The conversation's own composer (chat.js): its frame, its bar, its send button. The model
-    // is Pi's default (Settings > Agents), the one the new Pi starts on.
-    const field = el("textarea", { placeholder: "Message Pi. Enter starts it in this project.", spellcheck: true });
-    field.setAttribute("aria-label", "Your first message");
-    const send = el("button", { type: "button", className: "send", title: "Start Pi with this message" }, svgIcon("arrow-up"));
-    send.setAttribute("aria-label", "Start Pi with this message");
-    const model = el("button", { type: "button", className: "pickish", textContent: "default model ▾", title: "Pi's default model: changed in Settings > Agents" });
-    model.addEventListener("click", () => { openPrefs?.(); showPrefsPage("agents"); });
-    backend.api(["pi-default-read"]).then((r) => { if (r?.default) model.textContent = `${String(r.default).split("/").pop()} ▾`; }).catch(() => {});
+    // The conversation's own composer (chat.js), the same in every way: its text, + (a file
+    // from this PC, a skill), the model and the thinking (for this conversation), "/" for the
+    // project's skills and prompts. Enter starts Pi in the project with them; a file added
+    // starts it at once, the text kept to finish there.
+    const field = el("textarea", { placeholder: "Message Pi. / for skills and commands, @ for files", spellcheck: true, value: newTabDraft });
+    field.setAttribute("aria-label", "Message Pi");
+    field.addEventListener("input", () => { newTabDraft = field.value; });
+    const send = el("button", { type: "button", className: "send", title: "Send: Pi starts in this project" }, svgIcon("arrow-up"));
+    send.setAttribute("aria-label", "Send");
+    const plus = el("button", { type: "button", className: "icon-btn", title: "Add to the message" }, svgIcon("plus"));
+    plus.setAttribute("aria-label", "Add to the message");
+    plus.setAttribute("aria-haspopup", "menu");
+    const modelBtn = el("button", { type: "button", className: "pickish", textContent: "model ▾" });
+    const thinkBtn = el("button", { type: "button", className: "pickish", textContent: `thinking${newTabThinking ? `: ${newTabThinking}` : ""} ▾` });
+    const composer = el("div", { className: "composer nt-composer" }, field,
+      el("div", { className: "bar" }, plus, modelBtn, thinkBtn, el("span", { className: "head-gap" }), send));
+    const slash = slashMenu(field, composer, () => project);
+    const label = () => projectLabel(project);
+    const asked = () => ({ ...(newTabModel ? { model: newTabModel } : {}), ...(newTabThinking ? { thinking: newTabThinking } : {}) });
+    const started = () => { newTabDraft = ""; newTabModel = null; newTabThinking = null; };
+    // The model: Pi's default until another is chosen here (for this conversation only).
+    backend.api(["pi-default-read"]).then((r) => { if (!newTabModel && r?.default) modelBtn.textContent = `${String(r.default).split("/").pop()} ▾`; }).catch(() => {});
+    if (newTabModel) modelBtn.textContent = `${newTabModel.split("/").pop()} ▾`;
+    modelBtn.addEventListener("click", async () => {
+      await loadPiModels();
+      pickPalette(modelBtn, { items: modelItems(), current: newTabModel, placeholder: MODEL_SEARCH,
+        onPick: (v) => { newTabModel = v; modelBtn.textContent = `${v.split("/").pop()} ▾`; } });
+    });
+    thinkBtn.addEventListener("click", () => showMenu(thinkBtn, ["off", "minimal", "low", "medium", "high", "xhigh"].map((level) =>
+      [level, () => { newTabThinking = level; thinkBtn.textContent = `thinking: ${level} ▾`; }, false, { icon: level === newTabThinking ? "check" : null }])));
+    plus.addEventListener("click", () => showMenu(plus, [
+      ["Add a file from this PC", async () => {
+        const paths = await backend.pickFiles();
+        if (!paths.length) return;
+        const draft = field.value;
+        started();
+        openChat(project, label(), ["--new"], { ...asked(), draft, give: paths });
+      }, false, { icon: "paperclip" }],
+      ["Use a skill…", () => { if (!field.value.startsWith("/")) field.value = `/${field.value}`; field.focus(); field.setSelectionRange(1, 1); slash.update(); }, false, { icon: "gift" }],
+    ]));
     const go = () => {
       const text = field.value.trim();
       if (!text) { field.focus(); return; }
-      openChat(project, projectLabel(project), ["--new"], { firstPrompt: text });
+      const extra = asked();
+      started();
+      openChat(project, label(), ["--new"], { ...extra, firstPrompt: text });
     };
     send.addEventListener("click", go);
     field.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); } });
@@ -335,7 +371,7 @@ const workspace = (() => {
     return el("div", { className: "nt-start" },
       el("h2", { textContent: "New conversation" }),
       el("div", { className: "nt-bar" }, pick),
-      el("div", { className: "composer nt-composer" }, field, el("div", { className: "bar" }, model, el("span", { className: "head-gap" }), send)));
+      composer);
   }
 
   /** No VM yet: three steps, the next one put forward (the proposals' 3A). */
