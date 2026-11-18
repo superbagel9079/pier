@@ -165,4 +165,3 @@ pub(crate) async fn clear_project(app: AppHandle, state: State<'_, AppState>, pr
 pub(crate) async fn remove_upload(app: AppHandle, state: State<'_, AppState>, path: String) -> Result<Value, String> {
     api(&app, &state, &["remove", &path], &[]).await
 }
-
