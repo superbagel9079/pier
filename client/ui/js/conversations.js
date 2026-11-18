@@ -181,32 +181,6 @@ function stopIdlePi(tab) {
   }
 }
 
-/** A new project: a folder made on the VM (by default beside the latest project), then a
- *  conversation started in it. */
-function newProjectDialog() {
-  const recent = lastProjects?.recent?.[0]?.path || target?.path || "";
-  const parent = recent ? projectLabel(recent).replace(/\/[^/]+\/?$/, "") || "~" : "~";
-  const name = el("input", { spellcheck: false, placeholder: "my-site" });
-  const where = el("input", { spellcheck: false, value: parent });
-  const problem = dialogError();
-  const field = (label, input, hint) => el("label", { className: "provider-field" }, el("span", { textContent: label }), input, hint ? el("small", { textContent: hint }) : null);
-  const create = el("button", { type: "button", textContent: "Create and start" });
-  const dialog = resourceDialog("New project", [field("Name", name, "A folder of that name, made on the VM."), field("In", where), problem], [create]);
-  dialog.box.classList.add("provider-dialog");
-  const go = async () => {
-    const n = name.value.trim();
-    if (!n) { name.focus(); return; }
-    let made;
-    try { made = await backend.api(["fs-new", where.value.trim() || "~", n, "dir"]); } catch (e) { showError(problem, String(e)); return; }
-    dialog.close();
-    const path = made?.created;
-    if (path) openPiTerminal(path, projectLabel(path), ["--new"]);
-  };
-  create.addEventListener("click", go);
-  name.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
-  setTimeout(() => name.focus(), 0);
-}
-
 async function deleteConversation(project, session, { changed, failed }) {
   const running = session.slot ? " Its Pi is stopped first, and its tab closed." : "";
   if (!(await ask(`Delete "${conversationTitle(session)}" for good? The whole conversation is erased from the VM; it cannot be undone. (Archive only hides it.)${running}`))) return;
@@ -699,7 +673,7 @@ function makeConversations(tab) {
     }
     if (query && !shown) list.append(el("li", { className: "dim small", textContent: "No conversation matches." }));
     if (!data.projects.length) {
-      const start = el("button", { className: "secondary", textContent: "Open a folder…", title: "Choose a folder of the VM and start Pi in it" });
+      const start = el("button", { className: "secondary", textContent: "Start a project…", title: "A folder of the VM, or a new one: Pi starts in it" });
       start.addEventListener("click", () => openFolderPicker());
       const ready = el("button", { className: "link", textContent: "Is the VM ready?", title: "What Pier needs on the VM, and what is missing" });
       ready.addEventListener("click", () => openVmReady());
@@ -737,10 +711,7 @@ function makeConversations(tab) {
     if (on) $$(".conversation-filter").focus();
     else if (query) { $$(".conversation-filter").value = ""; query = ""; render(); }
   };
-  $$(".new-btn").addEventListener("click", (event) => showMenu(event.currentTarget, [
-    ["New project…", () => newProjectDialog(), !online, { icon: "folder-plus" }],
-    ["Open a folder…", () => openFolderPicker(), !online, { icon: "folder" }],
-  ]));
+  $$(".new-btn").addEventListener("click", () => openFolderPicker());
   $$(".display-btn").addEventListener("click", (event) => showMenu(event.currentTarget, [
     [$$(".toolbar").hidden ? "Search" : "Close the search", () => searching($$(".toolbar").hidden), false, { icon: "search" }],
     null,

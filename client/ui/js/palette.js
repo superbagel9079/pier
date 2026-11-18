@@ -48,7 +48,7 @@ const palette = (() => {
     }
     out.push(["action", "Waiting for you", "Pi's requests: approve or refuse", () => waiting.show()]);
     if (online) { // what needs the VM, once connected
-      out.push(["action", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()]);
+      out.push(["action", "Start a project…", "a folder of the VM, or a new one", () => openFolderPicker()]);
       out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
     }
     out.push(["page", "Activity: Given to Pi", "images, files, folders and shares given to Pi", () => contextTab({ reveal: true })]);
@@ -77,7 +77,7 @@ const palette = (() => {
   // As the proposals' A (Raycast): the results in groups, an icon on each line.
   const GROUPS = { tab: "Tabs", panel: "Panels", project: "Projects", conversation: "Conversations", page: "Pages", action: "Actions", setting: "Settings", theme: "Themes" };
   const ICONS = { panel: "panel-right", project: "folder", conversation: "message-square", page: "info", setting: "settings", theme: "palette" };
-  const ACTION_ICONS = { "Settings": "settings", "Waiting for you": "inbox", "Open a folder…": "folder-plus", "Is the VM ready?": "circle-check", "New shell": "terminal", "Reset layout": "panel-left", "Logs": "scroll-text" };
+  const ACTION_ICONS = { "Settings": "settings", "Waiting for you": "inbox", "Start a project…": "folder-plus", "Is the VM ready?": "circle-check", "New shell": "terminal", "Reset layout": "panel-left", "Logs": "scroll-text" };
   const iconOf = ([kind, label, , , tab]) => kind === "tab"
     ? (tab?.kind === "chat" || tab?.kind === "conversations" ? "message-square" : KINDS[tab?.kind]?.terminal ? "terminal" : tab?.dock === "right" ? "panel-right" : "file")
     : kind === "action" ? ACTION_ICONS[label] || "play" : ICONS[kind] || "chevron-right";

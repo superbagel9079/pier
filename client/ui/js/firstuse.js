@@ -69,22 +69,26 @@ function vmReadyAfterConnect(version) {
 /** A folder of the VM, then a Pi started in it (the proposals' D): the folders Pi worked in
  *  first, as the rail's squares; then the VM's folders, from home, by a clickable path. A
  *  click chooses a folder, a double click (or →) goes in; the button says where Pi starts. */
+/** Start a project (the proposals' A): a folder of the VM, recent or browsed, or a new one
+ *  made where you are ("New folder…", named in place); Pi starts in it. */
 function openFolderPicker(start = null) {
   if (!online) { flashStatus("Connect first: the folders are on your VM"); return; }
   let home = lastProjects?.home || ""; // else learnt from the first answer (ls "" is home)
   let here = start || home;
   let chosen = null; // a folder chosen in the list or the recent ones; else here
+  let naming = null; // the new folder's name field, while one is being named
   const problem = dialogError();
   const go = el("button", { type: "button" });
   const crumbs = el("nav", { className: "folder-crumbs", "aria-label": "Where" });
   const list = el("div", { className: "folder-box", role: "listbox", "aria-label": "Folders" });
   const name = (path) => (path === home ? "~" : visibleText(String(path).replace(/\/+$/, "").split("/").pop() || "~"));
-  const label = () => { go.textContent = `Start Pi in ${name(chosen || here)}`; };
+  const newName = () => naming?.value.trim() || "";
+  const label = () => { go.textContent = newName() ? `Create ${visibleText(newName())} and start Pi` : `Start Pi in ${name(chosen || here)}`; };
   const mark = () => {
     for (const n of document.querySelectorAll(".folder-dialog [data-path]")) n.setAttribute("aria-selected", String(n.dataset.path === chosen));
     label();
   };
-  const choose = (path) => { chosen = path; mark(); };
+  const choose = (path) => { stopNaming(); chosen = path; mark(); };
 
   // The recent ones: the projects Pi ran in, the latest first, with their conversations' age.
   const looks = (() => { try { return JSON.parse(localStorage.getItem("devbox.conversations.v1"))?.looks || {}; } catch { return {}; } })();
@@ -103,7 +107,7 @@ function openFolderPicker(start = null) {
     return card;
   })) : null;
 
-  const dialog = resourceDialog("Open a folder", [
+  const dialog = resourceDialog("Start a project", [
     ...(recent ? [el("p", { className: "folder-label", textContent: "Recent" }), recent, el("p", { className: "folder-label", textContent: "Browse" })] : []),
     crumbs, list, problem], [go]);
   dialog.box.classList.add("folder-dialog");
@@ -137,9 +141,47 @@ function openFolderPicker(start = null) {
       return row;
     }));
     if (!dirs.length) list.append(el("p", { className: "dim small folder-none", textContent: "No folder inside." }));
+    naming = null;
+    list.prepend(newRow());
     mark();
   }
+  // "New folder…" first in the list: a click turns it into its name, typed in place.
+  function newRow() {
+    const row = el("button", { type: "button", className: "folder-row folder-new" }, svgIcon("folder-plus"), el("span", { textContent: "New folder…" }));
+    row.addEventListener("click", () => startNaming(row));
+    return row;
+  }
+  function startNaming(row) {
+    chosen = null;
+    naming = el("input", { spellcheck: false, placeholder: "its name", "aria-label": `New folder in ${name(here)}`, "data-own-escape": "" });
+    const editing = el("div", { className: "folder-row folder-naming" }, svgIcon("folder"), naming);
+    naming.addEventListener("input", label);
+    naming.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); create(); }
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); stopNaming(); }
+    });
+    row.replaceWith(editing);
+    mark();
+    naming.focus();
+  }
+  function stopNaming() {
+    if (!naming) return;
+    naming.closest(".folder-row")?.replaceWith(newRow());
+    naming = null;
+    label();
+  }
+  async function create() {
+    const n = newName();
+    if (!n) { naming?.focus(); return; }
+    let made;
+    try { made = await backend.api(["fs-new", here, n, "dir"]); } catch (e) { showError(problem, String(e)); return; }
+    const path = made?.created;
+    if (!path) return;
+    dialog.close();
+    openPiTerminal(path, projectLabel(path), ["--new"]);
+  }
   function start_() {
+    if (newName()) { create(); return; }
     dialog.close();
     const path = chosen || here;
     openPiTerminal(path, projectLabel(path), []);

@@ -2186,3 +2186,7 @@ textarea { resize: none; }
 .chat .code-copy .i { width: 14px; height: 14px; }
 .chat .code-block:hover .code-copy, .chat .code-copy:focus-visible { opacity: 1; }
 .chat .code-copy:hover { color: var(--fg); }
+/* Start a project: "New folder…" first in the list, in the link colour; its name typed in place. */
+.folder-row.folder-new, .folder-row.folder-new .i { color: var(--link, var(--accent)); }
+.folder-row.folder-naming { background: var(--hover); }
+.folder-row.folder-naming input { flex: 1; min-width: 0; height: 24px; padding: 0 var(--s2); }

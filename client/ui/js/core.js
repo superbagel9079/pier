@@ -100,7 +100,8 @@ function trapDialog(box, close) {
   const onKey = (e) => {
     // Gone from the page some other way: the trap lets go, and keys go on as before.
     if (!document.contains(box)) { document.removeEventListener("keydown", onKey, true); return; }
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+    // A field that undoes itself on Escape (a name being typed in place) keeps it.
+    if (e.key === "Escape" && e.target.dataset?.ownEscape === undefined) { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key !== "Tab") return;
     const items = [...box.querySelectorAll("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])")]
       .filter((n) => !n.disabled && !n.hidden && n.offsetParent !== null);
