@@ -893,6 +893,22 @@ class Conversations(Home):
             m.pi_infos, m.SESSION_DELETE_WAIT = saved, wait
         self.assertTrue(os.path.exists(path))
 
+    def test_messages_follow_the_active_branch(self):
+        # The history shown at once: the branch ending at the last entry, images left out,
+        # the session header and an abandoned branch not shown.
+        path = os.path.join(self.folder, "b.jsonl")
+        user = lambda i, p, text: {"type": "message", "id": i, "parentId": p, "message": {"role": "user", "content": [{"type": "text", "text": text}, {"type": "image", "data": "AAAA"}]}}
+        lines = [{"type": "session", "id": "h", "cwd": self.project}, user("u1", None, "first"),
+                 {"type": "message", "id": "a1", "parentId": "u1", "message": {"role": "assistant", "content": [{"type": "text", "text": "x" * 30000}]}},
+                 user("u2", "a1", "abandoned"), user("u3", "a1", "edited")]
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("".join(json.dumps(line) + "\n" for line in lines))
+        out = m.api_session_messages(self.home, self.project, path)["messages"]
+        texts = [c.get("text", "")[:9] for msg in out for c in msg["content"]]
+        self.assertEqual(texts, ["first", "x" * 9, "edited"])
+        self.assertFalse(any(c.get("type") == "image" for msg in out for c in msg["content"]))
+        self.assertLess(len(out[1]["content"][0]["text"]), 25000)
+
     def test_delete_stops_its_pi_first(self):
         # A Pi holding the conversation is stopped, then the file goes once it has ended.
         path = self.session("a.jsonl", 1000)

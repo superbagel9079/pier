@@ -59,6 +59,7 @@ const PASSTHROUGH: &[&str] = &[
     "fs-write",
     "file",
     "image-read",
+    "session-messages",
     "model-images",
     "setup",
     "providers",

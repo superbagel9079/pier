@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.67"
+VERSION = "4.68"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -5229,6 +5229,59 @@ def save_labels(home, labels, file):
 _SESSION_INFO = {}  # path -> ((size, mtime), info): a session file is read again only when it changed
 
 
+SESSION_SHOW_MAX = 200          # the latest messages shown before Pi is up
+SESSION_SHOW_BYTES = 64 * 1024 * 1024
+SESSION_PART_MAX = 20000         # characters of one text part (a long tool output)
+
+
+def api_session_messages(home, path, file):
+    """A conversation's messages as Pi's get_messages gives them, read from its file at once
+    (Pier shows them while its Pi starts): the active branch (from the last entry back by
+    parentId), the latest SESSION_SHOW_MAX, images left out, long texts cut."""
+    project = resolve_inside(home, path)
+    file = session_file_in(project, file)
+    entries = {}
+    last = None
+    try:
+        with open_plain(file, sessions_root()) as handle:
+            if os.fstat(handle.fileno()).st_size > SESSION_SHOW_BYTES:
+                return {"messages": [], "partial": True}
+            for raw in handle:
+                try:
+                    entry = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict) and entry.get("id"):
+                    entries[entry["id"]] = entry
+                    last = entry["id"]
+    except OSError as exc:
+        raise ApiError(f"cannot read this conversation: {exc.strerror or exc}")
+    chain, seen = [], set()
+    while last and last not in seen and last in entries:
+        seen.add(last)
+        chain.append(entries[last])
+        last = entries[last].get("parentId")
+    messages = []
+    for entry in reversed(chain):
+        message = entry.get("message") if entry.get("type") == "message" else None
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, list):
+            light = []
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") == "image":
+                    continue
+                part = dict(part)
+                for key in ("text", "thinking"):
+                    if isinstance(part.get(key), str) and len(part[key]) > SESSION_PART_MAX:
+                        part[key] = part[key][:SESSION_PART_MAX] + "\n…"
+                light.append(part)
+            message = {**message, "content": light}
+        messages.append(message)
+    return {"messages": messages[-SESSION_SHOW_MAX:], "partial": len(messages) > SESSION_SHOW_MAX}
+
+
 def session_parent(path):
     """The conversation a fork came from (its header's parentSession), else None."""
     try:
@@ -10241,7 +10294,7 @@ def api_write_text(home, path, which, data):
 
 
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
-API_READS = {"version", "projects", "ls", "file", "image-read", "config", "models", "pi-default-read", "providers", "shares", "activity", "diff", "contexts",
+API_READS = {"version", "projects", "ls", "file", "image-read", "session-messages", "config", "models", "pi-default-read", "providers", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
              "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
 # Fields of a reply worth a place in the log line.
@@ -10341,6 +10394,7 @@ API_COMMANDS = {
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
     "session-delete": lambda home, config, a: api_session_delete(home, a[0], a[1]),
+    "session-messages": lambda home, config, a: api_session_messages(home, a[0], a[1]),
     "category-rename": lambda home, config, a: api_category_rename(home, a[0], a[1], a[2]),
     "conversations": lambda home, config, a: api_conversations(home),
     "copy-manifest": lambda home, config, a: api_copy_manifest(home, a[0]),

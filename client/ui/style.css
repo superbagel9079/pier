@@ -2163,3 +2163,5 @@ textarea { resize: none; }
 .sessions li.fork-child .row-main > .i { width: 12px; height: 12px; color: var(--dim); flex: none; margin-right: 6px; }
 /* (over the rule that hides a row's right side) the ring and the unread time with its dot show. */
 .sessions li:not(.project-head):not(.folder-head) > .row-main .row-meta:has(.side-note, .work-ring) { display: inline-flex; align-items: center; }
+/* An existing conversation shown from its file while its Pi starts. */
+.chat-starting { text-align: center; }

@@ -834,6 +834,21 @@ function makeChat(tab) {
   };
   tab.onClose = () => { clearInterval(clock); if (id !== null) backend.termClose(id); };
   tab.onShow = () => input.focus();
+  // An existing conversation: its history read from its file at once, while its Pi starts
+  // (seconds); Pi's own replaces it once attached (pier_attached draws again).
+  const file = tab.params.args?.[0] === "--session" ? tab.params.args[1] : null;
+  if (file) {
+    const starting = el("p", { className: "chat-notice dim chat-starting", textContent: "Starting Pi…" });
+    col.append(starting);
+    backend.api(["session-messages", project, file]).then((r) => {
+      if (!starting.isConnected) return; // Pi came first: it drew the conversation itself
+      starting.remove();
+      (r?.messages || []).forEach(drawMessage);
+      if (run) endRun(null);
+      col.append(starting);
+      scroller.scrollTop = scroller.scrollHeight;
+    }).catch(() => {});
+  }
   attach();
 }
 
