@@ -31,8 +31,8 @@ function mockPi(onBytes, params) {
     later(650, { type: "tool_execution_start", toolCallId: "t9", toolName: "read", args: { path: "/home/leo/work/README.md" } });
     later(1100, { type: "tool_execution_end", toolCallId: "t9", toolName: "read", isError: false, durationMs: 420,
       result: { content: [{ type: "text", text: "# Pier\n\nPi on a Linux VM, used from your laptop.\n\nTwo pieces: the desktop app, and the picker on the VM.\n\n## Install\n\nDownload Pier, connect, done." }] } });
-    const reply = "The README says Pier runs Pi on a VM from your laptop, in two pieces: the app and the picker. See `README.md`.";
-    reply.match(/.{1,24}/g).forEach((delta, i) => later(1300 + i * 80, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 2, delta } }));
+    const reply = "The README says Pier runs Pi on a VM from your laptop, in two pieces: the app and the picker. See `README.md`.\n\n```sh\nls -la ~/work\n```";
+    reply.match(/[\s\S]{1,24}/g).forEach((delta, i) => later(1300 + i * 80, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 2, delta } }));
     const done = 1400 + Math.ceil(reply.length / 24) * 80;
     later(done, { type: "message_end", message: { role: "assistant", usage: usage(0.02), content: [{ type: "text", text: reply }] } });
     later(done + 50, { type: "agent_end", messages: [] });

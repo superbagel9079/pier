@@ -394,6 +394,19 @@ function makeChat(tab) {
   /** The answer as Markdown, its files as links that open in a tab. */
   function answer(box, text) {
     box.replaceChildren(markdownPage(text));
+    // Each code block with a copy button, in its top right corner (shown under the pointer).
+    for (const pre of box.querySelectorAll("pre")) {
+      const copy = el("button", { className: "icon-btn code-copy", type: "button", title: "Copy" }, svgIcon("copy"));
+      copy.setAttribute("aria-label", "Copy this code");
+      copy.addEventListener("click", async () => {
+        try { await backend.copyText(pre.textContent); } catch (e) { flashStatus(`could not copy: ${e}`); return; }
+        copy.replaceChildren(svgIcon("check"));
+        setTimeout(() => copy.replaceChildren(svgIcon("copy")), 1500);
+      });
+      const block = el("div", { className: "code-block" });
+      pre.before(block);
+      block.append(pre, copy);
+    }
     for (const code of box.querySelectorAll("code")) {
       const p = code.textContent;
       if (/^[\w./-]+\.\w{1,8}$/.test(p) && !p.startsWith("/")) {

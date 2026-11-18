@@ -1796,7 +1796,8 @@ html.grad-in-sides #workspace #dock-left.over, html.mica.grad-in-sides #workspac
 html.grad-in-sides #workspace #dock-right.over, html.mica.grad-in-sides #workspace #dock-right.over { background-position: calc(min(var(--width, 360px), 85vw) - 100vw) 0; }
 /* A block opened in a conversation (a tool's output, Pi's thinking) scrolls on its own: the
    wheel there never moves the whole conversation, even at the block's ends. */
-.chat :is(.clip, .step-body, .step-body *, pre, .file) { overscroll-behavior: contain; }
+/* (The answer's own code blocks not: the wheel over them scrolls the conversation.) */
+.chat :is(.clip, .step-body, .step-body *, .file) { overscroll-behavior: contain; }
 /* The steps' marks on no patch of their own (a solid patch showed as a black disc on the
    gradient): the line between them stops short of each mark instead of running under it. */
 .chat .node { background: none; }
@@ -2177,3 +2178,9 @@ textarea { resize: none; }
 @keyframes fade-when-cut { from, to { --fade: 2.5em; } }
 /* A tab's name: as wide as about 28 letters, the rest fading out. */
 .tab > .tab-icon + span { max-width: 28ch; white-space: nowrap; }
+/* An answer's code block: a copy button in its corner, under the pointer or the focus. */
+.chat .code-block { position: relative; }
+.chat .code-copy { position: absolute; top: var(--s1); right: var(--s1); width: 24px; height: 24px; opacity: 0; background: var(--chip); }
+.chat .code-copy .i { width: 14px; height: 14px; }
+.chat .code-block:hover .code-copy, .chat .code-copy:focus-visible { opacity: 1; }
+.chat .code-copy:hover { color: var(--fg); }
