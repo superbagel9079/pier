@@ -92,8 +92,11 @@ fn skill_source(source: &str) -> bool {
     let Some(rest) = source.strip_prefix("skills:") else { return false };
     let parts: Vec<&str> = rest.split('/').collect();
     // Each part begins with a letter or a digit: never read as an option (--global) by npx.
-    let plain = |s: &str, extra: &str| s.len() <= 200 && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c) || extra.contains(c));
+    let plain = |s: &str, extra: &str| {
+        s.len() <= 200
+            && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c) || extra.contains(c))
+    };
     parts.len() == 3 && plain(parts[0], "") && plain(parts[1], "") && plain(parts[2], ":")
 }
 
