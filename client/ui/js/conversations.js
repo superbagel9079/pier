@@ -84,7 +84,9 @@ function conversationRow({ key, className = "", mark = null, title, fresh = fals
 /** A project's mark: a square of its colour with its first letter, an icon or a picture,
  *  chosen per viewer (kept with the folded projects). */
 const PROJECT_COLORS = ["#5b62b8", "#2f7aa8", "#2e7d5b", "#7a5ab0", "#2c7d7d", "#a0612a", "#a8414f", "#6b6b6b"];
-const PROJECT_GLYPHS = ["folder", "terminal", "file-code", "message-square", "git-branch", "flask-conical"];
+const PROJECT_GLYPHS = ["folder", "terminal", "code", "file-code", "message-square", "git-branch", "flask-conical", "globe", "server", "database",
+  "cloud", "cpu", "box", "layers", "network", "shield", "bot", "brain", "sparkles", "zap", "rocket", "puzzle", "wrench", "book-open",
+  "graduation-cap", "briefcase", "house", "smartphone", "gamepad-2", "music", "camera", "image", "palette", "heart", "star", "leaf", "coffee"];
 const projectLetter = (path) => (String(path).split("/").filter(Boolean).pop() || "?").charAt(0).toUpperCase();
 function defaultColor(path) {
   let n = 0;
@@ -118,10 +120,10 @@ async function squarePicture(file) {
 }
 
 /** Change a project's mark: its colour, a letter or an icon, or a picture from this PC. */
-function projectLookDialog(project, label, look, save) {
+function projectLookDialog(project, label, look, save, live = null) {
   const next = { ...look };
   const preview = el("span", { className: "look-preview" });
-  const draw = () => preview.replaceChildren(projectBadge(project, next), el("span", { textContent: label }));
+  const draw = () => { preview.replaceChildren(projectBadge(project, next), el("span", { textContent: label })); live?.(next); };
   const choice = (node, name, pressed, pick) => {
     const b = el("button", { className: "look-choice" });
     b.setAttribute("aria-label", name);
@@ -159,7 +161,9 @@ function projectLookDialog(project, label, look, save) {
   const ok = el("button", { textContent: "Save" });
   const dialog = resourceDialog("Project mark", [preview, el("h3", { textContent: "Colour" }), colors, el("h3", { textContent: "Letter or icon" }), glyphs,
     el("h3", { textContent: "Or a picture" }), el("div", { className: "actions" }, pick, drop, file), note], [ok]);
-  ok.addEventListener("click", () => { save(next); dialog.close(); });
+  let saved = false;
+  dialog.onClose = () => { if (!saved) live?.(look); };
+  ok.addEventListener("click", () => { saved = true; save(next); dialog.close(); });
   draw();
 }
 

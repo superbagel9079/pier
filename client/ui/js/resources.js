@@ -21,7 +21,8 @@ function resourceDialog(title, body, actions, wide = false) {
   const box = el("div", { className: wide ? "dialog wide" : "dialog" });
   const cancel = el("button", { className: "secondary", textContent: "Cancel" });
   let release = () => {};
-  const close = () => { overlay.remove(); release(); };
+  const api = {};
+  const close = () => { overlay.remove(); release(); api.onClose?.(); };
   cancel.addEventListener("click", close);
   box.append(el("h1", { textContent: title }), ...body, el("div", { className: "actions end" }, cancel, ...actions));
   overlay.append(box);
@@ -31,7 +32,7 @@ function resourceDialog(title, body, actions, wide = false) {
   // Its lists as picks now (ui.js would do it a frame later, after the focus is placed).
   for (const select of box.querySelectorAll("select")) pickify(select);
   ([...box.querySelectorAll("input, textarea, button.pick")].find((e) => !e.hidden && e.offsetParent) || actions[0] || cancel).focus();
-  return { close, box };
+  return Object.assign(api, { close, box });
 }
 
 /** "for you / for this project": where a new skill or a package goes. */

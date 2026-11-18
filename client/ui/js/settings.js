@@ -430,7 +430,9 @@ function drawProjects() {
       b.addEventListener("click", () => { projectsOpen = x.project; drawProjects(); });
       return b;
     });
-    section.replaceChildren(el("h2", { textContent: "Projects" }), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
+    const start = el("button", { type: "button", className: "secondary" }, svgIcon("folder-plus"), el("span", { textContent: "Start a project…" }));
+    start.addEventListener("click", () => { closePrefs(); openFolderPicker(); });
+    section.replaceChildren(el("div", { className: "projects-bar" }, start), el("div", { className: "rows project-list" }, ...(rows.length ? rows : [el("p", { className: "dim", textContent: "No project yet: open a folder of the VM, Pi starts there." })])));
     return;
   }
   const back = el("button", { type: "button", className: "link back-to", title: projectsSub ? `Back to ${p.label}` : "Back to all projects" }, svgIcon("arrow-left"), el("span", { textContent: "Back" }));
@@ -451,7 +453,7 @@ function drawProjects() {
     try { saved.looks = { ...looks, [p.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
     workspace.find("conversations")?.reloadLooks?.();
     drawProjects();
-  }));
+  }, (look) => $(".pbadge", title)?.replaceWith(projectBadge(p.project, look))));
   const copy = action("Copy", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
   section.replaceChildren(back, title,
     el("div", { className: "rows" },

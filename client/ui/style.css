@@ -2191,3 +2191,7 @@ textarea { resize: none; }
 .folder-row.folder-naming input { flex: 1; min-width: 0; height: 24px; padding: 0 var(--s2); }
 /* A package: its name, version and actions on one text line (the version sat higher than "remove"). */
 #ext-packages li { align-items: baseline; }
+/* Settings > Projects: Start a project above the list. */
+.projects-bar { display: flex; justify-content: flex-end; margin-bottom: var(--s3); }
+/* An installed package: its line in the middle of its row, name, version and remove on one baseline. */
+#ext-packages li { flex-wrap: wrap; align-content: center; }
