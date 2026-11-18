@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.55"
+VERSION = "4.56"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -10758,7 +10758,9 @@ def rpc_attach(path, extra):
             slot = rpc_new_slot(project, home)
             folder = rpc_slot_dir(slot)
             os.makedirs(folder, mode=0o700, exist_ok=True)
-            for old in ("events.jsonl", "events.jsonl.1"):
+            # A Pi of this name that was killed may have left its socket and pid: the attach
+            # below would find that socket at once and connect to nothing (Connection refused).
+            for old in ("events.jsonl", "events.jsonl.1", "in.sock", "pid"):
                 try:
                     os.unlink(os.path.join(folder, old))
                 except FileNotFoundError:
@@ -10816,7 +10818,16 @@ def rpc_attach(path, extra):
     threading.Thread(target=tail, daemon=True).start()
     conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        conn.connect(sock_path)
+        # The socket's file is there a moment before the host listens on it: tried again
+        # for a few seconds rather than lost at once.
+        for attempt in range(50):
+            try:
+                conn.connect(sock_path)
+                break
+            except (ConnectionRefusedError, FileNotFoundError):
+                if attempt == 49:
+                    raise
+                time.sleep(0.1)
         for line in sys.stdin.buffer:
             if len(line) <= RPC_LINE_MAX and line.strip():
                 conn.sendall(line if line.endswith(b"\n") else line + b"\n")
