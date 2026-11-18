@@ -566,9 +566,10 @@ _MODEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]*")
 _PROVIDER_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def parse_pi_models(text):
+def parse_pi_models(text, images=None):
     """["provider/id", ...] from what `pi --list-models` prints: a table, a provider and a
-    model id first on each line (the header and anything else are skipped)."""
+    model id first on each line (the header and anything else are skipped). images, a list,
+    gets those whose last column ("images") says yes."""
     models = []
     for line in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines():
         cells = line.split()
@@ -577,6 +578,8 @@ def parse_pi_models(text):
         if not _MODEL_TOKEN.fullmatch(cells[1]):
             continue
         models.append(f"{cells[0]}/{cells[1]}")
+        if images is not None and cells[-1].lower() == "yes" and len(cells) > 2:
+            images.append(f"{cells[0]}/{cells[1]}")
     return list(dict.fromkeys(models))[:MODELS_MAX]
 
 
@@ -609,17 +612,41 @@ def api_models(home):
     gateway such as Bifrost included), and its default."""
     config, _ = load_config(home)
     env = dict(child_env(home), NO_COLOR="1", TERM="dumb")
-    models, problem = [], None
+    models, problem, images = [], None, []
     try:
         result = subprocess.run(list(config["pi_command"]) + ["--list-models"], stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, errors="replace", env=env, timeout=MODELS_SECONDS)
-        models = parse_pi_models(result.stdout)
+        models = parse_pi_models(result.stdout, images)
         if not models:
             problem = (result.stderr.strip() or result.stdout.strip() or f"pi --list-models exited {result.returncode}")[-300:]
     except (OSError, subprocess.SubprocessError) as exc:
         problem = f"pi --list-models: {exc}"
     providers = sorted({m.split("/", 1)[0] for m in models})
-    return {"models": models, "providers": providers, "default": pi_default_model(home), "problem": problem}
+    return {"models": models, "providers": providers, "default": pi_default_model(home), "problem": problem,
+            "images": [m for m in dict.fromkeys(images) if m in models]}
+
+
+def api_model_images(home, value):
+    """A model of models.json marked as seeing images (input: text and image), as the user
+    says by choosing it for images: Pi lists them as text only unless told. A model of a
+    built-in provider is left to Pi."""
+    value = (value or "").strip()
+    if not MODEL_RE.fullmatch(value) or "/" not in value:
+        raise ApiError("a model as provider/id")
+    provider, model = value.split("/", 1)
+    whole = read_models_json()
+    entry = (whole.get("providers") or {}).get(provider)
+    if not isinstance(entry, dict):
+        return {"changed": False}
+    changed = False
+    for m in entry.get("models") or []:
+        if isinstance(m, dict) and m.get("id") == model and "image" not in (m.get("input") or []):
+            m["input"] = ["text", "image"]
+            changed = True
+    if changed:
+        atomic_write(models_json_path(), json.dumps(whole, indent=2) + "\n", os.path.dirname(models_json_path()), 0o600)
+        log("info", "pi.model-images", provider=provider)
+    return {"changed": changed}
 
 
 def api_pi_default(home, value):

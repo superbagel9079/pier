@@ -117,8 +117,27 @@ function makeChat(tab) {
 
   // --- a run: the request, the steps, the answers ------------------------------------
 
+  // What you gave (images and files, by their @reference): shown as themselves above your
+  // words, an image from this session's paste, else read back from the VM.
+  const previews = new Map();
+  const GIVEN = /(^|\s)@(\.pi-(?:images|files)\/[^\s]+)/g;
+  function given(ref) {
+    const name = ref.split("/").pop().replace(/^\d{8}-\d{4,6}-(?:[0-9a-f]{2,6}-)?/, "");
+    if (!ref.startsWith(".pi-images/")) return el("span", { className: "you-file", title: ref }, svgIcon(fileTypeIcon(name)), el("span", { textContent: name }));
+    const img = el("img", { alt: name, title: ref });
+    const known = previews.get(`@${ref}`);
+    if (known) img.src = known;
+    else backend.api(["image-read", project, ref]).then((r) => { if (r?.data) img.src = `data:${r.mime};base64,${r.data}`; }).catch(() => img.replaceWith(el("span", { className: "you-file", title: ref }, svgIcon("ft-image"), el("span", { textContent: name }))));
+    return el("span", { className: "you-shot" }, img);
+  }
   function you(text) {
-    col.append(el("div", { className: "you", textContent: text }));
+    const refs = [...text.matchAll(GIVEN)].map((m) => m[2]);
+    const words = text.replace(GIVEN, "$1").trim();
+    const box = el("div", { className: "you" });
+    if (refs.length) box.append(el("div", { className: "you-given" }, ...refs.map(given)));
+    if (words) box.append(el("div", { className: "you-words", textContent: words }));
+    col.append(box);
+    text = words || (refs.length ? "An image" : text);
     // The tab named after the conversation (its first words), not the project every tab
     // of it shares; a name given to the session wins (showState).
     if (!tab.named && !state.sessionName) {
@@ -533,6 +552,7 @@ function makeChat(tab) {
   // typed in the text); × takes it back (the file off the VM).
   function addChip(reference, { saved = null, image = null, name = "", icon = "file" } = {}) {
     const url = image ? URL.createObjectURL(image) : null;
+    if (url) previews.set(reference, url); // the message sent shows it (you)
     const back = el("button", { type: "button", className: "shot-x", title: "Take it back", ariaLabel: `Take ${name || "it"} back` }, svgIcon("x"));
     const chip = url
       ? el("span", { className: "shot", title: reference }, el("img", { src: url, alt: "" }), back)
@@ -540,7 +560,7 @@ function makeChat(tab) {
     chip.dataset.ref = reference; // added to the message when it is sent (submit)
     back.addEventListener("click", () => {
       if (saved) backend.removeUpload(saved).catch(() => {});
-      if (url) URL.revokeObjectURL(url);
+      if (url) { URL.revokeObjectURL(url); previews.delete(reference); }
       chip.remove();
       shots.hidden = !shots.childElementCount;
       input.focus();

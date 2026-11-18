@@ -130,6 +130,30 @@ function modelRow(key, label, hint, empty) {
   return row;
 }
 
+/** The model for images (look_at): one that sees them. Pi says which do (its list's
+ *  "images"); a model of models.json is text only to Pi until marked, which choosing it
+ *  here does. */
+function imageModelRow() {
+  const key = "image_model";
+  const value = configValue(key);
+  let row;
+  const picker = modelPicker(value, "None", async (v) => {
+    if (!(await setConfig(key, v || null, "agents", row.say))) return;
+    if (v) {
+      try { await backend.api(["model-images", v]); } catch { /* a built-in provider's: Pi knows */ }
+      await loadPiModels(true);
+      drawAgents(false);
+    }
+  }, { emptyChoice: true });
+  const sees = piModels?.images;
+  const hint = !value || !sees ? "A model that sees images: a Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at)."
+    : sees.includes(value) ? "Pi knows it sees images. A Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at)."
+      : `Pi lists ${value} as text only: it cannot read images. Choose one that sees them (Claude, GPT, Gemini…): ${sees.slice(0, 3).join(", ") || "none listed yet"}.`;
+  row = settingRow(key, "For images", picker, hint, "agents");
+  if (value && sees && !sees.includes(value)) row.classList.add("warn");
+  return row;
+}
+
 /** The workers' other models, as the proposals' 2B: one line each (its name, where it
  *  comes from, ⋯ to remove it), then Add a model, which opens the palette. */
 function workerModelsRow() {
@@ -229,7 +253,7 @@ function drawAgents(again) {
     out.push(el("h2", { textContent: "Providers" }), providersBlock());
     out.push(el("h2", { textContent: "Models" }), knows, defRow,
       modelRow("orchestrator_model", "Orchestrator", "The model of a Pi started with orchestrate (Conversations): the one that plans, splits and merges. A strong model.", "Pi's default"),
-      modelRow("image_model", "For images", "A model that sees images: a Pi whose own model cannot asks it about a pasted screenshot or a picture (look_at). For the Pis started from now on.", "None"));
+      imageModelRow());
     out.push(el("h2", { textContent: "Workers" }),
       toggleRow("workers", "A Pi may start workers", "Worker Pis, each in a git worktree of its own; the first one waits for your approval in Pier.", "agents"),
       (() => {

@@ -536,6 +536,29 @@ def api_file(home, path, file):
             "mtime": str(info.st_mtime_ns)}
 
 
+IMAGE_READ_MAX = 8 * 1024 * 1024
+
+
+def api_image_read(home, path, file):
+    """An image given to Pi (.pi-images of the project), for its thumbnail in Pier's
+    conversation view: {mime, data (base64)}. Nothing else of the project is read so."""
+    import base64
+    project = resolve_inside(home, path)
+    file = (file or "").lstrip("@")
+    full = os.path.realpath(os.path.join(project, file))
+    if not within(full, os.path.join(project, ".pi-images")):
+        raise ApiError(f"not an image given to Pi: {file}")
+    try:
+        with open_plain(full, project) as handle:
+            data = handle.read(IMAGE_READ_MAX + 1)
+    except OSError as exc:
+        raise ApiError(f"cannot read {file}: {exc.strerror or exc}")
+    kind = image_kind(data)
+    if not kind or len(data) > IMAGE_READ_MAX:
+        raise ApiError(f"not an image Pier shows: {file}")
+    return {"mime": "image/jpeg" if kind == "jpg" else f"image/{kind}", "data": base64.b64encode(data).decode()}
+
+
 def api_fs_write(home, path, file, expected, data):
     """A file of the project saved from Pier's viewer, as it is typed in: its whole text,
     written only if the file did not change since Pier read it (expected: its mtime then,
