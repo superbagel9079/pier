@@ -315,10 +315,15 @@ const workspace = (() => {
       null,
       ["Start a project…", () => openFolderPicker(), false, { icon: "folder-plus" }],
     ]));
-    const field = el("textarea", { rows: 3, placeholder: "Message Pi. Enter starts it in this project.", spellcheck: true });
+    // The conversation's own composer (chat.js): its frame, its bar, its send button. The model
+    // is Pi's default (Settings > Agents), the one the new Pi starts on.
+    const field = el("textarea", { placeholder: "Message Pi. Enter starts it in this project.", spellcheck: true });
     field.setAttribute("aria-label", "Your first message");
-    const send = el("button", { type: "button", className: "nt-send", title: "Start Pi with this message" }, svgIcon("arrow-up"));
+    const send = el("button", { type: "button", className: "send", title: "Start Pi with this message" }, svgIcon("arrow-up"));
     send.setAttribute("aria-label", "Start Pi with this message");
+    const model = el("button", { type: "button", className: "pickish", textContent: "default model ▾", title: "Pi's default model: changed in Settings > Agents" });
+    model.addEventListener("click", () => { openPrefs?.(); showPrefsPage("agents"); });
+    backend.api(["pi-default-read"]).then((r) => { if (r?.default) model.textContent = `${String(r.default).split("/").pop()} ▾`; }).catch(() => {});
     const go = () => {
       const text = field.value.trim();
       if (!text) { field.focus(); return; }
@@ -330,7 +335,7 @@ const workspace = (() => {
     return el("div", { className: "nt-start" },
       el("h2", { textContent: "New conversation" }),
       el("div", { className: "nt-bar" }, pick),
-      el("div", { className: "nt-composer" }, field, el("div", { className: "nt-foot" }, el("span", { className: "dim small", textContent: "Shift+Enter: a new line" }), send)));
+      el("div", { className: "composer nt-composer" }, field, el("div", { className: "bar" }, model, el("span", { className: "head-gap" }), send)));
   }
 
   /** No VM yet: three steps, the next one put forward (the proposals' 3A). */
