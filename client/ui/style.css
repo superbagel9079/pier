@@ -2123,3 +2123,7 @@ textarea { resize: none; }
 .you .you-file { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px; border: 1px solid var(--line); border-radius: var(--r); }
 .you .you-file .i { width: 14px; height: 14px; color: var(--dim); }
 .setting-row.warn .hint { color: var(--yellow, #e0af68); }
+/* A side over the middle is solid with Mica too: its blur did not hide what is under it in
+   Pier's window (the conversation's text read through the side). */
+html.mica #workspace :is(#dock-left, #dock-right).over,
+html.mica.grad-in-sides #workspace :is(#dock-left, #dock-right).over { background-color: var(--bg); }
