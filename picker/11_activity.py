@@ -69,12 +69,12 @@ def subagent_session(path):
 
 
 _GIT_CHANGES = {}  # project -> (when, index stat, changes)
-GIT_CHANGES_FRESH = 3.0
+GIT_CHANGES_FRESH = 10.0  # git status of a big tree costs; a commit or an add still shows at once
 
 
 def git_changes(project):
     """{relative path: two-letter git status} for the project's work tree. Asked to git
-    at most every 3 seconds per project, unless git's index changed (a commit, an add)."""
+    at most every 10 seconds per project, unless git's index changed (a commit, an add)."""
     directory = git_dir(project)
     try:
         index = os.stat(os.path.join(directory, "index")).st_mtime_ns if directory else None

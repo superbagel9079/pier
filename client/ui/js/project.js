@@ -86,6 +86,7 @@ function makeProject(tab) {
   }
 
   let stale = false;
+  let decorated = ""; // the activity the tree shows: every update redrew each file's badge
 
   function onActivity(message) {
     if (!vm.current(message)) return;
@@ -100,7 +101,10 @@ function makeProject(tab) {
     stale = false;
     renderAgent();
     if (mode === "activity") renderActivity();
-    else decorateTree();
+    else {
+      const sig = JSON.stringify([activity.files, activity.git]);
+      if (sig !== decorated) { decorated = sig; decorateTree(); }
+    }
   }
 
   /** The conversation of the Pi in the tab shown in the middle, when it runs here. */

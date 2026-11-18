@@ -181,7 +181,20 @@ def pier_extensions(home):
 def write_settings(scope, project, change):
     """settings.json of a scope, read, changed by change(settings), written back."""
     base, settings_file, root = scope_base(scope, project)
-    settings = read_json_file(settings_file) if os.path.exists(settings_file) else {}
+    settings = {}
+    if os.path.lexists(settings_file):
+        # Read as written: never through a link leading out of its root (a secret file Pi
+        # pointed it at would be copied into a file Pi reads).
+        text = read_text(settings_file, root=root)
+        if text is None:
+            raise ApiError(f"{pretty_path(settings_file, home_dir())} is not a plain file (a link leading out?): refused")
+        settings = None
+        for attempt in (text, re.sub(r"(?m)^\s*//.*$", "", text)):
+            try:
+                settings = json.loads(attempt)
+                break
+            except ValueError:
+                continue
     if not isinstance(settings, dict):
         raise ApiError(f"{pretty_path(settings_file, home_dir())} is not a JSON object: fix it by hand")
     change(settings)
@@ -680,12 +693,16 @@ def read_models_json():
     """models.json as Pi reads it ({} when absent); one it cannot parse is refused, never
     overwritten."""
     path = models_json_path()
-    try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-    except FileNotFoundError:
+    if not os.path.lexists(path):
         return {}
-    except (OSError, ValueError) as exc:
+    # Never through a link leading out of Pi's folder: Pi (sandboxed, ~/.pi writable) could
+    # point models.json at a secret, which saving a provider would then copy back to it.
+    text = read_text(path, 8 * 1024 * 1024, root=os.path.dirname(path))
+    if text is None:
+        raise ApiError(f"{path} is not a plain file of Pi's folder (a link leading out?): refused")
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
         raise ApiError(f"cannot read {path}: {exc}")
     if not isinstance(data, dict):
         raise ApiError(f"{path} is not an object")

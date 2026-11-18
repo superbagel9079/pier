@@ -128,8 +128,10 @@ def rpc_host(slot, project, extra):
     out = open(events, "ab")
     for raw in child.stdout:
         # Pi's own lines are JSON; anything else (a startup error) is passed on as text.
-        line = raw if raw.lstrip().startswith(b"{") else (
+        line = rpc_light(raw) if raw.lstrip().startswith(b"{") else (
             json.dumps({"type": "pier_text", "text": raw.decode("utf-8", "replace").rstrip("\n")}).encode() + b"\n")
+        if line is None:
+            continue
         out.write(line if line.endswith(b"\n") else line + b"\n")
         out.flush()
         if out.tell() > RPC_LOG_MAX:  # a new file: an attach sees the change and reads it from its start
@@ -147,6 +149,27 @@ def rpc_host(slot, project, extra):
             pass
     log("info", "rpc.ended", project=project, slot=slot, code=code)
     return 0
+
+
+def rpc_light(raw):
+    """A line of Pi as Pier needs it. Each message_update carries the whole message so far,
+    twice (message and assistantMessageEvent.partial): a 10 KB answer in 1 000 pieces made
+    20 MB to relay and parse. Pier reads its delta and a finished tool call only; the
+    pieces of a tool call's arguments (toolcall_delta) are not relayed at all. None: skip."""
+    if b'"message_update"' not in raw[:64]:
+        return raw
+    try:
+        event = json.loads(raw)
+    except ValueError:
+        return raw
+    update = event.get("assistantMessageEvent")
+    if not isinstance(update, dict):
+        return raw
+    if update.get("type") == "toolcall_delta":
+        return None
+    update.pop("partial", None)
+    event.pop("message", None)
+    return json.dumps(event, separators=(",", ":")).encode() + b"\n"
 
 
 def rpc_say(record):

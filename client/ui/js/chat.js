@@ -363,12 +363,19 @@ function makeChat(tab) {
       count("thinking");
     }
     m.thoughtText += text;
+    // Drawn at most every 120 ms, as the answer: a piece at a time rebuilt it all, thousands of times.
+    if (!m.thoughtPaint) m.thoughtPaint = setTimeout(() => drawThought(m), 120);
+  }
+
+  function drawThought(m) {
+    clearTimeout(m.thoughtPaint);
+    m.thoughtPaint = 0;
     const para = el("div", { className: "thought" }, ...m.thoughtText.split(/\n{2,}/).map((p) => el("p", { textContent: p })));
-    const n = Math.ceil(m.thoughtText.length / 80);
-    setBody(m.thought, para, n, "thought");
+    setBody(m.thought, para, Math.ceil(m.thoughtText.length / 80), "thought");
   }
 
   function endThinking(m, live) {
+    if (m.thoughtPaint) drawThought(m);
     if (!m.thought || m.thoughtDone) return;
     m.thoughtDone = true;
     m.thought.node.replaceChildren(svgIcon("circle-check"));
@@ -503,12 +510,18 @@ function makeChat(tab) {
         break;
       case "tool_execution_update": {
         const st = steps.get(e.toolCallId);
-        const text = (e.partialResult?.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
-        if (st && text) setBody(st, lines(text, 400), text.split("\n").length);
+        if (!st) break;
+        st.partial = e.partialResult; // drawn at most every 250 ms (a build's output came line by line)
+        st.paint ||= setTimeout(() => {
+          st.paint = 0;
+          const text = (st.partial?.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
+          if (text && !st.done) setBody(st, lines(text, 400), text.split("\n").length);
+        }, 250);
         break;
       }
       case "tool_execution_end": {
         const st = steps.get(e.toolCallId);
+        if (st) { clearTimeout(st.paint); st.done = true; }
         if (st) finishStep(st, e.result, e.isError, e.durationMs);
         break;
       }

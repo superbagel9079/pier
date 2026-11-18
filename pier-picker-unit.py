@@ -909,6 +909,32 @@ class Conversations(Home):
         self.assertFalse(any(c.get("type") == "image" for msg in out for c in msg["content"]))
         self.assertLess(len(out[1]["content"][0]["text"]), 25000)
 
+    def test_models_json_link_out_is_refused(self):
+        # Pi could point models.json at a secret: saving a provider must not copy it back.
+        secret = self.path("secret.json")
+        with open(secret, "w", encoding="utf-8") as handle:
+            json.dump({"token": "ghp_x"}, handle)
+        target = m.models_json_path()
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        try:
+            os.symlink(secret, target)
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks here")
+        with self.assertRaises(m.ApiError):
+            m.api_provider_save(self.home, "p", json.dumps({"baseUrl": "http://127.0.0.1:9/v1", "api": "openai-completions", "models": []}).encode())
+        self.assertTrue(os.path.islink(target))
+
+    def test_rpc_light_keeps_the_delta_only(self):
+        # A streamed piece without the message so far; a tool call's pieces dropped.
+        partial = {"role": "assistant", "content": [{"type": "text", "text": "x" * 5000}]}
+        raw = json.dumps({"type": "message_update", "message": partial,
+                          "assistantMessageEvent": {"type": "text_delta", "delta": "hi", "partial": partial}}).encode() + b"\n"
+        out = json.loads(m.rpc_light(raw))
+        self.assertEqual(out, {"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "hi"}})
+        self.assertIsNone(m.rpc_light(json.dumps({"type": "message_update", "assistantMessageEvent": {"type": "toolcall_delta", "delta": "{"}}).encode()))
+        other = b'{"type":"message_end","message":{"role":"assistant"}}\n'
+        self.assertEqual(m.rpc_light(other), other)
+
     def test_delete_stops_its_pi_first(self):
         # A Pi holding the conversation is stopped, then the file goes once it has ended.
         path = self.session("a.jsonl", 1000)

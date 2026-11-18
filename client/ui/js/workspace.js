@@ -271,7 +271,6 @@ const workspace = (() => {
   }
 
 
-  let emptyAsked = false; // the conversations asked for the New tab's recent ones
   /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
    *  latest conversations. */
   function emptyDock(name) {
@@ -289,11 +288,7 @@ const workspace = (() => {
       line("folder", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()),
       line("terminal", "New shell", "on the VM", () => add("shell", name)));
     // The recent ones even with the conversations' side folded (it follows them only while
-    // shown): asked once here, the page drawn again when they come.
-    if (!emptyAsked) {
-      emptyAsked = true;
-      vm.on("conversations", () => { if (!docks.center.tabs.length) render("center"); });
-    }
+    // shown): asked here, the page drawn again when they come (the listener below).
     vm.follow({ conversations: true });
     const recent = (vm.latest("conversations")?.data?.projects || []).flatMap((p) => p.sessions.filter((s) => !s.archived && !s.subagent).map((s) => [p, s]))
       .sort((a, b) => b[1].modified - a[1].modified).slice(0, 5);
