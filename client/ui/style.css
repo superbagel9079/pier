@@ -2175,3 +2175,5 @@ textarea { resize: none; }
   animation-timeline: scroll(self inline);
 }
 @keyframes fade-when-cut { from, to { --fade: 2.5em; } }
+/* A tab's name: as wide as about 28 letters, the rest fading out. */
+.tab > .tab-icon + span { max-width: 28ch; white-space: nowrap; }

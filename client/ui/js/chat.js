@@ -245,7 +245,7 @@ function makeChat(tab) {
     // of it shares; a name given to the session wins (showState).
     if (!tab.named && !state.sessionName) {
       const words = text.replace(/\s+/g, " ").trim();
-      tab.title = words.length > 28 ? `${words.slice(0, 27).trimEnd()}…` : words || tab.title;
+      tab.title = words.slice(0, 80) || tab.title; // cut by the tab itself, fading out (style.css)
       tab.named = true;
       workspace.retitle(tab);
     }
