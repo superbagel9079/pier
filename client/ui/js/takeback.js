@@ -11,7 +11,7 @@ function openTakeBack(share) {
     open.reload();
     return;
   }
-  workspace.add("takeback", workspace.find("main")?.dock || "center", {
+  workspace.add("takeback", "center", {
     params: { path: share.mountpoint, local: share.origin.local, project: share.origin.project },
   });
 }

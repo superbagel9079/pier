@@ -89,8 +89,8 @@ p { margin: var(--s2) 0; }
 
 /* What is code, in the terminal's font. */
 code, kbd, pre, .editor, .path, .rel, .file-name, .log-lines, .diff,
-.desc, .facts, .setup-summary, .startup .ellipsis, .context-project .label,
-.toolbar .root, .setup-project, #target, .tab-rename, .mark {
+.desc, .facts, .context-project .label,
+.toolbar .root, #target, .tab-rename, .mark {
   font-family: var(--code);
 }
 /* A path with its name always whole, its folder cut short first (splitPath). */
@@ -103,7 +103,7 @@ code, kbd, pre, .editor, .path, .rel, .file-name, .log-lines, .diff,
 .name, .path, .rel, .file-name { unicode-bidi: isolate; }
 code, kbd { background: var(--chip); padding: 0 var(--s1); font-size: var(--t-small); }
 pre { background: var(--chip); padding: var(--s2); overflow-x: auto; margin: var(--s2) 0; }
-#labs-key-text, #labs-install, #labs-vlan-commands, .labs-howto pre, .labs-host-install { white-space: pre-wrap; word-break: break-all; }
+#labs-install, #labs-vlan-commands, .labs-howto pre, .labs-host-install { white-space: pre-wrap; word-break: break-all; }
 .dialog .net-choice { margin: 4px 0; }
 .dialog .net-choice span { font-size: var(--t-small); }
 
@@ -309,9 +309,7 @@ nav > button { flex-shrink: 0; white-space: nowrap; }
 /* The Pier mark, drawn in text by dither.js. Decorative: hidden from screen readers and
    selection. Its line count is fixed, so nothing moves as it appears. */
 .mark { margin: 0; padding: 0; background: none; overflow: hidden; font-size: 7px; line-height: 1.2; color: var(--fg); user-select: none; }
-#connect > .mark { max-width: 520px; margin: 0 auto var(--s5); }
 /* A short window keeps its height for the form. */
-@media (max-height: 640px) { #connect > .mark { display: none; } }
 .empty .mark { margin-bottom: var(--s2); color: var(--dim); }
 
 /* workspace: three docks */
@@ -386,7 +384,6 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .pane-conversations .toolbar { padding: 0 var(--s2) var(--s2); }
 .pane-conversations .count { padding: 0 var(--s4); }
 .pane-conversations .sessions { margin: 0; padding: 0 var(--s2) var(--s2); }
-.tab.pinned > .tab-icon + span { font-weight: 600; }
 /* Six letters and the ellipsis at least, in the name's own font: "Conver…", never "Con…". */
 .tab > .tab-icon + span { overflow: hidden; text-overflow: ellipsis; min-width: 7ch; }
 /* Only the active tab (or the one under the pointer) shows its ×. */
@@ -422,7 +419,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .pane { position: absolute; inset: 0; overflow: auto; padding: var(--s4); }
 .pane:focus { outline: none; }
 /* Side panels never scroll sideways: their content wraps or is cut with an ellipsis. */
-.pane:has(> .pane-setup), .pane:has(> .pane-conversations), .pane:has(> .pane-project) { overflow-x: hidden; }
+.pane:has(> .pane-conversations), .pane:has(> .pane-project) { overflow-x: hidden; }
 /* The terminal's padding is its own (Settings > Appearance). None on the right: the scrollbar's
    width is the margin, and it must stay inside the area xterm.js watches to be draggable. */
 .pane.terminal { padding: 0; overflow: hidden; }
@@ -493,13 +490,11 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .pane-project > .toolbar .root { flex: 1 0 100%; }
 
 /* One way to title a section, in every panel: bold, plain, a line under it. */
-.pane-setup h2, .group h3, .sessions li.category {
+.group h3, .sessions li.category {
   font-size: var(--t-small); font-weight: 600; color: var(--fg); text-transform: none; letter-spacing: 0;
   margin: var(--s5) 0 var(--s1); padding: 0 0 var(--s2); border-bottom: 1px solid var(--line);
 }
-.pane-setup h2 .file-name, .pane-setup h2 .dim { font-weight: 400; color: var(--dim); }
-.pane-setup h3 { font-size: var(--t-small); font-weight: 600; color: var(--dim); margin: var(--s4) 0 var(--s1); }
-.setup-page > h2:first-child, .group:first-child h3 { margin-top: var(--s1); }
+.group:first-child h3 { margin-top: var(--s1); }
 
 /* Rows: a line between them; the row under the pointer lights up, with its actions. */
 .group { margin-bottom: var(--s4); }
@@ -520,9 +515,6 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .card-links { display: flex; gap: var(--s4); margin-top: var(--s3); }
 .card-links .link { display: inline-flex; align-items: center; gap: var(--s2); }
 .card-links .link .i { width: 14px; height: 14px; }
-.approval-exact { margin: 0 0 var(--s3); font-size: var(--t-small); }
-.approval-exact summary { color: var(--dim); cursor: pointer; }
-.approval-exact .approval-fact { font-family: var(--ui); }
 /* Files: the project's name above its tree, as the mock-up's group label. */
 /* The project is in the middle's header: the tree starts under the bar (the proposals' 2A). */
 .view-files .tree { margin-top: var(--s2); }
@@ -667,19 +659,9 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 :not(.setting-row) + .setting-row:not(:has(+ .setting-row)) { border-radius: var(--r); }
 .setting-head { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .setting-head > label, .setting-head > span:first-child { flex: 1 1 200px; font-weight: 600; }
-/* Pier's own list for a field (the models): under it, in the theme; the browser's
-   would be drawn by the system. */
-.setting-list li.off .name { color: var(--dim); text-decoration: line-through; }
-.setting-list li > input[type="checkbox"] { flex: none; margin: 0; }
-.setting-row.inactive .setting-list { opacity: .6; }
 .setting-row.toggle .setting-head > input { order: -1; flex: none; }
 .setting-row .hint { margin: var(--s1) 0 0; }
 .setting-key { margin: var(--s1) 0 0; font-family: var(--code); }
-.setting-list { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.setting-list li { display: flex; align-items: center; gap: var(--s2); padding: 2px var(--s2); background: var(--chip); }
-.setting-list li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--code); }
-.setting-add { display: flex; gap: var(--s2); margin-top: var(--s2); }
-.setting-add input { flex: 1; min-width: 0; max-width: 360px; }
 /* The mock-up's pick: the choice and ▾, its list Pier's menu (ui.js, pickify). */
 .pick { display: flex; align-items: center; justify-content: space-between; gap: var(--s4); flex: none; width: 184px; height: 32px; padding: 0 var(--s3);
   background: var(--bg); border: 1px solid var(--line); color: var(--fg); text-align: left; }
@@ -807,7 +789,6 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 /* Removed lines dimmed: completeTheme (themes.js) keeps dim 4.5:1 on this tint too. */
 .diff .del { background: var(--del-bg); color: var(--dim); }
 .diff .hunk { color: var(--dim); background: var(--raise); }
-.edit-title { color: var(--dim); font-size: var(--t-small); margin: var(--s2) 0 var(--s1); }
 .takeback-section { margin: 0 0 var(--s3); }
 .takeback-section summary { cursor: pointer; font-weight: 600; margin-bottom: var(--s1); color: var(--fg); }
 .takeback-list { list-style: none; margin: 0; padding: 0; }
@@ -818,15 +799,7 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 
 /* Setup */
 
-.pane-setup h2 { margin: var(--s4) 0 var(--s2); }
-.pane-setup .actions { flex-wrap: wrap; }
-.pane-setup button { white-space: nowrap; }
-.pane-setup .startup li, .pane-setup .startup .ellipsis { min-width: 0; }
-.setup-project { max-width: 60%; }
-.setup-summary { display: flex; gap: var(--s3); flex-wrap: wrap; align-items: baseline; margin: 0 0 var(--s2); color: var(--dim); font-size: var(--t-small); }
 /* The pages: chips, one row when they fit, wrapping otherwise; never a label cut. */
-.setup-pages { display: flex; flex-wrap: wrap; gap: 2px; margin: var(--s1) 0 var(--s3); }
-.setup-pages .mode { flex: 0 0 auto; padding: 2px var(--s2); white-space: nowrap; }
 .editor { width: 100%; resize: vertical; font-size: var(--t-small); line-height: 1.5; padding: var(--s2); background: var(--chip); color: var(--fg); border: 1px solid transparent; }
 .editor:focus { outline: 1px solid var(--accent); }
 /* Three groups that never break inside: what the text costs, the tools, the buttons.
@@ -838,12 +811,6 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
 .editor-bar .bar-buttons { gap: var(--s2); }
 .history-list { list-style: none; margin: var(--s2) 0 0; display: flex; flex-direction: column; gap: var(--s1); background: var(--chip); padding: var(--s2) var(--s2); }
 .history-list li { display: flex; gap: var(--s2); align-items: center; min-width: 0; }
-.startup { margin: 0; padding-left: 0; display: flex; flex-direction: column; gap: var(--s1); }
-.startup li { display: flex; gap: var(--s2); align-items: baseline; min-width: 0; }
-.startup .scope { color: var(--dim); font-size: var(--t-label); background: var(--chip); padding: 0 var(--s2); flex: 0 0 auto; }
-.startup .ellipsis { flex: 1 1 auto; min-width: 0; }
-.startup .dim { flex: 0 0 auto; white-space: nowrap; }
-.startup li.note { display: block; white-space: normal; }
 .startup-box { margin-top: var(--s3); }
 .startup-box > summary { cursor: pointer; color: var(--dim); }
 
@@ -1462,7 +1429,6 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 #dock-center { position: relative; }
 #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-center::after { content: ""; position: absolute; inset: 0; z-index: 15; background: rgba(0, 0, 0, .4); pointer-events: none; }
 /* Labs' settings in tabs (the proposals' 1B) */
-.labs-tabs-bar { margin: var(--s5) 0 var(--s3); }
 .labs-pane > .hint:first-child { margin-top: 0; }
 .lab-host { gap: var(--s3); }
 .lab-host .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -1648,15 +1614,9 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 @media (prefers-reduced-motion: reduce) { .row-main .mark .state.working { animation: none; border-top-color: var(--dim); } }
 .sessions li.more .link { color: var(--dim); }
 /* The first step's options, opened in place (not a window over it). */
-.qs-links { display: flex; gap: var(--s4); }
-.qs-links .link { font-size: 12px; color: var(--dim); }
-.qs-options { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-.qs-options[hidden], .qs-bastion[hidden] { display: none; }
-.qs-options .lc-row > .lc-field:first-child { flex: 0 0 88px; }
-.qs-options .lc-row > .lc-field + .lc-field { flex: 1; }
+.qs-bastion[hidden] { display: none; }
 .qs-bastion { display: flex; flex-direction: column; gap: var(--s3); }
 .qs-bastion .lc-row > .lc-field:last-child { flex: 0 0 88px; }
-.qs-options label.check { font-size: 13px; color: var(--fg); }
 /* The key, drawn and said: its picture beside its four words. */
 .trust-key { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r); background: color-mix(in srgb, var(--bg) 40%, transparent); }
 .trust-art { display: grid; grid-template-columns: repeat(8, 12px); grid-auto-rows: 12px; gap: 2px; flex: none; }
@@ -1709,13 +1669,9 @@ html:not(.grad-off) .settings-nav { background: transparent; }
 /* A file's view: its name in the interface's font (the folder dim), its size, its actions
    as icons, level with the code under it; the code in one frame, square inside it. */
 .file-head { display: flex; align-items: center; gap: var(--s3); min-height: 36px; margin-bottom: var(--s2); }
-.file-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--ui); font-weight: 600; font-size: 13px; }
-.file-path .dir { font-weight: 400; color: var(--dim); }
 .file-facts { flex: none; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .file-acts { display: inline-flex; gap: 2px; flex: none; }
 .file-acts .icon-btn .i { width: 15px; height: 15px; }
-.file-mode { height: 26px; padding: 0 var(--s2); font-size: 12px; background: none; border: 1px solid var(--line); color: var(--dim); }
-.file-mode:hover { color: var(--fg); background: var(--hover); }
 .code-view { border-radius: var(--r); overflow: auto; }
 .code-view pre { background: none; border-radius: 0; }
 .code-view .gutter { background: transparent; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
@@ -1837,8 +1793,8 @@ body:not(.online) .prefs-page.needs-vm::after { content: "These settings live on
 /* The code font for code only: a file's text, a diff, the editor, a tool's output and code
    in a conversation, the terminals. Names, paths, keys, times, the logs' details, fingerprints
    and addresses in the interface's font, its digits of equal width. */
-:is(kbd, .path, .rel, .file-name, .log-lines, .log-lines *, .desc, .facts, .setup-summary, .startup .ellipsis, .context-project .label,
-  .toolbar .root, .setup-project, #target, .tab-rename, .card .ref, .approval-fact, .setting-key, .setting-list li .name,
+:is(kbd, .path, .rel, .file-name, .log-lines, .log-lines *, .desc, .facts, .context-project .label,
+  .toolbar .root, #target, .tab-rename, .card .ref, .approval-fact, .setting-key,
   .tree .node .git, .point-head .when, .chat .path, .chat .ref, .set .what .code, .lab-host .fp, .labs-table .code,
   .trust-print code, .lc-head small, .vr-text code, .prefs-page code, .dialog code, .hint code, .resource-items code) {
   font-family: var(--ui) !important; font-variant-numeric: tabular-nums; }
@@ -1860,9 +1816,6 @@ input[type="checkbox"]::before { background:
 .rail-btn[aria-pressed="true"]::before, .rail-proj.on::before { background: var(--accent); }
 .pane-project > .toolbar .switch .mode.active::after { background: var(--accent); }
 @media (max-width: 720px) { .prefs-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--accent); } }
-/* The logs' paths: a click opens or copies; they look like the text, underlined. */
-.path-link { display: inline; padding: 0; border: 0; background: none; font: inherit; color: var(--fg); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); text-underline-offset: 3px; }
-.path-link:hover { text-decoration-color: var(--accent); }
 /* A page's own words when it needs the VM (data-offline), else the common one. */
 body:not(.online) .prefs-page.needs-vm[data-offline]::after { content: attr(data-offline); }
 /* A field with the keyboard: its own border in the accent, not an outline drawn over it (the
@@ -1947,7 +1900,6 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .file-conflict > span { flex: 1; }
 .file-conflict button { height: 28px; padding: 0 var(--s3); flex: none; }
 /* Settings > Projects: the host, the list (a mark, a name, how many conversations), a project. */
-.host-line { display: inline-flex; align-items: center; gap: var(--s2); color: var(--fg) !important; font-size: 13px !important; }
 .project-list { display: flex; flex-direction: column; }
 .project-pick { display: flex; flex-direction: row; align-items: center; gap: var(--s3); width: 100%; min-height: 52px; padding: var(--s2) var(--s4); text-align: left; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--fg); }
 .project-pick:last-child { border-bottom: 0; }
@@ -1961,7 +1913,6 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .project-title { display: flex; align-items: center; gap: var(--s3); margin: 0 0 var(--s3); }
 .project-title .pbadge { width: 26px; height: 26px; font-size: 13px; }
 .project-title h2 { margin: 0 !important; font-size: 18px; color: var(--fg); font-weight: 600; }
-.mark-preview .pbadge { width: 22px; height: 22px; }
 /* File-type icons (Catppuccin, monochrome): the tree's folder open when unfolded; a tab's
    icon before its name. */
 .tree .node .kind .i + .i { display: none; }
@@ -2011,11 +1962,6 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 /* Markdown shown as a page: in the middle of the tab. */
 .md-page { margin-left: auto; margin-right: auto; }
 /* Settings > Projects: the system prompts, a field each with its foot. */
-.system-prompts { display: flex; flex-direction: column; gap: var(--s4); }
-.prompt-block { display: flex; flex-direction: column; gap: var(--s2); }
-.prompt-block .what { display: flex; flex-direction: column; gap: 2px; }
-.prompt-block .what > :first-child { font-weight: 600; }
-.prompt-block .what > :last-child { font-size: 12px; color: var(--dim); }
 .prompt-edit { width: 100%; min-height: 120px; resize: vertical; padding: var(--s2) var(--s3); font: 12px/1.5 var(--code); color: var(--fg); }
 .prompt-foot { display: flex; align-items: center; gap: var(--s2); }
 .prompt-foot > .dim { flex: 1; }
@@ -2035,11 +1981,6 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
    came back to the list), its background as under the pointer. */
 .tree .node:focus-visible { outline: none; background: var(--hover); }
 /* Settings > Projects: each system prompt a card (the diff tab's), its field borderless inside. */
-.prompt-block { display: block; gap: 0; margin: 0; }
-.prompt-block .prompt-edit { display: block; border: 0 !important; border-radius: 0; background: transparent !important; min-height: 140px; padding: var(--s3); }
-.prompt-block .prompt-edit::placeholder { color: var(--dim); font-family: var(--ui); }
-.prompt-block .prompt-foot { padding: 6px var(--s3); border-top: 1px solid var(--line); }
-.prompt-block > .error { margin: 0 var(--s3) var(--s2); }
 .prompt-foot { flex-wrap: wrap; row-gap: 4px; }
 .prompt-foot > .dim { white-space: nowrap; }
 .prompt-foot .link { white-space: nowrap; font-size: 12px; }
@@ -2191,8 +2132,6 @@ textarea { resize: none; }
 .folder-row.folder-naming input { flex: 1; min-width: 0; height: 24px; padding: 0 var(--s2); }
 /* A package: its name, version and actions on one text line (the version sat higher than "remove"). */
 #ext-packages li { align-items: baseline; }
-/* Settings > Projects: Start a project above the list. */
-.projects-bar { display: flex; justify-content: flex-end; margin-bottom: var(--s3); }
 /* An installed package: its line in the middle of its row, name, version and remove on one baseline. */
 #ext-packages li { flex-wrap: wrap; align-content: center; }
 /* What Pi loads (the proposals' 1A): Installed by kind, Browse as a gallery with pictures. */
@@ -2225,7 +2164,6 @@ textarea { resize: none; }
 .pkg-row > .i { width: 14px; height: 14px; color: var(--dim); flex: none; }
 #prefs .prefs-page .pkg-row > button.secondary { flex: none; }
 #prefs .prefs-page button.secondary.pkg-installed:disabled { background: none; color: var(--dim); border-color: var(--line); }
-.pkg-types { display: flex; gap: var(--s1); flex-wrap: wrap; }
 .pkg-src { display: flex; align-items: center; gap: var(--s2); min-width: 0; }
 .pkg-src code { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pkg-from { margin-top: var(--s2); }

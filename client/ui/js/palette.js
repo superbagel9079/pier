@@ -14,7 +14,7 @@ const palette = (() => {
   function collect() {
     const out = [];
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, { left: "left side", right: "right side" }[tab.dock] || "", () => workspace.show(tab), tab]);
-    for (const kind of ["conversations", "project", "setup", "repository", ...(labsOn() ? ["labs"] : [])]) {
+    for (const kind of ["conversations", "project", "repository", ...(labsOn() ? ["labs"] : [])]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind)]);
     }
     const projects = new Map();
@@ -24,7 +24,7 @@ const palette = (() => {
     for (const [path, p] of projects) {
       out.push(["project", `${p.label}: new Pi`, p.running ? "running" : "", () => openPiTerminal(path, p.label, p.running ? ["--new"] : [])]);
       out.push(["project", `${p.label}: last conversation`, "", () => openPiTerminal(path, p.label, ["--continue"])]);
-      out.push(["project", `${p.label}: setup`, "", () => (workspace.find("setup") || workspace.add("setup"))?.openProject?.(path)]);
+      out.push(["project", `${p.label}: settings`, "its instructions, what Pi loads, its mark", () => openProjectSettings(path)]);
     }
     for (const p of conversations) {
       for (const s of p.sessions.slice(0, 100)) {
@@ -39,9 +39,6 @@ const palette = (() => {
       out.push(["setting", `Settings: ${button.textContent}`, "", () => { openPrefs(); showPrefsPage(button.dataset.page); }]);
     }
     const panel = (kind) => workspace.find(kind) || workspace.add(kind);
-    for (const button of document.querySelectorAll("#tpl-setup")[0]?.content.querySelectorAll(".setup-pages .mode") || []) {
-      out.push(["page", `Project: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
-    }
     for (const [mode, label, detail] of [["activity", "Activity", "what Pi read and changed"], ["files", "Files", "the project's files"],
       ["restore", "Restore points", "undo what Pi did: go back to before a prompt"]]) {
       out.push(["page", `Activity: ${label}`, detail, () => { const t = panel("project"); workspace.show(t); t?.setMode?.(mode); }]);
@@ -52,7 +49,7 @@ const palette = (() => {
       out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
     }
     out.push(["page", "Activity: Given to Pi", "images, files, folders and shares given to Pi", () => contextTab({ reveal: true })]);
-    if (online) out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
+    if (online) out.push(["action", "New shell", "", () => workspace.add("shell", "center")]);
     out.push(["action", "Reset layout", "layout", () => placePanels()]);
     out.push(["action", "Logs", "Settings > Diagnostics", () => { openPrefs(); showPrefsPage("diagnostics"); }]);
     for (const theme of [{ id: "system", name: "Follow the system" }, ...allThemes()]) {

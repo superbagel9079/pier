@@ -1,23 +1,4 @@
-//! The image on the system clipboard, as PNG bytes.
-
-use anyhow::{anyhow, Result};
-
-pub fn clipboard_png() -> Result<Vec<u8>> {
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| anyhow!("clipboard unavailable: {e}"))?;
-    let image = clipboard.get_image().map_err(|_| anyhow!("The clipboard holds no image."))?;
-    let pixels = image.width.saturating_mul(image.height);
-    if pixels > PIXELS_MAX {
-        return Err(anyhow!("The image in the clipboard is too big ({} x {} pixels): save it as a file and send that.", image.width, image.height));
-    }
-    if image.bytes.len() != pixels.saturating_mul(4) {
-        return Err(anyhow!("The image in the clipboard could not be read."));
-    }
-    encode_png(image.width as u32, image.height as u32, &image.bytes)
-}
-
-/// Most pixels of a pasted image: 50 million (an 8K screen is 33), so a pasted
-/// panorama or a damaged clipboard cannot make Pier encode and send gigabytes.
-const PIXELS_MAX: usize = 50_000_000;
+//! What the system clipboard holds that Pier reads: the files copied in the file manager.
 
 /// Files and folders copied in the file manager (Explorer's Ctrl+C), as paths.
 /// Empty when the clipboard holds none.
@@ -26,27 +7,4 @@ pub fn clipboard_paths() -> Vec<String> {
         .and_then(|mut clipboard| clipboard.get().file_list())
         .map(|paths| paths.into_iter().map(|p| p.to_string_lossy().into_owned()).collect())
         .unwrap_or_default()
-}
-
-/// RGBA pixels to PNG.
-pub fn encode_png(width: u32, height: u32, rgba: &[u8]) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
-    {
-        let mut encoder = png::Encoder::new(&mut out, width, height);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header()?;
-        writer.write_image_data(rgba)?;
-    }
-    Ok(out)
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn encodes_a_valid_png() {
-        let pixels = vec![255u8; 4 * 3 * 2];
-        let png = super::encode_png(3, 2, &pixels).unwrap();
-        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
-    }
 }

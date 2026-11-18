@@ -133,13 +133,6 @@ def worker_view(home, project, worker, running):
             "report": worker.get("report"), "reported_at": worker.get("reported_at")}
 
 
-def team_of(teams, slot):
-    team = teams.get(slot)
-    if not isinstance(team, dict):
-        raise ApiError("no worker started by this Pi yet")
-    return team
-
-
 def find_worker(team, which):
     for worker in team.get("workers") or []:
         if str(worker.get("n")) == str(which) or worker.get("slot") == which:

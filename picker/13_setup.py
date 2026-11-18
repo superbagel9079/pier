@@ -549,6 +549,26 @@ def folder_items(folder, kind):
 MCP_FILES = (("user", "{agent}/mcp.json"), ("project", "{project}/.pi/mcp.json"))
 
 
+def mcp_servers(project, home):
+    """The MCP servers Pi connects (~/.pi/agent/mcp.json and the project's .pi/mcp.json),
+    each with where it is set and whether it is on."""
+    agent = agent_dir()
+    out = []
+    for scope, pattern in MCP_FILES:
+        path = pattern.format(agent=agent, project=project)
+        config = read_json_file(path)
+        servers = config.get("mcpServers") if isinstance(config, dict) else None
+        if not isinstance(servers, dict):
+            continue
+        for name, server in list(servers.items())[:RESOURCE_MAX]:
+            server = server if isinstance(server, dict) else {}
+            kind = "http" if server.get("url") else "stdio" if server.get("command") else None
+            description = server.get("description") if isinstance(server.get("description"), str) else None
+            out.append({"name": name, "scope": scope, "from": pretty_path(path, home), "kind": kind,
+                        "enabled": server.get("enabled") is not False, "description": description})
+    return out
+
+
 def pi_resources(project, home):
     agent = agent_dir()
     places = (("user", agent, read_json_file(os.path.join(agent, "settings.json"))),
@@ -569,18 +589,7 @@ def pi_resources(project, home):
         for key in ("defaultProvider", "defaultModel", "defaultThinkingLevel"):
             if isinstance(settings.get(key), str):
                 out["model"][key] = settings[key]
-    for scope, pattern in MCP_FILES:
-        path = pattern.format(agent=agent, project=project)
-        config = read_json_file(path)
-        servers = config.get("mcpServers") if isinstance(config, dict) else None
-        if not isinstance(servers, dict):
-            continue
-        for name, server in list(servers.items())[:RESOURCE_MAX]:
-            server = server if isinstance(server, dict) else {}
-            kind = "http" if server.get("url") else "stdio" if server.get("command") else None
-            description = server.get("description") if isinstance(server.get("description"), str) else None
-            out["mcp"].append({"name": name, "scope": scope, "from": pretty_path(path, home), "kind": kind,
-                               "enabled": server.get("enabled") is not False, "description": description})
+    out["mcp"] = mcp_servers(project, home)
     versions = pi_versions_soon(home, [p["source"] for p in out["packages"]])
     out["pi"] = versions.get("pi")
     for info in out["packages"]:

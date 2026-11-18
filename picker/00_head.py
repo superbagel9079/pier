@@ -19,10 +19,8 @@
 #   DEVBOX_REQUEST         the client's id for the call, written in the log next to its own
 
 import collections
-import curses
 import hashlib
 import json
-import locale
 import os
 import queue
 import re
@@ -51,19 +49,13 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.72"
+VERSION = "4.73"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
-    "start": "~",                      # directory shown first, inside the home directory
-    "ignore": [],                      # directory names never listed nor searched
-    "search_depth": 4,                 # levels below home that f searches
     "pi_command": ["pi"],              # program and arguments; a string is split like a shell
-    "continue_args": ["--continue"],   # added by c: continue Pi's last session
-    "resume_args": ["--resume"],       # added by r: choose one of Pi's saved sessions
     "tmux": True,                      # run Pi in tmux so it survives a dropped connection
     "recent_count": 8,                 # recent projects listed at the top of home, 0 hides them
-    "preview": True,                   # side panel when the terminal is wide enough
     "sandbox": True,                   # run Pi in bubblewrap: it only sees its project, see sandbox_argv
     "sandbox_read": [],                # extra paths Pi may read in the sandbox, e.g. ["~/docs"]
     "sandbox_write": [],               # extra paths Pi may also write in the sandbox
@@ -136,62 +128,6 @@ INSTALLERS = (
     ("apk", ["apk", "add", "tmux"]),
 )
 
-SEARCH_SKIP = {"node_modules", "__pycache__", "venv", "env", "target", "dist", "build", "vendor"}
-SEARCH_LIMIT = 20000
-SEARCH_SHOWN = 200
 RECENT_KEPT = 50
-PROJECT_MARKERS = ("AGENTS.md", "CLAUDE.md", ".pi", "README.md")
-
-# Below this many rows the logo is dropped; below this many columns, the preview.
-BANNER_MIN_ROWS = 30
-PREVIEW_MIN_COLS = 110
-
-# Plain ASCII: renders the same whatever the terminal's encoding.
-LOGO = [
-    "         ''",
-    "'||''|,  ||",
-    " ||  ||  ||",
-    " ||..|' .||.",
-    " ||",
-    ".||",
-]
-HELP = [
-    ("up/down  pgup/pgdn  home/end", "move"),
-    ("right  enter", "open the directory"),
-    ("left  backspace", "go up"),
-    ("p", "start pi in the selected directory"),
-    ("P", "start pi in the current directory"),
-    ("N", "start another pi in the selection, in a new conversation"),
-    ("c", "continue pi's last session in the selection"),
-    ("r", "choose one of pi's saved sessions"),
-    ("x", "stop the pis running in the selection"),
-    ("/", "filter this directory"),
-    ("f", "find a directory anywhere under ~"),
-    ("n", "new directory"),
-    ("g", "git clone here"),
-    ("R", "rename the selection"),
-    ("t", "sort by name or by recent activity"),
-    ("s", "shell in the selection"),
-    ("q  esc", "quit (esc first clears a filter or a search)"),
-]
-
-# Python sets LC_CTYPE from the environment at startup, so this is the terminal's.
-ENCODING = locale.getpreferredencoding(False) or "ascii"
-UNICODE = "utf" in ENCODING.lower()
-ELLIPSIS = "…" if UNICODE else "~"
-AHEAD = "↑" if UNICODE else "+"
-BEHIND = "↓" if UNICODE else "-"
-
-HELP_NOTES = [
-    "[pi]  a pi runs there in tmux: p goes back to it, ctrl-b d inside it returns here",
-    f"main*  {AHEAD}2 {BEHIND}1   branch, uncommitted changes, commits ahead and behind upstream",
-]
-
-ENTER = ("\n", "\r", curses.KEY_ENTER)
-BACKSPACE = ("\x7f", "\x08", curses.KEY_BACKSPACE)
-ESCAPE = "\x1b"
-CTRL_C = "\x03"
-CTRL_L = "\x0c"
-CTRL_U = "\x15"
 
 

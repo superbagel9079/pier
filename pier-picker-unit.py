@@ -26,19 +26,7 @@ LINUX = sys.platform.startswith("linux")
 
 
 def load_picker():
-    """pier-picker.py as a module. Without curses (Windows), a stand-in: the picker only
-    needs it to draw."""
-    try:
-        import curses  # noqa: F401
-    except ImportError:
-        class Curses(types.ModuleType):
-            error = Exception
-
-            def __getattr__(self, name):
-                if name.startswith(("KEY_", "A_", "COLOR_")):
-                    return 0
-                raise AttributeError(name)
-        sys.modules["curses"] = Curses("curses")
+    """pier-picker.py as a module."""
     spec = importlib.util.spec_from_file_location("pier_picker", os.path.join(HERE, "pier-picker.py"))
     module = importlib.util.module_from_spec(spec)
     sys.modules["pier_picker"] = module
@@ -128,16 +116,6 @@ class AllowList(unittest.TestCase):
             watcher.tick()  # was: FileNotFoundError, logged as checkpoint.watch-failed
         finally:
             m.pier_state = saved
-
-    def test_a_commit_subject_makes_no_line_of_its_own(self):
-        saved = m.git_dir, m.git_run
-        m.git_dir = lambda path: True
-        m.git_run = lambda path, *args: "1700000000\tfix ²\tfake\n1700000001\tok\x1c²\tx\n".encode()
-        try:
-            commits = m.preview_info(tempfile.gettempdir())["commits"]
-        finally:
-            m.git_dir, m.git_run = saved
-        self.assertEqual(commits, [(1700000000, "fix ²\tfake"), (1700000001, "ok\x1c²\tx")])
 
     def test_a_name_never_leads_to_this_machine(self):
         answers = ["127.0.0.1", "169.254.169.254", "::ffff:127.0.0.1", "fe80::1%eth0", "10.0.0.5", "140.82.112.3"]

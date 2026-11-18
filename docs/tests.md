@@ -3,9 +3,9 @@
 
 ## The picker
 
-The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 27 October 2026, picker 4.37, on the Debian VM; the CI runs it too, at every push): it drives the picker in a real tmux terminal, and checks with the real programs:
+The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 27 October 2026, picker 4.37, on the Debian VM; the CI runs it too, at every push): it checks the picker with the real programs:
 
-- the screen and its keys, starting Pi (directly and in tmux), the Hindsight key, two Pis in one project and the API that lists them;
+- two Pis in one project and the API that lists them;
 - the real bubblewrap sandbox: what Pi sees, its own `/dev`, `/run` hidden, the TIOCSTI filter, and its network (no direct connection, the proxy refusing what is not allowed);
 - the protections against links and FIFOs Pi could plant (Hindsight key, Setup, removals, writes, the git jail), folder copies;
 - restore points around a real `--exec-pi`, the log, what Setup lists, and moving the folders of the old name (pi-dir-picker).

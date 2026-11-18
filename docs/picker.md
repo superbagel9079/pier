@@ -1,40 +1,7 @@
 <!-- Part of Pier's documentation: see the index in ../README.md -->
 # The picker
 
-A single-file Python program, **with no dependencies**: only the standard library. It is used directly over SSH (`ssh pi`) and is also Pier's engine.
-
-## The screen
-
-- At the top, an ASCII logo and the version, when the terminal has at least 30 rows.
-- The current path, then the list of non-hidden folders.
-- For each folder: the **git branch**, a **star** when there are uncommitted changes, `↑2 ↓1` for commits ahead of and behind the remote, and **`[pi]`** when a Pi runs there.
-- At the top of your home, the **recent projects**.
-- From 110 columns, a **preview panel**: latest commits, whether `AGENTS.md` or `.pi` exist, the start of the README.
-- At the bottom, a reminder of the keys, which adapts to the width.
-- Folders where Pi may not run (see [Security](security.md#security)), such as `~/bin`, are not listed, found or offered at all.
-
-## Keys
-
-| Key | Action |
-|---|---|
-| `↑` `↓` (or `k` `j`), `PgUp` `PgDn`, `Home` `End` | move |
-| `→` / `Enter` (or `l`) | open the folder |
-| `←` / `Backspace` (or `h`) | go up |
-| **`p`** | start Pi in the **selected** folder |
-| **`P`** | start Pi in the **current** folder |
-| `N` | start **one more Pi** in the selection, in a new conversation |
-| `c` | continue Pi's last session (`--continue`) |
-| `r` | choose one of Pi's saved sessions (`--resume`) |
-| `x` | stop the Pis running in the selection |
-| `/` | filter the current folder as you type |
-| `f` | find a folder anywhere under home |
-| `n` | create a folder |
-| `g` | clone a git repository here |
-| `R` | rename the selection |
-| `t` | sort by name or by recent activity |
-| `s` | open a shell in the selection |
-| `?` | help |
-| `q` / `Esc` | quit (Esc first clears a filter or a search) |
+A single-file Python program, **with no dependencies**: only the standard library. It is Pier's engine on the VM, run over SSH; it has no screen of its own (the terminal picker it had, its keys and its `start`, `ignore`, `search_depth`, `continue_args`, `resume_args` and `preview` settings are gone: a config that still has them is fine).
 
 ## Pi in tmux
 
@@ -71,14 +38,9 @@ Optional, in `~/.config/pier-picker/config.toml`. A commented template is in [co
 
 | Key | Purpose | Default |
 |---|---|---|
-| `start` | folder shown first | `~` |
-| `ignore` | folder names never listed or searched | `[]` |
-| `search_depth` | depth of the `f` search | `4` |
 | `pi_command` | Pi's command, with its arguments | `["pi"]` |
-| `continue_args`, `resume_args` | arguments of `c` and `r` | `--continue`, `--resume` |
 | `tmux` | start Pi in tmux | `true` |
 | `recent_count` | number of recent projects shown | `8` |
-| `preview` | preview panel | `true` |
 | `sandbox` | bubblewrap sandbox | `true` |
 | `sandbox_read`, `sandbox_write` | more folders Pi may read, or write | `[]` |
 | `checkpoints` | restore points before each prompt | `true` |

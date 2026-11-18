@@ -27,7 +27,6 @@ function realBackend() {
     checkpointCreate: (project, label) => invoke("checkpoint_create", { project, label }),
     stopPi: (project, slot) => invoke("stop_pi", { project, slot }),
     sessionLabel: (project, file, title, category) => invoke("session_label", { project, file, title, category }),
-    shortcutStatus: () => invoke("shortcut_status"),
     sessionMark: (project, file, what, on) => invoke("session_mark", { project, file, what, on }),
     sessionDelete: (project, file) => invoke("session_delete", { project, file }),
     categoryRename: (project, old, name) => invoke("category_rename", { project, old, new: name }),
@@ -55,7 +54,6 @@ function realBackend() {
       if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== "granted") return;
       n.sendNotification({ title, body });
     },
-    setShortcut: (enabled) => invoke("set_paste_shortcut", { enabled }),
     async termOpen(kind, cols, rows, onBytes, params) {
       // What the terminal has written is told back every 256 KB: Pier holds the VM back
       // when the tab falls far behind (term.rs), rather than piling up its output here.
@@ -135,7 +133,6 @@ function realBackend() {
     updateCheck: () => invoke("update_check"),
     updateInstall: () => invoke("update_install"),
     onUpdateProgress: (handler) => listen("update-progress", (event) => handler(event.payload)),
-    onClipboardSent: (handler) => listen("clipboard-sent", (event) => handler(event.payload)),
     onConnectionLost: (handler) => listen("connection-lost", (event) => handler(event.payload)),
     onConnectionRetrying: (handler) => listen("connection-retrying", () => handler()),
     onConnectionBack: (handler) => listen("connection-back", (event) => handler(event.payload)),

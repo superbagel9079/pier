@@ -71,21 +71,6 @@ def tmux(*args, socket=SOCKET):
     return subprocess.run(["tmux", "-L", socket, *args], capture_output=True, text=True)
 
 
-def capture(attrs=False):
-    args = ["capture-pane", "-p", "-t", SESSION]
-    if attrs:
-        args.insert(2, "-e")
-    return tmux(*args).stdout
-
-
-def send(*keys, literal=False):
-    tmux("send-keys", "-t", SESSION, *(["-l"] if literal else []), *keys)
-
-
-def has_session():
-    return tmux("has-session", "-t", SESSION).returncode == 0
-
-
 def tmux_available():
     try:
         return subprocess.run(["tmux", "-V"], capture_output=True).returncode == 0
@@ -108,84 +93,10 @@ def write_pi(home, body):
     script.chmod(0o755)
 
 
-def fake_pi(home):
-    """A stand-in for pi that records where it ran and with which arguments, then exits."""
-    home_fixture(home)
-    write_pi(home, 'pwd > "$HOME/pi-ran.txt"\necho "$@" > "$HOME/pi-args.txt"\n')
-
-
-def slow_pi(home):
-    """A stand-in for pi that keeps running, and records the Hindsight key it was given."""
-    home_fixture(home)
-    (home / ".pi").mkdir()
-    (home / ".pi" / "hindsight.key").write_text("secret-test-key\n")
-    (home / ".pi" / "hindsight.key").chmod(0o600)
-    write_pi(home, 'pwd > "$HOME/pi-ran.txt"\necho "$HINDSIGHT_API_KEY" > "$HOME/pi-key.txt"\nsleep 60\n')
-
-
-def git_fixture(home):
-    """A real repository with an untracked file, so git status reports it dirty."""
-    home_fixture(home)
-    repo = home / "dirty-repo"
-    subprocess.run(["git", "init", "-q", "-b", "work", str(repo)], check=True)
-    (repo / "new.txt").write_text("x\n")
-
-
-def activity_fixture(home):
-    home_fixture(home)
-    later = time.time() + 1000
-    os.utime(home / "beta", (later, later))
-
-
-def session(keys, fixture=home_fixture, use_tmux=False):
-    """Fresh tmux session and sandbox per call. keys is a list of ("key"|"text", value)."""
-    work = tempfile.mkdtemp(prefix="pier-picker-")
-    home = Path(work) / "home"
-    home.mkdir()
-    bin_dir = Path(work) / "bin"
-    bin_dir.mkdir()
-    if fixture:
-        fixture(home)
-    # The picker resolves symlinks in HOME (/tmp can be one): compare against that.
-    home = Path(os.path.realpath(home))
-
-    unset = "-u XDG_CONFIG_HOME -u XDG_STATE_HOME -u PI_BIN" + (" -u TMUX" if use_tmux else "")
-    tmux("kill-server")
-    tmux("kill-server", socket=PI_SOCKET)
-    tmux("new-session", "-d", "-s", SESSION, "-x", str(COLS), "-y", str(ROWS),
-         f"env {unset} HOME={home} PATH={bin_dir}:$PATH PI_PICKER_TMUX_SOCKET={PI_SOCKET} PI_PICKER_SANDBOX=0 "
-         f"{sys.executable} -B {APP}")
-    time.sleep(1.2)
-
-    screens = [capture()]
-    for kind, value in keys:
-        send(value, literal=(kind == "text"))
-        time.sleep(0.35)
-        screens.append(capture())
-    return home, screens, work
-
-
 def cleanup(work):
     tmux("kill-server")
     tmux("kill-server", socket=PI_SOCKET)
     shutil.rmtree(work, ignore_errors=True)
-
-
-def selected(attrs):
-    found = re.findall(r"\x1b\[7m(.*?)\x1b\[0m", attrs)
-    return found[0].strip() if found else "(none)"
-
-
-def rows(screen):
-    return [line.strip() for line in screen.splitlines()]
-
-
-def path_row(screen):
-    """The current path: the only row that starts with '/' (the logo above it does not)."""
-    for content in rows(screen):
-        if content.startswith("/"):
-            return content
-    return "(no path row)"
 
 
 def read(path):
@@ -203,36 +114,14 @@ def unit_tests():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    check("valid_name accepts proj-1", module.valid_name("proj-1"))
-    check("valid_name accepts accents", module.valid_name("projet-été"))
-    check("valid_name rejects a path", not module.valid_name("a/b"))
-    check("valid_name rejects hidden", not module.valid_name(".x"))
-    check("valid_name rejects a leading dash", not module.valid_name("-rf"))
-    check("valid_name rejects empty", not module.valid_name(""))
-    check("valid_name rejects traversal", not module.valid_name("../evil"))
-    check("valid_name rejects a trailing newline", not module.valid_name("a\n"))
-
-    check("clone url: https", module.valid_clone_url("https://github.com/u/r.git"))
-    check("clone url: scp form", module.valid_clone_url("git@github.com:u/r.git"))
-    check("clone url: rejects an option", not module.valid_clone_url("--upload-pack=x"))
-    check("clone url: rejects ext::", not module.valid_clone_url("ext::sh -c x"))
-    check("clone name", module.clone_name("git@github.com:u/blog.git") == "blog")
-
     check("clean masks control characters", module.clean("a\x1b[2Jb\n") == "a?[2Jb?")
     check("clean survives undecodable bytes", "�" in module.clean(os.fsdecode(b"x\xff")))
-    check("fit counts wide characters", module.text_width(module.fit("日本語日本語", 5)) <= 5)
-    check("search prefers the last segment",
-          module.match_score("blog", "blog") < module.match_score("blog", "blog-old/x"))
-    check("search matches scattered letters", module.match_score("bv2", "clients/blog-v2") is not None)
-
     work = tempfile.mkdtemp(prefix="pier-picker-unit-")
     root = Path(work)
     (root / "b").mkdir()
     (root / "A").mkdir()
     (root / ".hidden").mkdir()
     (root / "file.txt").write_text("x")
-    check("list_dirs hides dotfiles", module.list_dirs(str(root)) == ["A", "b"],
-          module.list_dirs(str(root)))
     tree = root / "repo"
     (tree / ".git").mkdir(parents=True)
     (tree / ".git" / "HEAD").write_text("ref: refs/heads/feature/x\n")
@@ -247,35 +136,6 @@ def unit_tests():
     check("git_branch follows a .git file", module.git_branch(str(linked)) == "wt",
           module.git_branch(str(linked)))
     shutil.rmtree(work, ignore_errors=True)
-
-
-def back_to_back_children():
-    """Two children with nothing drawn between them, as when tmux gets installed and Pi
-    starts right after: endwin used to fail the second time and crash the picker."""
-    work = Path(tempfile.mkdtemp(prefix="pier-picker-"))
-    home = work / "home"
-    home.mkdir()
-    done = work / "done.txt"
-    script = work / "twice.py"
-    script.write_text(
-        "import curses, importlib.util\n"
-        f"spec = importlib.util.spec_from_file_location('picker', {str(APP)!r})\n"
-        "m = importlib.util.module_from_spec(spec)\n"
-        "spec.loader.exec_module(m)\n"
-        "def go(scr):\n"
-        "    p = m.Picker(scr, m.home_dir(), 0, dict(m.DEFAULTS, tmux=False))\n"
-        "    env = m.child_env(p.home)\n"
-        "    p.run_child(['true'], p.home, env, 'one')\n"
-        "    p.run_child(['true'], p.home, env, 'two')\n"
-        "curses.wrapper(go)\n"
-        f"open({str(done)!r}, 'w').write('ok')\n"
-    )
-    tmux("kill-server")
-    tmux("new-session", "-d", "-s", SESSION, "-x", str(COLS), "-y", str(ROWS),
-         f"env -u XDG_CONFIG_HOME -u XDG_STATE_HOME HOME={home} {sys.executable} -B {script}; sleep 5")
-    time.sleep(2.0)
-    check("two children in a row do not crash", done.is_file(), capture()[-600:])
-    cleanup(str(work))
 
 
 def sandbox_test():
@@ -1265,195 +1125,6 @@ def main():
     print("=" * 72, "\nUNIT\n", "=" * 72, sep="")
     unit_tests()
 
-    print("=" * 72, "\nTERMINAL\n", "=" * 72, sep="")
-    home, screens, work = session([])
-    print(screens[0])
-    text = screens[0]
-    check("lists directories", all(x in text for x in ("alpha/", "beta/", "a-repo/")))
-    check("hides dot directories", ".hidden" not in text)
-    check("lists no files", "notes.txt" not in text)
-    check("shows the git branch", "main" in text)
-    check("path row shows home", path_row(text) == str(home), path_row(text))
-    attrs = capture(attrs=True)
-    check("something is selected", selected(attrs) != "(none)", selected(attrs))
-    check("grey used for secondary text", "\x1b[90m" in attrs or "\x1b[2m" in attrs)
-    send("q")
-    time.sleep(0.5)
-    check("q quits", not has_session())
-    cleanup(work)
-
-    home, screens, work = session([("key", "Down")])
-    check("arrow key moves the selection", selected(capture(attrs=True)).startswith("alpha/"),
-          selected(capture(attrs=True)))
-    cleanup(work)
-
-    home, screens, work = session([("key", "Down"), ("key", "Right")])
-    check("right opens the directory", path_row(screens[-1]) == f"{home}/alpha", path_row(screens[-1]))
-    cleanup(work)
-
-    home, screens, work = session([("key", "Down"), ("key", "Right"), ("key", "Left")])
-    check("left returns to home", path_row(screens[-1]) == str(home), path_row(screens[-1]))
-    check("left reselects the directory it came from",
-          selected(capture(attrs=True)).startswith("alpha/"), selected(capture(attrs=True)))
-    cleanup(work)
-
-    home, screens, work = session([("text", "/"), ("text", "bet")])
-    check("filter narrows the list while typing",
-          "beta/" in screens[-1] and "alpha/" not in screens[-1], screens[-1][:300])
-    cleanup(work)
-
-    home, screens, work = session([("text", "/"), ("text", "alp"), ("key", "Enter")])
-    check("filter is kept after Enter",
-          "alpha/" in screens[-1] and "beta/" not in screens[-1], screens[-1][:300])
-    send("Right")
-    time.sleep(0.4)
-    inside = capture()
-    check("filter is cleared when entering a directory",
-          path_row(inside) == f"{home}/alpha" and "sub/" in inside and "filter:" not in inside,
-          inside[:300])
-    cleanup(work)
-
-    home, screens, work = session([("text", "/"), ("text", "alp"), ("key", "Enter"), ("key", "Escape")])
-    check("escape clears the filter instead of quitting",
-          has_session() and "beta/" in screens[-1], screens[-1][:300])
-    cleanup(work)
-
-    home, screens, work = session([("text", "f"), ("text", "sub")])
-    check("f finds a nested directory", "alpha/sub/" in screens[-1], screens[-1][:600])
-    send("Enter")
-    time.sleep(0.3)
-    send("Right")
-    time.sleep(0.4)
-    check("opening a search result goes there", path_row(capture()) == f"{home}/alpha/sub",
-          path_row(capture()))
-    cleanup(work)
-
-    home, screens, work = session([("text", "n"), ("text", "newproj"), ("key", "Enter")])
-    check("n creates the directory", (home / "newproj").is_dir())
-    check("the new directory is listed and selected",
-          selected(capture(attrs=True)).startswith("newproj/"), selected(capture(attrs=True)))
-    cleanup(work)
-
-    home, screens, work = session([("text", "n"), ("text", "../evil"), ("key", "Enter")])
-    check("invalid name creates nothing", not (home.parent / "evil").exists())
-    check("invalid name says why", "invalid name" in screens[-1], screens[-1][-400:])
-    cleanup(work)
-
-    home, screens, work = session([("key", "Down"), ("text", "R"), ("key", "C-u"),
-                                   ("text", "gamma"), ("key", "Enter")])
-    check("R renames the selection", (home / "gamma").is_dir() and not (home / "alpha").exists())
-    cleanup(work)
-
-    home, screens, work = session([("text", "t")], fixture=activity_fixture)
-    shown = screens[-1]
-    check("t sorts by activity", 0 <= shown.find("beta/") < shown.find("alpha/"), shown[:600])
-    cleanup(work)
-
-    home, screens, work = session([("text", "?")])
-    check("? shows the keys", "find a directory anywhere" in screens[-1], screens[-1][:400])
-    send("x")
-    time.sleep(0.4)
-    check("any key leaves the help", "up/down move" in capture(), capture()[-300:])
-    cleanup(work)
-
-    if shutil.which("git"):
-        def clone_fixture(home):
-            home_fixture(home)
-            source = home.parent / "src"
-            subprocess.run(["git", "init", "-q", "-b", "main", str(source)], check=True)
-            subprocess.run(["git", "-C", str(source), "-c", "user.name=t", "-c", "user.email=t@t",
-                            "commit", "-q", "--allow-empty", "-m", "init"], check=True)
-        home, screens, work = session([("text", "g")], fixture=clone_fixture)
-        send(f"file://{os.path.realpath(home.parent / 'src')}", literal=True)
-        send("Enter")
-        time.sleep(2.5)
-        check("g clones a repository", (home / "src" / ".git").is_dir(), capture()[-400:])
-        check("the clone is selected", selected(capture(attrs=True)).startswith("src/"),
-              selected(capture(attrs=True)))
-        cleanup(work)
-
-        home, screens, work = session([], fixture=git_fixture)
-        time.sleep(1.0)
-        check("dirty repository gets a star", "work*" in capture(), capture()[:600])
-        cleanup(work)
-    else:
-        print("  skip clone and dirty star tests: git is not installed")
-
-    home, screens, work = session([("text", "p")], fixture=fake_pi)
-    time.sleep(0.6)
-    check("p runs pi in the selected directory", read(home / "pi-ran.txt") == str(home / "a-repo"),
-          read(home / "pi-ran.txt"))
-    after = capture()
-    check("the directory becomes a recent project at the top", "~/a-repo/" in after, after[:600])
-    cleanup(work)
-
-    home, screens, work = session([("text", "c")], fixture=fake_pi)
-    time.sleep(0.6)
-    check("c continues the last session", without_extension(read(home / "pi-args.txt")) == "--continue",
-          read(home / "pi-args.txt"))
-    cleanup(work)
-
-    home, screens, work = session([("text", "P")], fixture=fake_pi)
-    time.sleep(0.6)
-    picker = capture()
-    check("P runs pi in the current directory", read(home / "pi-ran.txt") == str(home),
-          read(home / "pi-ran.txt"))
-    check("the picker survives pi exiting", has_session() and "up/down move" in picker,
-          picker[:200])
-    send("q")
-    time.sleep(0.5)
-    check("q still quits after pi ran", not has_session())
-    cleanup(work)
-
-    home, screens, work = session([("text", "p")], fixture=slow_pi, use_tmux=True)
-    time.sleep(1.5)
-    check("tmux mode runs pi in the selected directory", read(home / "pi-ran.txt") == str(home / "a-repo"),
-          read(home / "pi-ran.txt"))
-    check("pi gets the hindsight key", read(home / "pi-key.txt") == "secret-test-key",
-          read(home / "pi-key.txt"))
-    send("C-b")
-    send("d")
-    time.sleep(0.8)
-    detached = capture()
-    check("detaching comes back to the picker", "up/down move" in detached, detached[:400])
-    check("the running pi is marked", "[pi]" in detached, detached[:600])
-
-    env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "XDG_CONFIG_HOME", "XDG_STATE_HOME")}
-    env.update(HOME=str(home), PI_PICKER_TMUX_SOCKET=PI_SOCKET)
-    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
-    api = subprocess.run([sys.executable, "-B", str(APP), "--api", "paste-image"], input=png,
-                         capture_output=True, env=env)
-    try:
-        reply = json.loads(api.stdout)
-    except ValueError:
-        reply = {"error": api.stdout.decode(errors="replace") + api.stderr.decode(errors="replace")}
-    saved = Path(reply.get("saved", "/nonexistent"))
-    check("api paste-image saves into the running project",
-          saved.parent == home / "a-repo" / ".pi-images" and saved.read_bytes() == png, reply)
-    time.sleep(0.3)
-    inner = tmux("list-sessions", "-F", "#{session_name}", socket=PI_SOCKET).stdout.split()
-    pane = tmux("capture-pane", "-p", "-t", inner[0], socket=PI_SOCKET).stdout if inner else ""
-    check("api paste-image types the reference into pi",
-          reply.get("typed") and reply.get("reference", "?") in pane, (reply, pane[-300:]))
-    projects = json.loads(subprocess.run([sys.executable, "-B", str(APP), "--api", "projects"],
-                                         capture_output=True, env=env).stdout)
-    check("api projects lists the running pi",
-          [p["label"] for p in projects.get("running", [])] == ["~/a-repo"], projects)
-
-    send("x")
-    time.sleep(0.3)
-    send("y")
-    time.sleep(0.8)
-    check("x stops it", "[pi]" not in capture() and "pi stopped" in capture(), capture()[-400:])
-    cleanup(work)
-
-    home, screens, work = session([("text", "s"), ("text", "exit"), ("key", "Enter")])
-    time.sleep(0.5)
-    back = capture()
-    check("s opens a shell and comes back", has_session() and "up/down move" in back, back[:200])
-    cleanup(work)
-
-    back_to_back_children()
     sandbox_test()
     hardening_test()
     checkpoint_test()
@@ -1462,18 +1133,6 @@ def main():
     git_broker_test()
     labs_test()
     worktree_test()
-
-    home, screens, work = session([])
-    send("Escape")
-    time.sleep(0.5)
-    check("escape quits", not has_session())
-    cleanup(work)
-
-    home, screens, work = session([])
-    send("C-c")
-    time.sleep(0.5)
-    check("ctrl-c quits", not has_session())
-    cleanup(work)
 
     print("=" * 72, "\nASSERTIONS\n", "=" * 72, sep="")
     print("\n" + ("ALL PASSED" if not FAILURES else f"FAILED: {FAILURES}"))

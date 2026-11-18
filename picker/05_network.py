@@ -478,15 +478,6 @@ def pause_for_enter(prompt="press Enter to go back to the picker "):
         pass
 
 
-def sync_size():
-    """Tell curses about a resize that happened while the child owned the terminal."""
-    try:
-        size = os.get_terminal_size(sys.__stdout__.fileno())
-        curses.resizeterm(size.lines, size.columns)
-    except (OSError, ValueError, AttributeError, curses.error):
-        pass
-
-
 def exec_pi(path, extra):
     """Entry point inside a tmux session: run Pi in path with the Hindsight key.
 

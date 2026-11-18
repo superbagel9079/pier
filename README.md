@@ -5,7 +5,7 @@
 Two pieces:
 
 - **Pier** (`client/`), a desktop app for Windows (macOS and Linux builds exist, not yet tried by hand).
-- **The picker** (`pier-picker.py`, installed on the VM as `~/bin/pi-pick`): a terminal screen to choose a folder and start Pi there, and the API Pier talks to. Pier carries it and installs it itself.
+- **The picker** (`pier-picker.py`, installed on the VM as `~/bin/pi-pick`): Pier's side on the VM: it starts Pi and answers Pier (its API), over SSH. It has no screen of its own. Pier carries it and installs it itself.
 
 ## Words used here
 
@@ -13,7 +13,7 @@ Two pieces:
 |---|---|
 | **Pi** | the coding agent, running on the VM |
 | **the VM** | the Linux machine (Debian 13) where Pi runs; your laptop only shows it |
-| **the picker** (`pi-pick`) | chooses the folder Pi starts in, and answers Pier (its API) |
+| **the picker** (`pi-pick`) | starts Pi where Pier asks, and answers Pier (its API) |
 | **Pier** | the desktop app on the laptop |
 | **a project** | a folder of the VM where Pi works; Pi sees only it (its sandbox) |
 | **a share** | a folder of the laptop lent to Pi live, read-only or not |

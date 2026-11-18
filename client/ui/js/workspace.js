@@ -3,10 +3,8 @@
 // Workspace: three docks, any tab in any of them
 
 const KINDS = {
-  picker: { title: "picker", terminal: true },
   shell: { title: "shell", terminal: true },
   project: { title: "Activity", single: true, make: (tab) => makeProject(tab) },
-  setup: { title: "Project", single: true, make: (tab) => makeSetup(tab) },
   repository: { title: "Repository", single: true, make: (tab) => makeRepository(tab) },
   conversations: { title: "Conversations", single: true, make: (tab) => makeConversations(tab) },
   pi: { title: "pi", terminal: true },
@@ -20,11 +18,10 @@ const KINDS = {
 };
 const DOCKS = ["left", "center", "right"];
 // A tab's icon: a file's or a diff's by its type, else by what the tab is.
-const TAB_ICON = { chat: "message-square", project: "activity", setup: "folder-cog", repository: "git-branch",
+const TAB_ICON = { chat: "message-square", project: "activity", repository: "git-branch",
   conversations: "inbox", takeback: "undo-2", labs: "flask-conical" };
 const tabIcon = (tab) => tab.kind === "diff" ? "git-compare" : tab.kind === "file" && tab.params?.rel ? fileTypeIcon(tab.params.rel)
   : TAB_ICON[tab.kind] || (KINDS[tab.kind]?.terminal ? "terminal" : "file");
-// "main" is the pinned picker: the terminal Pier opens on, which cannot be closed.
 // Fixed, as the mock-up: Conversations on the left, Activity on the right, everything else
 // (terminals, files, Project, Repository, Logs, Labs) as tabs in the middle.
 const HOME = { conversations: "left", project: "right" };
@@ -49,7 +46,7 @@ const workspace = (() => {
   }
   let nextId = 1;
 
-  const keyOf = (tab) => (tab.pinned ? "main" : tab.kind);
+  const keyOf = (tab) => tab.kind;
   const tabs = () => DOCKS.flatMap((name) => docks[name].tabs);
   const find = (key) => tabs().find((t) => keyOf(t) === key);
 
@@ -166,7 +163,7 @@ const workspace = (() => {
 
   function tabElement(tab, dock) {
     const node = el("div");
-    node.className = "tab" + (tab === dock.active && !folded(dock) ? " active" : "") + (tab.pinned ? " pinned" : "");
+    node.className = "tab" + (tab === dock.active && !folded(dock) ? " active" : "");
     node.setAttribute("role", "tab");
     // The keyboard: the shown tab is the one Tab reaches, arrows go to its neighbours.
     const shown = tab === dock.active && !folded(dock);
@@ -190,20 +187,18 @@ const workspace = (() => {
       show(next);
       requestAnimationFrame(() => dock.el?.querySelector(".tab.active")?.focus());
     });
-    node.title = tab.pinned ? "picker: the main terminal (cannot be closed)" : tab.title;
+    node.title = tab.title;
     node.append(el("span", { className: "tab-icon" }, svgIcon(tabIcon(tab))), el("span", { textContent: tab.title }));
     const actions = el("span");
     actions.className = "tab-actions";
     // Only ×: moving, renaming and the rest are in the tab's right-click menu.
-    if (!tab.pinned) {
-      const x = iconButton("", "Close", () => close(tab));
-      x.removeAttribute("title"); // no hint over the ×: its name is enough for a reader
-      x.append(svgIcon("x"));
-      actions.append(x);
-    }
+    const x = iconButton("", "Close", () => close(tab));
+    x.removeAttribute("title"); // no hint over the ×: its name is enough for a reader
+    x.append(svgIcon("x"));
+    actions.append(x);
     node.append(actions);
     dragSource(node, tab);
-    node.addEventListener("auxclick", (e) => { if (e.button === 1 && !tab.pinned) close(tab); });
+    node.addEventListener("auxclick", (e) => { if (e.button === 1) close(tab); });
     node.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       contextMenu(tab, e.clientX, e.clientY);
@@ -224,8 +219,8 @@ const workspace = (() => {
     // A conversation: on in the other view (switchPiView, setup.js).
     if (tab.kind === "pi") items.push(null, ["Continue in the conversation view", () => switchPiView(tab), false, { icon: "message-square" }]);
     if (tab.kind === "chat") items.push(null, ["Continue in Pi's screen (tmux)", () => switchPiView(tab), false, { icon: "terminal" }]);
-    const others = dock.tabs.filter((t) => t !== tab && !t.pinned);
-    items.push(null, ["Close", () => close(tab), tab.pinned], ["Close the other tabs here", () => others.forEach(close), !others.length]);
+    const others = dock.tabs.filter((t) => t !== tab);
+    items.push(null, ["Close", () => close(tab)], ["Close the other tabs here", () => others.forEach(close), !others.length]);
     showMenu(null, items, { x, y });
   }
 
@@ -402,9 +397,8 @@ const workspace = (() => {
       ...(online ? [["New conversation", () => $("#rail-new").click(), false, { icon: "square-pen" }],
         ["Start a project…", () => openFolderPicker(), false, { icon: "folder-plus" }]] : []),
       ["New shell", () => add("shell", name), false, { icon: "terminal" }],
-      ...(prefs.piTerminal ? [["New picker", () => add("picker", name), false, { icon: "folder" }]] : []), // tmux's picker
     ];
-    const ICONS = { setup: "folder-cog", repository: "git-branch", labs: "flask-conical", conversations: "message-square", project: "activity" };
+    const ICONS = { repository: "git-branch", labs: "flask-conical", conversations: "message-square", project: "activity" };
     // The panels of the middle, and the sides' two when closed. Labs once they are on
     // (Settings > Labs); Given to Pi is in Activity.
     for (const kind of ["repository", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
@@ -417,12 +411,12 @@ const workspace = (() => {
 
   // --- tabs ---
 
-  function create(kind, { pinned = false, params = null } = {}) {
+  function create(kind, { params = null } = {}) {
     const pane = el("div");
     pane.className = "pane";
     const same = tabs().filter((t) => t.kind === kind).length;
-    const title = pinned || KINDS[kind].single || !same ? KINDS[kind].title : `${KINDS[kind].title} ${same + 1}`;
-    const tab = { id: nextId++, kind, pinned, pane, title, defaultTitle: title, params };
+    const title = KINDS[kind].single || !same ? KINDS[kind].title : `${KINDS[kind].title} ${same + 1}`;
+    const tab = { id: nextId++, kind, pane, title, defaultTitle: title, params };
     if (KINDS[kind].terminal) makeTerminal(tab, kind);
     else KINDS[kind].make(tab);
     focusFollows(tab);
@@ -432,14 +426,14 @@ const workspace = (() => {
 
   /** Opens a tab where its kind lives (homeOf: the dock asked is only a wish kept for
    *  callers); a single-instance panel already open is shown instead. */
-  function add(kind, name, { reveal = true, pinned = false, params = null, replace = false } = {}) {
+  function add(kind, name, { reveal = true, params = null, replace = false } = {}) {
     name = homeOf(kind);
     const existing = KINDS[kind].single ? find(kind) : null;
     if (existing) return move(existing, name, { reveal });
-    const tab = create(kind, { pinned, params });
+    const tab = create(kind, { params });
     // replace: in the place of the file or diff shown in the middle; any other tab stays.
     const old = replace ? docks[name].active : null;
-    const swap = old && !old.pinned && (old.kind === "file" || old.kind === "diff");
+    const swap = old && (old.kind === "file" || old.kind === "diff");
     place(tab, name, { reveal, index: swap ? docks[name].tabs.indexOf(old) + 1 : null });
     if (swap) close(old);
     return tab;
@@ -498,7 +492,6 @@ const workspace = (() => {
   }
 
   function close(tab) {
-    if (tab.pinned) return;
     if (currentTab === tab) setCurrentTab(null);
     detach(tab);
     stopIdlePi(tab);
@@ -693,11 +686,11 @@ const workspace = (() => {
     const saved = {};
     for (const name of DOCKS) {
       const dock = docks[name];
-      saved[name] = { tabs: dock.tabs.filter((t) => t.pinned || KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
+      saved[name] = { tabs: dock.tabs.filter((t) => KINDS[t.kind].single).map(keyOf), active: dock.active ? keyOf(dock.active) : null, collapsed: dock.collapsed, width: dock.width };
     }
     saved.layout = 8; // what restore() keeps; below, it starts from the default layout
     // Names given by the user, for the tabs that come back at the next connection.
-    saved.titles = Object.fromEntries(tabs().filter((t) => t.renamed && (t.pinned || KINDS[t.kind].single)).map((t) => [keyOf(t), t.title]));
+    saved.titles = Object.fromEntries(tabs().filter((t) => t.renamed && KINDS[t.kind].single).map((t) => [keyOf(t), t.title]));
     return saved;
   }
 
@@ -715,16 +708,12 @@ const workspace = (() => {
     // Before 6, Context had a tab of its own: the default layout again (it is in Activity).
     if ((saved.layout || 0) < 8) saved = { ...defaultLayout(), titles: saved.titles };
     clear();
-    let mainPlaced = false;
     for (const name of DOCKS) {
       const want = saved[name] || defaultLayout()[name];
       const dock = docks[name];
       dock.width = want.width || dock.width;
       for (const key of want.tabs || []) {
-        if (key === "main") {
-          if (!mainPlaced) place(create("picker", { pinned: true }), name, { reveal: false });
-          mainPlaced = true;
-        } else if (KINDS[key]?.single && !find(key)) {
+        if (KINDS[key]?.single && !find(key)) {
           place(create(key), name, { reveal: false });
         }
       }
@@ -736,7 +725,6 @@ const workspace = (() => {
       if (tab && typeof title === "string" && title.trim()) Object.assign(tab, { title: title.trim(), renamed: true });
     }
     renderAll();
-    find("main")?.onShow?.();
     save();
   }
 
@@ -755,10 +743,9 @@ const workspace = (() => {
         else if (KINDS[key]?.single) add(key, name, { reveal: false });
       }
     }
-    // Extra terminals are not in any layout: they gather next to the main picker.
-    const home = find("main")?.dock || "center";
+    // Terminals are not in any layout: they gather in the middle.
     for (const tab of tabs()) {
-      if (KINDS[tab.kind].terminal && !tab.pinned) move(tab, home, { reveal: false });
+      if (KINDS[tab.kind].terminal) move(tab, "center", { reveal: false });
     }
     for (const name of DOCKS) {
       const dock = docks[name];

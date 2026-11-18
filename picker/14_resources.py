@@ -159,6 +159,7 @@ def api_resources(home, path):
             for kind in MANAGED_KINDS:
                 out[kind].extend(info["resources"][kind])
     out["pier"] = pier_extensions(home)
+    out["mcp"] = mcp_servers(project, home)
     return out
 
 

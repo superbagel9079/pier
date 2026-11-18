@@ -437,8 +437,7 @@ function makeTerminal(tab, kind) {
     return true;
   });
 
-  // OSC 7770: Pier's requests. The picker asks for a Pi tab ("open-pi;{project,label,slot,n}")
-  // instead of attaching to tmux here (see pi_in_tmux). Only picker tabs act on it.
+  // OSC 7770: Pier's requests.
   term.parser.registerOscHandler(7770, (data) => {
     // In a Pi tab, Pier's Rust side names the tmux session shown (see term.rs).
     if (kind === "pi" && data.startsWith("session;")) {
@@ -447,16 +446,6 @@ function makeTerminal(tab, kind) {
       tab.slot = slot;
       renderSessionBadge();
       return true;
-    }
-    if (kind !== "picker" || !data.startsWith("open-pi;")) return true;
-    try {
-      const request = JSON.parse(data.slice("open-pi;".length));
-      if (typeof request.project === "string" && /^pi-[A-Za-z0-9_-]+$/.test(request.slot || "")) {
-        uiLog("info", "open-pi-from-picker", { project: request.project, slot: request.slot });
-        openPiTerminal(request.project, request.label || request.project, ["--slot", request.slot], Number(request.n) || 1);
-      }
-    } catch (error) {
-      uiLog("warn", "open-pi-bad-request", { msg: String(error) });
     }
     return true;
   });
@@ -518,7 +507,7 @@ function makeTerminal(tab, kind) {
       null,
       ["Clear scrollback", () => term.clear()],
       ["Restart", () => tab.restart()],
-      [`New ${kind === "picker" ? "picker" : "shell"} terminal`, () => workspace.add(kind === "picker" ? "picker" : "shell", tab.dock)],
+      ["New shell terminal", () => workspace.add("shell", tab.dock)],
     ], { x: event.clientX, y: event.clientY });
   });
 

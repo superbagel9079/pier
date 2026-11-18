@@ -141,7 +141,7 @@ let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
 // Preferences (this computer only)
 
-const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: true, resume: false, customThemes: [],
+const PREFS_DEFAULT = { theme: "system", fontSize: 13, autostop: true, notify: true, clearOnEnd: true, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
   termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false, railAlways: true,
   gradStyle: "aurora", gradIntensity: 22, gradCustom: false, gradC1: "#4c8dff", gradC2: "#a371f7", gradGrain: false,
@@ -199,7 +199,6 @@ applyCorners();
 
 /** Ctrl+Alt+V types the clipboard image's reference into Pi's prompt in tmux: taken from
  *  Windows only when Pi runs there (Settings > Terminals), not for the conversation view. */
-const shortcutOn = () => Boolean(prefs.shortcut && prefs.piTerminal);
 
 /** Mica (Appearance, Windows 11): the window takes a tint of the wallpaper, as the
  *  Explorer's; the window is transparent (tauri.windows.conf.json), the panels let it

@@ -15,7 +15,6 @@ function openPrefs() {
   $("#prefs-menublur").checked = prefs.menuBlur;
   $("#prefs-mica").checked = prefs.mica;
   $("#prefs-rail").checked = prefs.railAlways !== false;
-  $("#prefs-shortcut").checked = prefs.shortcut;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
   $("#prefs-clear").checked = prefs.clearOnEnd;
@@ -34,8 +33,6 @@ function openPrefs() {
   fillPickerInfo();
   fillLabsPrefs();
   backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
-  $("#prefs-shortcut-note").hidden = true;
-  backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !shortcutOn() || !prefs.piTerminal; }).catch(() => {});
   showSettingsPage(prefsPage);
   if ($("#prefs").hidden) {
     // The workspace stays as it was behind (terminals run on), only out of sight.
@@ -56,7 +53,6 @@ function closePrefs() {
   $("#workspace").hidden = false;
   renderSessionBadge(); // hidden while the workspace was
   for (const tab of workspace.tabs()) tab.refit?.();
-  workspace.find("main")?.onShow?.();
 }
 
 /** One category of the settings at a time; the one last shown comes back next time. */
@@ -522,11 +518,6 @@ $("#prefs-padding").addEventListener("change", (e) => {
   applyTermPadding();
   for (const tab of workspace.tabs()) tab.refit?.();
 });
-$("#prefs-shortcut").addEventListener("change", async (e) => {
-  prefs.shortcut = e.target.checked;
-  savePrefs();
-  try { await backend.setShortcut(shortcutOn()); } catch (error) { alert(String(error)); }
-});
 $("#prefs-autostop").addEventListener("change", (e) => { prefs.autostop = e.target.checked; savePrefs(); });
 $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.checked; savePrefs(); });
 // A real one, as connect.js sends them, to see where and how it shows.
@@ -549,14 +540,14 @@ $("#prefs-rail").addEventListener("change", (e) => { prefs.railAlways = e.target
 $("#prefs-pi-terminal").addEventListener("change", (e) => {
   prefs.piTerminal = e.target.checked;
   savePrefs();
-  showTerminalPage(); // the terminals' options, only with Pi in tmux
-  backend.setShortcut(shortcutOn()).catch(() => {});
+  showTerminalPage();
 });
 /** Terminals: off, what tmux gives and Use tmux (as Labs); on, the switch and the options. */
 function showTerminalPage() {
   $("#term-welcome").hidden = prefs.piTerminal;
   $("#term-on").hidden = !prefs.piTerminal;
-  $("#prefs-term-more").hidden = !prefs.piTerminal;
+  // The terminals' own options (font, copy and paste) are every terminal's: shown either way.
+  $("#prefs-term-more").hidden = false;
 }
 $("#term-turn-on").addEventListener("click", () => {
   const box = $("#prefs-pi-terminal");

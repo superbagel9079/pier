@@ -5,6 +5,9 @@ def config_path(home):
     return os.path.join(base, "pier-picker", "config.toml")
 
 
+RETIRED_KEYS = {"start", "ignore", "search_depth", "continue_args", "resume_args", "preview"}
+
+
 def load_config(home):
     """(config, warning). Unknown keys and wrong types are reported; defaults stand in."""
     config = {key: list(value) if isinstance(value, list) else value for key, value in DEFAULTS.items()}
@@ -20,10 +23,12 @@ def load_config(home):
         return config, f"config.toml ignored: {exc}"
     problems = []
     for key, value in data.items():
+        if key in RETIRED_KEYS:
+            continue  # the terminal picker's, gone: a config that still has them is fine
         if key not in DEFAULTS:
             problems.append(f"unknown key {key}")
             continue
-        if key in ("pi_command", "continue_args", "resume_args") and isinstance(value, str):
+        if key == "pi_command" and isinstance(value, str):
             value = shlex.split(value)
         default = DEFAULTS[key]
         if isinstance(default, bool) != isinstance(value, bool) or not isinstance(value, type(default)):

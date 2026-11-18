@@ -9,6 +9,16 @@
 const previews = new Map(); // saved path on the VM -> blob URL, for this session's pastes
 
 /** A pasted image's preview let go: its blob URL freed, not kept until Pier quits. */
+
+/** A reference typed into Pi's message: the conversation of this project shown (or one
+ *  open), where it waits for you to send it; a Pi in tmux gets it typed into its prompt. */
+function mentionToPi(text, project) {
+  const mine = (t) => t.kind === "chat" && t.params?.project === project && t.mention;
+  const tab = (mine(currentTab || {}) && currentTab) || workspace.tabs().find(mine);
+  if (tab) { workspace.show(tab); tab.mention(text); return Promise.resolve(); }
+  return backend.api(["type", `${text} `, project]);
+}
+
 function forgetPreview(path) {
   const url = previews.get(path);
   if (url) URL.revokeObjectURL(url);
@@ -121,7 +131,7 @@ function makeContext(tab) {
     const actions = el("div");
     actions.className = "row-actions";
     actions.append(
-      link("mention", "Type its reference into Pi", () => backend.api(["type", `${kind === "copy" ? "" : "@"}${relative}${kind === "copy" ? "/" : ""} `, context.project])),
+      link("mention", "Type its reference into Pi", () => mentionToPi(`${kind === "copy" ? "" : "@"}${relative}${kind === "copy" ? "/" : ""}`, context.project)),
       iconLink("×", `Delete it from the VM${kind === "copy" ? " (the original folder on this computer is not touched)" : ""}`, async () => {
         await backend.removeUpload(info.path);
         forgetPreview(info.path);
@@ -153,7 +163,7 @@ function makeContext(tab) {
       actions.append(...takeBackActions(share, context));
     } else if (share.state === "live") {
       actions.append(
-        link("mention", "Type its folder into Pi", () => backend.api(["type", `${share.relative}/ `, context.project])),
+        link("mention", "Type its folder into Pi", () => mentionToPi(`${share.relative}/`, context.project)),
         iconLink("×", "Stop sharing (the folder on this computer is not touched)", async () => {
           await backend.shareStop(share.id, true);
           notify(`Stopped sharing ${share.local}.`);
@@ -422,7 +432,6 @@ document.addEventListener("paste", async (event) => {
   focused?.focus?.();
 }, true);
 
-backend.onClipboardSent((results) => contextTab().handleResults(results));
 
 // Files and folders dropped on the window
 

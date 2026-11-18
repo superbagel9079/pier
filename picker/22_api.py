@@ -1,7 +1,7 @@
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
 API_READS = {"version", "projects", "ls", "file", "image-read", "session-messages", "config", "models", "pi-default-read", "providers", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
-             "skill-read", "gallery", "gallery-media", "gallery-package", "skills-search", "skill-page", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
+             "skill-read", "gallery", "gallery-media", "gallery-package", "skills-search", "skill-page", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -127,7 +127,6 @@ API_COMMANDS = {
     "team": lambda home, config, a: api_team(home, a[0]),
     "labs": lambda home, config, a: api_labs(home),
     "labs-settings": lambda home, config, a: api_labs_settings(home, read_stdin_text()),
-    "lab-journal": lambda home, config, a: api_lab_journal(home, a[0] or "60"),
     "lab-action": lambda home, config, a: api_lab_action(home, a[0], a[1], a[2]),
     "machine-add": lambda home, config, a: api_machine_add(home, a[0], a[1], a[2], a[3], a[4], read_stdin_text()),
     "lab-new": lambda home, config, a: api_lab_new(home, a[0], a[1], read_stdin_text()),

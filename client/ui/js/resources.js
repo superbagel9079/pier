@@ -9,7 +9,7 @@ const PACKAGE_WARNING = "A package's extensions run code with your rights when P
 
 /** Opens `pi install` or `pi remove` in a terminal tab: what npm does stays visible. */
 function openPackageTerminal(action, scope, source, label, onDone) {
-  workspace.add("update", workspace.find("main")?.dock || "center", {
+  workspace.add("update", "center", {
     params: { label: `${action} ${label}`, termKind: "package", args: [action, scope, source], onDone },
   });
 }
@@ -108,6 +108,20 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
       any = true;
       if (kind === "all") list.append(el("h3", { className: "loads-group" }, el("span", { textContent: KIND_LABELS[k] }), el("span", { className: "n", textContent: String(rows.childElementCount) })));
       list.append(rows);
+    }
+    // MCP servers (Installed): shown, set with pi mcp add on the VM (Pi connects them itself).
+    const servers = kind === "all" ? (data?.mcp || []).filter(shown) : [];
+    if (servers.length) {
+      any = true;
+      list.append(el("h3", { className: "loads-group" }, el("span", { textContent: "MCP servers" }), el("span", { className: "n", textContent: String(servers.length) })),
+        el("div", { className: "rows" }, ...servers.map((m) => {
+          const state = el("input", { type: "checkbox", checked: m.enabled, disabled: true });
+          state.setAttribute("aria-label", m.name);
+          return el("div", { className: m.enabled ? "set" : "set off", title: `in ${m.from}` },
+            el("div", { className: "what" }, el("span", { textContent: m.name }),
+              el("span", { textContent: said([m.description, m.kind].filter(Boolean).join(" · "), m.scope === "project" ? "this project only" : "yours") })),
+            el("span", { className: "switch-hint", title: `Set in ${m.from}, with pi mcp on the VM` }, state));
+        })));
     }
     if (!any) list.append(el("p", { className: "dim small", textContent: needle ? "Nothing matches." : `Nothing ${kind === "all" ? "" : `of ${KIND_LABELS[kind].toLowerCase()} `}yet: Add makes a skill, imports one, or installs a package (Browse).` }));
     off.hidden = !any;
@@ -292,7 +306,7 @@ function renderPackageList(list, r, project, reload) {
   list.replaceChildren();
   if (!r) return;
   const update = (label, args, title) => linkButton("update", title, () => {
-    workspace.add("update", workspace.find("main")?.dock || "center", { params: { label, args } });
+    workspace.add("update", "center", { params: { label, args } });
   });
   const tiles = [];
   const line = (name, detail, title, ...actions) => el("li", { title: title || "" },

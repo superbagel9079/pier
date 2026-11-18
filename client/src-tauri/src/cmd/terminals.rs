@@ -133,7 +133,6 @@ pub(crate) async fn term_open(
     })?;
     let request = next_request();
     let command = match kind.as_str() {
-        "picker" => Some(remote(&settings, &request, "")),
         "shell" => None,
         "pi" => Some(remote(&settings, &request, &attach_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
         "chat" => Some(remote(&settings, &request, &rpc_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),

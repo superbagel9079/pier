@@ -84,7 +84,7 @@ function labsAge(seconds) {
 function openLabTerminal(name) {
   const existing = workspace.tabs().find((t) => t.kind === "lab" && t.params?.args?.[0] === name);
   if (existing) { workspace.show(existing); return; }
-  workspace.add("lab", workspace.find("main")?.dock || "center", { params: { args: [name], label: name } });
+  workspace.add("lab", "center", { params: { args: [name], label: name } });
 }
 
 // --- Settings > Labs ------------------------------------------------------------------

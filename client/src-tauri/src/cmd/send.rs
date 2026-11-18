@@ -81,40 +81,6 @@ pub(crate) async fn send_image(app: &AppHandle, state: &AppState, bytes: &[u8], 
     api(app, state, &args, bytes).await
 }
 
-/// Ctrl+Alt+V anywhere: the clipboard's image, or the files copied in the file
-/// manager, go to the Pi in use. Copied folders are handed to the window, which asks.
-pub(crate) async fn send_clipboard(app: AppHandle) {
-    let state = app.state::<AppState>();
-    let results: Vec<Value> = match clip::clipboard_png() {
-        Ok(png) => {
-            log_info!("clipboard.image", bytes = png.len());
-            vec![send_image(&app, &state, &png, "").await.unwrap_or_else(|e| json!({ "error": e }))]
-        }
-        Err(_) => {
-            let paths = clip::clipboard_paths();
-            log_info!("clipboard.paths", count = paths.len());
-            if paths.is_empty() {
-                vec![json!({ "error": "The clipboard holds no image, file or folder." })]
-            } else {
-                let mut results = Vec::new();
-                for path in paths {
-                    results.push(send_path(&app, &state, &path, "").await.unwrap_or_else(|e| json!({ "error": e })));
-                }
-                results
-            }
-        }
-    };
-    let sent = results.iter().filter(|r| r.get("reference").is_some()).count();
-    if sent > 0 {
-        let label = results.iter().find_map(|r| r.get("label").and_then(Value::as_str)).unwrap_or("?");
-        set_tooltip(&app, &format!("Pier · {sent} item(s) sent to {label}"));
-    }
-    if results.iter().any(|r| r.get("error").is_some() || r.get("folder").is_some()) {
-        show_window(&app);
-    }
-    let _ = app.emit("clipboard-sent", results);
-}
-
 /// The paths of files and folders copied in the file manager, for a Ctrl+V in the window.
 #[tauri::command]
 pub(crate) fn clipboard_paths(state: State<'_, AppState>) -> Vec<String> {
@@ -200,30 +166,3 @@ pub(crate) async fn remove_upload(app: AppHandle, state: State<'_, AppState>, pa
     api(&app, &state, &["remove", &path], &[]).await
 }
 
-/// Turns Ctrl+Alt+V on or off, from the preferences.
-#[tauri::command]
-pub(crate) fn set_paste_shortcut(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let shortcut = paste_shortcut();
-    let shortcuts = app.global_shortcut();
-    let registered = shortcuts.is_registered(shortcut);
-    let outcome = match (enabled, registered) {
-        (true, false) => shortcuts.register(shortcut),
-        (false, true) => shortcuts.unregister(shortcut),
-        _ => Ok(()),
-    };
-    match &outcome {
-        Ok(()) => log_debug!("shortcut.set", enabled = enabled),
-        Err(err) => log_warn!("shortcut.unavailable", enabled = enabled, err = err),
-    }
-    outcome.map_err(|e| format!("Ctrl+Alt+V: {e}"))
-}
-
-/// Whether Ctrl+Alt+V is Pier's right now: false when off, or taken by another program.
-#[tauri::command]
-pub(crate) fn shortcut_status(app: AppHandle) -> bool {
-    app.global_shortcut().is_registered(paste_shortcut())
-}
-
-pub(crate) fn paste_shortcut() -> Shortcut {
-    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyV)
-}

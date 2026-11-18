@@ -87,7 +87,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.72" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.73" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -193,16 +193,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.72") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.72", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.72" };
+      if (pickerVersion !== "4.73") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.73", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.73" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.72", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.72";
-      return { status: "connected", bundled: "4.72", version: { version: "4.72", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.73", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.73";
+      return { status: "connected", bundled: "4.73", version: { version: "4.73", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.72" ? 22 : 21 }, bundled: "4.72", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.73" ? 22 : 21 }, bundled: "4.73", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -237,6 +237,7 @@ function mockBackend() {
           skills: [...mockSkills.map((s) => item("skills", s.name, s.scope, null, s.enabled, true)), item("skills", "recall", "user", "npm:pi-hindsight", true, false)],
           extensions: [item("extensions", "memory", "user", "npm:pi-hindsight", true, false)],
           prompts: [item("prompts", "review", "user", null, true, false)],
+          mcp: [{ name: "github", scope: "user", from: "~/.pi/agent/mcp.json", kind: "http", enabled: true, description: "Issues and pull requests" }],
           pier: [{ name: "pier-session.ts", enabled: true, setting: "track_sessions", description: "says which conversation this Pi writes and whether it works; no tool, nothing sent" },
             { name: "pier-git.ts", enabled: true, setting: "git_tools", description: "git tools for the forge (push, pull requests, tasks), through the picker" },
             { name: "pier-labs.ts", enabled: false, setting: null, description: "the labs' tools (disposable machines), once a lab host is set up in Labs" }] };
@@ -321,7 +322,7 @@ pi install npm:${args[1]}
         };
       }
       if (args[0] === "version") {
-        return { version: "4.72", checks: [
+        return { version: "4.73", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
@@ -611,7 +612,6 @@ pi install npm:${args[1]}
       return { removed: path };
     },
     notify: async (title, body) => { console.log("notification:", title, body); },
-    setShortcut: async () => {},
     async termOpen(kind, cols, rows, onBytes, params) {
       const id = nextTerm++;
       if (kind === "chat") { echoes[id] = mockPi(onBytes, params); return id; }
@@ -637,7 +637,6 @@ pi install npm:${args[1]}
     pickFolder: async () => "C:\\Users\\leo\\Documents\\mockups",
     pickFiles: async () => ["C:\\Users\\leo\\Documents\\notes.pdf"],
     onDragDrop() {},
-    onClipboardSent() {},
     updateCheck: async () => ({ current: "0.6.0", version: "0.7.0", date: "2026-10-20 09:00:00 +00:00",
       notes: ["- Per-repository Git settings", "- A font for Pier in Settings", "- 13 more themes"].join("\n") }),
     async updateInstall() {
@@ -677,7 +676,6 @@ pi install npm:${args[1]}
       mockLog("info", "vm.label", { args: `${file} ${category}` });
       return { file, title, category };
     },
-    shortcutStatus: async () => false,
     async sessionDelete(project, file) {
       if (mockPis.some((p) => p.file === file)) throw new Error("a Pi runs this conversation: stop it first");
       mockDeleted.add(file);

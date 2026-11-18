@@ -28,7 +28,6 @@ use tauri::ipc::{Channel as Output, InvokeResponseBody};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -87,7 +86,6 @@ const PASSTHROUGH: &[&str] = &[
     "team",
     "collaborators",
     "labs",
-    "lab-journal",
 ];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
@@ -872,12 +870,6 @@ fn show_window(app: &AppHandle) {
     }
 }
 
-fn set_tooltip(app: &AppHandle, text: &str) {
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(text));
-    }
-}
-
 // --- updating Pier itself -------------------------------------------------------------
 //
 // Updates come from latest.json in the latest GitHub release (tauri.conf.json); installed only
@@ -927,7 +919,6 @@ async fn update_install(app: AppHandle, state: State<'_, AppState>) -> Result<()
 }
 
 pub fn run() {
-    let paste = paste_shortcut();
     tauri::Builder::default()
         // One Pier at a time: starting it again brings the running one forward (two would
         // fight over the shortcut, the connection and the shares).
@@ -952,15 +943,6 @@ pub fn run() {
         )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, shortcut, event| {
-                    if shortcut == &paste && event.state() == ShortcutState::Pressed {
-                        tauri::async_runtime::spawn(send_clipboard(app.clone()));
-                    }
-                })
-                .build(),
-        )
         .setup(move |app| {
             let logs = app.path().app_log_dir().unwrap_or_else(|_| std::env::temp_dir().join("pier-logs"));
             let log_file = journal::init(&logs);
@@ -993,10 +975,6 @@ pub fn run() {
                 watch: watch::Watch::default(),
                 grants: grants::Grants::default(),
             });
-            // Another program may own the shortcut: Pier still works from its window.
-            if let Err(err) = app.global_shortcut().register(paste) {
-                log_warn!("shortcut.unavailable", err = err);
-            }
             let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -1066,7 +1044,6 @@ pub fn run() {
             share_stop,
             share_list,
             remove_upload,
-            set_paste_shortcut,
             clipboard_paths,
             pick_folder,
             pick_files,
@@ -1124,7 +1101,6 @@ pub fn run() {
             config_set,
             pi_default,
             shares_cleanup,
-            shortcut_status,
             watch_start,
             watch_set,
             log_ui,

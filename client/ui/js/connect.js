@@ -337,7 +337,6 @@ async function enterWorkspace(note = "", version = null) {
   setStatus(`connected · ${describe(settings)}`);
   if (note) flashStatus(note);
   showWorkspace();
-  backend.setShortcut(shortcutOn()).catch(() => {});
   workspace.restore();
   await refreshTarget();
   vm.start();
