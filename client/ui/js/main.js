@@ -28,27 +28,17 @@ document.addEventListener("mousemove", (event) => {
   const win = tauri?.window?.getCurrentWindow?.();
   if (!win || !/Windows/.test(navigator.userAgent)) return;
   document.body.classList.add("own-titlebar");
-  const ns = "http://www.w3.org/2000/svg";
-  const glyph = (button, paths) => {
-    const svg = document.createElementNS(ns, "svg");
-    for (const [k, v] of Object.entries({ viewBox: "0 0 10 10", width: "10", height: "10", fill: "none", stroke: "currentColor",
-      "stroke-width": "1", "shape-rendering": "crispEdges", "aria-hidden": "true" })) svg.setAttribute(k, v);
-    for (const d of paths) {
-      const path = document.createElementNS(ns, "path");
-      path.setAttribute("d", d);
-      svg.append(path);
-    }
-    button.replaceChildren(svg);
-  };
+  // Windows' own caption glyphs (Segoe Fluent Icons, MDL2 on Windows 10), as Explorer draws
+  // them: minimize, maximize, restore, close.
+  const glyph = (button, char) => button.replaceChildren(el("span", { className: "caption-glyph", textContent: char, "aria-hidden": "true" }));
   const max = $("#win-max");
   const showMaximized = (maximized) => {
-    glyph(max, maximized ? ["M2.5 .5h7v7", "M.5 2.5h7v7h-7z"] : ["M.5 .5h9v9h-9z"]);
+    glyph(max, maximized ? "\uE923" : "\uE922");
     max.title = maximized ? "Restore" : "Maximize";
     max.setAttribute("aria-label", max.title);
   };
-  glyph($("#win-min"), ["M0 5.5h10"]);
-  glyph($("#win-close"), ["M.5 .5l9 9", "M9.5 .5l-9 9"]);
-  $("#win-close svg").setAttribute("shape-rendering", "geometricPrecision"); // diagonals: smoothed
+  glyph($("#win-min"), "\uE921");
+  glyph($("#win-close"), "\uE8BB");
   showMaximized(false);
   win.isMaximized().then(showMaximized).catch(() => {});
   win.onResized(() => win.isMaximized().then(showMaximized).catch(() => {})).catch(() => {});

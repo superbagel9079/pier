@@ -2132,3 +2132,5 @@ textarea { resize: none; }
   .row-main .mark .state.working { animation: spin 2s linear infinite; border-top-color: transparent; }
   .tree .node .badge.is-being-read .i { animation: spin 2s linear infinite; }
 }
+/* The window's buttons: Windows' own glyphs, at its size. */
+#window-buttons .caption-glyph { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 10px; line-height: 1; font-weight: 400; -webkit-font-smoothing: antialiased; }
