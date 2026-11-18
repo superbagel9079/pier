@@ -153,7 +153,7 @@ function openFolderPicker(start = null) {
   }
   function startNaming(row) {
     chosen = null;
-    naming = el("input", { spellcheck: false, placeholder: "its name", "aria-label": `New folder in ${name(here)}`, "data-own-escape": "" });
+    naming = el("input", { spellcheck: false, placeholder: "Folder name", "aria-label": `New folder in ${name(here)}`, "data-own-escape": "" });
     const editing = el("div", { className: "folder-row folder-naming" }, svgIcon("folder"), naming);
     naming.addEventListener("input", label);
     naming.addEventListener("keydown", (e) => {
@@ -186,6 +186,8 @@ function openFolderPicker(start = null) {
     const path = chosen || here;
     openPiTerminal(path, projectLabel(path), []);
   }
+  // A click on the list's empty space puts the name being typed away.
+  list.addEventListener("pointerdown", (e) => { if (naming && !e.target.closest(".folder-row")) stopNaming(); });
   list.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft" && here !== home) { e.preventDefault(); show(here.replace(/\/[^/]+\/?$/, "") || home); }
   });
