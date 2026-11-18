@@ -111,7 +111,7 @@ All of it, with its limits: [Security](docs/security.md). To report a flaw: [SEC
 ## Contributing, releasing
 
 - The picker lives in `picker/NN_*.py`: edit the parts, then `python3 tools/bundle.py` writes `pier-picker.py` (the CI checks they match).
-- Tests: `python3 -B pier-picker-unit.py` anywhere, `pier-picker-tests.py` on a VM (the CI runs both), `cargo test` in `client/src-tauri`, `node --test client/test/dither.test.js client/test/themes.test.js` for the interface's helpers (Node 18 or later).
+- Tests: `python3 -B pier-picker-unit.py` anywhere, `pier-picker-tests.py` on a VM (the CI runs both), `cargo test` in `client/src-tauri`, `node --test client/test/themes.test.js` for the themes' contrast (Node 18 or later).
 - Releases: [RELEASING.md](RELEASING.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ## License
