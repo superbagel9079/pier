@@ -4,7 +4,7 @@
 
 /** Opens a conversation of project: new (args []), the last one (--continue), a file
  *  (--session FILE) or a Pi running in RPC mode (--slot NAME). */
-function openChat(project, label, args = []) {
+function openChat(project, label, args = [], extra = {}) {
   // The tab already on this conversation (by its file, or by its Pi) is shown instead.
   const [how, what] = args;
   const sessions = (vm.latest("conversations")?.data?.projects || []).find((p) => p.project === project)?.sessions || [];
@@ -14,7 +14,7 @@ function openChat(project, label, args = []) {
     || (how === "--slot" && t.params.args?.[0] === "--slot" && t.params.args[1] === what));
   const existing = (how === "--session" || how === "--slot") && workspace.tabs().find(same);
   if (existing) { workspace.show(existing); return existing; }
-  return workspace.add("chat", "center", { params: { project, label, args } });
+  return workspace.add("chat", "center", { params: { project, label, args, ...extra } });
 }
 
 // What a tool did, in a few words; the file it touched, when it has one.
@@ -51,6 +51,7 @@ function makeChat(tab) {
   const col = el("div", { className: "chat-col" });
   const scroller = el("div", { className: "chat" }, col);
   const input = el("textarea", { placeholder: "Message Pi. / for skills and commands, @ for files", spellcheck: true });
+  if (tab.params.firstPrompt) input.value = tab.params.firstPrompt; // the New tab's, sent once Pi is up
   input.setAttribute("aria-label", "Message Pi");
   const send = el("button", { className: "send", title: "Send", type: "button" });
   send.setAttribute("aria-label", "Send");
@@ -459,6 +460,8 @@ function makeChat(tab) {
         if (tab.params.args?.[0] === "--session") tab.params.file = tab.params.args[1]; // still its row in the list
         tab.params.args = ["--slot", e.slot]; // a reconnection comes back to this Pi
         if (e.fresh) vm.poke(); // the list shows this new Pi at once, not at its next look
+        // Written on the New tab: sent once Pi is up (then forgotten: never sent twice).
+        if (tab.params.firstPrompt) { input.value = tab.params.firstPrompt; delete tab.params.firstPrompt; setTimeout(submit, 0); }
         if (currentTab === tab) for (const t of workspace.tabs()) t.onShownTab?.(); // the list and Details follow it
         command({ type: "get_state" }, (data) => { state = data || {}; tab.sessionFile = state.sessionFile || tab.sessionFile; showState(); setWorking(Boolean(state.isStreaming)); });
         redraw(() => {

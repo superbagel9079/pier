@@ -412,9 +412,11 @@ def api_gallery(home, query):
 
 GALLERY_SIZE = 40
 _CARD_RE = re.compile(
+    r'(?:data-package-types="(?P<types>[a-z ]*)"[^>]*>.{0,2000}?)?'
     r'<h3 class="packages-name"><a [^>]*>(?P<name>[^<]{1,214})</a></h3>\s*'
     r'(?:<p class="packages-desc">(?P<desc>.*?)</p>\s*)?'
-    r'<div class="packages-meta">(?P<meta>.*?)</div>', re.S)
+    r'<div class="packages-meta">(?P<meta>.*?)</div>'
+    r'(?:.{0,3000}?<div class="packages-links"[^>]*>(?P<links>.*?)</div>)?', re.S)
 
 
 def gallery_pi_dev(query, urllib):
@@ -434,10 +436,12 @@ def gallery_pi_dev(query, urllib):
             continue
         meta = [html.unescape(re.sub(r"<[^>]*>", "", m)).strip() for m in re.findall(r"<span>(.*?)</span>", card["meta"] or "", re.S)]
         desc = html.unescape(re.sub(r"<[^>]*>", "", card["desc"] or "")).strip()
+        repo = next((u for u in re.findall(r'href="(https://github\.com/[\w.-]+/[\w.-]+)"', card["links"] or "")), None)
         results.append({"name": name, "version": None, "date": None, "description": desc[:300],
                         "publisher": meta[0][:100] if meta else None,
                         "downloads": meta[1][:20] if len(meta) > 1 and meta[1].endswith("/mo") else None,
-                        "source": f"npm:{name}"})
+                        "types": [t for t in (card["types"] or "").split() if t in ("extension", "skill", "prompt", "theme")],
+                        "repo": repo, "source": f"npm:{name}"})
         if len(results) >= GALLERY_SIZE:
             break
     return results
@@ -463,6 +467,55 @@ def gallery_npm(query, urllib):
                         "description": (pkg.get("description") or "")[:300], "publisher": publisher.get("username"),
                         "source": f"npm:{pkg['name']}"})
     return results
+
+
+GALLERY_MEDIA_MAX = 1536 * 1024  # bytes of one package's picture; a bigger one is left out
+GALLERY_MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
+_GALLERY_MEDIA = {}  # name -> (when, data URL or None)
+
+
+def api_gallery_media(home, names):
+    """The pictures pi.dev shows for packages (its preview-media API: one each, given by its
+    author), as data URLs Pier can show (its pages load no image from the web): {name: url
+    or None}. Only https, a PNG, JPEG, WebP or GIF of GALLERY_MEDIA_MAX at most; kept an hour."""
+    import base64
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    names = [n for n in dict.fromkeys(names or []) if isinstance(n, str) and NPM_NAME_RE.fullmatch(n)][:16]
+    now = time.monotonic()
+    out = {n: _GALLERY_MEDIA[n][1] for n in names if n in _GALLERY_MEDIA and now - _GALLERY_MEDIA[n][0] < 3600}
+    asked = [n for n in names if n not in out]
+    if not asked:
+        return {"media": out}
+    headers = {"User-Agent": f"pier-picker/{VERSION}", "Accept": "application/json"}
+    url = "https://pi.dev/api/packages/preview-media?" + urllib.parse.urlencode([("name", n) for n in asked])
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as answer:
+            previews = json.loads(answer.read(1024 * 1024)).get("previews") or []
+    except (OSError, ValueError, AttributeError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
+        log("info", "gallery.media-failed", err=str(exc)[:200])
+        return {"media": out}
+    found = {p.get("name"): (p.get("media") or {}) for p in previews if isinstance(p, dict)}
+    for name in asked:
+        media = found.get(name) or {}
+        picture = None
+        link = media.get("url") if isinstance(media, dict) and media.get("type") == "image" else None
+        if isinstance(link, str) and link.startswith("https://") and len(link) < 1000:
+            try:
+                with urllib.request.urlopen(urllib.request.Request(link, headers={"User-Agent": headers["User-Agent"]}), timeout=10) as answer:
+                    data = answer.read(GALLERY_MEDIA_MAX + 1)
+                kind = GALLERY_MEDIA_TYPES.get(image_kind(data))  # what the bytes are, not what the server says
+                if len(data) <= GALLERY_MEDIA_MAX and kind:
+                    picture = f"data:{kind};base64,{base64.b64encode(data).decode()}"
+            except (OSError, ValueError) as exc:
+                if isinstance(exc, urllib.error.HTTPError):
+                    exc.close()
+        out[name] = picture
+        remember(_GALLERY_MEDIA, name, (now, picture), 200)
+    return {"media": out}
 
 
 NPM_NAME_RE = re.compile(r"(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]{0,213}")

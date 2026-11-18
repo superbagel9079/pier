@@ -437,7 +437,11 @@ function drawProjects() {
   }
   const back = el("button", { type: "button", className: "link back-to", title: projectsSub ? `Back to ${p.label}` : "Back to all projects" }, svgIcon("arrow-left"), el("span", { textContent: "Back" }));
   back.addEventListener("click", () => { if (projectsSub) projectsSub = null; else projectsOpen = null; drawProjects(); });
-  const title = el("div", { className: "project-title" }, projectBadge(p.project, looks[p.project]), el("h2", { textContent: projectsSub ? "Instructions" : p.label }));
+  // Its mark: a click changes it (a pencil over it under the pointer, as Edit's).
+  const mark = el("button", { type: "button", className: "mark-edit", title: "Change its mark: a colour, a letter, an icon or a picture", "aria-label": "Change its mark" },
+    projectBadge(p.project, looks[p.project]), el("span", { className: "mark-pen" }, svgIcon("pencil")));
+  mark.addEventListener("click", () => openMark());
+  const title = el("div", { className: "project-title" }, mark, el("h2", { textContent: projectsSub ? "Instructions" : p.label }));
   if (projectsSub === "instructions") {
     section.replaceChildren(back, title, promptCards(p.project));
     return;
@@ -449,17 +453,16 @@ function drawProjects() {
   };
   const toTab = (kind, then) => () => { closePrefs(); const t = workspace.find(kind) || workspace.add(kind, "center"); workspace.show(t); then?.(t); };
   const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
-  const change = action("Change…", () => projectLookDialog(p.project, p.label, looks[p.project] || {}, (look) => {
+  const openMark = () => projectLookDialog(p.project, p.label, looks[p.project] || {}, (look) => {
     try { saved.looks = { ...looks, [p.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
     workspace.find("conversations")?.reloadLooks?.();
     drawProjects();
-  }, (look) => $(".pbadge", title)?.replaceWith(projectBadge(p.project, look))));
+  }, (look) => $(".pbadge", title)?.replaceWith(projectBadge(p.project, look)));
   const copy = action("Copy", () => backend.copyText(p.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
   section.replaceChildren(back, title,
     el("div", { className: "rows" },
       row("Instructions", "AGENTS.md and Pi's system prompt: what Pi reads first in every session here.", action("Edit", () => { projectsSub = "instructions"; drawProjects(); })),
       row("What Pi loads", "Its skills, extensions, prompt templates and packages, the project's and yours.", action("Open", () => { extProject = p.project; extFromProject = true; showPrefsPage("extensions"); })),
-      row("Its mark", "A colour, a letter, an icon or a picture, in the lists and the rail.", change),
       row("Repository", "Its git repository and forge: branches, pull requests, what Pi pushed.", action("Open", toTab("repository", (t) => t.openProject?.(p.project)))),
       row("Its path", p.project, copy)));
 }
@@ -663,7 +666,7 @@ async function drawForges() {
 let extProject = null;  // the project whose own resources are shown with yours
 let extParts = null;    // {manager, tools, showTab}
 let extFromProject = false; // shown from Settings > Projects: that project's, its name on top
-let extTab = "skills";   // the tab shown: skills, extensions, prompts, packages
+let extTab = "installed"; // the tab shown: installed or browse
 
 /** From Project's "manage": that project's own resources, with yours. */
 function settingsExtensionsFor(project) {
@@ -697,7 +700,8 @@ async function drawExtensions() {
   if (!extParts) {
     const current = () => extProject;
     // The tabs: Skills, Extensions, Prompts (the manager), Packages (the list and the gallery).
-    const TABS = [["skills", "Skills"], ["extensions", "Extensions"], ["prompts", "Prompts"], ["packages", "Packages"]];
+    // Installed (what Pi loads, by kind, its packages first) and Browse (pi.dev's): the proposals' 1A.
+    const TABS = [["installed", "Installed"], ["browse", "Browse"]];
     const tabs = Object.fromEntries(TABS.map(([key, label]) => {
       const b = el("button", { type: "button" }, el("span", { textContent: label }), el("span", { className: "n" }));
       b.setAttribute("role", "tab");
@@ -708,18 +712,19 @@ async function drawExtensions() {
     const showTab = (key) => {
       extTab = key;
       for (const [k, b] of Object.entries(tabs)) b.setAttribute("aria-selected", String(k === key));
-      $("#ext-manager").hidden = key === "packages";
-      $("#ext-pack").hidden = key !== "packages";
-      if (key === "packages") tools.shown();
-      else manager.show(key);
+      $("#ext-manager").hidden = key !== "installed";
+      $("#ext-pack").hidden = key !== "browse";
+      if (key === "browse") tools.shown();
+      else manager.show("all");
     };
     const counts = () => {
       const d = manager.data();
-      const n = { skills: d?.skills?.length, extensions: (d?.extensions?.length || 0) + (d?.pier?.length || 0), prompts: d?.prompts?.length, packages: d?.packages?.length };
-      for (const [k, b] of Object.entries(tabs)) $(".n", b).textContent = d ? String(n[k] || 0) : "";
+      const n = { installed: (d?.skills?.length || 0) + (d?.extensions?.length || 0) + (d?.pier?.length || 0) + (d?.prompts?.length || 0) + (d?.packages?.length || 0) };
+      for (const [k, b] of Object.entries(tabs)) $(".n", b).textContent = d && k in n ? String(n[k]) : "";
     };
+    const packs = el("div", { className: "loads-packages" }, el("h3", { className: "loads-group", textContent: "Packages" }), $("#ext-packages"));
     const manager = makeResourceManager($("#ext-manager"), current,
-      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); counts(); });
+      () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages); counts(); }, packs);
     const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load());
     extParts = { manager, tools, showTab };
     select.addEventListener("change", () => { extProject = select.value; extParts.manager.load(); });

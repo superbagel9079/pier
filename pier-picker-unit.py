@@ -924,6 +924,45 @@ class Conversations(Home):
             m.api_provider_save(self.home, "p", json.dumps({"baseUrl": "http://127.0.0.1:9/v1", "api": "openai-completions", "models": []}).encode())
         self.assertTrue(os.path.islink(target))
 
+    def test_gallery_media_keeps_real_pictures_only(self):
+        # pi.dev's picture of each package, as a data URL: a real PNG over https only.
+        import urllib.request
+        png = b"\x89PNG\r\n\x1a\n" + b"0" * 40
+        answers = {
+            "https://pi.dev/api/packages/preview-media": json.dumps({"previews": [
+                {"name": "good", "media": {"type": "image", "url": "https://x.test/good.png"}},
+                {"name": "plain", "media": {"type": "image", "url": "http://x.test/plain.png"}},
+                {"name": "fake", "media": {"type": "image", "url": "https://x.test/fake.png"}},
+                {"name": "none", "media": None}]}).encode(),
+            "https://x.test/good.png": png,
+            "https://x.test/fake.png": b"<html>not a picture</html>",
+        }
+        asked = []
+
+        class Answer(io.BytesIO):
+            headers = {}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def urlopen(request, timeout=None):
+            url = request.full_url if hasattr(request, "full_url") else request
+            asked.append(url)
+            return Answer(answers[url.split("?")[0]])
+
+        old = urllib.request.urlopen
+        urllib.request.urlopen = urlopen
+        try:
+            m._GALLERY_MEDIA.clear()
+            media = m.api_gallery_media(self.home, ["good", "plain", "fake", "none", "bad name!"])["media"]
+        finally:
+            urllib.request.urlopen = old
+        self.assertTrue(media["good"].startswith("data:image/png;base64,"))
+        self.assertIsNone(media["plain"])
+        self.assertIsNone(media["fake"])
+        self.assertIsNone(media["none"])
+        self.assertNotIn("bad name!", media)
+        self.assertNotIn("http://x.test/plain.png", asked)
+
     def test_rpc_light_keeps_the_delta_only(self):
         # A streamed piece without the message so far; a tool call's pieces dropped.
         partial = {"role": "assistant", "content": [{"type": "text", "text": "x" * 5000}]}

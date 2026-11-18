@@ -273,6 +273,7 @@ const workspace = (() => {
 
   /** The middle with nothing open (the mock-up's New tab): what Pier can open, then the
    *  latest conversations. */
+  let newTabProject = null; // the project the New tab's message field starts Pi in, once chosen
   function emptyDock(name) {
     if (!settings || (!online && vmForm)) return quickStart(); // no VM yet, or its form asked for: how to begin (3A)
     if (!online) return el("div", { className: "empty launcher" }, pierMark(), loginCard()); // a VM known: its password (D)
@@ -281,9 +282,11 @@ const workspace = (() => {
       b.addEventListener("click", () => (online ? action() : toLogin())); // not connected: connect first
       return b;
     };
-    const project = target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
+    const project = newTabProject || target?.path || lastProjects?.recent?.[0]?.path || lastProjects?.running?.[0]?.path;
+    // Pier's conversation view: write first, Enter starts Pi in the project chosen above. Pi
+    // in tmux: the lines as before.
     const group = el("div", { className: "lgroup" },
-      line("square-pen", "New conversation", project ? projectLabel(project) : "", () => (project ? openPiTerminal(project, projectLabel(project), ["--new"]) : openFolderPicker())),
+      ...(prefs.piTerminal || !project ? [line("square-pen", "New conversation", project ? projectLabel(project) : "", () => (project ? openPiTerminal(project, projectLabel(project), ["--new"]) : openFolderPicker()))] : [newTabComposer(project)]),
       line("folder-plus", "Start a project…", "a folder of the VM, or a new one", () => openFolderPicker()),
       line("terminal", "New shell", "on the VM", () => add("shell", name)));
     // The recent ones even with the conversations' side folded (it follows them only while
@@ -296,6 +299,38 @@ const workspace = (() => {
       for (const [p, s] of recent) group.append(line("message-square", conversationTitle(s), p.label, () => openPiTerminal(p.project, p.label, ["--session", s.path])));
     }
     return el("div", { className: "empty launcher" }, group);
+  }
+
+  /** The New tab's message field: the project (its mark, a menu of the others), the field, send. */
+  function newTabComposer(project) {
+    let looks = {};
+    try { looks = JSON.parse(localStorage.getItem("devbox.conversations.v1"))?.looks || {}; } catch { /* none */ }
+    const projects = [...new Map([...(vm.latest("conversations")?.data?.projects || []).map((p) => [p.project, p.label]),
+      ...[...(lastProjects?.running || []), ...(lastProjects?.recent || [])].map((p) => [p.path, p.label || projectLabel(p.path)])]).entries()];
+    const pick = el("button", { type: "button", className: "nt-project", title: "The project Pi starts in" },
+      projectBadge(project, looks[project]), el("span", { textContent: projectLabel(project) }), svgIcon("chevron-down"));
+    pick.setAttribute("aria-haspopup", "menu");
+    pick.addEventListener("click", () => showMenu(pick, [
+      ...projects.map(([path, label]) => [label, () => { newTabProject = path; render("center"); }, false, { mark: projectBadge(path, looks[path]) }]),
+      null,
+      ["Start a project…", () => openFolderPicker(), false, { icon: "folder-plus" }],
+    ]));
+    const field = el("textarea", { rows: 3, placeholder: "Message Pi. Enter starts it in this project.", spellcheck: true });
+    field.setAttribute("aria-label", "Your first message");
+    const send = el("button", { type: "button", className: "nt-send", title: "Start Pi with this message" }, svgIcon("arrow-up"));
+    send.setAttribute("aria-label", "Start Pi with this message");
+    const go = () => {
+      const text = field.value.trim();
+      if (!text) { field.focus(); return; }
+      openChat(project, projectLabel(project), ["--new"], { firstPrompt: text });
+    };
+    send.addEventListener("click", go);
+    field.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); } });
+    setTimeout(() => { if (field.isConnected && !document.querySelector(".overlay:not([hidden])") && $("#prefs").hidden) field.focus({ preventScroll: true }); }, 0);
+    return el("div", { className: "nt-start" },
+      el("h2", { textContent: "New conversation" }),
+      el("div", { className: "nt-bar" }, pick),
+      el("div", { className: "nt-composer" }, field, el("div", { className: "nt-foot" }, el("span", { className: "dim small", textContent: "Shift+Enter: a new line" }), send)));
   }
 
   /** No VM yet: three steps, the next one put forward (the proposals' 3A). */
@@ -742,13 +777,13 @@ function showMenu(anchor, items, at = null) {
   menu.replaceChildren();
   menu.setAttribute("role", "menu");
   // The icons' column only when an item has one: otherwise the labels start at the edge.
-  menu.classList.toggle("no-icons", !items.some((item) => item?.[3]?.icon));
+  menu.classList.toggle("no-icons", !items.some((item) => item?.[3]?.icon || item?.[3]?.mark));
   for (const item of items) {
     if (!item) { menu.append(el("hr")); continue; }
     // [label, action, disabled, { icon, danger }]: every row keeps the icon's column.
-    const [label, action, disabled, { icon, danger } = {}] = item;
+    const [label, action, disabled, { icon, danger, mark } = {}] = item;
     const b = el("button", { className: danger ? "danger" : "" });
-    b.append(el("span", { className: "menu-icon" }, ...(icon ? [svgIcon(icon)] : [])), el("span", { textContent: label }));
+    b.append(el("span", { className: "menu-icon" }, ...(mark ? [mark] : icon ? [svgIcon(icon)] : [])), el("span", { textContent: label }));
     b.disabled = Boolean(disabled);
     b.setAttribute("role", "menuitem");
     b.addEventListener("click", () => { closeMenu(false); action(); });

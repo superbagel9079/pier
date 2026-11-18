@@ -54,7 +54,7 @@ function dialogError() {
 }
 
 /** The Skills page. onChange: after each load or change (the summary counts follow). */
-function makeResourceManager(box, currentProject, onChange) {
+function makeResourceManager(box, currentProject, onChange, top = null) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
   const filter = el("input", { type: "search", placeholder: "Filter skills", spellcheck: false });
@@ -67,7 +67,7 @@ function makeResourceManager(box, currentProject, onChange) {
   const off = el("p", { className: "hint", textContent: "Off: Pi leaves it out at its next start. Nothing is deleted." });
   box.replaceChildren(
     el("div", { className: "toolbar resource-bar" }, filter, add, refresh),
-    error, notice, list, off);
+    error, notice, ...(top ? [top] : []), list, off);
 
   let data = null;
   let kind = "skills"; // the tab shown (settings.js): skills, extensions or prompts
@@ -103,17 +103,25 @@ function makeResourceManager(box, currentProject, onChange) {
     list.replaceChildren();
     const needle = filter.value.trim().toLowerCase();
     const shown = (item) => !needle || [item.name, item.description, item.source].some((t) => t && t.toLowerCase().includes(needle));
-    const items = (data?.[kind] || []).filter(shown);
-    // Pier's own extensions: given to each Pi it starts (--extension), never in Pi's
-    // settings; shown, not toggled here (each has its setting in the picker's config).
-    const pier = kind === "extensions" ? (data?.pier || []).filter(shown) : [];
-    const rows = el("div", { className: "rows" },
-      ...items.filter((i) => i.scope === "user").map((i) => row(kind, i)),
-      ...items.filter((i) => i.scope === "project").map((i) => row(kind, i)),
-      ...pier.map(pierRow));
-    if (rows.childElementCount) list.append(rows);
-    else list.append(el("p", { className: "dim small", textContent: needle ? "Nothing matches." : `No ${KIND_LABELS[kind].toLowerCase()} yet: Add makes one, imports one, or installs a package.` }));
-    off.hidden = !rows.childElementCount;
+    // "all" (Installed): skills, extensions and prompts, one group under the other.
+    const kinds = kind === "all" ? Object.keys(KIND_LABELS) : [kind];
+    let any = false;
+    for (const k of kinds) {
+      const items = (data?.[k] || []).filter(shown);
+      // Pier's own extensions: given to each Pi it starts (--extension), never in Pi's
+      // settings; shown, not toggled here (each has its setting in the picker's config).
+      const pier = k === "extensions" ? (data?.pier || []).filter(shown) : [];
+      const rows = el("div", { className: "rows" },
+        ...items.filter((i) => i.scope === "user").map((i) => row(k, i)),
+        ...items.filter((i) => i.scope === "project").map((i) => row(k, i)),
+        ...pier.map(pierRow));
+      if (!rows.childElementCount) continue;
+      any = true;
+      if (kind === "all") list.append(el("h3", { className: "loads-group" }, el("span", { textContent: KIND_LABELS[k] }), el("span", { className: "n", textContent: String(rows.childElementCount) })));
+      list.append(rows);
+    }
+    if (!any) list.append(el("p", { className: "dim small", textContent: needle ? "Nothing matches." : `Nothing ${kind === "all" ? "" : `of ${KIND_LABELS[kind].toLowerCase()} `}yet: Add makes a skill, imports one, or installs a package (Browse).` }));
+    off.hidden = !any;
   }
 
   /** Where an item comes from, in words: "yours, local", "from pi-hindsight", "this project only". */
@@ -266,7 +274,7 @@ function makeResourceManager(box, currentProject, onChange) {
   /** The tab shown: skills, extensions or prompts. */
   function show(next) {
     kind = next;
-    filter.placeholder = `Filter ${KIND_LABELS[kind].toLowerCase()}`;
+    filter.placeholder = kind === "all" ? "Filter skills, extensions and prompts" : `Filter ${KIND_LABELS[kind].toLowerCase()}`;
     render();
   }
 
@@ -294,7 +302,9 @@ function renderPackageList(list, r, project, reload) {
   const update = (label, args, title) => linkButton("update", title, () => {
     workspace.add("update", workspace.find("main")?.dock || "center", { params: { label, args } });
   });
+  const tiles = [];
   const line = (name, detail, title, ...actions) => el("li", { title: title || "" },
+    (() => { const t = packageTile(name.startsWith("Pi ") ? "pi" : name); tiles.push([name, t]); return t; })(),
     el("span", { className: "name ellipsis", textContent: name }),
     el("span", { className: "dim small ellipsis", textContent: detail || "" }),
     actions.length ? el("span", { className: "row-actions" }, ...actions) : null);
@@ -319,7 +329,50 @@ function renderPackageList(list, r, project, reload) {
       ...(behind ? [update(name, [p.source], `pi update ${p.source}, in a terminal`)] : []), remove));
   }
   if (outdated > 1) list.append(el("li", { className: "note small" }, update("all packages", ["--extensions"], "pi update --extensions, in a terminal")));
-  if (!(r.packages || []).length) list.append(el("li", { className: "dim small note", textContent: "No package yet: install one, or find one in the gallery below." }));
+  if (!(r.packages || []).length) list.append(el("li", { className: "dim small note", textContent: "No package yet: find one in Browse." }));
+  showPackageMedia(tiles.filter(([name]) => !name.startsWith("Pi ")).map(([, t]) => t));
+}
+
+// --- the packages' pictures -------------------------------------------------------------
+
+/** pi.dev's picture of each package (given by its author), read by the picker on the VM as
+ *  a data URL (Pier's pages load nothing from the web): name -> URL, or null for none. */
+const packageMedia = new Map();
+const mediaAsked = new Set();
+async function loadPackageMedia(names) {
+  const want = [...new Set(names)].filter((n) => n && n !== "pi" && !packageMedia.has(n) && !mediaAsked.has(n));
+  for (let i = 0; i < want.length; i += 16) {
+    const part = want.slice(i, i + 16);
+    part.forEach((n) => mediaAsked.add(n));
+    try {
+      const r = await backend.api(["gallery-media", ...part]);
+      for (const n of part) packageMedia.set(n, r?.media?.[n] || null);
+    } catch { part.forEach((n) => mediaAsked.delete(n)); } // asked again next time
+  }
+}
+
+/** A package's square: its picture once known, else its first letter on a colour of its own. */
+function packageTile(name, size = "") {
+  const tile = el("span", { className: `pkg-tile ${size}`.trim(), "aria-hidden": "true" });
+  tile.dataset.name = name;
+  tile.refresh = () => {
+    const url = packageMedia.get(name);
+    if (url) {
+      tile.classList.add("pic");
+      tile.style.removeProperty("background");
+      tile.replaceChildren(el("img", { src: url, alt: "" }));
+    } else {
+      tile.textContent = name === "pi" ? "π" : (name.replace(/^@[^/]+\//, "").replace(/^pi-/, "")[0] || "?").toUpperCase();
+      tile.style.background = defaultColor(name);
+    }
+  };
+  tile.refresh();
+  return tile;
+}
+
+/** The pictures of these tiles, asked together, each drawn once known. */
+function showPackageMedia(tiles) {
+  loadPackageMedia(tiles.map((t) => t.dataset.name)).then(() => tiles.forEach((t) => t.refresh()));
 }
 
 /** Installing a package: a source, for you or the project, then pi install in a tab. */
@@ -345,52 +398,121 @@ function installDialog(currentProject, onDone, source = "") {
   input.focus();
 }
 
-/** Under the packages: Install a package…, and the gallery, searched as you type. */
+/** Browse (the proposals' 1A, as Paseo's plugins): pi.dev's packages searched as you type,
+ *  the first ones with a picture as featured cards, then the list; a click shows a package's
+ *  detail beside the list, Install on its row and there. */
 function makePackageTools(box, currentProject, onDone) {
-  const install = el("button", { className: "secondary", title: "pi install npm:… / git:… / https://…, in Pi's sandbox on the VM" }, svgIcon("plus"), el("span", { textContent: "Install a package…" }));
+  const install = el("button", { className: "secondary", title: "pi install npm:… / git:… / https://…, in Pi's sandbox on the VM" }, svgIcon("plus"), el("span", { textContent: "Install from a source…" }));
   install.addEventListener("click", () => installDialog(currentProject, onDone));
-  const input = el("input", { type: "search", placeholder: "Search the gallery", spellcheck: false });
-  input.setAttribute("aria-label", "Search the gallery");
-  const results = el("ul", { className: "resource-items gallery" });
+  const input = el("input", { type: "search", placeholder: "Search pi.dev's packages", spellcheck: false });
+  input.setAttribute("aria-label", "Search the packages");
+  const featured = el("div", { className: "pkg-featured" });
+  const featuredHead = el("h3", { className: "loads-group", textContent: "Featured" });
+  const results = el("div", { className: "pkg-list" });
+  const detail = el("aside", { className: "pkg-detail", hidden: true });
+  const where = el("p", { className: "hint pkg-from" });
   box.replaceChildren(
-    el("h2", {}, el("span", { textContent: "Gallery" }), el("span", { className: "aside", textContent: "pi.dev/packages, searched from the VM" })),
-    el("div", { className: "resource-bar" }, input, install),
-    results);
+    el("div", { className: "toolbar resource-bar" }, input, install),
+    featuredHead, featured,
+    el("h3", { className: "loads-group", textContent: "All packages" }),
+    el("div", { className: "pkg-browse" }, results, detail),
+    where);
   let installed = new Set();
   let searched = false;
   let timer = null;
+  let shownName = null;
+
+  const facts = (pkg) => [pkg.publisher, pkg.downloads].filter(Boolean).join(" · ");
+  const installButton = (pkg) => {
+    const there = installed.has(pkg.source);
+    const b = el("button", { type: "button", className: there ? "secondary pkg-installed" : "secondary", textContent: there ? "Installed" : "Install", disabled: there });
+    b.addEventListener("click", (e) => { e.stopPropagation(); installDialog(currentProject, onDone, pkg.source); });
+    return b;
+  };
+
+  function showDetail(pkg) {
+    shownName = pkg.name;
+    for (const r of results.children) r.classList.toggle("on", r.dataset.name === pkg.name);
+    const close = el("button", { type: "button", className: "icon-btn", title: "Close" }, svgIcon("x"));
+    close.addEventListener("click", () => { detail.hidden = true; shownName = null; for (const r of results.children) r.classList.remove("on"); });
+    const copy = (text) => { const b = linkButton("copy", `Copy ${text}`, () => backend.copyText(text).then(() => flashStatus("copied")).catch((e) => flashStatus(String(e)))); return b; };
+    const tile = packageTile(pkg.name, "big");
+    detail.replaceChildren(
+      el("div", { className: "pkg-detail-head" }, tile, close),
+      el("h3", { textContent: pkg.name }),
+      el("p", { className: "dim small", textContent: facts(pkg) }),
+      ...(pkg.types?.length ? [el("p", { className: "pkg-types" }, ...pkg.types.map((t) => el("span", { className: "chip", textContent: t })))] : []),
+      el("p", { className: "pkg-desc", textContent: pkg.description || "No description." }),
+      el("p", { className: "pkg-src" }, el("code", { textContent: pkg.source }), copy(pkg.source)),
+      ...(pkg.repo ? [el("p", { className: "pkg-src" }, el("span", { className: "dim small ellipsis", textContent: pkg.repo.replace(/^https:\/\//, "") }), copy(pkg.repo))] : []),
+      installButton(pkg));
+    detail.hidden = false;
+    showPackageMedia([tile]);
+  }
+
+  function row(pkg) {
+    const tile = packageTile(pkg.name);
+    const r = el("button", { type: "button", className: "pkg-row" }, tile,
+      el("span", { className: "tx" },
+        el("span", { className: "name" }, el("b", { textContent: pkg.name }), ...(pkg.types || []).map((t) => el("span", { className: "chip", textContent: t }))),
+        pkg.description ? el("span", { className: "desc", textContent: pkg.description }) : null,
+        el("span", { className: "by", textContent: facts(pkg) })),
+      installButton(pkg), svgIcon("chevron-right"));
+    r.dataset.name = pkg.name;
+    r.addEventListener("click", () => showDetail(pkg));
+    return [r, tile];
+  }
+
+  function card(pkg) {
+    const tile = packageTile(pkg.name, "shot");
+    const c = el("button", { type: "button", className: "pkg-card" }, tile,
+      el("span", { className: "tx" }, el("b", { textContent: pkg.name }), el("span", { className: "desc", textContent: pkg.description || "" }), el("span", { className: "by", textContent: facts(pkg) })));
+    c.addEventListener("click", () => showDetail(pkg));
+    return [c, tile];
+  }
 
   async function search() {
     searched = true;
-    results.replaceChildren(el("li", { className: "dim small", textContent: "asking the npm registry, from the VM…" }));
+    const query = input.value.trim();
+    results.replaceChildren(el("p", { className: "dim small", textContent: "Asking pi.dev, from the VM…" }));
     let answer;
     try {
-      answer = await backend.api(["gallery", input.value.trim()]);
+      answer = await backend.api(["gallery", query]);
     } catch (e) {
-      results.replaceChildren(el("li", { className: "error", textContent: String(e) }));
+      results.replaceChildren(el("p", { className: "error", textContent: String(e) }));
       return;
     }
-    results.replaceChildren(...answer.results.map((pkg) => {
-      const there = installed.has(pkg.source);
-      const action = el("button", { className: "link", textContent: there ? "installed" : "install", disabled: there });
-      action.addEventListener("click", () => installDialog(currentProject, onDone, pkg.source));
-      // The name in full, then its version (from npm), author and downloads a month (from
-      // pi.dev); the description on a line of its own.
-      return el("li", { className: "two-lines", title: pkg.description || "" },
-        el("div", { className: "line" },
-          el("span", { className: "name", textContent: pkg.name }),
-          el("span", { className: "dim small ellipsis", textContent: [pkg.version && `v${pkg.version}`, pkg.publisher, pkg.downloads].filter(Boolean).join(" · ") }),
-          action),
-        pkg.description ? el("div", { className: "desc dim small", textContent: pkg.description }) : null);
-    }));
-    if (!answer.results.length) results.append(el("li", { className: "dim small", textContent: "Nothing found." }));
+    if (input.value.trim() !== query) return; // typed again meanwhile
+    const list = answer.results || [];
+    const rows = list.map(row);
+    results.replaceChildren(...rows.map(([r]) => r));
+    if (!list.length) results.append(el("p", { className: "dim small", textContent: "Nothing found." }));
+    where.textContent = answer.from === "npm" ? "From the npm registry (pi.dev did not answer), asked from the VM." : "From pi.dev/packages, asked from the VM.";
+    // Featured, without a search: the most installed that have a picture.
+    featured.replaceChildren();
+    featured.hidden = featuredHead.hidden = Boolean(query);
+    const top = list.slice(0, 16);
+    await loadPackageMedia(top.map((p) => p.name));
+    rows.forEach(([, t]) => t.refresh());
+    showPackageMedia(rows.slice(16).map(([, t]) => t));
+    if (!query && input.value.trim() === query) {
+      const withPicture = top.filter((p) => packageMedia.get(p.name));
+      const cards = [...withPicture, ...top.filter((p) => !packageMedia.get(p.name))].slice(0, 3).map(card);
+      featured.replaceChildren(...cards.map(([c]) => c));
+      cards.forEach(([, t]) => t.refresh());
+    }
+    const again = list.find((p) => p.name === shownName);
+    if (again) showDetail(again);
   }
   input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(search, 400); });
-  // Asked once the field is used, not at every Setup refresh.
-  input.addEventListener("focus", () => { if (!searched) search(); });
 
   return {
     shown() { if (!searched) search(); },
-    installed(packages) { installed = new Set((packages || []).map((p) => p.source.replace(/@[^@/]*$/, ""))); },
+    installed(packages) {
+      const next = new Set((packages || []).map((p) => p.source.replace(/@[^@/]*$/, "")));
+      const changed = next.size !== installed.size || [...next].some((s) => !installed.has(s));
+      installed = next;
+      if (searched && changed) search(); // its Install buttons say Installed (the picker keeps the answer 10 min)
+    },
   };
 }

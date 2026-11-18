@@ -76,6 +76,7 @@ const PASSTHROUGH: &[&str] = &[
     "resources",
     "skill-read",
     "gallery",
+    "gallery-media",
     "forges",
     "repo",
     "approvals",
