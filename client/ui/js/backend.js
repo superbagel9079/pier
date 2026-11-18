@@ -47,6 +47,7 @@ function realBackend() {
       return invoke("paste_image", bytes, { headers: { "x-target": encodeURIComponent(project) } });
     },
     pasteFiles: (paths, project) => invoke("paste_files", { paths, target: project }),
+    imagePreview: (path) => invoke("image_preview", { path }), // an ArrayBuffer
     removeUpload: (path) => invoke("remove_upload", { path }),
     async notify(title, body) {
       const n = tauri.notification;

@@ -1026,6 +1026,7 @@ pub fn run() {
             disconnect,
             api_call,
             paste_image,
+            image_preview,
             paste_files,
             term_open,
             term_write,

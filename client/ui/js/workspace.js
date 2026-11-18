@@ -327,6 +327,8 @@ const workspace = (() => {
 
   function addChoices(name) {
     const items = [
+      // As the rail's pen: in the project of the Pi in use, else the last one.
+      ...(online ? [["New conversation", () => $("#rail-new").click(), false, { icon: "square-pen" }]] : []),
       ["New shell", () => add("shell", name), false, { icon: "terminal" }],
       ...(prefs.piTerminal ? [["New picker", () => add("picker", name), false, { icon: "folder" }]] : []), // tmux's picker
     ];

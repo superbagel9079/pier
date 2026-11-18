@@ -327,6 +327,14 @@ function makeChat(tab) {
           if (run) endRun(null);
           showContext();
           scroller.scrollTop = scroller.scrollHeight;
+          // A new conversation not on the default model: Pi could not use it (unknown to it, or
+          // no key for its provider) and took another without a word. Said once drawn.
+          if (e.fresh && !tab.params.file && state.model) {
+            const now = `${state.model.provider}/${state.model.id}`;
+            backend.api(["pi-default-read"]).then((r) => {
+              if (r?.default && r.default !== now) notice(`Pi started on ${now}: your default model, ${r.default}, is unknown to Pi or has no key for its provider. Choose another in Settings > Agents.`, "error");
+            }).catch(() => {});
+          }
         });
         break;
       case "pier_error": notice(e.error, "error"); break;
@@ -553,7 +561,15 @@ function makeChat(tab) {
    *  as chips; a folder asks first, as everywhere (share live, or copy). */
   tab.give = async (paths) => {
     const results = (await backend.pasteFiles(paths, project).catch((e) => { notice(String(e), "error"); return []; })) || [];
-    for (const r of results) {
+    for (const [i, r] of results.entries()) {
+      // An image (saved in .pi-images): its thumbnail, read from this computer (one result a path).
+      if (r.reference?.startsWith("@.pi-images/") && paths[i]) {
+        try {
+          const bytes = await backend.imagePreview(paths[i]);
+          addChip(r.reference, { saved: r.saved, image: new Blob([bytes]) });
+          continue;
+        } catch { /* its icon, as a file */ }
+      }
       if (r.error) notice(r.error, "error");
       else if (r.folder) {
         const name = r.folder.split(/[\\/]/).filter(Boolean).pop();

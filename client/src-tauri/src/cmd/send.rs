@@ -13,6 +13,22 @@ pub(crate) async fn paste_image(app: AppHandle, state: State<'_, AppState>, requ
     send_image(&app, &state, bytes, &header(&request, "x-target")).await
 }
 
+/// An image of this computer the user dropped or picked (granted), for its thumbnail in a
+/// message: its bytes as they are, nothing else is read.
+#[tauri::command]
+pub(crate) fn image_preview(state: State<'_, AppState>, path: String) -> Result<tauri::ipc::Response, String> {
+    let file = given_path(&state, &path)?;
+    let size = std::fs::metadata(&file).map_err(|e| format!("{path}: {e}"))?.len();
+    if size > IMAGE_MAX_BYTES {
+        return Err(format!("{path}: larger than 20 MB"));
+    }
+    let bytes = std::fs::read(&file).map_err(|e| format!("{path}: {e}"))?;
+    if !is_image(&bytes) {
+        return Err(format!("{path}: not an image"));
+    }
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Files dropped on the window: images go to .pi-images, anything else to .pi-files.
 #[tauri::command]
 pub(crate) async fn paste_files(app: AppHandle, state: State<'_, AppState>, paths: Vec<String>, target: String) -> Result<Vec<Value>, String> {
