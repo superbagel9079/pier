@@ -5,6 +5,15 @@
 /** Opens a conversation of project: new (args []), the last one (--continue), a file
  *  (--session FILE) or a Pi running in RPC mode (--slot NAME). */
 function openChat(project, label, args = []) {
+  // The tab already on this conversation (by its file, or by its Pi) is shown instead.
+  const [how, what] = args;
+  const sessions = (vm.latest("conversations")?.data?.projects || []).find((p) => p.project === project)?.sessions || [];
+  const file = how === "--session" ? what : how === "--slot" ? sessions.find((s) => s.slot === what)?.path : null;
+  const same = (t) => t.kind === "chat" && t.params?.project === project && (
+    (file && (t.sessionFile === file || t.params.file === file || (t.params.args?.[0] === "--session" && t.params.args[1] === file)))
+    || (how === "--slot" && t.params.args?.[0] === "--slot" && t.params.args[1] === what));
+  const existing = (how === "--session" || how === "--slot") && workspace.tabs().find(same);
+  if (existing) { workspace.show(existing); return existing; }
   return workspace.add("chat", "center", { params: { project, label, args } });
 }
 
