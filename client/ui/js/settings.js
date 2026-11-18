@@ -318,7 +318,11 @@ function providersBlock() {
         await afterProviders();
       }, false, { icon: "trash", danger: true }],
     ]));
-    const facts = [p.baseUrl, p.api, `${p.models.length} model${p.models.length === 1 ? "" : "s"}`, p.key ? (p.keyEnv ? `key from ${p.keyEnv}` : "key set") : "no key"];
+    // Its models' context: as the provider said it (or as typed), else Pi's 128K by default.
+    const sized = (p.contexts || []).filter(Boolean);
+    const tokens = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}K`);
+    const context = !p.models.length ? "" : sized.length ? `context ${[...new Set(sized.map(tokens))].join(", ")}` : "context unknown: Pi takes 128K";
+    const facts = [p.baseUrl, p.api, `${p.models.length} model${p.models.length === 1 ? "" : "s"}`, context, p.key ? (p.keyEnv ? `key from ${p.keyEnv}` : "key set") : "no key"];
     box.append(el("div", { className: "setting-row provider-row" },
       el("div", { className: "setting-head" }, el("span", { className: "provider-name", textContent: p.name }), more),
       el("p", { className: "hint", textContent: facts.filter(Boolean).join(" · ") })));
@@ -349,6 +353,7 @@ function providerDialog(p) {
   api.value = p?.api || "openai-completions";
   const key = el("input", { type: "password", autocomplete: "off", spellcheck: false, placeholder: p?.key ? "set: leave empty to keep it" : "its API key, or an environment variable's NAME" });
   const models = el("textarea", { rows: 4, spellcheck: false, placeholder: "one model id a line, as the provider names it", value: (p?.models || []).join("\n") });
+  const contextField = el("input", { type: "number", min: 1000, step: 1000, spellcheck: false, placeholder: "asked of the provider, else 128000" });
   const problem = dialogError();
   preset.addEventListener("change", () => {
     const [, n, url, kind] = PROVIDER_PRESETS[Number(preset.value)];
@@ -366,12 +371,17 @@ function providerDialog(p) {
     field("API", api),
     field("Key", key, "Kept on the VM, in Pi's models.json (readable by your user only); never logged."),
     field("Models", models),
+    field("Context window", contextField, "In tokens. Pier asks the provider for each model's own; this is for those it does not tell (else Pi takes 128 000)."),
     problem], [save]);
   dialog.box.classList.add("provider-dialog");
   save.addEventListener("click", async () => {
     const body = { baseUrl: base.value.trim(), api: api.value, models: models.value.split(/[\n,]+/).map((m) => m.trim()).filter(Boolean) };
     if (key.value.trim()) body.apiKey = key.value.trim();
-    try { await backend.api(["provider-save", (p?.name || name.value).trim(), JSON.stringify(body)]); } catch (e) { showError(problem, String(e)); return; }
+    if (Number(contextField.value) >= 1000) body.contextWindow = Math.round(Number(contextField.value));
+    let saved;
+    try { saved = await backend.api(["provider-save", (p?.name || name.value).trim(), JSON.stringify(body)]); } catch (e) { showError(problem, String(e)); return; }
+    const sized = saved?.sized?.length ?? 0;
+    flashStatus(!body.models.length ? "Provider saved" : sized ? `Saved: the context of ${sized} of ${body.models.length} model${body.models.length === 1 ? "" : "s"} known` : "Saved: the provider did not tell its models' context; type it in Context window, else Pi takes 128K");
     dialog.close();
     await afterProviders();
   });

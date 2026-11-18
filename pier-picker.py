@@ -51,7 +51,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.61"
+VERSION = "4.62"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -6169,14 +6169,61 @@ def api_providers(home):
             continue
         models = [m.get("id") for m in p.get("models") or [] if isinstance(m, dict) and m.get("id")]
         key = p.get("apiKey")
+        contexts = [m.get("contextWindow") for m in p.get("models") or [] if isinstance(m, dict) and m.get("id")]
         out.append({"name": name, "baseUrl": p.get("baseUrl") or "", "api": p.get("api") or "",
-                    "models": models, "key": bool(key), "keyEnv": key if isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key or "") else ""})
+                    "models": models, "contexts": contexts, "key": bool(key), "keyEnv": key if isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key or "") else ""})
     return {"providers": out, "path": models_json_path()}
 
 
+# A model's sizes as providers publish them in /models (OpenRouter, vLLM, LiteLLM, most
+# gateways): its context, its longest answer. Without them Pi takes 128 000 and 16 384.
+_CONTEXT_FIELDS = ("context_length", "context_window", "max_model_len", "max_context_length", "max_input_tokens", "contextWindow")
+_OUTPUT_FIELDS = ("max_completion_tokens", "max_output_tokens", "max_tokens", "maxTokens")
+
+
+def provider_model_sizes(base, key):
+    """{id: (context or None, max output or None)} from the provider's GET /models, {} when
+    it does not answer or says nothing of sizes. key: the literal key, or $NAME of a variable."""
+    import urllib.request
+    if isinstance(key, str) and key.startswith("$") and not key.startswith("$$"):
+        key = os.environ.get(key.strip("${}"), "")
+    elif isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key) and key in os.environ:
+        key = os.environ[key]  # a variable's name, as Pi reads it
+    headers = {"Accept": "application/json"}
+    if isinstance(key, str) and key and not key.startswith("!"):
+        headers["Authorization"] = f"Bearer {key}"
+    try:
+        request = urllib.request.Request(base.rstrip("/") + "/models", headers=headers)
+        with urllib.request.urlopen(request, timeout=8) as answer:
+            listing = json.loads(answer.read(4 * 1024 * 1024).decode("utf-8", "replace"))
+    except (OSError, ValueError) as exc:
+        log("info", "provider.sizes-unknown", err=str(exc)[:200])
+        return {}
+    items = listing.get("data") if isinstance(listing, dict) else listing
+    sizes = {}
+
+    def number(item, fields):
+        for field in fields:
+            value = item.get(field)
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value)
+        return None
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            continue
+        top = item.get("top_provider") if isinstance(item.get("top_provider"), dict) else {}
+        context = number(item, _CONTEXT_FIELDS) or number(top, _CONTEXT_FIELDS)
+        output = number(top, _OUTPUT_FIELDS) or number(item, _OUTPUT_FIELDS)
+        if context or output:
+            sizes[item["id"]] = (context, output)
+    return sizes
+
+
 def api_provider_save(home, name, data):
-    """A provider added or changed: {baseUrl, api, apiKey?, models: [ids]} on stdin. An
-    absent apiKey keeps the one there; the provider's other fields (a model's limits…) stay."""
+    """A provider added or changed: {baseUrl, api, apiKey?, models: [ids], contextWindow?}
+    on stdin. An absent apiKey keeps the one there; the provider's other fields stay. Each
+    model's sizes are asked of the provider (/models); contextWindow, given, is for those it
+    does not tell."""
     if not PROVIDER_NAME.match(name or ""):
         raise ApiError("a provider's name: letters, digits, . _ -")
     if len(data) > PROVIDER_MAX_BYTES:
@@ -6200,11 +6247,20 @@ def api_provider_save(home, name, data):
         entry["apiKey"] = str(given["apiKey"]).strip()
     known = {m.get("id"): m for m in entry.get("models") or [] if isinstance(m, dict)}
     entry["models"] = [known.get(i) or {"id": i} for i in ids]
+    sizes = provider_model_sizes(base, entry.get("apiKey"))
+    typed = given.get("contextWindow")
+    typed = int(typed) if isinstance(typed, (int, float)) and 1000 <= typed <= 100_000_000 else None
+    for model in entry["models"]:
+        context, output = sizes.get(model["id"], (None, None))
+        if context or typed:
+            model["contextWindow"] = context or typed
+        if output and output < (model.get("contextWindow") or 10**12):
+            model["maxTokens"] = output
     providers[name] = entry
     path = models_json_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     atomic_write(path, json.dumps(whole, indent=2) + "\n", os.path.dirname(path), 0o600)
-    return {"saved": name}
+    return {"saved": name, "sized": [m["id"] for m in entry["models"] if m.get("contextWindow")]}
 
 
 def api_provider_delete(home, name):
