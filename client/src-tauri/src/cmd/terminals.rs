@@ -4,11 +4,8 @@ use crate::*;
 
 // --- terminals ----------------------------------------------------------------------
 
-/// The command line of a "pi" terminal: the picker's --attach-control, which opens
-/// the Pi (see open_pi there) and attaches to it in tmux's control mode (term.rs).
-/// Only what Pier itself asks is accepted: the Pi used last or a new one (nothing),
-/// a new Pi (--new), an orchestrator (--orchestrator), a running one (--slot NAME), or a conversation (--continue,
-/// --session FILE): its Pi if one runs it, else a new Pi on it.
+/// The command line of a "pi" terminal: the picker's --attach-control (see open_pi there).
+/// Only Pier's forms: nothing, --new, --orchestrator, --slot NAME, --continue, --session FILE.
 pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, String> {
     let slot_name = |name: &str| name.starts_with("pi-") && name.len() < 100 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
     let allowed = match args {
@@ -27,6 +24,28 @@ pub(crate) fn attach_command(project: &str, args: &[String]) -> Result<String, S
         return Err("unsupported Pi arguments".into());
     }
     let mut line = format!("--attach-control {}", sh_quote(project));
+    for arg in args {
+        line.push(' ');
+        line.push_str(&sh_quote(arg));
+    }
+    Ok(line)
+}
+
+/// The command line of a conversation tab: the picker's --rpc-attach (see rpc_attach there),
+/// Pi in RPC mode. Pier's forms only: nothing, --new, --continue, --session FILE, --slot NAME.
+pub(crate) fn rpc_command(project: &str, args: &[String]) -> Result<String, String> {
+    let rpc_slot = |name: &str| name.starts_with("pi-") && name.len() < 100 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    let allowed = match args {
+        [] => true,
+        [flag] => flag == "--continue" || flag == "--new",
+        [flag, file] if flag == "--session" => file.ends_with(".jsonl") && file.contains("/.pi/") && !file.contains('\n'),
+        [flag, name] if flag == "--slot" => rpc_slot(name),
+        _ => false,
+    };
+    if !allowed || project.is_empty() {
+        return Err("unsupported Pi arguments".into());
+    }
+    let mut line = format!("--rpc-attach {}", sh_quote(project));
     for arg in args {
         line.push(' ');
         line.push_str(&sh_quote(arg));
@@ -57,14 +76,28 @@ pub(crate) fn update_command(args: &[String]) -> Result<String, String> {
 pub(crate) fn package_command(args: &[String]) -> Result<String, String> {
     match args {
         [action, scope, source]
-            if (action == "install" || action == "remove")
+            if (action == "install" || action == "remove" || action == "skill")
                 && (scope == "user" || (scope.starts_with('/') && scope.len() < 4096 && !scope.chars().any(char::is_control)))
-                && package_source(source) =>
+                && (if action == "skill" { skill_source(source) } else { package_source(source) }) =>
         {
             Ok(format!("--pi-package {} {} {}", sh_quote(action), sh_quote(scope), sh_quote(source)))
         }
         _ => Err("unsupported package command".into()),
     }
+}
+
+/// A skill of skills.sh as Pier installs it: skills:OWNER/REPO/SKILL, plain names only
+/// (the picker checks it again).
+fn skill_source(source: &str) -> bool {
+    let Some(rest) = source.strip_prefix("skills:") else { return false };
+    let parts: Vec<&str> = rest.split('/').collect();
+    // Each part begins with a letter or a digit: never read as an option (--global) by npx.
+    let plain = |s: &str, extra: &str| {
+        s.len() <= 200
+            && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-".contains(c) || extra.contains(c))
+    };
+    parts.len() == 3 && plain(parts[0], "") && plain(parts[1], "") && plain(parts[2], ":")
 }
 
 /// A terminal in a lab or on a machine (the picker's --lab-shell): only a name.
@@ -80,9 +113,8 @@ pub(crate) fn lab_name(name: &str) -> bool {
     chars.next().is_some_and(|c| c.is_ascii_lowercase()) && name.len() <= 40 && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-/// kind "picker" runs the picker, "shell" the login shell, "pi" Pi itself in `project`
-/// (with `args`: nothing, --continue, or --session FILE), "update" `pi update` (see
-/// update_command).
+/// kind "picker" runs the picker, "shell" the login shell, "pi" Pi in `project` (with `args`),
+/// "update" `pi update` (see update_command).
 #[tauri::command]
 pub(crate) async fn term_open(
     app: AppHandle,
@@ -101,9 +133,9 @@ pub(crate) async fn term_open(
     })?;
     let request = next_request();
     let command = match kind.as_str() {
-        "picker" => Some(remote(&settings, &request, "")),
         "shell" => None,
         "pi" => Some(remote(&settings, &request, &attach_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
+        "chat" => Some(remote(&settings, &request, &rpc_command(project.as_deref().unwrap_or(""), args.as_deref().unwrap_or(&[]))?)),
         "update" => Some(remote(&settings, &request, &update_command(args.as_deref().unwrap_or(&[]))?)),
         "package" => Some(remote(&settings, &request, &package_command(args.as_deref().unwrap_or(&[]))?)),
         "lab" => Some(remote(&settings, &request, &lab_command(args.as_deref().unwrap_or(&[]))?)),
@@ -124,6 +156,8 @@ pub(crate) async fn term_open(
     let opening = match (kind.as_str(), command.as_deref()) {
         // Pi: tmux in control mode, Pi's own output (see term.rs).
         ("pi", Some(command)) => state.terminals.open_control(channel, command, cols, rows, output, on_exit).await,
+        // A conversation: Pi in RPC mode, JSON lines, no terminal in between.
+        ("chat", Some(command)) => state.terminals.open_plain(channel, command, output, on_exit).await,
         _ => state.terminals.open(channel, command.as_deref().map(str::trim_end), cols, rows, output, on_exit).await,
     };
     let id = opening.map_err(|e| {
@@ -184,6 +218,12 @@ pub(crate) async fn config_set(app: AppHandle, state: State<'_, AppState>, key: 
     api(&app, &state, &["config-set", &key], value.as_bytes()).await
 }
 
+/// Sets Pi's default thinking level ("" puts Pi's own back), in Pi's own settings.json.
+#[tauri::command]
+pub(crate) async fn pi_thinking(app: AppHandle, state: State<'_, AppState>, level: String) -> Result<Value, String> {
+    api(&app, &state, &["pi-thinking", &level], &[]).await
+}
+
 /// Sets Pi's default model ("provider/id"), in Pi's own settings.json.
 #[tauri::command]
 pub(crate) async fn pi_default(app: AppHandle, state: State<'_, AppState>, model: String) -> Result<Value, String> {
@@ -202,9 +242,8 @@ pub(crate) async fn session_mark(app: AppHandle, state: State<'_, AppState>, pro
 
 // --- the watch -------------------------------------------------------------------------
 
-/// Opens the watch (closing one already open) and says what to follow. What it sends
-/// comes as "vm-update" events; "watch-ended" when it stops (the connection dropped):
-/// the interface opens it again.
+/// Opens the watch (closing one already open); events come as "vm-update", and "watch-ended"
+/// when the connection drops, so the interface opens it again.
 #[tauri::command]
 pub(crate) async fn watch_start(app: AppHandle, state: State<'_, AppState>, want: Value) -> Result<u32, String> {
     let settings = settings(&state)?;

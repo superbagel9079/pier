@@ -1,19 +1,17 @@
 // File tabs: a project file read from the VM, with its line numbers and its syntax in
 // the theme's colors; Markdown also shown as a page.
 
-// ============================================================================
 // Viewer: one file of a project, read only
-// ============================================================================
 
 /** Opens (or shows) a project file next to the main terminal. */
-function openFile(rel, project) {
+function openFile(rel, project, { newTab = false } = {}) {
   const open = workspace.tabs().find((t) => t.kind === "file" && t.params.rel === rel && t.params.project === project);
   if (open) {
     workspace.show(open);
     open.reload();
     return;
   }
-  workspace.add("file", workspace.find("main")?.dock || "center", { params: { rel, project } });
+  workspace.add("file", "center", { params: { rel, project }, replace: !newTab });
 }
 
 const VIEW_HIGHLIGHT_MAX = 400 * 1024; // past this, plain text: coloring would freeze the page
@@ -76,8 +74,15 @@ function tokenizer(lang) {
 
 /** text in spans of the syntax's classes, into parent (no HTML parsed: text nodes only). */
 function highlight(parent, text, lang) {
-  if (!lang || !LANGS[lang] || text.length > VIEW_HIGHLIGHT_MAX) {
+  if (!lang || !LANGS[lang]) {
     parent.append(document.createTextNode(text));
+    return;
+  }
+  // A big file: its beginning in colour (a whole number of lines), the rest as it is.
+  if (text.length > VIEW_HIGHLIGHT_MAX) {
+    const cut = text.lastIndexOf("\n", VIEW_HIGHLIGHT_MAX) + 1 || VIEW_HIGHLIGHT_MAX;
+    highlight(parent, text.slice(0, cut), lang);
+    parent.append(document.createTextNode(text.slice(cut)));
     return;
   }
   const { re, keywords, nocase } = tokenizer(lang);
@@ -215,18 +220,68 @@ function makeFile(tab) {
   const lang = languageOf(rel);
   const markdown = lang === "md";
   let asPage = markdown;
-  const head = el("div", { className: "diff-head" });
-  const path = el("span", { className: "path", textContent: rel, title: `${project}/${rel}` });
-  const facts = el("span", { className: "dim small" });
-  const view = el("button", { className: "link", textContent: "source", hidden: !markdown });
-  const changes = el("button", { className: "link", textContent: "changes", title: "What changed in it: git, and Pi's edits" });
-  const refresh = el("button", { className: "link", textContent: "refresh" });
-  const mention = el("button", { className: "link", textContent: "mention in Pi" });
-  head.append(path, facts, view, changes, refresh, mention);
+  // Its lines and weight (its name is the tab's), then its actions as icons; "mention in
+  // Pi" types into Pi's prompt in tmux, so only with Pi in tmux.
+  const head = el("div", { className: "file-head" });
+  const facts = el("span", { className: "file-facts", title: `${project}/${rel}` });
+  const iconButton = (icon, title) => el("button", { type: "button", className: "icon-btn", title, ariaLabel: title }, svgIcon(icon));
+  const view = iconButton("file-code", "Its source");
+  view.hidden = !markdown;
+  const copy = iconButton("copy", "Copy its text");
+  const changes = iconButton("git-compare", "What changed in it: git, and Pi's edits");
+  const refresh = iconButton("refresh-cw", "Read it again");
+  const wrapLines = iconButton("wrap-text", "Wrap long lines");
+  const applyWrap = () => {
+    wrapLines.setAttribute("aria-pressed", String(Boolean(prefs.wordWrap)));
+    $(".code-view", body)?.classList.toggle("wrap", Boolean(prefs.wordWrap));
+  };
+  wrapLines.addEventListener("click", () => {
+    prefs.wordWrap = !prefs.wordWrap;
+    savePrefs();
+    for (const t of workspace.tabs()) t.applyWrap?.();
+  });
+  tab.applyWrap = applyWrap;
+  const mention = iconButton("at-sign", "Mention it in Pi's prompt");
+  mention.hidden = !prefs.piTerminal;
+  head.append(facts, el("span", { className: "file-acts" }, view, wrapLines, copy, changes, refresh, mention));
   const error = el("p", { className: "error", hidden: true });
   const body = el("div", { className: "file-body" });
-  tab.pane.append(head, error, body);
+  const conflict = el("div", { className: "file-conflict", role: "alert", hidden: true });
+  tab.pane.append(head, error, conflict, body);
   let last = null;
+  // Typing in it (the proposals' 3, saved by itself): a moment after the last key, or at
+  // Ctrl+S; the VM's copy written only if it did not change since read (else the choice).
+  let area = null, dirty = false, saveTimer = 0, saving = false;
+  const factsText = () => facts.textContent.replace(/ · (saving…|saved|not saved)$/, "");
+  const say = (word) => { facts.textContent = `${factsText()}${word ? ` · ${word}` : ""}`; };
+  async function save(force = false) {
+    clearTimeout(saveTimer);
+    if (!area || !dirty || saving) return;
+    saving = true;
+    say("saving…");
+    const tail = last.text.endsWith("\n") ? "\n" : "";
+    const text = area.value + tail;
+    let r;
+    try { r = await backend.api(["fs-write", project, rel, force ? "-" : (last.mtime || "-"), text]); }
+    catch (e) { saving = false; say("not saved"); showError(error, String(e)); return; }
+    saving = false;
+    if (r.conflict) {
+      say("not saved");
+      const theirs = el("button", { type: "button", className: "secondary", textContent: "Show theirs" });
+      const mine = el("button", { type: "button", textContent: "Keep mine" });
+      theirs.addEventListener("click", () => { dirty = false; conflict.hidden = true; reload(); });
+      mine.addEventListener("click", () => { conflict.hidden = true; save(true); });
+      conflict.replaceChildren(el("span", { textContent: "It changed on the VM since you opened it (Pi, perhaps): nothing was saved." }), theirs, mine);
+      conflict.hidden = false;
+      return;
+    }
+    showError(error, "");
+    last = { ...last, text, mtime: r.mtime, size: text.length };
+    // Typed on while it was being saved: saved again in a moment.
+    dirty = area.value + tail !== text;
+    if (dirty) saveTimer = setTimeout(save, 700);
+    else say("saved");
+  }
 
   function draw() {
     body.replaceChildren();
@@ -244,16 +299,64 @@ function makeFile(tab) {
       const gutter = el("pre", { className: "gutter", textContent: Array.from({ length: count }, (_, n) => n + 1).join("\n") });
       gutter.setAttribute("aria-hidden", "true");
       const src = el("pre", { className: "src" });
-      highlight(src, text, markdown ? null : lang);
-      code.append(gutter, src);
+      highlight(src, text || " ", markdown ? null : lang); // an empty file: a line high, to click in
+      if (last.truncated) {
+        area = null;
+        code.append(gutter, el("div", { className: "code-scroll" }, src));
+      } else {
+        // The text typed in a clear field laid exactly over the coloured one, which follows it.
+        area = el("textarea", { className: "code-edit", spellcheck: false, value: text, ariaLabel: `${rel}: type to change it, saved by itself` });
+        const wrap = el("div", { className: "code-wrap" }, src, area);
+        code.append(gutter, el("div", { className: "code-scroll" }, wrap)); // only the code scrolls sideways, under no number
+        let paint = 0, lines = count;
+        // A big file (past what is coloured): typed in, the field shows its own text at once and
+        // the copy under it only keeps the size, uncoloured (colouring 2 MB at each pause lagged).
+        const big = text.length > VIEW_HIGHLIGHT_MAX;
+        const repaint = () => {
+          paint = 0;
+          const value = area.value + (area.value.endsWith("\n") || !area.value ? " " : "");
+          if (big) src.textContent = value;
+          else { src.replaceChildren(); highlight(src, value, markdown ? null : lang); }
+          const n = area.value.split("\n").length;
+          if (n !== lines) { lines = n; gutter.textContent = Array.from({ length: n }, (_, i) => i + 1).join("\n"); }
+        };
+        area.addEventListener("input", () => {
+          dirty = true;
+          say("");
+          if (big && !area.classList.contains("plain")) { area.classList.add("plain"); src.style.visibility = "hidden"; }
+          if (!paint) paint = setTimeout(repaint, big ? 250 : 60);
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(save, big ? 1500 : 700); // a big one sent less often
+        });
+        area.addEventListener("keydown", (e) => {
+          if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+          if (e.key === "Tab" && !e.ctrlKey && !e.altKey) {
+            // Tab indents as the file does (a tab, or four spaces).
+            e.preventDefault();
+            const unit = /^\t/m.test(area.value) ? "\t" : "    ";
+            document.execCommand("insertText", false, unit);
+          }
+        });
+        area.addEventListener("blur", () => save());
+        // A click beside the text (under the last line, in the numbers): typing at its end.
+        code.addEventListener("mousedown", (e) => {
+          if (e.target === area || e.button !== 0) return;
+          e.preventDefault();
+          area.focus({ preventScroll: true });
+          area.setSelectionRange(area.value.length, area.value.length);
+        });
+      }
       body.append(code);
+      applyWrap();
     }
+    wrapLines.hidden = asPage; // a page wraps anyway
     if (last.truncated) {
       body.append(el("p", { className: "dim small", textContent: `Only the first ${humanSize(last.text.length)} are shown, of ${humanSize(last.size)}.` }));
     }
   }
 
   async function reload() {
+    if (dirty) { await save(); if (dirty) return; } // never drop what was typed
     let result;
     try {
       result = await backend.api(["file", project, rel]);
@@ -264,7 +367,8 @@ function makeFile(tab) {
     error.hidden = true;
     last = result;
     const lines = result.binary ? "" : `${(result.text.match(/\n/g)?.length || 0) + (result.text && !result.text.endsWith("\n") ? 1 : 0)} lines · `;
-    facts.textContent = `${lines}${humanSize(result.size)}`;
+    // Past what Pier shows (4 MB), its beginning only, and not typed in: a whole save would cut it.
+    facts.textContent = `${lines}${humanSize(result.size)}${result.truncated ? ` · read only: the first ${humanSize(result.text.length)} shown` : ""}`;
     const top = body.scrollTop;
     draw();
     body.scrollTop = top;
@@ -272,8 +376,18 @@ function makeFile(tab) {
 
   view.addEventListener("click", () => {
     asPage = !asPage;
-    view.textContent = asPage ? "source" : "page";
+    const word = asPage ? "Its source" : "Preview";
+    $("use", view).setAttribute("href", `#i-${asPage ? "file-code" : "eye"}`);
+    view.title = word;
+    view.setAttribute("aria-label", word);
     draw();
+  });
+  copy.addEventListener("click", async () => {
+    if (!last || last.binary) return;
+    try { await navigator.clipboard.writeText(last.text); } catch (e) { showError(error, `Could not copy: ${e}`); return; }
+    const use = $("use", copy);
+    use.setAttribute("href", "#i-check");
+    setTimeout(() => use.setAttribute("href", "#i-copy"), 1200);
   });
   changes.addEventListener("click", () => openDiff(rel, project));
   refresh.addEventListener("click", reload);

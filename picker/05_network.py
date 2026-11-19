@@ -1,14 +1,8 @@
 # --- the network Pi may reach -----------------------------------------------------------
 #
-# With network_limit, Pi's sandbox has a network of its own with nothing in it
-# (--unshare-net): Pi cannot connect anywhere by itself. Inside, a small relay of this
-# file (--net-bridge) listens on 127.0.0.1:3128 and passes each connection, through a
-# Unix socket bound into the sandbox, to NetProxy, which runs out here and accepts only
-# HTTP CONNECT to the places allowed. Pi, npm, git and curl use it through the usual
-# HTTPS_PROXY variables (NODE_USE_ENV_PROXY for Node's own fetch). Refused attempts are
-# logged as net.blocked, with the host: add it to network_allow if Pi needs it.
-# An address on the VM itself ("127.0.0.1:8080", a local gateway) is relayed too: the
-# relay listens on that port inside, and NetProxy connects to it out here.
+# With network_limit the sandbox has an empty network (--unshare-net); a relay (--net-bridge)
+# on 127.0.0.1:3128 reaches NetProxy, out here, by a Unix socket: HTTP CONNECT to allowed
+# hosts only. Refusals are logged as net.blocked (add to network_allow). VM addresses work.
 
 NET_DIR = "/tmp/.pier-net"
 NET_PROXY_PORT = 3128
@@ -474,20 +468,13 @@ def wait_child(proc):
 
 
 def pause_for_enter(prompt="press Enter to go back to the picker "):
+    if os.environ.get("PIER_RPC") == "1":  # no terminal to read Enter from: Pier shows the error
+        return
     try:
         sys.stderr.write(prompt)
         sys.stderr.flush()
         sys.stdin.readline()
     except (OSError, ValueError):
-        pass
-
-
-def sync_size():
-    """Tell curses about a resize that happened while the child owned the terminal."""
-    try:
-        size = os.get_terminal_size(sys.__stdout__.fileno())
-        curses.resizeterm(size.lines, size.columns)
-    except (OSError, ValueError, AttributeError, curses.error):
         pass
 
 
@@ -530,9 +517,12 @@ def exec_pi(path, extra):
     # Workers and helpers (see workers): every Pi may start workers (a worker none) and
     # consult helpers; an orchestrator or a worker gets its model.
     role = pi_role()[0] if config["workers"] else None
-    team_extension = pier_team_extension() if config["workers"] or config["helpers"] else None
+    image_model = config["image_model"] if MODEL_RE.fullmatch(config["image_model"] or "") else ""
+    team_extension = pier_team_extension() if config["workers"] or config["helpers"] or image_model else None
     if role:
         tracked = tracked + pi_model_args(config, role, os.environ.get("PIER_MODEL"))
+    elif not set(extra) & {"--session", "--continue", "-c", "--resume", "-r", "--model"}:
+        tracked = tracked + pi_default_args(home)
     if team_extension:
         env["PIER_WORKERS"] = "1" if config["workers"] and role != "worker" else ""
         env["PIER_HELPERS"] = "1" if config["helpers"] else ""
@@ -540,6 +530,7 @@ def exec_pi(path, extra):
         env["PIER_SESSIONS"] = session_dir(os.path.realpath(path))
         env["PIER_HELPER_MODELS"] = ",".join(helper_models(config))
         env["PIER_HELPER_MODEL"] = config["helper_model"] if MODEL_RE.fullmatch(config["helper_model"] or "") else ""
+        env["PIER_IMAGE_MODEL"] = image_model  # look_at: images read by this model
     if git_extension or labs_extension or team_extension:
         try:
             broker = GitBroker(os.path.realpath(path))
@@ -550,6 +541,9 @@ def exec_pi(path, extra):
                 if extension:
                     tracked = tracked + ["--extension", extension]
             env["PIER_GIT_SOCKET"] = broker.socket
+    # Pier's conversation view (see rpc_host): Pi speaks JSON on its stdin and stdout.
+    if os.environ.get("PIER_RPC") == "1":
+        extra = ["--mode", "rpc", *extra]
     plain = argv + list(extra)
     argv = argv + tracked + list(extra)
     if sandbox_wanted(config):
@@ -585,10 +579,8 @@ def exec_pi(path, extra):
     project = os.path.realpath(path)
     watcher = None
     if config["checkpoints"]:
-        # Saved before Pi starts, so that whatever it does first can be undone.
-        # A Pi in a worktree of its own changes that folder, not the project (whose points
-        # leave .pi-worktrees out), and writes its conversations as that folder's: its
-        # points are the worktree's, in a store of their own.
+        # Saved before Pi starts, so whatever it does first can be undone. A worktree Pi
+        # has its own store: its points are the worktree's, not the project's.
         saved = os.path.realpath(workdir)
         if not os.path.isdir(checkpoint_store(saved)):
             print("Pier: saving the project's first restore point (only the first one takes a while)...", flush=True)

@@ -1,6 +1,5 @@
-//! The SSH client against real SSH servers, run in-process: russh's server side plays
-//! the VM and the bastion. Covers what cannot be tried without the user's password:
-//! first contact, wrong password, a changed host key, a bastion, stdin delivery.
+//! The SSH client against in-process russh servers playing the VM and bastion: first contact,
+//! wrong password, a changed host key, a bastion, stdin delivery.
 
 use std::sync::Arc;
 

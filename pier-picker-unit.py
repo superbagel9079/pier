@@ -26,19 +26,7 @@ LINUX = sys.platform.startswith("linux")
 
 
 def load_picker():
-    """pier-picker.py as a module. Without curses (Windows), a stand-in: the picker only
-    needs it to draw."""
-    try:
-        import curses  # noqa: F401
-    except ImportError:
-        class Curses(types.ModuleType):
-            error = Exception
-
-            def __getattr__(self, name):
-                if name.startswith(("KEY_", "A_", "COLOR_")):
-                    return 0
-                raise AttributeError(name)
-        sys.modules["curses"] = Curses("curses")
+    """pier-picker.py as a module."""
     spec = importlib.util.spec_from_file_location("pier_picker", os.path.join(HERE, "pier-picker.py"))
     module = importlib.util.module_from_spec(spec)
     sys.modules["pier_picker"] = module
@@ -128,16 +116,6 @@ class AllowList(unittest.TestCase):
             watcher.tick()  # was: FileNotFoundError, logged as checkpoint.watch-failed
         finally:
             m.pier_state = saved
-
-    def test_a_commit_subject_makes_no_line_of_its_own(self):
-        saved = m.git_dir, m.git_run
-        m.git_dir = lambda path: True
-        m.git_run = lambda path, *args: "1700000000\tfix ²\tfake\n1700000001\tok\x1c²\tx\n".encode()
-        try:
-            commits = m.preview_info(tempfile.gettempdir())["commits"]
-        finally:
-            m.git_dir, m.git_run = saved
-        self.assertEqual(commits, [(1700000000, "fix ²\tfake"), (1700000001, "ok\x1c²\tx")])
 
     def test_a_name_never_leads_to_this_machine(self):
         answers = ["127.0.0.1", "169.254.169.254", "::ffff:127.0.0.1", "fe80::1%eth0", "10.0.0.5", "140.82.112.3"]
@@ -350,6 +328,33 @@ class Checks(unittest.TestCase):
 
 
 # --- sessions ------------------------------------------------------------------------------
+
+class SkillsTop(unittest.TestCase):
+    """skills.sh's ranking read from its home page: well-formed ones only, in order, once each."""
+
+    def test_entries(self):
+        page = ('x{\\"source\\":\\"vercel-labs/skills\\",\\"skillId\\":\\"find-skills\\",\\"name\\":\\"find-skills\\",\\"installs\\":4436719,\\"weekly\\":[1]}'
+                '{\\"source\\":\\"-evil/repo\\",\\"skillId\\":\\"x\\",\\"name\\":\\"x\\",\\"installs\\":9}'
+                '{\\"source\\":\\"vercel-labs/skills\\",\\"skillId\\":\\"find-skills\\",\\"name\\":\\"find-skills\\",\\"installs\\":1}')
+        skills = m.skills_from_home(page)
+        self.assertEqual([s["source"] for s in skills], ["skills:vercel-labs/skills/find-skills"])
+        self.assertEqual(skills[0]["installs"], 4436719)
+
+
+class Thinking(Home):
+    """Pi's default thinking level: written in its settings.json, put back, refused when unknown."""
+
+    def test_set_then_cleared(self):
+        self.assertEqual(m.api_pi_thinking(self.home, "high"), {"thinking": "high"})
+        with open(self.path(".pi", "agent", "settings.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["defaultThinkingLevel"], "high")
+        self.assertEqual(m.api_pi_thinking(self.home, ""), {"thinking": ""})
+        self.assertEqual(m.pi_default_thinking(self.home), "")
+
+    def test_unknown_level_refused(self):
+        with self.assertRaises(m.ApiError):
+            m.api_pi_thinking(self.home, "--everything")
+
 
 class Sessions(Home):
     def session(self, *entries, partial=""):
@@ -880,16 +885,149 @@ class Conversations(Home):
         with self.assertRaises(m.ApiError):
             m.api_session_delete(self.home, self.project, self.write("work/test/notes.jsonl", "{}"))
 
-    def test_delete_refused_while_a_pi_runs_it(self):
+    def test_delete_refused_while_its_pi_does_not_stop(self):
+        # Its Pi is stopped and waited for; one that never ends leaves the file in place.
         path = self.session("a.jsonl", 1000)
-        saved = m.pi_infos
+        saved, wait = m.pi_infos, m.SESSION_DELETE_WAIT
         m.pi_infos = lambda project, home, pis: [{"file": path}]
+        m.SESSION_DELETE_WAIT = 0.3
         try:
             with self.assertRaises(m.ApiError):
                 m.api_session_delete(self.home, self.project, path)
         finally:
-            m.pi_infos = saved
+            m.pi_infos, m.SESSION_DELETE_WAIT = saved, wait
         self.assertTrue(os.path.exists(path))
+
+    def test_messages_follow_the_active_branch(self):
+        # The history shown at once: the branch ending at the last entry, images left out,
+        # the session header and an abandoned branch not shown.
+        path = os.path.join(self.folder, "b.jsonl")
+        user = lambda i, p, text: {"type": "message", "id": i, "parentId": p, "message": {"role": "user", "content": [{"type": "text", "text": text}, {"type": "image", "data": "AAAA"}]}}
+        lines = [{"type": "session", "id": "h", "cwd": self.project}, user("u1", None, "first"),
+                 {"type": "message", "id": "a1", "parentId": "u1", "message": {"role": "assistant", "content": [{"type": "text", "text": "x" * 30000}]}},
+                 user("u2", "a1", "abandoned"), user("u3", "a1", "edited")]
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("".join(json.dumps(line) + "\n" for line in lines))
+        out = m.api_session_messages(self.home, self.project, path)["messages"]
+        texts = [c.get("text", "")[:9] for msg in out for c in msg["content"]]
+        self.assertEqual(texts, ["first", "x" * 9, "edited"])
+        self.assertFalse(any(c.get("type") == "image" for msg in out for c in msg["content"]))
+        self.assertLess(len(out[1]["content"][0]["text"]), 25000)
+
+    def test_models_json_link_out_is_refused(self):
+        # Pi could point models.json at a secret: saving a provider must not copy it back.
+        secret = self.path("secret.json")
+        with open(secret, "w", encoding="utf-8") as handle:
+            json.dump({"token": "ghp_x"}, handle)
+        target = m.models_json_path()
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        try:
+            os.symlink(secret, target)
+        except (OSError, NotImplementedError):
+            self.skipTest("no symlinks here")
+        with self.assertRaises(m.ApiError):
+            m.api_provider_save(self.home, "p", json.dumps({"baseUrl": "http://127.0.0.1:9/v1", "api": "openai-completions", "models": []}).encode())
+        self.assertTrue(os.path.islink(target))
+
+    def test_gallery_media_keeps_real_pictures_only(self):
+        # pi.dev's picture of each package, as a data URL: a real PNG over https only.
+        import urllib.request
+        png = b"\x89PNG\r\n\x1a\n" + b"0" * 40
+        answers = {
+            "https://pi.dev/api/packages/preview-media": json.dumps({"previews": [
+                {"name": "good", "media": {"type": "image", "url": "https://x.test/good.png"}},
+                {"name": "plain", "media": {"type": "image", "url": "http://x.test/plain.png"}},
+                {"name": "fake", "media": {"type": "image", "url": "https://x.test/fake.png"}},
+                {"name": "none", "media": None}]}).encode(),
+            "https://x.test/good.png": png,
+            "https://x.test/fake.png": b"<html>not a picture</html>",
+        }
+        asked = []
+
+        class Answer(io.BytesIO):
+            headers = {}
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def urlopen(request, timeout=None):
+            url = request.full_url if hasattr(request, "full_url") else request
+            asked.append(url)
+            return Answer(answers[url.split("?")[0]])
+
+        old = urllib.request.urlopen
+        urllib.request.urlopen = urlopen
+        try:
+            m._GALLERY_MEDIA.clear()
+            media = m.api_gallery_media(self.home, ["good", "plain", "fake", "none", "bad name!"])["media"]
+        finally:
+            urllib.request.urlopen = old
+        self.assertTrue(media["good"].startswith("data:image/png;base64,"))
+        self.assertIsNone(media["plain"])
+        self.assertIsNone(media["fake"])
+        self.assertIsNone(media["none"])
+        self.assertNotIn("bad name!", media)
+        self.assertNotIn("http://x.test/plain.png", asked)
+
+    def test_skill_sources_are_plain_names_only(self):
+        # skills:OWNER/REPO/SKILL, nothing a shell or npx would read as more.
+        ok = m.SKILL_SOURCE_RE.fullmatch("skills:vercel-labs/agent-skills/vercel-react-best-practices")
+        self.assertEqual(ok.groups(), ("vercel-labs", "agent-skills", "vercel-react-best-practices"))
+        for bad in ("skills:a/b", "skills:a/b/c d", "skills:a/b/c;rm", "npm:x", "skills:a/b/--global", "skills:-a/b/c", "skills:a/.b/c"):
+            self.assertIsNone(m.SKILL_SOURCE_RE.fullmatch(bad), bad)
+        # Under two letters: skills.sh's most installed, from its home page; offline, type two letters.
+        import urllib.request
+
+        class Answer(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def offline(request, timeout=None):
+            raise OSError("offline")
+
+        page = (r'{\"source\":\"vercel-labs/skills\",\"skillId\":\"find-skills\",\"name\":\"find-skills\",\"installs\":42}'
+                r'{\"source\":\"-bad/repo\",\"skillId\":\"x\",\"name\":\"x\",\"installs\":1}')
+        old = urllib.request.urlopen
+        try:
+            urllib.request.urlopen = lambda request, timeout=None: Answer(page.encode())
+            m._SKILLS_SEARCH.clear()
+            top = m.api_skills_search(self.home, "a")
+            self.assertEqual([s["source"] for s in top["skills"]], ["skills:vercel-labs/skills/find-skills"])
+            self.assertTrue(top["top"])
+            urllib.request.urlopen = offline
+            m._SKILLS_SEARCH.clear()
+            self.assertEqual(m.api_skills_search(self.home, "a"), {"query": "", "skills": [], "short": True})
+        finally:
+            urllib.request.urlopen = old
+            m._SKILLS_SEARCH.clear()
+
+    def test_rpc_light_keeps_the_delta_only(self):
+        # A streamed piece without the message so far; a tool call's pieces dropped.
+        partial = {"role": "assistant", "content": [{"type": "text", "text": "x" * 5000}]}
+        raw = json.dumps({"type": "message_update", "message": partial,
+                          "assistantMessageEvent": {"type": "text_delta", "delta": "hi", "partial": partial}}).encode() + b"\n"
+        out = json.loads(m.rpc_light(raw))
+        self.assertEqual(out, {"type": "message_update", "assistantMessageEvent": {"type": "text_delta", "delta": "hi"}})
+        self.assertIsNone(m.rpc_light(json.dumps({"type": "message_update", "assistantMessageEvent": {"type": "toolcall_delta", "delta": "{"}}).encode()))
+        other = b'{"type":"message_end","message":{"role":"assistant"}}\n'
+        self.assertEqual(m.rpc_light(other), other)
+
+    def test_delete_stops_its_pi_first(self):
+        # A Pi holding the conversation is stopped, then the file goes once it has ended.
+        path = self.session("a.jsonl", 1000)
+        saved = (m.pi_infos, m.project_pis, m.stop_pi)
+        state = {"running": True, "stopped": []}
+        m.pi_infos = lambda project, home, pis: [{"file": path, "slot": "pi-x"}] if state["running"] else []
+        m.project_pis = lambda sessions, project: [{"name": "pi-x"}]
+        def stop(pi, env=None):
+            state["stopped"].append(pi["name"])
+            state["running"] = False
+        m.stop_pi = stop
+        try:
+            self.assertTrue(m.api_session_delete(self.home, self.project, path)["deleted"])
+        finally:
+            m.pi_infos, m.project_pis, m.stop_pi = saved
+        self.assertEqual(state["stopped"], ["pi-x"])
+        self.assertFalse(os.path.exists(path))
 
     def test_category_rename_and_remove(self):
         a, b, c = (self.session(f"{n}.jsonl", 1000) for n in "abc")

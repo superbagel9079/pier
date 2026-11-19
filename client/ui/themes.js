@@ -1,9 +1,5 @@
-// Color themes for Pier: the built-in ones, and readers for VS Code and Zed theme
-// files, so their thousands of themes can be used as they are.
-//
-// A theme has the interface's colors (ui) and the terminal's (terminal: background,
-// foreground, cursor, selection and the 16 ANSI colors). Missing colors are derived
-// from the others, so a partial theme still looks whole.
+// Color themes: the built-in ones, and readers for VS Code and Zed theme files.
+// A theme has the interface's colors (ui) and the terminal's; missing ones are derived.
 
 const UI_KEYS = ["bg", "panel", "fg", "dim", "line", "field", "hover", "accent", "green", "red", "edge"];
 const ANSI_KEYS = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
@@ -15,10 +11,10 @@ const ansi = (list) => Object.fromEntries(ANSI_KEYS.map((k, i) => [k, list[i]]))
 // Palettes of well-known public themes (colors only).
 const BUILTIN_THEMES = [
   { id: "devbox-dark", name: "Pier dark", dark: true,
-    ui: { bg: "#0c0c0c", panel: "#111111", fg: "#f2f2f2", dim: "#8a8a8a", line: "#2c2c2c", field: "#161616", hover: "#1c1c1c" },
+    ui: { bg: "#141414", panel: "#101010", fg: "#ececec", dim: "#9a9a9a", line: "#2a2a2a", field: "#1b1b1b", hover: "#222222" },
     terminal: {} },
   { id: "devbox-light", name: "Pier light", dark: false,
-    ui: { bg: "#fafafa", panel: "#f3f3f3", fg: "#111111", dim: "#6a6a6a", line: "#d4d4d4", field: "#ffffff", hover: "#e9e9e9" },
+    ui: { bg: "#fbfbfa", panel: "#f3f3f1", fg: "#1c1c1c", dim: "#646464", line: "#e2e2df", field: "#ffffff", hover: "#ebebe8" },
     terminal: {} },
   { id: "ayu-dark", name: "Ayu Dark", dark: true,
     ui: { bg: "#0b0e14", panel: "#0d1017", fg: "#bfbdb6", dim: "#565b66", line: "#1b1f29", field: "#0d1017", hover: "#131721", accent: "#e6b450" },
@@ -150,8 +146,8 @@ function readable(color, toward, backgrounds, ratio) {
 /** Fills what a theme leaves out, from its own colors. */
 function completeTheme(theme) {
   const ui = { ...theme.ui };
-  ui.bg = flatten(ui.bg, "#000000") || (theme.dark ? "#0c0c0c" : "#fafafa");
-  ui.fg = flatten(ui.fg, ui.bg) || (luminance(ui.bg) < 0.5 ? "#f2f2f2" : "#111111");
+  ui.bg = flatten(ui.bg, "#000000") || (theme.dark ? "#141414" : "#fbfbfa");
+  ui.fg = flatten(ui.fg, ui.bg) || (luminance(ui.bg) < 0.5 ? "#ececec" : "#1c1c1c");
   for (const key of ["panel", "dim", "line", "field", "hover", "accent"]) ui[key] = flatten(ui[key], ui.bg);
   ui.panel ||= mix(ui.bg, ui.fg, 0.03);
   ui.dim ||= mix(ui.fg, ui.bg, 0.45);
@@ -159,17 +155,18 @@ function completeTheme(theme) {
   ui.field ||= mix(ui.bg, ui.fg, 0.05);
   ui.hover ||= mix(ui.bg, ui.fg, 0.09);
   ui.accent ||= ui.fg;
-  // WCAG AA: dim text 4.5:1 wherever it is drawn: the background, the panels and the
-  // surfaces style.css mixes from bg and fg (--surface 5%, --raise 10%, --strong 16%), a
-  // field, a row under the pointer. The edge of a field and the accent (focus rings, the
-  // active tab) 3:1, so they are seen (1.4.11).
-  const surfaces = [ui.bg, ui.panel, ui.field, ui.hover, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.fg, 0.10), mix(ui.bg, ui.fg, 0.16)];
-  ui.dim = readable(ui.dim, ui.fg, surfaces, 4.5);
-  ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);
-  ui.accent = readable(ui.accent, ui.fg, [ui.bg, ui.panel, ui.field, ui.hover], 3);
   const terminal = { ...theme.terminal };
   ui.green = flatten(ui.green || terminal.green, ui.bg) || "#3fb950";
   ui.red = flatten(ui.red || terminal.red, ui.bg) || "#f85149";
+  // The theme's own text 4.5:1 too, the diff's tints included (Solarized's falls short).
+  ui.fg = readable(ui.fg, luminance(ui.bg) < 0.5 ? "#ffffff" : "#000000",
+    [ui.bg, ui.panel, ui.field, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.green, 0.18), mix(ui.bg, ui.red, 0.18)], 4.5);
+  // WCAG AA: dim text 4.5:1 on the bg, panels, style.css surfaces (--surface 5%, --raise 10%,
+  // --strong 16%), fields, hovered rows, removed diff lines (--del-bg, 18%). Edge, accent 3:1.
+  const surfaces = [ui.bg, ui.panel, ui.field, ui.hover, mix(ui.bg, ui.fg, 0.05), mix(ui.bg, ui.fg, 0.10), mix(ui.bg, ui.fg, 0.16), mix(ui.bg, ui.red, 0.18)];
+  ui.dim = readable(ui.dim, ui.fg, surfaces, 4.5);
+  ui.edge = readable(mix(ui.field, ui.fg, 0.25), ui.fg, [ui.bg, ui.panel, ui.field], 3);
+  ui.accent = readable(ui.accent, ui.fg, [ui.bg, ui.panel, ui.field, ui.hover], 3);
   return { ...theme, dark: theme.dark ?? luminance(ui.bg) < 0.5, ui, terminal };
 }
 
@@ -268,4 +265,9 @@ function themesFromFile(text, fileName) {
     ui: Object.fromEntries(Object.entries(t.ui).filter(([, v]) => v)),
     terminal: Object.fromEntries(Object.entries(t.terminal).filter(([, v]) => v)),
   }));
+}
+
+// The unit tests (client/test, in Node) read these; in the page there is no module.
+if (typeof module === "object" && module.exports) {
+  module.exports = { UI_KEYS, BUILTIN_THEMES, completeTheme, mix, contrast };
 }

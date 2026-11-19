@@ -1,21 +1,16 @@
 # --- git forges: GitHub, GitLab, Gitea / Forgejo ------------------------------------------
 #
-# Pi works in git as it likes inside its sandbox (commit, branch, merge, all local). What
-# talks to a forge goes through the picker, out of the sandbox, with a token Pi never
-# sees: Pi's tools (PIER_GIT_EXTENSION) ask the broker (GitBroker) over a Unix socket,
-# and the broker checks each request against the rules before doing it.
-#   - push: only branches under "pi/" (the default branch only while the remote repository
-#     is empty), never forced. The commits are first fetched, in git's jail (no network,
-#     the project read-only), into a bare mirror of the picker's own; the mirror then
-#     pushes with the token. No hook, filter or setting of the project runs with it.
-#   - pull: the forge into the mirror, then the mirror into the project's
-#     refs/remotes/origin/*, in the jail: Pi merges or rebases itself.
+# Pi works in git freely in its sandbox; whatever talks to a forge goes through the picker,
+# outside it, with a token Pi never sees: Pi's tools (PIER_GIT_EXTENSION) ask the broker
+# (GitBroker) over a Unix socket, which checks each request against the rules.
+#   - push: only "pi/" branches (the default branch only while the remote is empty), never
+#     forced. Fetched first in git's jail (no network, project read-only) into a bare mirror,
+#     which pushes with the token. No hook, filter or setting of the project runs.
+#   - pull: forge into the mirror, then into refs/remotes/origin/* in the jail; Pi merges.
 #   - pull requests: opened, listed and read freely.
-#   - merging, and creating a repository: never by Pi alone. Its request waits in
-#     approvals.json until the user approves it in Pier, which then does it.
-# Tokens live in ~/.config/pier-picker/forges.json (mode 600), out of the sandbox's
-# sight; they are never logged, nor put on a command line (git gets them in its
-# environment, GIT_CONFIG_*).
+#   - merging, creating a repository: never by Pi alone; the request waits in approvals.json.
+# Tokens live in ~/.config/pier-picker/forges.json (mode 600), out of the sandbox's sight;
+# never logged, nor on a command line (git gets them in GIT_CONFIG_*).
 
 FORGE_KINDS = ("github", "gitlab", "gitea")
 PI_BRANCH_RE = re.compile(r"pi/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*")
@@ -127,9 +122,8 @@ def forge_open(request, timeout):
     return urllib.request.build_opener(KeepToken).open(request, timeout=timeout)
 
 
-# Answers to GET, with their ETag: asked again, the forge says "304 not modified",
-# which GitHub does not count against the token's 5,000 requests an hour. Kept for the
-# watch's life (the team part asks the same pages every five minutes).
+# Answers to GET, with their ETag: asked again, the forge says "304 not modified", which
+# GitHub does not count against the 5,000 requests an hour. Kept for the watch's life.
 _FORGE_ETAGS = {}
 FORGE_ETAGS_KEPT = 300
 

@@ -1,10 +1,9 @@
 # --- project setup ---------------------------------------------------------------------
 #
-# Mirrors Pi's resource loader: a global context file in the agent dir, then the first
-# of AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD in every directory from / down to the
-# project. .pi/SYSTEM.md and .pi/APPEND_SYSTEM.md only count once the project is
-# trusted (~/.pi/agent/trust.json, nearest entry wins); otherwise Pi uses the global
-# ones in the agent dir.
+# Mirrors Pi's resource loader: a global context file in the agent dir, then the first of
+# AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD in every directory from / to the project.
+# .pi/SYSTEM.md and .pi/APPEND_SYSTEM.md count only once the project is trusted
+# (~/.pi/agent/trust.json, nearest entry wins); else the global ones.
 
 CONTEXT_NAMES = ("AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD")
 TEXT_MAX_BYTES = 256 * 1024
@@ -303,14 +302,31 @@ def api_mark(home, path, file, what, value):
     return {"file": file, what: entry[what]}
 
 
+SESSION_DELETE_WAIT = 8  # seconds a Pi stopped for its conversation's deletion may take to end
+
+
 def api_session_delete(home, path, file):
     """Deletes a conversation for good: its file in Pi's sessions, and Pier's name, folder,
-    pin for it. Refused while a Pi runs it (stop it first): it would write it again."""
+    pin for it. A Pi running it is stopped first, and waited for (it would write the file
+    again as it ends); the file written once more by it is deleted again."""
     project = resolve_inside(home, path)
     file = label_key(project, file)
-    held = {i["file"] for i in pi_infos(project, home, project_pis(pi_sessions(), project)) if i["file"]}
-    if file in held:
-        raise ApiError("a Pi runs this conversation: stop it first")
+
+    def holders():
+        forget_pi_sessions()
+        return [i for i in pi_infos(project, home, project_pis(pi_sessions(), project)) if i["file"] == file]
+    running = holders()
+    if running:
+        sessions = {p["name"]: p for p in project_pis(pi_sessions(), project)}
+        for pi in running:
+            if pi.get("slot") in sessions:
+                stop_pi(sessions[pi["slot"]])
+        deadline = time.monotonic() + SESSION_DELETE_WAIT
+        while holders() and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if holders():
+            raise ApiError("its Pi did not stop in time: try again in a moment")
+        time.sleep(0.3)  # its last write, as it ended
     try:
         st = os.lstat(file)
     except FileNotFoundError:
@@ -319,6 +335,12 @@ def api_session_delete(home, path, file):
         raise ApiError("not a conversation file")
     with labels_lock(home):
         os.unlink(file)
+        if running:
+            time.sleep(0.5)
+            try:
+                os.unlink(file)  # written again by the Pi as it ended
+            except FileNotFoundError:
+                pass
         labels = load_labels(home)
         labels.pop(file, None)
         save_labels(home, labels, file)
@@ -357,6 +379,70 @@ def save_labels(home, labels, file):
 _SESSION_INFO = {}  # path -> ((size, mtime), info): a session file is read again only when it changed
 
 
+SESSION_SHOW_MAX = 200          # the latest messages shown before Pi is up
+SESSION_SHOW_BYTES = 64 * 1024 * 1024
+SESSION_PART_MAX = 20000         # characters of one text part (a long tool output)
+
+
+def api_session_messages(home, path, file):
+    """A conversation's messages as Pi's get_messages gives them, read from its file at once
+    (Pier shows them while its Pi starts): the active branch (from the last entry back by
+    parentId), the latest SESSION_SHOW_MAX, images left out, long texts cut."""
+    project = resolve_inside(home, path)
+    file = session_file_in(project, file)
+    entries = {}
+    last = None
+    try:
+        with open_plain(file, sessions_root()) as handle:
+            if os.fstat(handle.fileno()).st_size > SESSION_SHOW_BYTES:
+                return {"messages": [], "partial": True}
+            for raw in handle:
+                try:
+                    entry = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(entry, dict) and entry.get("id"):
+                    entries[entry["id"]] = entry
+                    last = entry["id"]
+    except OSError as exc:
+        raise ApiError(f"cannot read this conversation: {exc.strerror or exc}")
+    chain, seen = [], set()
+    while last and last not in seen and last in entries:
+        seen.add(last)
+        chain.append(entries[last])
+        last = entries[last].get("parentId")
+    messages = []
+    for entry in reversed(chain):
+        message = entry.get("message") if entry.get("type") == "message" else None
+        if not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if isinstance(content, list):
+            light = []
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") == "image":
+                    continue
+                part = dict(part)
+                for key in ("text", "thinking"):
+                    if isinstance(part.get(key), str) and len(part[key]) > SESSION_PART_MAX:
+                        part[key] = part[key][:SESSION_PART_MAX] + "\n…"
+                light.append(part)
+            message = {**message, "content": light}
+        messages.append(message)
+    return {"messages": messages[-SESSION_SHOW_MAX:], "partial": len(messages) > SESSION_SHOW_MAX}
+
+
+def session_parent(path):
+    """The conversation a fork came from (its header's parentSession), else None."""
+    try:
+        with open(path, "rb") as handle:
+            head = json.loads(handle.readline(64 * 1024).decode("utf-8", "replace") or "{}")
+    except (OSError, ValueError):
+        return None
+    parent = head.get("parentSession") if isinstance(head, dict) and head.get("type") == "session" else None
+    return os.path.realpath(parent) if isinstance(parent, str) and parent else None
+
+
 def session_info(path, st):
     """A conversation for the lists: name, first question, and its token use (files up
     to 8 MB), read again only when the file changed."""
@@ -368,7 +454,9 @@ def session_info(path, st):
     info = {"path": path, "file": os.path.basename(path), "modified": int(st.st_mtime),
             "name": session_name_of(path),
             # The first prompt does not change once there is one.
-            "prompt": first["prompt"] if first and first["prompt"] else first_prompt(path), "usage": None}
+            "prompt": first["prompt"] if first and first["prompt"] else first_prompt(path), "usage": None,
+            # A fork names the conversation it came from in its first line (Pi's header).
+            "parent": first["parent"] if first else session_parent(path)}
     if st.st_size <= 8 * 1024 * 1024:
         try:
             _, _, usage, _ = read_session(path)
@@ -461,6 +549,26 @@ def folder_items(folder, kind):
 MCP_FILES = (("user", "{agent}/mcp.json"), ("project", "{project}/.pi/mcp.json"))
 
 
+def mcp_servers(project, home):
+    """The MCP servers Pi connects (~/.pi/agent/mcp.json and the project's .pi/mcp.json),
+    each with where it is set and whether it is on."""
+    agent = agent_dir()
+    out = []
+    for scope, pattern in MCP_FILES:
+        path = pattern.format(agent=agent, project=project)
+        config = read_json_file(path)
+        servers = config.get("mcpServers") if isinstance(config, dict) else None
+        if not isinstance(servers, dict):
+            continue
+        for name, server in list(servers.items())[:RESOURCE_MAX]:
+            server = server if isinstance(server, dict) else {}
+            kind = "http" if server.get("url") else "stdio" if server.get("command") else None
+            description = server.get("description") if isinstance(server.get("description"), str) else None
+            out.append({"name": name, "scope": scope, "from": pretty_path(path, home), "kind": kind,
+                        "enabled": server.get("enabled") is not False, "description": description})
+    return out
+
+
 def pi_resources(project, home):
     agent = agent_dir()
     places = (("user", agent, read_json_file(os.path.join(agent, "settings.json"))),
@@ -481,18 +589,7 @@ def pi_resources(project, home):
         for key in ("defaultProvider", "defaultModel", "defaultThinkingLevel"):
             if isinstance(settings.get(key), str):
                 out["model"][key] = settings[key]
-    for scope, pattern in MCP_FILES:
-        path = pattern.format(agent=agent, project=project)
-        config = read_json_file(path)
-        servers = config.get("mcpServers") if isinstance(config, dict) else None
-        if not isinstance(servers, dict):
-            continue
-        for name, server in list(servers.items())[:RESOURCE_MAX]:
-            server = server if isinstance(server, dict) else {}
-            kind = "http" if server.get("url") else "stdio" if server.get("command") else None
-            description = server.get("description") if isinstance(server.get("description"), str) else None
-            out["mcp"].append({"name": name, "scope": scope, "from": pretty_path(path, home), "kind": kind,
-                               "enabled": server.get("enabled") is not False, "description": description})
+    out["mcp"] = mcp_servers(project, home)
     versions = pi_versions_soon(home, [p["source"] for p in out["packages"]])
     out["pi"] = versions.get("pi")
     for info in out["packages"]:
@@ -500,9 +597,8 @@ def pi_resources(project, home):
     return out
 
 
-# Every conversation of every project, for the Conversations tab: Pi's sessions folder
-# holds one folder per project; the project is the "cwd" of a session's first line.
-# Light on purpose: no token counts (Setup has them, project by project).
+# Every conversation of every project, for the Conversations tab: the project is the
+# "cwd" of a session's first line. Light on purpose: no token counts (Setup has them).
 
 _FOLDER_PROJECT = {}  # sessions folder -> project path (a folder never changes project)
 # The most recent conversations, over all projects, come with their token use (the
@@ -621,9 +717,8 @@ def api_conversations(home):
     return {"projects": projects, "truncated": cut is not None}
 
 
-# Pi's version and the newest one, and the newest version of each npm package. Asked to
-# npm's registry from the VM, at most every 6 hours (an hour after a failure); the
-# answer is kept in ~/.local/state/pier-picker/versions.json.
+# Pi's version and the newest, and the newest of each npm package: asked of npm's registry
+# at most every 6 hours (1 hour after a failure), cached in the state dir's versions.json.
 
 PI_NPM = "@earendil-works/pi-coding-agent"
 VERSIONS_FRESH = 6 * 3600

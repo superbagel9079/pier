@@ -1,12 +1,8 @@
 # --- what each Pi says about itself -------------------------------------------------------
 #
-# Pi switches conversations by itself (/new, /resume, /fork), and the file of a new one
-# only appears at its first answer: from outside, which conversation a Pi holds can only
-# be guessed. So the Pis started here get a small extension (--extension, nothing is
-# installed in Pi's settings) that writes, at every change, which conversation it holds
-# and whether it works, to <the picker's state>/pi/pis/<tmux session>/state.json. That
-# folder is the picker's: the sandbox gives each Pi its own folder there and nothing else
-# of it, so a Pi cannot write what another says, nor change the extensions they load.
+# Pi switches conversations itself and a new one's file appears only at its first answer, so
+# the Pis started here get an extension writing which conversation each holds, and whether it
+# works, to <state>/pi/pis/<tmux session>/state.json: a folder only that Pi can write.
 
 PIER_EXTENSION = """// Written by Pier (pier-picker): tells Pier which conversation this Pi holds and
 // whether it is working. Loaded with --extension by the picker only; it writes one small
@@ -15,6 +11,15 @@ import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export default function (pi: any) {
+  // Pier's "edit this message": back to just before it, in the same conversation (what
+  // followed stays a branch of its tree, as /tree does); Pier then sends the changed text.
+  pi.registerCommand("pier-edit", {
+    description: "Pier: back to just before one of your messages, to send it changed",
+    handler: async (args: string, ctx: any) => {
+      const id = String(args || "").trim();
+      if (id) await ctx.navigateTree(id, { summarize: false });
+    },
+  });
   const target = process.env.PIER_STATE;
   if (!target) return;
   let file: string | null = null;

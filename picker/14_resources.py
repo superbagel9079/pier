@@ -1,12 +1,8 @@
 # --- managing what Pi loads: skills, extensions, prompts, packages ------------------------
 #
-# Setup lists each resource with whether Pi loads it, and turns one on or off the way
-# `pi config` does (Pi's own package-manager.js): a "+path" or "-path" entry, path
-# relative to its base, in the "skills" / "extensions" / "prompts" list of
-# settings.json, or of the package's entry there (then relative to the package root).
-# Local skills can be made, edited, imported from the PC and put in a bin; packages are
-# installed and removed by `pi install` / `pi remove`, run in Pi's sandbox (see
-# pi_package). Pi reads what changed when it next starts.
+# Setup lists each resource and turns one on or off like `pi config`: a "+path" or "-path"
+# entry in the skills / extensions / prompts list of settings.json (or the package's entry).
+# Packages go through `pi install` / `pi remove` in Pi's sandbox (see pi_package).
 
 MANAGED_KINDS = ("skills", "extensions", "prompts")
 SKILL_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")  # Pi's rule: 1-64, lowercase, hyphens
@@ -163,6 +159,7 @@ def api_resources(home, path):
             for kind in MANAGED_KINDS:
                 out[kind].extend(info["resources"][kind])
     out["pier"] = pier_extensions(home)
+    out["mcp"] = mcp_servers(project, home)
     return out
 
 
@@ -177,15 +174,28 @@ def pier_extensions(home):
          "description": "git tools for the forge (push, pull requests, tasks), through the picker: the token stays out of the sandbox"},
         {"name": "pier-labs.ts", "enabled": labs_enabled(home), "setting": None,
          "description": "the labs' tools (disposable machines), once a lab host is set up in Labs"},
-        {"name": "pier-workers.ts", "enabled": bool(config["workers"] or config["helpers"]), "setting": "workers, helpers",
-         "description": "worker Pis (start_worker...: the first one waits for your approval) and read-only helpers (consult: scout, reviewer, critic, checker); a worker gets report instead of start_worker"},
+        {"name": "pier-workers.ts", "enabled": bool(config["workers"] or config["helpers"] or config["image_model"]), "setting": "workers, helpers",
+         "description": "worker Pis (start_worker...: the first one waits for your approval), read-only helpers (consult: scout, reviewer, critic, checker) and, with a model for images, look_at; a worker gets report instead of start_worker"},
     ]
 
 
 def write_settings(scope, project, change):
     """settings.json of a scope, read, changed by change(settings), written back."""
     base, settings_file, root = scope_base(scope, project)
-    settings = read_json_file(settings_file) if os.path.exists(settings_file) else {}
+    settings = {}
+    if os.path.lexists(settings_file):
+        # Read as written: never through a link leading out of its root (a secret file Pi
+        # pointed it at would be copied into a file Pi reads).
+        text = read_text(settings_file, root=root)
+        if text is None:
+            raise ApiError(f"{pretty_path(settings_file, home_dir())} is not a plain file (a link leading out?): refused")
+        settings = None
+        for attempt in (text, re.sub(r"(?m)^\s*//.*$", "", text)):
+            try:
+                settings = json.loads(attempt)
+                break
+            except ValueError:
+                continue
     if not isinstance(settings, dict):
         raise ApiError(f"{pretty_path(settings_file, home_dir())} is not a JSON object: fix it by hand")
     change(settings)
@@ -403,9 +413,11 @@ def api_gallery(home, query):
 
 GALLERY_SIZE = 40
 _CARD_RE = re.compile(
+    r'(?:(?P<attrs>data-package-types="[a-z ]*"[^>]*)>.{0,2000}?)?'
     r'<h3 class="packages-name"><a [^>]*>(?P<name>[^<]{1,214})</a></h3>\s*'
     r'(?:<p class="packages-desc">(?P<desc>.*?)</p>\s*)?'
-    r'<div class="packages-meta">(?P<meta>.*?)</div>', re.S)
+    r'<div class="packages-meta">(?P<meta>.*?)</div>'
+    r'(?:.{0,3000}?<div class="packages-links"[^>]*>(?P<links>.*?)</div>)?', re.S)
 
 
 def gallery_pi_dev(query, urllib):
@@ -425,13 +437,226 @@ def gallery_pi_dev(query, urllib):
             continue
         meta = [html.unescape(re.sub(r"<[^>]*>", "", m)).strip() for m in re.findall(r"<span>(.*?)</span>", card["meta"] or "", re.S)]
         desc = html.unescape(re.sub(r"<[^>]*>", "", card["desc"] or "")).strip()
+        repo = next((u for u in re.findall(r'href="(https://github\.com/[\w.-]+/[\w.-]+)"', card["links"] or "")), None)
         results.append({"name": name, "version": None, "date": None, "description": desc[:300],
                         "publisher": meta[0][:100] if meta else None,
                         "downloads": meta[1][:20] if len(meta) > 1 and meta[1].endswith("/mo") else None,
-                        "source": f"npm:{name}"})
+                        **gallery_card_facts(card["attrs"] or ""), "repo": repo, "source": f"npm:{name}"})
         if len(results) >= GALLERY_SIZE:
             break
     return results
+
+
+def gallery_card_facts(attrs):
+    """What a pi.dev card says in its attributes: its kinds, its downloads a month and its
+    date (ms), for Browse's filters and sorting."""
+    def attr(key):
+        found = re.search(rf'data-package-{key}="([^"]*)"', attrs)
+        return found.group(1) if found else ""
+    return {"types": [t for t in attr("types").split() if t in ("extension", "skill", "prompt", "theme")],
+            "monthly": int(attr("downloads")) if attr("downloads").isdigit() else None,
+            "updated": int(attr("date")) // 1000 if attr("date").isdigit() else None}
+
+
+_SKILLS_SEARCH = {}  # query -> (when, answer)
+SKILL_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,199}")
+REPO_PART_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+
+
+def api_skills_search(home, query):
+    """Skills of skills.sh (the `npx skills` directory) matching query: its search API, as
+    `npx skills find` asks it (two letters at least). Each: its name, its repository, its
+    installs, and the source Pier installs it by (skills:OWNER/REPO/SKILL)."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    query = " ".join((query or "").split())[:100]
+    if len(query) < 2:
+        return skills_top(urllib)
+    cached = _SKILLS_SEARCH.get(query)
+    if cached and time.monotonic() - cached[0] < 600:
+        return cached[1]
+    url = "https://skills.sh/api/search?" + urllib.parse.urlencode({"q": query})
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": f"pier-picker/{VERSION}", "Accept": "application/json"}), timeout=10) as answer:
+            data = json.loads(answer.read(4 * 1024 * 1024))
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
+        raise ApiError(f"skills.sh did not answer ({exc})")
+    skills = []
+    for item in (data.get("skills") if isinstance(data, dict) else None) or []:
+        if not isinstance(item, dict):
+            continue
+        source, skill = str(item.get("source") or ""), str(item.get("skillId") or item.get("name") or "")
+        owner, _, repo = source.partition("/")
+        if not (REPO_PART_RE.fullmatch(owner) and REPO_PART_RE.fullmatch(repo) and SKILL_NAME_RE.fullmatch(skill)):
+            continue
+        skills.append({"name": str(item.get("name") or skill)[:200], "repo": f"{owner}/{repo}", "skill": skill,
+                       "installs": item.get("installs") if isinstance(item.get("installs"), int) else None,
+                       "page": f"https://skills.sh/{owner}/{repo}/{skill}", "source": f"skills:{owner}/{repo}/{skill}"})
+        if len(skills) >= GALLERY_SIZE:
+            break
+    reply = {"query": query, "skills": skills}
+    remember(_SKILLS_SEARCH, query, (time.monotonic(), reply), 50)
+    return reply
+
+
+# One skill of skills.sh's ranking, as its home page carries it (escaped, in its page data).
+_SKILL_ENTRY_RE = re.compile(r'\{\\"source\\":\\"(?P<source>[^"\\]{1,200})\\",\\"skillId\\":\\"(?P<skill>[^"\\]{1,200})\\",'
+                             r'\\"name\\":\\"(?P<name>[^"\\]{1,200})\\",\\"installs\\":(?P<installs>\d{1,12})')
+
+
+def skills_from_home(page):
+    """skills.sh's ranking from its home page (most installed first; it has no API for it),
+    each as the search gives them; only well-formed owner/repo/skill."""
+    skills = []
+    for entry in _SKILL_ENTRY_RE.finditer(page):
+        owner, _, repo = entry["source"].partition("/")
+        skill = entry["skill"]
+        if not (REPO_PART_RE.fullmatch(owner) and REPO_PART_RE.fullmatch(repo) and SKILL_NAME_RE.fullmatch(skill)):
+            continue
+        if any(s["source"] == f"skills:{owner}/{repo}/{skill}" for s in skills):
+            continue
+        skills.append({"name": entry["name"], "repo": f"{owner}/{repo}", "skill": skill, "installs": int(entry["installs"]),
+                       "page": f"https://skills.sh/{owner}/{repo}/{skill}", "source": f"skills:{owner}/{repo}/{skill}"})
+        if len(skills) >= GALLERY_SIZE:
+            break
+    return skills
+
+
+def skills_top(urllib):
+    """The skills most installed, before anything is typed; when the home page cannot be
+    read, the short answer (type two letters) as before."""
+    cached = _SKILLS_SEARCH.get("")
+    if cached and time.monotonic() - cached[0] < 600:
+        return cached[1]
+    try:
+        request = urllib.request.Request("https://www.skills.sh/", headers={"User-Agent": f"pier-picker/{VERSION}"})
+        with urllib.request.urlopen(request, timeout=10) as answer:
+            skills = skills_from_home(answer.read(4 * 1024 * 1024).decode("utf-8", "replace"))
+    except OSError as exc:
+        log("info", "skills.top-failed", err=str(exc)[:200])
+        skills = []
+    reply = {"query": "", "skills": skills, "top": True} if skills else {"query": "", "skills": [], "short": True}
+    remember(_SKILLS_SEARCH, "", (time.monotonic(), reply), 50)
+    return reply
+
+
+def api_skill_page(home, source):
+    """A skill of skills.sh: its SKILL.md, read from its GitHub repository where such a
+    repository keeps it (skills/NAME, NAME, .claude/skills/NAME, or the root)."""
+    import urllib.error
+    import urllib.request
+    found = SKILL_SOURCE_RE.fullmatch(source or "")
+    if not found:
+        raise ApiError("not a skill of skills.sh")
+    owner, repo, skill = found.groups()
+    agent = {"User-Agent": f"pier-picker/{VERSION}"}
+
+    def fetch(url, limit):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=10) as answer:
+                return answer.read(limit + 1)[:limit]
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
+            return None
+
+    # Its SKILL.md: the one whose folder is its name, else the one declaring its name (a
+    # folder may differ: vercel-react-best-practices is in skills/react-best-practices).
+    paths = []
+    tree = fetch(f"https://api.github.com/repos/{owner}/{repo}/git/trees/HEAD?recursive=1", 8 * 1024 * 1024)
+    try:
+        paths = [t["path"] for t in json.loads(tree).get("tree", []) if isinstance(t, dict) and str(t.get("path", "")).endswith("SKILL.md")] if tree else []
+    except (ValueError, AttributeError):
+        paths = []
+    folder = lambda path: path.rsplit("/", 2)[-2] if "/" in path else ""
+    paths.sort(key=lambda path: (folder(path) != skill, not (folder(path) and skill.endswith(folder(path))), len(path)))
+    if not paths:
+        paths = [f"skills/{skill}/SKILL.md", f"{skill}/SKILL.md", "SKILL.md"]
+    text = first = None
+    for path in paths[:6]:
+        data = fetch(f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path}", PACKAGE_README_MAX)
+        if not data:
+            continue
+        candidate = data.decode("utf-8", "replace")
+        first = first or candidate
+        named = re.search(r"(?m)^name:\s*[\"']?([^\"'\n]+)", candidate[:2000])
+        if folder(path) == skill or (named and named.group(1).strip() == skill):
+            text = candidate
+            break
+    text = text or first
+    description = None
+    if text and text.startswith("---"):
+        head, _, body = text[3:].partition("\n---")
+        said = re.search(r"(?m)^description:\s*(.+)$", head)
+        description = said.group(1).strip().strip("\"'")[:500] if said else None
+        text = body.lstrip("-\n")
+    return {"source": source, "repo": f"https://github.com/{owner}/{repo}", "page": f"https://skills.sh/{owner}/{repo}/{skill}",
+            "description": description, "readme": text}
+
+
+PACKAGE_README_MAX = 200 * 1024
+_GALLERY_PACKAGE = {}  # name -> (when, answer)
+
+
+def api_gallery_package(home, name):
+    """A package's page in Browse: its npm facts (version, licence, site, repository) and its
+    README (from its GitHub repository, else npm's copy), cut at PACKAGE_README_MAX."""
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    if not isinstance(name, str) or not NPM_NAME_RE.fullmatch(name):
+        raise ApiError("not a package name")
+    cached = _GALLERY_PACKAGE.get(name)
+    if cached and time.monotonic() - cached[0] < 3600:
+        return cached[1]
+    agent = {"User-Agent": f"pier-picker/{VERSION}"}
+
+    def fetch(url, limit):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, headers=agent), timeout=10) as answer:
+                return answer.read(limit + 1)
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, urllib.error.HTTPError):
+                exc.close()
+            return None
+
+    meta = {}
+    raw = fetch("https://registry.npmjs.org/" + urllib.parse.quote(name, safe="@") + "/latest", 2 * 1024 * 1024)
+    try:
+        meta = json.loads(raw) if raw else {}
+    except ValueError:
+        meta = {}
+    if not isinstance(meta, dict):
+        meta = {}
+    repository = meta.get("repository")
+    repo_url = repository.get("url") if isinstance(repository, dict) else repository if isinstance(repository, str) else ""
+    github = re.search(r"github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[#/].*)?$", repo_url or "")
+    repo = f"https://github.com/{github.group(1)}/{github.group(2)}" if github else None
+    homepage = meta.get("homepage") if isinstance(meta.get("homepage"), str) and meta["homepage"].startswith("https://") else None
+    readme = None
+    if github:
+        for file in ("README.md", "readme.md", "Readme.md"):
+            data = fetch(f"https://raw.githubusercontent.com/{github.group(1)}/{github.group(2)}/HEAD/{file}", PACKAGE_README_MAX)
+            if data:
+                readme = data[:PACKAGE_README_MAX].decode("utf-8", "replace")
+                break
+    if readme is None:
+        full = fetch("https://registry.npmjs.org/" + urllib.parse.quote(name, safe="@"), 16 * 1024 * 1024)
+        try:
+            text = json.loads(full).get("readme") if full else None
+        except (ValueError, AttributeError):
+            text = None
+        readme = text[:PACKAGE_README_MAX] if isinstance(text, str) and text.strip() else None
+    license_ = meta.get("license") if isinstance(meta.get("license"), str) else None
+    answer = {"name": name, "version": meta.get("version") if isinstance(meta.get("version"), str) else None,
+              "license": license_, "homepage": None if not homepage or (repo and homepage.split("#")[0].rstrip("/") == repo) else homepage, "repo": repo,
+              "npm": f"https://www.npmjs.com/package/{name}", "readme": readme,
+              "keywords": [k for k in meta.get("keywords") or [] if isinstance(k, str)][:12] if isinstance(meta.get("keywords"), list) else []}
+    remember(_GALLERY_PACKAGE, name, (time.monotonic(), answer), 50)
+    return answer
 
 
 def gallery_npm(query, urllib):
@@ -454,6 +679,55 @@ def gallery_npm(query, urllib):
                         "description": (pkg.get("description") or "")[:300], "publisher": publisher.get("username"),
                         "source": f"npm:{pkg['name']}"})
     return results
+
+
+GALLERY_MEDIA_MAX = 1536 * 1024  # bytes of one package's picture; a bigger one is left out
+GALLERY_MEDIA_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}
+_GALLERY_MEDIA = {}  # name -> (when, data URL or None)
+
+
+def api_gallery_media(home, names):
+    """The pictures pi.dev shows for packages (its preview-media API: one each, given by its
+    author), as data URLs Pier can show (its pages load no image from the web): {name: url
+    or None}. Only https, a PNG, JPEG, WebP or GIF of GALLERY_MEDIA_MAX at most; kept an hour."""
+    import base64
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+    names = [n for n in dict.fromkeys(names or []) if isinstance(n, str) and NPM_NAME_RE.fullmatch(n)][:16]
+    now = time.monotonic()
+    out = {n: _GALLERY_MEDIA[n][1] for n in names if n in _GALLERY_MEDIA and now - _GALLERY_MEDIA[n][0] < 3600}
+    asked = [n for n in names if n not in out]
+    if not asked:
+        return {"media": out}
+    headers = {"User-Agent": f"pier-picker/{VERSION}", "Accept": "application/json"}
+    url = "https://pi.dev/api/packages/preview-media?" + urllib.parse.urlencode([("name", n) for n in asked])
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as answer:
+            previews = json.loads(answer.read(1024 * 1024)).get("previews") or []
+    except (OSError, ValueError, AttributeError) as exc:
+        if isinstance(exc, urllib.error.HTTPError):
+            exc.close()
+        log("info", "gallery.media-failed", err=str(exc)[:200])
+        return {"media": out}
+    found = {p.get("name"): (p.get("media") or {}) for p in previews if isinstance(p, dict)}
+    for name in asked:
+        media = found.get(name) or {}
+        picture = None
+        link = media.get("url") if isinstance(media, dict) and media.get("type") == "image" else None
+        if isinstance(link, str) and link.startswith("https://") and len(link) < 1000:
+            try:
+                with urllib.request.urlopen(urllib.request.Request(link, headers={"User-Agent": headers["User-Agent"]}), timeout=10) as answer:
+                    data = answer.read(GALLERY_MEDIA_MAX + 1)
+                kind = GALLERY_MEDIA_TYPES.get(image_kind(data))  # what the bytes are, not what the server says
+                if len(data) <= GALLERY_MEDIA_MAX and kind:
+                    picture = f"data:{kind};base64,{base64.b64encode(data).decode()}"
+            except (OSError, ValueError) as exc:
+                if isinstance(exc, urllib.error.HTTPError):
+                    exc.close()
+        out[name] = picture
+        remember(_GALLERY_MEDIA, name, (now, picture), 200)
+    return {"media": out}
 
 
 NPM_NAME_RE = re.compile(r"(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]{0,213}")
@@ -521,18 +795,54 @@ def run_in_pi_sandbox(command, project, home, config, env):
     return status, network
 
 
+SKILLS_CLI = "skills@1.9.0"  # vercel-labs/skills (skills.sh), pinned: a newer one is chosen, not taken
+# Each part begins with a letter or a digit: never read as an option (--global) by npx.
+SKILL_SOURCE_RE = re.compile(r"skills:([A-Za-z0-9][A-Za-z0-9._-]{0,99})/([A-Za-z0-9][A-Za-z0-9._-]{0,99})/([A-Za-z0-9][A-Za-z0-9._:-]{0,199})")
+
+
 def pi_package(args):
-    """--pi-package install|remove user|PROJECT SOURCE: `pi install` or `pi remove`
-    (-l for a project) in a terminal of Pier. npm runs the packages' install scripts:
-    with the sandbox on, it all runs in Pi's sandbox, network limited as Pi's is, so a
-    package cannot read your keys or the rest of home while it installs."""
-    if len(args) != 3 or args[0] not in ("install", "remove") or not PI_UPDATE_TARGET.fullmatch(args[2]):
-        print("usage: --pi-package install|remove user|PROJECT SOURCE")
+    """--pi-package install|remove|skill user|PROJECT SOURCE: `pi install` or `pi remove`
+    (-l for a project), or a skill of skills.sh (skills:OWNER/REPO/SKILL: `npx skills add`
+    for Pi, into .agents/skills, ~/.agents/skills for yours), in a terminal of Pier. npm runs
+    the packages' install scripts: with the sandbox on, it all runs in Pi's sandbox, network
+    limited as Pi's is, so a package cannot read your keys or the rest of home meanwhile."""
+    if len(args) != 3 or args[0] not in ("install", "remove", "skill") \
+            or not (SKILL_SOURCE_RE.fullmatch(args[2]) if args[0] == "skill" else PI_UPDATE_TARGET.fullmatch(args[2])):
+        print("usage: --pi-package install|remove|skill user|PROJECT SOURCE")
         return 2
     action, scope, source = args
     home = home_dir()
     config, _ = load_config(home)
     env = child_env(home)
+    if action == "skill":
+        owner, repo, skill = SKILL_SOURCE_RE.fullmatch(source).groups()
+        npx = shutil.which("npx", path=env.get("PATH"))
+        if not npx:
+            print("npx not found on PATH: install Node.js on the VM (Pi needs it too)")
+            pause_for_enter("press Enter to close ")
+            return 1
+        if scope == "user":
+            project = os.path.join(home, ".agents")
+            os.makedirs(project, exist_ok=True)
+        else:
+            project = resolve_inside(home, scope)
+        glob = ["-g"] if scope == "user" else []
+        command = [npx, "-y", SKILLS_CLI, "add", f"{owner}/{repo}", "--skill", skill, "--agent", "pi", "--yes", "--copy", *glob]
+        env = {**env, "DISABLE_TELEMETRY": "1", "DO_NOT_TRACK": "1"}
+        print(f"$ npx {SKILLS_CLI} add {owner}/{repo} --skill {skill} --agent pi --yes --copy {' '.join(glob)}".rstrip(), flush=True)
+        log("info", "skill.add", source=source, scope="user" if glob else project)
+        status, network = run_in_pi_sandbox(command, project, home, config, env)
+        if status is None:
+            pause_for_enter("press Enter to close ")
+            return 1
+        log("warn" if status else "info", "skill.add-done", source=source, status=status)
+        print("\n" + ("done" if not status else f"npx skills add failed (status {status})")
+              + ". Pis load the skill when they next start.")
+        if status and network:
+            print("If it needed another site, look for net.blocked in the picker's log (Settings > Diagnostics), "
+                  "and add it to network_allow in ~/.config/pier-picker/config.toml.")
+        pause_for_enter("press Enter to close ")
+        return status
     argv = pi_argv(config, env)
     if argv is None:
         print("pi not found on PATH: install it or set PI_BIN")
@@ -554,7 +864,7 @@ def pi_package(args):
     print("\n" + ("done" if not status else f"pi {action} failed (status {status})")
           + ". Pis load the change when they next start.")
     if status and network:
-        print("If it needed another site, look for net.blocked in the picker's log (Logs tab), "
+        print("If it needed another site, look for net.blocked in the picker's log (Settings > Diagnostics), "
               "and add it to network_allow in ~/.config/pier-picker/config.toml.")
     pause_for_enter("press Enter to close ")
     return status
@@ -570,9 +880,10 @@ _MODEL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]*")
 _PROVIDER_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
-def parse_pi_models(text):
+def parse_pi_models(text, images=None):
     """["provider/id", ...] from what `pi --list-models` prints: a table, a provider and a
-    model id first on each line (the header and anything else are skipped)."""
+    model id first on each line (the header and anything else are skipped). images, a list,
+    gets those whose last column ("images") says yes."""
     models = []
     for line in re.sub(r"\x1b\[[0-9;]*m", "", text).splitlines():
         cells = line.split()
@@ -581,6 +892,8 @@ def parse_pi_models(text):
         if not _MODEL_TOKEN.fullmatch(cells[1]):
             continue
         models.append(f"{cells[0]}/{cells[1]}")
+        if images is not None and cells[-1].lower() == "yes" and len(cells) > 2:
+            images.append(f"{cells[0]}/{cells[1]}")
     return list(dict.fromkeys(models))[:MODELS_MAX]
 
 
@@ -594,22 +907,60 @@ def pi_default_model(home):
     return ""
 
 
+def pi_default_args(home):
+    """--model (and --thinking) for a new conversation: Pi's default by name. Left to itself
+    at startup, Pi silently takes another model when it judges the default's key missing
+    (a provider of models.json, in Pier's sandbox), where by name it uses it."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    settings = settings if isinstance(settings, dict) else {}
+    model = pi_default_model(home)
+    args = ["--model", model] if model and "/" in model and MODEL_RE.fullmatch(model) else []
+    level = settings.get("defaultThinkingLevel")
+    if args and level in ("off", "minimal", "low", "medium", "high", "xhigh", "max"):
+        args += ["--thinking", level]
+    return args
+
+
 def api_models(home):
     """The models Pi knows (`pi --list-models`: its providers and models.json's, a
     gateway such as Bifrost included), and its default."""
     config, _ = load_config(home)
     env = dict(child_env(home), NO_COLOR="1", TERM="dumb")
-    models, problem = [], None
+    models, problem, images = [], None, []
     try:
         result = subprocess.run(list(config["pi_command"]) + ["--list-models"], stdin=subprocess.DEVNULL,
                                 capture_output=True, text=True, errors="replace", env=env, timeout=MODELS_SECONDS)
-        models = parse_pi_models(result.stdout)
+        models = parse_pi_models(result.stdout, images)
         if not models:
             problem = (result.stderr.strip() or result.stdout.strip() or f"pi --list-models exited {result.returncode}")[-300:]
     except (OSError, subprocess.SubprocessError) as exc:
         problem = f"pi --list-models: {exc}"
     providers = sorted({m.split("/", 1)[0] for m in models})
-    return {"models": models, "providers": providers, "default": pi_default_model(home), "problem": problem}
+    return {"models": models, "providers": providers, "default": pi_default_model(home), "problem": problem,
+            "images": [m for m in dict.fromkeys(images) if m in models]}
+
+
+def api_model_images(home, value):
+    """A model of models.json marked as seeing images (input: text and image), as the user
+    says by choosing it for images: Pi lists them as text only unless told. A model of a
+    built-in provider is left to Pi."""
+    value = (value or "").strip()
+    if not MODEL_RE.fullmatch(value) or "/" not in value:
+        raise ApiError("a model as provider/id")
+    provider, model = value.split("/", 1)
+    whole = read_models_json()
+    entry = (whole.get("providers") or {}).get(provider)
+    if not isinstance(entry, dict):
+        return {"changed": False}
+    changed = False
+    for m in entry.get("models") or []:
+        if isinstance(m, dict) and m.get("id") == model and "image" not in (m.get("input") or []):
+            m["input"] = ["text", "image"]
+            changed = True
+    if changed:
+        atomic_write(models_json_path(), json.dumps(whole, indent=2) + "\n", os.path.dirname(models_json_path()), 0o600)
+        log("info", "pi.model-images", provider=provider)
+    return {"changed": changed}
 
 
 def api_pi_default(home, value):
@@ -626,3 +977,183 @@ def api_pi_default(home, value):
     write_settings("user", None, change)
     log("info", "pi.default-model", provider=provider)
     return {"default": pi_default_model(home)}
+
+
+THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def pi_default_thinking(home):
+    """Pi's default thinking level (its settings.json: defaultThinkingLevel), "" when unset."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    level = settings.get("defaultThinkingLevel") if isinstance(settings, dict) else None
+    return level if level in THINKING_LEVELS else ""
+
+
+def api_pi_thinking(home, value):
+    """Pi's default thinking level, for the models that think; "" puts Pi's own back."""
+    value = (value or "").strip()
+    if value and value not in THINKING_LEVELS:
+        raise ApiError(f"a thinking level: {', '.join(THINKING_LEVELS)}, or nothing")
+
+    def change(settings):
+        if value:
+            settings["defaultThinkingLevel"] = value
+        else:
+            settings.pop("defaultThinkingLevel", None)
+
+    write_settings("user", None, change)
+    log("info", "pi.default-thinking", thinking=value or "-")
+    return {"thinking": pi_default_thinking(home)}
+
+
+# --- providers (Settings > Providers): Pi's models.json -------------------------------
+
+PROVIDER_APIS = ("openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai")
+PROVIDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+PROVIDER_MAX_BYTES = 64 * 1024
+
+
+def models_json_path():
+    return os.path.join(agent_dir(), "models.json")
+
+
+def read_models_json():
+    """models.json as Pi reads it ({} when absent); one it cannot parse is refused, never
+    overwritten."""
+    path = models_json_path()
+    if not os.path.lexists(path):
+        return {}
+    # Never through a link leading out of Pi's folder: Pi (sandboxed, ~/.pi writable) could
+    # point models.json at a secret, which saving a provider would then copy back to it.
+    text = read_text(path, 8 * 1024 * 1024, root=os.path.dirname(path))
+    if text is None:
+        raise ApiError(f"{path} is not a plain file of Pi's folder (a link leading out?): refused")
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        raise ApiError(f"cannot read {path}: {exc}")
+    if not isinstance(data, dict):
+        raise ApiError(f"{path} is not an object")
+    return data
+
+
+def api_providers(home):
+    """The providers of models.json: name, address, kind of API, models, and whether a key
+    is set (never the key itself)."""
+    data = read_models_json()
+    out = []
+    for name, p in sorted((data.get("providers") or {}).items()):
+        if not isinstance(p, dict):
+            continue
+        models = [m.get("id") for m in p.get("models") or [] if isinstance(m, dict) and m.get("id")]
+        key = p.get("apiKey")
+        contexts = [m.get("contextWindow") for m in p.get("models") or [] if isinstance(m, dict) and m.get("id")]
+        out.append({"name": name, "baseUrl": p.get("baseUrl") or "", "api": p.get("api") or "",
+                    "models": models, "contexts": contexts, "key": bool(key), "keyEnv": key if isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key or "") else ""})
+    return {"providers": out, "path": models_json_path()}
+
+
+# A model's sizes as providers publish them in /models (OpenRouter, vLLM, LiteLLM, most
+# gateways): its context, its longest answer. Without them Pi takes 128 000 and 16 384.
+_CONTEXT_FIELDS = ("context_length", "context_window", "max_model_len", "max_context_length", "max_input_tokens", "contextWindow")
+_OUTPUT_FIELDS = ("max_completion_tokens", "max_output_tokens", "max_tokens", "maxTokens")
+
+
+def provider_model_sizes(base, key):
+    """{id: (context or None, max output or None)} from the provider's GET /models, {} when
+    it does not answer or says nothing of sizes. key: the literal key, or $NAME of a variable."""
+    import urllib.request
+    if isinstance(key, str) and key.startswith("$") and not key.startswith("$$"):
+        key = os.environ.get(key.strip("${}"), "")
+    elif isinstance(key, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", key) and key in os.environ:
+        key = os.environ[key]  # a variable's name, as Pi reads it
+    headers = {"Accept": "application/json"}
+    if isinstance(key, str) and key and not key.startswith("!"):
+        headers["Authorization"] = f"Bearer {key}"
+    try:
+        request = urllib.request.Request(base.rstrip("/") + "/models", headers=headers)
+        with urllib.request.urlopen(request, timeout=8) as answer:
+            listing = json.loads(answer.read(4 * 1024 * 1024).decode("utf-8", "replace"))
+    except (OSError, ValueError) as exc:
+        log("info", "provider.sizes-unknown", err=str(exc)[:200])
+        return {}
+    items = listing.get("data") if isinstance(listing, dict) else listing
+    sizes = {}
+
+    def number(item, fields):
+        for field in fields:
+            value = item.get(field)
+            if isinstance(value, (int, float)) and value > 0:
+                return int(value)
+        return None
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            continue
+        top = item.get("top_provider") if isinstance(item.get("top_provider"), dict) else {}
+        context = number(item, _CONTEXT_FIELDS) or number(top, _CONTEXT_FIELDS)
+        output = number(top, _OUTPUT_FIELDS) or number(item, _OUTPUT_FIELDS)
+        if context or output:
+            sizes[item["id"]] = (context, output)
+    return sizes
+
+
+def api_provider_save(home, name, data):
+    """A provider added or changed: {baseUrl, api, apiKey?, models: [ids], contextWindow?}
+    on stdin. An absent apiKey keeps the one there; the provider's other fields stay. Each
+    model's sizes are asked of the provider (/models); contextWindow, given, is for those it
+    does not tell."""
+    if not PROVIDER_NAME.match(name or ""):
+        raise ApiError("a provider's name: letters, digits, . _ -")
+    if len(data) > PROVIDER_MAX_BYTES:
+        raise ApiError("too long")
+    try:
+        given = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise ApiError("not JSON")
+    base = str(given.get("baseUrl") or "").strip()
+    api = str(given.get("api") or "").strip()
+    if not re.match(r"^https?://[^\s]+$", base):
+        raise ApiError("the address: http:// or https://, then the host")
+    if api not in PROVIDER_APIS:
+        raise ApiError(f"the API: one of {', '.join(PROVIDER_APIS)}")
+    # A model as "id", or {"id", "contextWindow"} with its size typed by the user.
+    typed_sizes = {}
+    ids = []
+    for m in given.get("models") or []:
+        mid = str(m.get("id") if isinstance(m, dict) else m).strip()
+        if not mid:
+            continue
+        ids.append(mid)
+        size = m.get("contextWindow") if isinstance(m, dict) else None
+        if isinstance(size, (int, float)) and 1000 <= size <= 100_000_000:
+            typed_sizes[mid] = int(size)
+    whole = read_models_json()
+    providers = whole.setdefault("providers", {})
+    entry = providers.get(name) if isinstance(providers.get(name), dict) else {}
+    entry["baseUrl"], entry["api"] = base, api
+    if given.get("apiKey"):
+        entry["apiKey"] = str(given["apiKey"]).strip()
+    known = {m.get("id"): m for m in entry.get("models") or [] if isinstance(m, dict)}
+    entry["models"] = [known.get(i) or {"id": i} for i in ids]
+    sizes = provider_model_sizes(base, entry.get("apiKey"))
+    for model in entry["models"]:
+        context, output = sizes.get(model["id"], (None, None))
+        if typed_sizes.get(model["id"]) or context:
+            model["contextWindow"] = typed_sizes.get(model["id"]) or context
+        if output and output < (model.get("contextWindow") or 10**12):
+            model["maxTokens"] = output
+    providers[name] = entry
+    path = models_json_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    atomic_write(path, json.dumps(whole, indent=2) + "\n", os.path.dirname(path), 0o600)
+    return {"saved": name, "sized": [m["id"] for m in entry["models"] if m.get("contextWindow")]}
+
+
+def api_provider_delete(home, name):
+    whole = read_models_json()
+    if name not in (whole.get("providers") or {}):
+        raise ApiError(f"no provider {name}")
+    del whole["providers"][name]
+    path = models_json_path()
+    atomic_write(path, json.dumps(whole, indent=2) + "\n", os.path.dirname(path), 0o600)
+    return {"removed": name}

@@ -28,23 +28,19 @@ export PATH="$HOME/.npm-global/bin:$PATH" && npm install -g --ignore-scripts @ea
 ### On the PC: `~/.ssh/config`
 
 ```
-Host pi pi-sh
+Host pi-sh
     HostName 192.168.1.20
     Port 2222
     User <you>
     ServerAliveInterval 60
     ServerAliveCountMax 3
-
-Host pi
-    RequestTTY force
-    RemoteCommand /home/<you>/bin/pi-pick
 ```
 
-`ssh pi` opens the picker, and `ssh pi-sh` a normal shell (for scp, rsync…). With a bastion, add `ProxyJump bastion` under `Host pi pi-sh`.
+`ssh pi-sh` opens a normal shell (for scp, rsync…). With a bastion, add `ProxyJump bastion` under `Host pi-sh`. The picker has no screen of its own any more: Pier is how you use it.
 
 ### Pier
 
-**The simplest:** download the installer from the [latest release](https://github.com/superbagel9079/pier/releases/latest) (Windows `Pier_…_x64-setup.exe`, macOS `.dmg`, Linux `.AppImage` or `.deb`) and install it. On Windows, Pier then updates itself (Settings > Updates): no clone, no build. The macOS and Linux builds have not been tried by hand yet: they do not update themselves, download the next release again. Without a code-signing certificate, Windows SmartScreen warns once, at that first installation ("More info", then "Run anyway").
+**The simplest:** download the installer from the [latest release](https://github.com/superbagel9079/pier/releases/latest) (Windows `Pier_…_x64-setup.exe`, macOS `.dmg`, Linux `.AppImage` or `.deb`) and install it. On Windows, Pier then updates itself (Settings > About): no clone, no build. The macOS and Linux builds have not been tried by hand yet: they do not update themselves, download the next release again. Without a code-signing certificate, Windows SmartScreen warns once, at that first installation ("More info", then "Run anyway").
 
 **Or build it:**
 
@@ -62,12 +58,6 @@ Quit Pier before building again (also from the notification area): Windows does 
 **GitHub Actions** (`.github/workflows/build.yml`) runs the tests (Rust on Linux and Windows, the picker's unit tests and the suite of the VM on Linux, `cargo audit`) and builds Pier for Windows (installer and exe), macOS (universal `.dmg`) and Linux (`.deb`, AppImage) at every push to `main`, every tag and every pull request, kept as the run's artifacts with their SHA-256. A tag `v…` (`git tag v0.3.0`, `git push --tags`) also prepares a draft GitHub release with them. Signing is optional: with the secrets listed at the top of the workflow (an Authenticode certificate for Windows, a Developer ID for macOS, notarized), the files are signed; without them they are not, and Windows and macOS warn on first start. The macOS and Linux versions are built there only, not yet tried by hand.
 
 ## Day to day
-
-### Without Pier, over SSH
-
-1. `ssh pi` opens the picker.
-2. Select a project, then `p`: Pi starts in it.
-3. `Ctrl-b d` goes back to the picker, and Pi carries on. `q` quits.
 
 ### With Pier
 

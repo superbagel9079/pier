@@ -1,15 +1,27 @@
 // The Activity panel: what Pi reads and changes, the files, what it was given, the restore points.
 
-// ============================================================================
 // Project: what the agent reads and changes, and the files
-// ============================================================================
 
+/** The tree's orders (Files, sorted from its bar); folders always come first. */
+const fileExt = (name) => (name.includes(".", 1) ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "");
+const FILE_ORDER = {
+  name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  type: (a, b) => fileExt(a.name).localeCompare(fileExt(b.name)) || FILE_ORDER.name(a, b),
+  size: (a, b) => (b.size || 0) - (a.size || 0) || FILE_ORDER.name(a, b),
+  date: (a, b) => (b.mtime || 0) - (a.mtime || 0) || FILE_ORDER.name(a, b),
+};
+/** A file's icon by its type (python, rust, markdown…); a folder's, open or not (CSS). */
+const fileIcon = (entry) => entry.kind === "dir" ? "ft-folder" : fileTypeIcon(entry.name);
+
+// The tree's marks, from a file's word (the Changes card's): what Pi or git did to it.
+const BADGE_ICONS = { "being changed": "pencil", "being read": "loader-circle", "change failed": "circle-alert",
+  new: "plus", deleted: "trash", changed: "check", read: "eye" };
 const STATES = {
-  modifying: { mark: "✎", label: "Being modified", live: true },
-  reading: { mark: "◐", label: "Being read", live: true },
-  modified: { mark: "✓", label: "Modified" },
-  read: { mark: "●", label: "Read" },
-  error: { mark: "!", label: "Failed" },
+  modifying: { label: "Pi is changing it" },
+  reading: { label: "Pi is reading it" },
+  modified: { label: "Pi changed it" },
+  read: { label: "Pi read it" },
+  error: { label: "Pi's change failed" },
 };
 
 /** git's two-letter status of a file, in words ("?? notes.md": new, not in git). */
@@ -33,15 +45,17 @@ function makeProject(tab) {
   const filesView = $(".view-files", tab.pane);
   const tree = $(".tree", tab.pane);
   const showHidden = $(".show-hidden", tab.pane);
+  const sortBy = $(".files-sort", tab.pane);
+  pickify(sortBy, "quiet"); // "Name ⌄", as the mock-up: a word and Pier's menu
+  sortBy.value = FILE_ORDER[prefs.filesSort] ? prefs.filesSort : "name";
   const restoreView = $(".view-restore", tab.pane);
   const points = $(".points", restoreView);
   const restoreNote = $(".restore-note", restoreView);
-  const whichPi = $(".which-pi", tab.pane);
   let mode = "activity";
   let activity = null;
   let base = "";
   let selected = null;
-  let chosenFile = null; // the conversation shown, when several Pis run here; else the one in use
+  let chosenFile = null; // the conversation of the Pi in the middle's tab; else the one used last
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
 
@@ -50,6 +64,8 @@ function makeProject(tab) {
   }
 
   async function mention(rel) {
+    // The conversation shown in the middle is of this project: into its message.
+    if (currentTab?.mention && currentTab.params?.project === base) { currentTab.mention(`@${rel}`); return; }
     try {
       const slot = activity?.pis?.find((pi) => pi.file === chosenFile)?.slot || "";
       const result = await backend.api(["type", `@${rel} `, base, slot]);
@@ -70,136 +86,150 @@ function makeProject(tab) {
   }
 
   let stale = false;
+  let decorated = ""; // the activity the tree shows: every update redrew each file's badge
 
   function onActivity(message) {
     if (!vm.current(message)) return;
     if (message.error) { showError(error, message.error); return; }
     showError(error, "");
     activity = message.data;
-    if (chosenFile && !activity.pis.some((pi) => pi.file === chosenFile)) {
-      chosenFile = null; // that Pi stopped: back to the one used last
+    if (shownFile() !== chosenFile) {
+      chosenFile = shownFile(); // another tab shown, or its Pi stopped: back to the one used last
       follow();
     }
     if (!visible()) { stale = true; return; }
     stale = false;
-    renderPis();
     renderAgent();
     if (mode === "activity") renderActivity();
-    else decorateTree();
+    else {
+      const sig = JSON.stringify([activity.files, activity.git]);
+      if (sig !== decorated) { decorated = sig; decorateTree(); }
+    }
   }
 
-  /** Several Pis here: a list to choose whose work is shown. */
-  function renderPis() {
-    const pis = activity?.pis || [];
-    whichPi.hidden = pis.length < 2;
-    if (pis.length < 2) return;
-    whichPi.replaceChildren();
-    whichPi.add(new Option("the Pi used last", ""));
-    for (const pi of pis) whichPi.add(new Option(`Pi #${pi.n}${pi.working ? " · working" : ""}`, pi.file || ""));
-    whichPi.value = chosenFile && pis.some((pi) => pi.file === chosenFile) ? chosenFile : "";
+  /** The conversation of the Pi in the tab shown in the middle, when it runs here. */
+  function shownFile() {
+    const { slot } = shownConversation();
+    return (slot && activity?.pis?.find((pi) => pi.slot === slot)?.file) || null;
   }
 
-  whichPi.addEventListener("change", () => {
-    chosenFile = whichPi.value || null;
-    activity = null;
+  /** Details and Files belong to the conversation (or file) shown in the middle: none
+   *  there, a note in their place. */
+  const gate = () => tab.pane.firstElementChild.classList.toggle("no-conversation", !currentTab?.params?.project);
+  gate();
+  tab.onShownTab = () => {
+    gate();
+    drawContext();
+    if (shownFile() === chosenFile) return;
+    chosenFile = shownFile();
     follow();
-  });
+  };
 
   function renderAgent() {
     const agent = $(".agent", tab.pane);
     agent.replaceChildren();
     if (!activity?.session) { agent.textContent = "no session yet"; return; }
-    agent.append(el("span", { className: activity.working ? "live-dot" : "dim", textContent: activity.working ? "working" : "idle" }));
-    const usage = $(".usage", tab.pane);
-    const u = activity.usage;
-    usage.hidden = !u;
-    if (u) {
-      const parts = [`${tokens(u.input)} in`, `${tokens(u.output)} out`];
-      if (u.cacheRead) parts.push(`${tokens(u.cacheRead)} cached`);
-      parts.push(dollars(u.cost) || "cost unknown");
-      usage.replaceChildren(`session · ${parts.join(" · ")}`);
-      // The model: a click goes where models are chosen.
-      if (u.model) usage.append(" · ", linkButton(u.model, "The models of Pi, the orchestrator, workers and helpers: Settings > Agents", () => { openPrefs(); showPrefsPage("agents"); }));
-    }
+    agent.append(el("span", { className: activity.working ? "" : "dim", textContent: activity.working ? "working" : "idle" }));
   }
 
   let drawnActivity = "";
   function renderActivity() {
     // Activity comes every 1.5 s while a Pi works: drawn again only when what it shows
     // changed, and without losing the focus or the scroll.
-    const shape = JSON.stringify([activity, base]);
+    const shape = JSON.stringify([activity, base, waitingHere()]);
     if (shape === drawnActivity && activityView.childElementCount) return;
     drawnActivity = shape;
     keepPlace(activityView, drawActivity);
   }
 
+  /** What Pi asks in this project and waits for: approve or refuse it here. */
+  function waitingHere() {
+    return (vm.latest("approvals")?.data?.approvals || []).filter((a) => (a.state === "pending" || a.state === undefined) && a.project === base);
+  }
+
+  /** A card of Details: its title, a detail on the right, what it holds. */
+  function card(title, aside, ...body) {
+    return el("section", { className: "card" },
+      el("h2", {}, el("span", { textContent: title }), aside ? el("span", { className: "card-aside", textContent: aside }) : null), ...body);
+  }
+
+  const changing = (f) => f.modified || f.edits > 0 || ["modifying", "modified", "error"].includes(f.state);
+  /** What happened to a file, in a word: the Changes card's and the tree's. */
+  const word = (path, f) => {
+    const git = activity.git[path]?.trim();
+    if (f?.state === "modifying") return "being changed";
+    if (f?.state === "reading") return "being read";
+    if (f?.state === "error") return "change failed";
+    if (git === "??" || git === "A") return "new";
+    if (git === "D") return "deleted";
+    if (f && changing(f)) return f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : "changed";
+    return git ? "changed" : "read";
+  };
+
+  const openAsks = new Set(); // the requests unfolded by a click: they stay so on redraws
+
+  /** Details, as the mock-up: what waits for you, what Pi changed (and Undo), the
+   *  session's tokens and cost; then what Pi read and its last steps. */
   function drawActivity() {
     activityView.replaceChildren();
     if (!activity) return;
     const files = Object.entries(activity.files);
-    for (const [state, spec] of Object.entries(STATES)) {
-      const items = files.filter(([, f]) => f.state === state).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
-      if (!items.length) continue;
-      activityView.append(group(`${spec.label} (${items.length})`, items.map(([path, f]) => fileRow(path, spec, f))));
+    const sorted = (items) => items.sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
+    const asks = waitingHere().sort((x, y) => (x.at || 0) - (y.at || 0));
+    if (asks.length) {
+      // Every request in a line (the proposals' 1C): what it asks in a few words, where and
+      // when, ✕ and ✓; a click unfolds exactly what will be done. The oldest is open.
+      const shown = asks.slice(0, 5);
+      const rows = shown.map((a, i) => waitRow(a, i === 0 || openAsks.has(a.id), openAsks));
+      activityView.append(card("Waiting for you", asks.length > 1 ? String(asks.length) : "", el("div", { className: "wait-list" }, ...rows),
+        asks.length > shown.length ? el("p", { className: "small" }, linkButton(`See all ${asks.length}`, "Every request waiting for you", () => waiting.show())) : null));
     }
-    // Changes git sees that did not go through Pi's edit or write tools: made by
-    // a bash command, or by you.
-    const touched = new Set(files.filter(([, f]) => f.modified || f.edits > 0 || f.state === "modifying" || f.state === "modified").map(([p]) => p));
+    // Changed: by Pi's edit and write tools, then what git sees changed otherwise (a bash
+    // command, or you).
+    const mine = sorted(files.filter(([, f]) => changing(f)));
+    const touched = new Set(mine.map(([p]) => p));
     const outside = Object.entries(activity.git).filter(([path]) => !touched.has(path));
-    if (outside.length) {
-      activityView.append(group(`Changed on disk, not by Pi's edit tool (${outside.length})`,
-        outside.map(([path, code]) => fileRow(path, { mark: code }, null))));
-    }
-    if (activity.events.length) {
-      activityView.append(group("Recent", activity.events.slice(0, 15).map((e) => {
-        const li = el("li");
-        const mark = e.state === "running" ? "…" : e.state === "error" ? "!" : "·";
-        li.append(
-          el("span", { textContent: mark, className: e.state === "running" ? "live-dot" : "" }),
-          el("span", { className: "dim", textContent: e.tool }),
-          el("span", { className: "path", textContent: e.target }),
-        );
-        return li;
-      })));
-    }
-    if (!activityView.childElementCount) {
-      activityView.append(el("p", { className: "dim", textContent: activity.session ? "Pi has not touched any file yet." : "No Pi session for this project yet." }));
-    }
-    activityView.append(el("p", {
-      className: "hint",
-      textContent: "Shown from Pi's own session log: files read or changed by a bash command only appear under \"changed on disk\". What Pi will read next cannot be known in advance.",
-    }));
+    // Changes: each file as a link, what happened to it on the right (as the mock-up's).
+    const read = sorted(files.filter(([, f]) => !changing(f) && f.state !== "reading"));
+    const changeRow = (path, f) => {
+      const changed = !f || changing(f);
+      const ref = el("button", { className: "ref", type: "button", textContent: path, title: changed ? "See what changed" : "Open it" });
+      ref.addEventListener("click", () => (changed ? openDiff(path, base) : openFile(path, base)));
+      ref.addEventListener("dblclick", () => mention(path));
+      return el("div", { className: "row" }, el("span", { className: "grow" }, ref), el("span", { className: "add", textContent: word(path, f) }));
+    };
+    const rows = [...mine.map(([p, f]) => changeRow(p, f)), ...outside.map(([p]) => changeRow(p, null)), ...read.map(([p, f]) => changeRow(p, f))];
+    const restore = linkButton("", "The project as it was before a prompt", () => setMode("restore"));
+    restore.append(svgIcon("history"), el("span", { textContent: "Restore points" }));
+    activityView.append(card("Changes", "this session",
+      ...(rows.length ? rows : [el("p", { className: "dim", textContent: activity.session ? "Pi has not touched a file yet." : "No Pi session for this project yet." })]),
+      // Undo and the restore points mean something once Pi changed files.
+      ...(mine.length || outside.length ? [el("div", { className: "card-links" }, undo, restore)] : [])));
+    drawContext();
+    activityView.append(ctxSlot);
   }
 
-  function group(title, rows) {
-    const box = el("div", { className: "group" });
-    const list = el("ul");
-    list.append(...rows);
-    box.append(el("h3", { textContent: title }), list);
-    return box;
+  /** Context, as the mock-up: how full the conversation shown in the middle is, and what
+   *  it cost. Only for one of this project: its ring knows the model's window (chat.js). */
+  const ctxSlot = el("div");
+  function drawContext() {
+    const c = currentTab?.params?.project === base ? currentTab.context : null;
+    if (!c) { ctxSlot.replaceChildren(); return; }
+    const meter = el("div", { className: "meter" }, el("i", { style: `width: ${c.pct}%` }));
+    meter.setAttribute("role", "meter");
+    meter.setAttribute("aria-label", "Context used");
+    meter.setAttribute("aria-valuenow", String(c.pct));
+    const kv = (k, v) => el("div", { className: "kv" }, el("span", { textContent: k }), el("span", { textContent: v }));
+    const u = c.usage || {};
+    const box = card("Context", `${c.pct}% · ${dollars(c.spent) || "$0"}`, meter,
+      kv("Used", `${tokens(c.used)} of ${tokens(c.window)} tokens`),
+      kv("Tokens in", `${tokens(u.input || 0)}${u.cacheRead ? `, ${tokens(u.cacheRead)} cached` : ""}`),
+      kv("Tokens out", tokens(u.output || 0)),
+      ...(c.model ? [kv("Model", c.model)] : []));
+    box.classList.add("context-card");
+    ctxSlot.replaceChildren(box);
   }
-
-  function fileRow(path, spec, f) {
-    const li = el("li");
-    li.dataset.key = path;
-    const changed = !f || f.edits > 0 || f.state === "modifying" || f.state === "modified" || f.state === "error";
-    li.title = changed ? "Click to see the changes, double-click to mention it in Pi" : "Double-click to mention it in Pi";
-    if (changed) {
-      li.classList.add("clickable");
-      li.addEventListener("click", (e) => { if (e.detail === 1) openDiff(path, base); });
-    }
-    li.append(
-      el("span", { textContent: spec.mark, className: spec.live ? "live-dot" : "" }),
-      splitPath(path),
-    );
-    if (f) {
-      const counts = [f.reads ? `${f.reads} read` : "", f.edits ? `${f.edits} edit${f.edits > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
-      const git = gitWords(activity.git[path]);
-      li.append(el("span", { className: "count", textContent: [counts, git].filter(Boolean).join(" · ") }));
-    }
-    li.addEventListener("dblclick", () => mention(path));
-    return pressable(li);
-  }
+  tab.onContext = drawContext;
 
   // --- files view ---
 
@@ -219,14 +249,16 @@ function makeProject(tab) {
     }
     if (asked !== base) return; // another project is shown now
     list.replaceChildren();
-    for (const entry of listing.entries) {
-      if (entry.hidden && !showHidden.checked) continue;
-      list.append(node(entry));
-    }
+    const shown = listing.entries.filter((entry) => !entry.hidden || showHidden.getAttribute("aria-pressed") === "true");
+    // Folders first, then the order chosen.
+    shown.sort((a, b) => (b.kind === "dir") - (a.kind === "dir") || FILE_ORDER[sortBy.value](a, b));
+    for (const entry of shown) list.append(node(entry));
     if (listing.truncated) list.append(el("li", { className: "dim small", textContent: "… (list cut short)" }));
     decorateTree();
   }
 
+  /** A row of the tree: an arrow for a folder, its kind, its name, what Pi and git did to
+   *  it, and the size or the date when the files are sorted by them. */
   function node(entry) {
     const li = el("li");
     li.className = entry.kind === "dir" ? "dir" : "file";
@@ -234,36 +266,172 @@ function makeProject(tab) {
     const row = el("div");
     row.className = "node" + (entry.hidden ? " hidden-entry" : "");
     row.setAttribute("role", "treeitem");
-    const label = (open) => (entry.kind === "dir" ? `${open ? "▾" : "▸"} ${entry.name}/` : `${entry.name}${entry.kind === "link" ? " \u2197\uFE0E" : ""}`);
-    const name = el("span", { textContent: label(false) });
-    row.append(el("span", { className: "badge" }), el("span", { className: "git" }), name);
-    if (entry.kind === "file") row.append(el("span", { className: "size", textContent: humanSize(entry.size) }));
+    if (entry.kind === "dir") row.setAttribute("aria-expanded", "false");
+    const name = el("span", { className: "name", textContent: entry.name + (entry.kind === "link" ? " \u2197\uFE0E" : "") });
+    const meta = sortBy.value === "size" && entry.kind === "file" ? humanSize(entry.size)
+      : sortBy.value === "date" && entry.mtime ? relTime(entry.mtime).replace(/ ago$/, "") : "";
+    row.append(el("span", { className: "fold-arrow" }, ...(entry.kind === "dir" ? [svgIcon("chevron-right")] : [])),
+      el("span", { className: "kind" }, svgIcon(fileIcon(entry)), ...(entry.kind === "dir" ? [svgIcon("ft-folder-open")] : [])), name,
+      el("span", { className: "badge" }), el("span", { className: "git" }), el("span", { className: "size", textContent: meta }));
     li.append(pressable(row));
+    row.addEventListener("contextmenu", (e) => { e.preventDefault(); nodeMenu(entry, li.dataset.rel, row, { x: e.clientX, y: e.clientY }); });
+    row.addEventListener("keydown", (e) => {
+      if (e.target !== row) return;
+      if (e.key === "F2") { e.preventDefault(); renameEntry(entry, li.dataset.rel, row); return; }
+      if (e.key === "Delete") { e.preventDefault(); deleteEntry(entry, li.dataset.rel, li); return; }
+      if (e.key !== "ContextMenu" && !(e.shiftKey && e.key === "F10")) return;
+      e.preventDefault();
+      const box = row.getBoundingClientRect();
+      nodeMenu(entry, li.dataset.rel, row, { x: box.left + 24, y: box.bottom });
+    });
     row.addEventListener("click", async () => {
       selected?.classList.remove("selected");
       selected = row;
       row.classList.add("selected");
       if (entry.kind !== "dir") {
         const rel = li.dataset.rel;
-        // A file Pi or git changed: its changes (the file itself is a link away); any
-        // other: the file.
-        if (activity && (activity.git[rel] || activity.files[rel]?.edits)) openDiff(rel, base);
-        else openFile(rel, base);
+        // The file itself, changed or not: its changes are a button away (and in Changes).
+        openFile(rel, base);
         return;
       }
       let children = $(":scope > ul", li);
       if (children) {
         children.remove();
-        name.textContent = label(false);
+        row.setAttribute("aria-expanded", "false");
       } else {
         children = el("ul");
         li.append(children);
-        name.textContent = label(true);
+        row.setAttribute("aria-expanded", "true");
         await fill(children, entry.path);
       }
     });
     row.addEventListener("dblclick", () => { if (entry.kind !== "dir") mention(li.dataset.rel); });
     return li;
+  }
+
+  /** A right click on a file or a folder: what Pier can do with it from here. */
+  function nodeMenu(entry, rel, row, at) {
+    const copy = (text) => backend.copyText(text).then(() => flashStatus("copied")).catch((e) => showError(error, String(e)));
+    const items = [];
+    if (entry.kind === "dir") items.push([row.getAttribute("aria-expanded") === "true" ? "Fold" : "Open", () => row.click(), false, { icon: "folder" }]);
+    else {
+      if (activity && (activity.git[rel] || activity.files[rel]?.edits)) items.push(["Open its changes", () => openDiff(rel, base), false, { icon: "git-compare" }]);
+      items.push(["Open in a tab", () => openFile(rel, base, { newTab: true }), false, { icon: "external-link" }], [`Mention it to Pi (@${rel})`, () => mention(rel), false, { icon: "at-sign" }]);
+    }
+    items.push(null, ["Copy its path", () => copy(entry.path), false, { icon: "copy" }], ["Copy its path in the project", () => copy(rel), false, { icon: "copy" }]);
+    // New things go in the folder clicked, or beside the file clicked.
+    const li = row.parentElement;
+    const where = entry.kind === "dir" ? { li, rel } : { li: li.parentElement.closest("li.dir"), rel: rel.split("/").slice(0, -1).join("/") };
+    items.push(null,
+      ["New file here", () => newEntry("file", where), false, { icon: "file-plus" }],
+      ["New folder here", () => newEntry("dir", where), false, { icon: "folder-plus" }],
+      null,
+      ["Rename", () => renameEntry(entry, rel, row), false, { icon: "pencil" }],
+      ...(entry.kind === "file" ? [["Duplicate", () => change(["fs-copy", base, rel], li.parentElement, parentOf(entry.path)), false, { icon: "copy-plus" }]] : []),
+      ["Delete…", () => deleteEntry(entry, rel, li), false, { icon: "trash", danger: true }]);
+    showMenu(null, items, at);
+  }
+
+  const parentOf = (path) => path.slice(0, path.lastIndexOf("/")) || base;
+  /** A change through the picker, then the folder it touched listed again. */
+  async function change(args, list, dir) {
+    try {
+      await backend.api(args);
+      showError(error, "");
+    } catch (e) { showError(error, String(e)); return false; }
+    await fill(list, dir);
+    return true;
+  }
+
+  /** A name typed in the tree, in the row of a new entry or of the one renamed: Enter
+   *  does it, Escape leaves it; what the picker refuses ("already exists") shows in the row. */
+  function nameField(row, { value = "", kind, done, cancel }) {
+    const input = el("input", { value, spellcheck: false });
+    input.setAttribute("aria-label", kind === "dir" ? "Folder name" : "File name");
+    input.placeholder = kind === "dir" ? "Folder name" : "File name";
+    const hint = el("span", { className: "name-hint", textContent: "Enter to save" });
+    hint.id = `name-hint-${Date.now()}`;
+    input.setAttribute("aria-describedby", hint.id);
+    $(".name", row).replaceWith(input);
+    row.append(hint);
+    row.classList.add("naming");
+    let busy = false;
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("keydown", async (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") { e.preventDefault(); cancel(); }
+      if (e.key !== "Enter" || busy || !input.value.trim()) return;
+      e.preventDefault();
+      busy = true;
+      const problem = await done(input.value.trim());
+      busy = false;
+      if (problem) { hint.textContent = problem; hint.classList.add("bad"); input.setAttribute("aria-invalid", "true"); }
+    });
+    input.addEventListener("input", () => { hint.textContent = "Enter to save"; hint.classList.remove("bad"); input.removeAttribute("aria-invalid"); });
+    // A click elsewhere: an empty name is given up (a name typed waits for Enter or Escape).
+    input.addEventListener("blur", () => setTimeout(() => { if (input.isConnected && !busy && !input.value.trim()) cancel(); }, 120));
+    input.focus();
+    // A file's name chosen up to its extension, as in every file manager.
+    const dot = kind === "file" ? value.lastIndexOf(".") : -1;
+    input.setSelectionRange(0, dot > 0 ? dot : value.length);
+    return input;
+  }
+
+  /** A new file or folder: a row at the top of its folder (opened first) to name it. */
+  async function newEntry(kind, where = { li: null, rel: "" }) {
+    // One new entry at a time: the same one again is focused, another one replaces it.
+    const pending = $("li.new-entry", tree);
+    if (pending?.dataset.kind === kind && pending.dataset.at === where.rel) { $("input", pending)?.focus(); return; }
+    pending?.remove();
+    const dir = where.rel ? `${base}/${where.rel}` : base;
+    let list = tree;
+    if (where.li) {
+      list = $(":scope > ul", where.li);
+      if (!list) { // the folder opened first, listed before the new row goes on top
+        list = el("ul");
+        where.li.append(list);
+        $(":scope > .node", where.li).setAttribute("aria-expanded", "true");
+        await fill(list, dir);
+      }
+    }
+    const li = el("li", { className: `${kind === "dir" ? "dir" : "file"} new-entry` });
+    li.dataset.kind = kind;
+    li.dataset.at = where.rel;
+    const row = el("div", { className: "node" },
+      el("span", { className: "fold-arrow" }, ...(kind === "dir" ? [svgIcon("chevron-right")] : [])),
+      el("span", { className: "kind" }, svgIcon(kind === "dir" ? "folder" : "file")), el("span", { className: "name" }));
+    li.append(row);
+    list.prepend(li);
+    nameField(row, { kind,
+      cancel: () => li.remove(),
+      done: async (name) => {
+        const rel = where.rel ? `${where.rel}/${name}` : name;
+        try { await backend.api(["fs-new", base, rel, kind]); } catch (e) { return String(e); }
+        await fill(list, dir);
+        $(`:scope > li[data-rel="${CSS.escape(rel)}"] > .node`, list)?.focus();
+        return null;
+      } });
+  }
+
+  function renameEntry(entry, rel, row) {
+    const list = row.parentElement.parentElement;
+    const back = () => fill(list, parentOf(entry.path));
+    nameField(row, { kind: entry.kind, value: entry.name,
+      cancel: back,
+      done: async (name) => {
+        if (name === entry.name) { back(); return null; }
+        try { await backend.api(["fs-rename", base, rel, name]); } catch (e) { return String(e); }
+        await back();
+        const moved = rel.split("/").slice(0, -1).concat(name).join("/");
+        $(`:scope > li[data-rel="${CSS.escape(moved)}"] > .node`, list)?.focus();
+        return null;
+      } });
+  }
+
+  async function deleteEntry(entry, rel, li) {
+    const what = entry.kind === "dir" ? `the folder "${rel}" and all it holds` : `"${rel}"`;
+    if (!(await ask(`Delete ${what} for good? It goes from the VM, not to a bin; a restore point taken before has it.`))) return;
+    await change(["fs-delete", base, rel], li.parentElement, parentOf(entry.path));
   }
 
   /** Marks files the agent touched, and folders that contain any. */
@@ -279,16 +447,22 @@ function makeProject(tab) {
       const f = activity.files[rel];
       const badge = $(":scope > .node > .badge", li);
       const git = $(":scope > .node > .git", li);
-      badge.textContent = f ? (STATES[f.state]?.mark ?? "?") : li.classList.contains("dir") && touchedDirs.has(rel) ? "•" : "";
-      badge.className = "badge" + (f && STATES[f.state]?.live ? " live-dot" : "");
-      git.textContent = activity.git[rel] || "";
-      git.title = gitWords(activity.git[rel]);
+      // In words, as the Changes card; a folder: a dot when Pi touched something in it.
+      const dir = li.classList.contains("dir");
+      // An icon (its word in the hint); a folder: a dot when Pi touched something in it.
+      const said = dir ? "" : f || activity.git[rel] ? word(rel, f) : "";
+      const icon = BADGE_ICONS[said] || (/edit/.test(said) ? "check" : "");
+      badge.replaceChildren(...(icon ? [svgIcon(icon)] : []), ...(f?.edits > 1 ? [String(f.edits)] : []));
+      badge.title = dir ? (touchedDirs.has(rel) ? "Pi read or changed files in here" : "")
+        : [said, f ? STATES[f.state]?.label : "", activity.git[rel] ? `git: ${gitWords(activity.git[rel])}` : ""].filter(Boolean).join(" · ");
+      badge.className = "badge" + (said ? ` is-${said.replace(/^\d+ edits?$/, "changed").replace(/ /g, "-")}` : "") + (dir && touchedDirs.has(rel) ? " dot" : "");
+      git.textContent = "";
     }
   }
 
   // --- restore points ---
 
-  const POINT_MARKS = { start: "\u25B6\uFE0E", prompt: "›", idle: "■", manual: "★", "before-restore": "↺" };
+  const POINT_MARKS = { start: "play", prompt: "message-square", idle: "square", manual: "pin", "before-restore": "undo-2" };
   const CHANGE_MARKS = { created: ["+", "created since: going back removes it"], modified: ["~", "changed since"], deleted: ["−", "deleted since: going back brings it back"] };
   let pointsData = null;
   let openPoint = null;
@@ -356,7 +530,7 @@ function makeProject(tab) {
       const li = el("li");
       const head = el("div", { className: "point-head", title: point.prompts.length > 1 ? `Also before:\n${point.prompts.slice(1).join("\n")}` : "Click to see what changed since" });
       head.append(
-        el("span", { className: "mark", textContent: POINT_MARKS[point.reason] || "·" }),
+        el("span", { className: "mark" }, svgIcon(POINT_MARKS[point.reason] || "history")),
         el("span", { className: "when", textContent: pointWhen(point) }),
         el("span", { className: "what", textContent: pointTitle(point) }),
       );
@@ -462,6 +636,13 @@ function makeProject(tab) {
   tab.given = given;
   tab.showGiven = () => { workspace.show(tab); setMode("given"); };
 
+  // Repository is a view too: the project of the conversation in use, as Details and Files.
+  const repoView = $(".view-repository", tab.pane);
+  const repo = { kind: "repository", pane: repoView, get shown() { return tab.shown !== false && mode === "repository"; } };
+  makeRepository(repo);
+  $(".repository-project", repoView).style.display = "none"; // the panel's own bar names the project
+  tab.showRepository = () => { workspace.show(tab); setMode("repository"); };
+
   // Undo last prompt: back to the point saved as the latest prompt arrived.
   const undo = $(".undo-prompt", tab.pane);
   undo.addEventListener("click", async () => {
@@ -477,14 +658,15 @@ function makeProject(tab) {
   tab.setMode = (next) => setMode(next); // from the palette
   function setMode(next) {
     mode = next;
-    for (const b of tab.pane.querySelectorAll(".mode")) b.classList.toggle("active", b.dataset.mode === mode);
+    for (const b of modes()) b.classList.toggle("active", b.dataset.mode === mode);
     activityView.hidden = mode !== "activity";
     filesView.hidden = mode !== "files";
     restoreView.hidden = mode !== "restore";
     givenView.hidden = mode !== "given";
+    repoView.hidden = mode !== "repository";
+    if (mode === "repository") repo.onShow?.();
     given.onVisible?.(mode === "given" && tab.shown !== false);
     if (mode === "given") given.onShow?.();
-    $(".files-hint", tab.pane).hidden = mode === "restore" || mode === "given";
     if (mode === "files" && !tree.childElementCount) loadTree();
     if (mode === "restore") loadPoints();
     follow();
@@ -503,23 +685,36 @@ function makeProject(tab) {
     points.replaceChildren();
     restoreNote.hidden = true;
     renderAgent();
-    renderPis();
     follow();
     if (mode === "files") await loadTree();
     if (mode === "restore") loadPoints();
   }
 
-  for (const b of tab.pane.querySelectorAll(".mode")) b.addEventListener("click", () => setMode(b.dataset.mode));
+  // Its own switch's buttons (Repository's Git and Team are .mode too).
+  const modes = () => tab.pane.querySelectorAll(".pane-project > .toolbar .switch .mode");
+  for (const b of modes()) b.addEventListener("click", () => setMode(b.dataset.mode));
   $(".refresh", tab.pane).addEventListener("click", loadTree);
-  showHidden.addEventListener("change", loadTree);
-  tab.onTargetChange = () => { retarget(); given.onTargetChange?.(); };
+  $(".new-file", tab.pane).addEventListener("click", () => base && newEntry("file"));
+  $(".new-folder", tab.pane).addEventListener("click", () => base && newEntry("dir"));
+  showHidden.addEventListener("click", () => {
+    const on = showHidden.getAttribute("aria-pressed") !== "true";
+    showHidden.setAttribute("aria-pressed", String(on));
+    showHidden.title = on ? "Hide hidden files" : "Show hidden files";
+    showHidden.setAttribute("aria-label", showHidden.title);
+    $("use", showHidden).setAttribute("href", on ? "#i-eye" : "#i-eye-off");
+    loadTree();
+  });
+  sortBy.addEventListener("change", () => { prefs.filesSort = sortBy.value; savePrefs(); loadTree(); });
+  tab.onTargetChange = () => { retarget(); given.onTargetChange?.(); repo.onTargetChange?.(); };
   tab.onVisible = (shown) => { follow(); given.onVisible?.(shown !== false && mode === "given"); };
   tab.onShow = () => {
     if (stale && vm.latest("activity")) onActivity(vm.latest("activity"));
     if (mode === "given") given.onShow?.();
   };
-  const unlisten = [vm.on("activity", onActivity), vm.on("checkpoints", onPoints)];
-  tab.onClose = () => { unlisten.forEach((stop) => stop()); given.onClose?.(); vm.follow({ activity: null, checkpoints: null }); };
+  // A request answered elsewhere (or a new one): the Waiting card follows.
+  const onApprovals = () => { if (activity && mode === "activity" && visible()) renderActivity(); };
+  const unlisten = [vm.on("activity", onActivity), vm.on("checkpoints", onPoints), vm.on("approvals", onApprovals)];
+  tab.onClose = () => { unlisten.forEach((stop) => stop()); given.onClose?.(); repo.onClose?.(); vm.follow({ activity: null, checkpoints: null }); };
   retarget();
 }
 

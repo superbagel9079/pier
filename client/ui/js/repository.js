@@ -1,12 +1,22 @@
-// The Repository panel: the project's repository (Git) and the colleagues met there
-// (Team), for the Pi in use. Git and Team were pages of Setup, the project's
-// configuration; they are a subject of their own.
+// The Repository panel: the project's repository (Git) and the colleagues met there (Team),
+// for the Pi in use.
+
+/** The right side's Repository view (Details' panel), opened. */
+function showRepository() {
+  if (!workspace.find("project")) workspace.add("project");
+  workspace.find("project")?.showRepository?.();
+}
 
 function makeRepository(tab) {
   tab.pane.append($("#tpl-repository").content.cloneNode(true));
   const $$ = (sel) => $(sel, tab.pane);
   const project = () => target?.path || null;
-  const gitManager = makeGitManager($$(".git-manager"), project);
+  // No repository connected: no Team to switch to (it works through the repository).
+  const gitManager = makeGitManager($$(".git-manager"), project, (data) => {
+    const linked = Boolean(data?.link);
+    $$(".repository-pages").hidden = !linked;
+    if (!linked && page === "team") showPage("git");
+  });
   const teamManager = makeTeamManager($$(".team-manager"), project);
   let page = prefs.repositoryPage === "team" ? "team" : "git";
 

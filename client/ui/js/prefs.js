@@ -1,76 +1,47 @@
 // Settings: the whole window, categories on the left, a search over all of them;
-// layout, themes, behavior, the picker, diagnostics (Agents and Network: settings.js).
+// layout, themes, notifications, the picker, diagnostics (what lives on the VM: settings.js).
 
-// ============================================================================
 // Preferences dialog
-// ============================================================================
-
-// Given to Pi is a view of Activity (no tab of its own). Labs is always listed, hidden
-// and not to be placed while labs are off: turning them on puts the tab on the panels'
-// side, turning them off hides it (labs.js).
-const PLACEABLE = [
-  ["main", "picker (main terminal)", false],
-  ["conversations", "Conversations", true],
-  ["project", "Activity (what Pi does, what it was given)", true],
-  ["setup", "Project (instructions, skills, packages)", true],
-  ["repository", "Repository (Git, Team)", true],
-  ["logs", "Logs", true],
-  ["labs", "Labs", true, () => labsOn()],
-];
-
-/** Where each panel is, in Appearance: drawn again whenever a panel comes or goes
- *  from elsewhere (labs turned on or off). */
-function fillLayout() {
-  const grid = $("#prefs-layout");
-  grid.replaceChildren();
-  for (const [key, label, hideable, usable] of PLACEABLE) {
-    const select = el("select");
-    select.id = `prefs-place-${key}`;
-    for (const name of DOCKS) select.add(new Option(name, name));
-    if (hideable) select.add(new Option("hidden", "hidden"));
-    select.value = workspace.find(key)?.dock || "hidden";
-    if (usable && !usable() && !workspace.find(key)) {
-      select.disabled = true;
-      select.title = "Turn labs on first (Settings > Labs)";
-    }
-    select.addEventListener("change", () => {
-      const tab = workspace.find(key);
-      if (select.value === "hidden") { if (tab) workspace.close(tab); }
-      else if (tab) workspace.move(tab, select.value);
-      else workspace.add(key, select.value);
-    });
-    grid.append(el("label", { htmlFor: select.id, textContent: label }), select);
-  }
-}
 
 function openPrefs() {
-  fillLayout();
   fillThemes();
   $("#prefs-font").value = prefs.fontSize;
   $("#prefs-padding").value = prefs.termPadding;
   fillTermFonts();
   fillUiFonts();
-  $("#prefs-shortcut").checked = prefs.shortcut;
+  showCorners();
+  showAccent();
+  showGradient();
+  $("#prefs-menublur").checked = prefs.menuBlur;
+  $("#prefs-mica").checked = prefs.mica;
+  $("#prefs-rail").checked = prefs.railAlways !== false;
   $("#prefs-autostop").checked = prefs.autostop;
   $("#prefs-notify").checked = prefs.notify;
   $("#prefs-clear").checked = prefs.clearOnEnd;
   $("#prefs-resume").checked = prefs.resume;
   $("#prefs-focus").checked = prefs.focusFollowsMouse;
+  $("#prefs-pi-terminal").checked = prefs.piTerminal;
+  showTerminalPage();
   $("#prefs-gpu").checked = prefs.gpuTerminal;
-  $("#prefs-copykeys").value = prefs.copyKeys;
-  $("#prefs-copymode").value = prefs.copyMode;
+  showCopy();
+  showFold();
+  showCopyButtons();
+  $("#prefs-notify-wait").checked = prefs.notifyWait !== false;
+  showLayoutChoice();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
+  $("#prefs-address").textContent = settings?.host || "";
   $("#prefs-autoupdate").checked = prefs.autoUpdatePicker;
   $("#prefs-updatecheck").checked = prefs.updateCheck;
   $("#prefs-debug").checked = prefs.debugLogs;
-  $("#prefs-side").value = prefs.panelSide === "left" ? "left" : "right";
   $("#prefs-picker-note").hidden = true;
   $("#prefs-diag-note").hidden = true;
   fillPickerInfo();
   fillLabsPrefs();
-  backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
-  $("#prefs-shortcut-note").hidden = true;
-  backend.shortcutStatus?.().then((ours) => { $("#prefs-shortcut-note").hidden = ours || !prefs.shortcut; }).catch(() => {});
+  backend.logInfo().then((info) => {
+    $("#prefs-logpath").textContent = info.path || "?";
+    if (info.version) $("#about-version").textContent = `Pier ${info.version}`;
+  }).catch(() => {});
+  $("#prefs-releasenotes").checked = prefs.releaseNotes !== false;
   showSettingsPage(prefsPage);
   if ($("#prefs").hidden) {
     // The workspace stays as it was behind (terminals run on), only out of sight.
@@ -79,54 +50,69 @@ function openPrefs() {
     $("#prefs-search").value = "";
     searchSettings("");
   }
-  $(`#prefs .prefs-tabs button[data-page="${prefsPage}"]`)?.focus();
+  // The keyboard where the categories are, without the ring of a key press (opened by a click).
+  $(`#prefs .prefs-tabs button[data-page="${prefsPage}"]`)?.focus({ focusVisible: false });
 }
 
 function closePrefs() {
   if ($("#prefs").hidden) return;
   closeThemeEditor(); // an unsaved theme is not kept
   $("#prefs").hidden = true;
+  prefsLogs.onVisible?.(false);
   $("#workspace").hidden = false;
+  renderSessionBadge(); // hidden while the workspace was
   for (const tab of workspace.tabs()) tab.refit?.();
-  workspace.find("main")?.onShow?.();
 }
 
 /** One category of the settings at a time; the one last shown comes back next time. */
-let prefsPage = "agents";
-// A category shows its pages one under the other: Appearance its own and Layout,
-// Connection the VM and the picker. A page asked by its own name ("picker", "layout"),
-// or by an older one ("general"), opens its category.
-const PREFS_GROUPS = { appearance: ["appearance", "layout"], connection: ["connection", "picker"] };
-const PREFS_OLD = { general: "connection" };
+let prefsPage = "general";
+// A category shows its pages one under the other. A page asked by its own name or an older
+// one ("picker", "behavior", "connection") opens its category.
+const PREFS_GROUPS = { overview: ["overview", "picker"] };
+const PREFS_OLD = { behavior: "general", layout: "general", connection: "overview", updates: "about" };
 const prefsTabOf = (page) => PREFS_OLD[page] || Object.keys(PREFS_GROUPS).find((tab) => PREFS_GROUPS[tab].includes(page)) || page;
 const prefsTabs = () => [...document.querySelectorAll("#prefs .prefs-tabs button")];
 
 function showSettingsPage(page) {
+  closeMenu(false); // a menu of the page left goes with it
   page = prefsTabOf(page);
-  if (!prefsTabs().some((t) => t.dataset.page === page)) page = "agents";
+  if (!prefsTabs().some((t) => t.dataset.page === page)) page = "general";
   prefsPage = page;
   const shown = PREFS_GROUPS[page] || [page];
   const tabs = prefsTabs();
   for (const tab of tabs) {
-    const on = tab.dataset.page === page;
+    const on = tab.dataset.page === (page === "extensions" && extFromProject ? "projects" : page);
     tab.setAttribute("aria-selected", String(on));
     tab.tabIndex = on ? 0 : -1;
   }
-  $("#prefs-title").textContent = tabs.find((t) => t.dataset.page === page)?.textContent || "Settings";
+  const tab = tabs.find((t) => t.dataset.page === page);
+  $("#prefs-title").textContent = tab?.textContent || "Settings";
+  $("#prefs-lede").textContent = tab?.dataset.lede || "";
+  $("#prefs-act").replaceChildren(...(PAGE_ACTIONS[page] ? [PAGE_ACTIONS[page]()] : [])); // settings.js
   if ($("#prefs-search").value.trim()) return; // the search shows what matches, wherever it is
   for (const section of document.querySelectorAll("#prefs .prefs-page")) section.hidden = !shown.includes(section.dataset.page);
   settingsPageShown(page);
+  // The log viewer (logs.js): made the first time Diagnostics is shown, paused elsewhere.
+  if (page !== "diagnostics") prefsLogs.onVisible?.(false);
+  else if (prefsLogs.onShow) prefsLogs.onShow();
+  else makeLogs(prefsLogs);
 }
+const prefsLogs = { pane: $("#prefs-logs") };
+
+
 /** A page asked for from elsewhere (Labs' settings link, the update button, the palette). */
 function showPrefsPage(page) {
   $("#prefs-search").value = "";
   searchSettings("");
   showSettingsPage(page);
 }
-for (const tab of prefsTabs()) tab.addEventListener("click", () => showPrefsPage(tab.dataset.page));
+for (const tab of prefsTabs()) tab.addEventListener("click", () => {
+  if (tab.dataset.page === "extensions") extFromProject = false; // from the menu: yours, any project
+  showPrefsPage(tab.dataset.page);
+});
 // The categories, a vertical tab list: arrows move, Home and End go to the ends.
 $("#prefs .prefs-tabs").addEventListener("keydown", (e) => {
-  const tabs = prefsTabs();
+  const tabs = prefsTabs().filter((t) => !t.hidden);
   const at = tabs.indexOf(document.activeElement);
   if (at < 0) return;
   const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: tabs.length - 1 }[e.key];
@@ -158,7 +144,7 @@ function searchSettings(query) {
     page.hidden = !hit;
     if (!hit) continue;
     any = true;
-    for (const row of page.querySelectorAll(".setting-row, label, h2, .check, .hint, button")) {
+    for (const row of page.querySelectorAll(".set, .setting-row, label, h2, .check, .hint, button")) {
       if (matches(textOf(row)) && !row.closest(".found")) row.classList.add("found");
     }
   }
@@ -183,20 +169,20 @@ document.addEventListener("keydown", (e) => {
   closePrefs();
 });
 /** Every panel to the side chosen, the terminals in the middle. */
+/** Reset layout: both sides open at their usual widths. */
 function placePanels() {
   workspace.arrange(defaultLayout()); // moves tabs, never restarts a terminal
-  const logs = workspace.find("logs");
-  if (logs) workspace.move(logs, prefs.panelSide === "left" ? "left" : "right");
 }
-$("#prefs-reset").addEventListener("click", () => {
-  placePanels();
-  fillLayout();
-});
-$("#prefs-side").addEventListener("change", (e) => {
-  prefs.panelSide = e.target.value;
-  savePrefs();
-  placePanels();
-  fillLayout();
+/** Where the panels go (General): both sides, or Details only (the conversations folded). */
+function showLayoutChoice() {
+  const both = !workspace.docks.left.collapsed;
+  for (const b of $("#prefs-layout").children) b.setAttribute("aria-checked", String((b.dataset.v === "both") === both));
+}
+for (const b of $("#prefs-layout").children) b.addEventListener("click", () => {
+  const layout = defaultLayout();
+  if (b.dataset.v === "details") layout.left = { ...layout.left, collapsed: true };
+  workspace.arrange(layout); // moves tabs, never restarts a terminal
+  showLayoutChoice();
 });
 $("#prefs-theme").addEventListener("change", (e) => {
   closeThemeEditor();
@@ -211,7 +197,7 @@ function fillThemes() {
   const select = $("#prefs-theme");
   select.replaceChildren();
   const builtIn = el("optgroup", { label: "Built in" });
-  builtIn.append(new Option("follow the system (Pier dark / light)", "system"));
+  builtIn.append(new Option("Follow the system", "system"));
   for (const t of BUILTIN_THEMES) builtIn.append(new Option(t.name, t.id));
   select.append(builtIn);
   if (prefs.customThemes.length) {
@@ -227,6 +213,51 @@ function fillThemes() {
   const colors = [theme.ui.bg, theme.ui.panel, theme.ui.fg, theme.ui.dim, theme.ui.accent,
     ...ANSI_KEYS.slice(1, 7).map((k) => theme.terminal[k]).filter(Boolean)];
   for (const color of colors) box.append(el("span", { style: `background:${color}` }));
+  drawThemeGallery();
+}
+
+/** The themes as cards (the proposals' 5A): four colours of each (background, panel,
+ *  text, accent) and its name; the one in use has Customize, yours a bin; the last card
+ *  imports. Drives the hidden list, so the rest of the code keeps its one source. */
+function drawThemeGallery() {
+  const gallery = $("#theme-gallery");
+  const select = $("#prefs-theme");
+  const preview = (t) => {
+    const ui = completeTheme(t).ui;
+    return el("span", { className: "theme-preview", "aria-hidden": "true" }, ...[ui.bg, ui.panel, ui.fg, ui.accent].map((c) => el("i", { style: `background:${c}` })));
+  };
+  const card = (id, name, previewEl, own) => {
+    const on = select.value === id;
+    const b = el("button", { type: "button", className: on ? "theme-card on" : "theme-card", title: name }, previewEl, el("span", { className: "name", textContent: name }));
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(on));
+    b.addEventListener("click", () => { if (select.value === id) return; select.value = id; select.dispatchEvent(new Event("change")); });
+    const box = el("div", { className: "theme-cell" }, b);
+    if (on && id !== "system") {
+      const edit = el("button", { type: "button", className: "icon-btn", title: "Customize this theme" }, svgIcon("pencil"));
+      edit.setAttribute("aria-label", `Customize ${name}`);
+      edit.addEventListener("click", () => $("#theme-customize").click());
+      box.append(el("span", { className: "theme-actions" }, edit, ...(own ? [(() => {
+        const del = el("button", { type: "button", className: "icon-btn", title: "Delete this theme" }, svgIcon("trash"));
+        del.setAttribute("aria-label", `Delete ${name}`);
+        del.addEventListener("click", () => $("#theme-delete").click());
+        return del;
+      })()] : [])));
+    }
+    return box;
+  };
+  const dark = BUILTIN_THEMES.find((t) => t.id === "devbox-dark") || BUILTIN_THEMES[0];
+  const light = BUILTIN_THEMES.find((t) => t.id === "devbox-light") || BUILTIN_THEMES[1];
+  const half = el("span", { className: "theme-preview system", "aria-hidden": "true" },
+    el("i", { style: `background:${completeTheme(dark).ui.bg}` }), el("i", { style: `background:${completeTheme(light).ui.bg}` }));
+  const add = el("button", { type: "button", className: "theme-card import", title: "A VS Code theme's .json (its \"themes\" folder, on GitHub or in ~/.vscode/extensions), or a Zed theme .json (zed.dev/themes, ~/.config/zed/themes): every theme in it is added." },
+    svgIcon("upload"), el("span", { className: "name", textContent: "Import a VS Code or Zed theme…" }));
+  add.addEventListener("click", () => $("#theme-import").click());
+  gallery.replaceChildren(
+    card("system", "Follow the system", half, false),
+    ...BUILTIN_THEMES.map((t) => card(t.id, t.name, preview(t), false)),
+    ...prefs.customThemes.map((t) => card(t.id, t.imported ? `${t.name} (imported)` : t.name, preview(t), true)),
+    el("div", { className: "theme-cell" }, add));
 }
 
 $("#theme-import").addEventListener("click", () => $("#theme-file").click());
@@ -329,6 +360,79 @@ $("#theme-save").addEventListener("click", () => {
   closeThemeEditor();
   fillThemes();
 });
+/** The accent: the theme's, or a colour of the palette, or any (the colour field). */
+const ACCENTS = ["#4c8dff", "#38bdf8", "#2dd4bf", "#3fb950", "#a3e635", "#eab308", "#f97316", "#f85149", "#ec4899", "#a371f7", "#6366f1", "#9ca3af"];
+let accentLast = "#4c8dff"; // Custom chosen again: the colour it had
+function setAccent(value) {
+  prefs.accent = value;
+  if (value) accentLast = value;
+  savePrefs();
+  applyTheme();
+  showAccent();
+}
+function showAccent() {
+  const custom = Boolean(prefs.accent);
+  for (const b of $("#prefs-accent-mode").children) b.setAttribute("aria-checked", String((b.dataset.v === "custom") === custom));
+  $("#prefs-accent-palette").hidden = !custom;
+  const box = $("#prefs-accent-swatches");
+  box.replaceChildren(...ACCENTS.map((c) => {
+    const b = el("button", { type: "button", className: "accent-swatch", style: `--swatch:${c}`, title: c });
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-label", c);
+    b.setAttribute("aria-checked", String(prefs.accent.toLowerCase() === c));
+    b.addEventListener("click", () => setAccent(c));
+    return b;
+  }));
+  $("#prefs-accent-pick").value = prefs.accent || accentLast;
+}
+for (const b of $("#prefs-accent-mode").children) b.addEventListener("click", () => setAccent(b.dataset.v === "custom" ? (prefs.accent || accentLast) : ""));
+$("#prefs-accent-pick").addEventListener("input", (e) => setAccent(e.target.value.toLowerCase()));
+
+/** The gradient's settings: the styles as thumbnails (each drawn by its own rule), then
+ *  intensity, colours, grain, and where it goes. */
+const GRAD_NAMES = { off: "Off", aurora: "Aurora", mesh: "Mesh", linear: "Linear", glow: "Glow", dusk: "Dusk", horizon: "Horizon", halo: "Halo", corners: "Corners", dawn: "Dawn", prism: "Prism", tide: "Tide" };
+const GRAD_FLAGS = { "prefs-grad-grain": "gradGrain", "prefs-grad-newtab": "gradNewTab", "prefs-grad-working": "gradWorking", "prefs-grad-empty": "gradEmpty", "prefs-grad-buttons": "gradButtons", "prefs-grad-sides": "gradSides" };
+const GRAD_PLACES = [["gradSides", "around the window"], ["gradNewTab", "the new tab"], ["gradWorking", "the message field while Pi works"], ["gradEmpty", "empty screens"], ["gradButtons", "the main buttons"]];
+function setGradient(changes) {
+  Object.assign(prefs, changes);
+  savePrefs();
+  applyGradient();
+  showGradient();
+}
+function showGradient() {
+  $("#grad-gallery").replaceChildren(...Object.entries(GRAD_NAMES).map(([key, name]) => {
+    const on = (prefs.gradStyle || "aurora") === key;
+    const b = el("button", { type: "button", className: `grad-thumb s-${key}${on ? " on" : ""}`, title: name }, el("span", { textContent: name }));
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(on));
+    // A style chosen with no place ticked showed nowhere: the new tab and empty screens then.
+    b.addEventListener("click", () => setGradient({ gradStyle: key, ...(key !== "off" && !GRAD_PLACES.some(([k]) => prefs[k]) ? { gradSides: true, gradNewTab: true, gradEmpty: true } : {}) }));
+    return b;
+  }));
+  $("#prefs-grad-intensity").value = prefs.gradIntensity;
+  for (const b of $("#prefs-grad-colors").children) b.setAttribute("aria-checked", String((b.dataset.v === "custom") === Boolean(prefs.gradCustom)));
+  $("#prefs-grad-own").hidden = !prefs.gradCustom;
+  $("#prefs-grad-c1").value = prefs.gradC1;
+  $("#prefs-grad-c2").value = prefs.gradC2;
+  for (const [id, key] of Object.entries(GRAD_FLAGS)) $(`#${id}`).checked = Boolean(prefs[key]);
+  // Where it shows, said under the styles: Settings covers the window, so it is not seen here.
+  const places = GRAD_PLACES.filter(([k]) => prefs[k]).map(([, words]) => words);
+  $("#grad-where").textContent = (prefs.gradStyle || "aurora") === "off" ? "" : places.length
+    ? `Shown here, and on ${places.join(", ").replace(/, ([^,]*)$/, " and $1")}.` : "Shown here only: tick where else, below.";
+}
+$("#prefs-grad-intensity").addEventListener("input", (e) => setGradient({ gradIntensity: Number(e.target.value) }));
+for (const b of $("#prefs-grad-colors").children) b.addEventListener("click", () => setGradient({ gradCustom: b.dataset.v === "custom" }));
+$("#prefs-grad-c1").addEventListener("input", (e) => setGradient({ gradC1: e.target.value }));
+$("#prefs-grad-c2").addEventListener("input", (e) => setGradient({ gradC2: e.target.value }));
+for (const [id, key] of Object.entries(GRAD_FLAGS)) $(`#${id}`).addEventListener("change", (e) => setGradient({ [key]: e.target.checked }));
+
+/** Corners: Square, Slight, Round; the one in use pressed. */
+function showCorners() {
+  for (const b of $("#prefs-corners").children) b.setAttribute("aria-checked", String(Number(b.dataset.v) === prefs.corners));
+}
+for (const b of $("#prefs-corners").children) {
+  b.addEventListener("click", () => { prefs.corners = Number(b.dataset.v); savePrefs(); applyCorners(); showCorners(); });
+}
 $("#prefs-font").addEventListener("change", (e) => {
   prefs.fontSize = Math.min(28, Math.max(8, Number(e.target.value) || PREFS_DEFAULT.fontSize));
   e.target.value = prefs.fontSize;
@@ -364,7 +468,7 @@ function fillTermFonts() {
   const select = $("#prefs-termfont");
   const chosen = prefs.termFont || "";
   select.replaceChildren();
-  select.add(new Option("Cascadia Mono (default)", ""));
+  select.add(new Option("Cascadia Mono", ""));
   for (const name of installedFonts) if (name !== "Cascadia Mono") select.add(new Option(name, name));
   if (chosen && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
   select.add(new Option("Other font…", OTHER_FONT));
@@ -397,23 +501,23 @@ $("#prefs-termfont-other").addEventListener("keydown", (e) => {
   if (e.key === "Escape") { e.stopPropagation(); fillTermFonts(); }
 });
 $("#prefs-termfont-other").addEventListener("change", (e) => { if (e.target.value.trim()) setTermFont(e.target.value); });
-/** Pier's own font: the same list, after "the terminals'" and the system's sans. */
+/** Pier's own font: the system's sans, the terminals', then the same list. */
 function fillUiFonts() {
   installedFonts ||= TERM_FONT_CHOICES.filter(fontInstalled);
   const select = $("#prefs-uifont");
   const chosen = prefs.uiFont || "";
   select.replaceChildren();
-  select.add(new Option("Same as the terminals (default)", ""));
+  select.add(new Option("Segoe UI", ""));
+  select.add(new Option("Same as the code", UI_TERM));
   for (const name of installedFonts) select.add(new Option(name, name));
-  if (chosen && chosen !== UI_SANS && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
-  select.add(new Option("The system's sans (Segoe UI)", UI_SANS));
+  if (chosen && chosen !== UI_TERM && !installedFonts.includes(chosen)) select.add(new Option(chosen, chosen));
   select.add(new Option("Other font…", OTHER_FONT));
   select.value = chosen;
   $("#prefs-uifont-other").hidden = true;
 }
 
 function setUiFont(raw) {
-  const name = raw === UI_SANS ? UI_SANS : String(raw).replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
+  const name = raw === UI_TERM ? UI_TERM : String(raw).replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
   prefs.uiFont = name;
   savePrefs();
   applyFonts();
@@ -439,19 +543,69 @@ $("#prefs-padding").addEventListener("change", (e) => {
   applyTermPadding();
   for (const tab of workspace.tabs()) tab.refit?.();
 });
-$("#prefs-shortcut").addEventListener("change", async (e) => {
-  prefs.shortcut = e.target.checked;
-  savePrefs();
-  try { await backend.setShortcut(prefs.shortcut); } catch (error) { alert(String(error)); }
-});
 $("#prefs-autostop").addEventListener("change", (e) => { prefs.autostop = e.target.checked; savePrefs(); });
 $("#prefs-notify").addEventListener("change", (e) => { prefs.notify = e.target.checked; savePrefs(); });
+// A real one, as connect.js sends them, to see where and how it shows.
+$("#prefs-notify-test").addEventListener("click", () => {
+  // The preview comes in as the real one does; Windows shows the real one in its corner.
+  const preview = $(".toast-preview");
+  preview.classList.remove("shown");
+  void preview.offsetWidth; // restart its animation
+  preview.classList.add("shown");
+  backend.notify("Pi finished", "~/work is waiting for you (a test from Pier's settings)")
+    .then(() => flashStatus("Sent: Windows shows it in the corner of the screen"))
+    .catch((error) => flashStatus(`No notification: ${error}`));
+});
 $("#prefs-clear").addEventListener("change", (e) => { prefs.clearOnEnd = e.target.checked; savePrefs(); });
 $("#prefs-resume").addEventListener("change", (e) => { prefs.resume = e.target.checked; savePrefs(); });
 $("#prefs-focus").addEventListener("change", (e) => { prefs.focusFollowsMouse = e.target.checked; savePrefs(); });
+$("#prefs-menublur").addEventListener("change", (e) => { prefs.menuBlur = e.target.checked; savePrefs(); applyMenuBlur(); });
+$("#prefs-mica").addEventListener("change", (e) => { prefs.mica = e.target.checked; savePrefs(); applyMica(); });
+$("#prefs-rail").addEventListener("change", (e) => { prefs.railAlways = e.target.checked; savePrefs(); applyRail(); window.dispatchEvent(new Event("resize")); });
+$("#prefs-pi-terminal").addEventListener("change", (e) => {
+  prefs.piTerminal = e.target.checked;
+  savePrefs();
+  showTerminalPage();
+});
+/** Terminals: off, what tmux gives and Use tmux (as Labs); on, the switch and the options. */
+function showTerminalPage() {
+  $("#term-welcome").hidden = prefs.piTerminal;
+  $("#term-on").hidden = !prefs.piTerminal;
+  // Off: only what tmux gives and its button; on, the terminals' options under it.
+  $("#prefs-term-more").hidden = !prefs.piTerminal;
+}
+$("#term-turn-on").addEventListener("click", () => {
+  const box = $("#prefs-pi-terminal");
+  box.checked = true;
+  box.dispatchEvent(new Event("change"));
+});
 $("#prefs-gpu").addEventListener("change", (e) => { prefs.gpuTerminal = e.target.checked; savePrefs(); });
-$("#prefs-copykeys").addEventListener("change", (e) => { prefs.copyKeys = e.target.value; savePrefs(); });
-$("#prefs-copymode").addEventListener("change", (e) => { prefs.copyMode = e.target.value; savePrefs(); });
+/** Copy and paste: the keys and when copying happens, the ones in use pressed. */
+function showCopy() {
+  for (const b of $("#prefs-copykeys").children) b.setAttribute("aria-checked", String(b.dataset.v === prefs.copyKeys));
+  for (const b of $("#prefs-copymode").children) b.setAttribute("aria-checked", String(b.dataset.v === prefs.copyMode));
+}
+for (const [id, key] of [["prefs-copykeys", "copyKeys"], ["prefs-copymode", "copyMode"]]) {
+  for (const b of $(`#${id}`).children) b.addEventListener("click", () => { prefs[key] = b.dataset.v; savePrefs(); showCopy(); });
+}
+/** A list to choose from (as the board's "Value ⌄"): its value on the button, the others
+ *  in a menu, the one in use checked. Returns what shows the value again. */
+function choiceButton(button, options, get, set) {
+  const show = () => { $("span", button).textContent = (options.find(([v]) => v === get()) || options[0])[1]; };
+  button.addEventListener("click", () => showMenu(button, options.map(([v, label]) => [label, () => { set(v); show(); }, false,
+    { mark: v === get() ? svgIcon("check") : el("span"), current: v === get() }])));
+  show();
+  return show;
+}
+/** When a Pi finishes: its steps folded behind one line, or left open (chat.js). */
+const showFold = choiceButton($("#prefs-fold"), [["fold", "Fold them"], ["open", "Keep them open"]],
+  () => (prefs.foldRuns === false ? "open" : "fold"), (v) => { prefs.foldRuns = v === "fold"; savePrefs(); });
+const showCopyButtons = choiceButton($("#prefs-copybtn"), [["hover", "Under the pointer"], ["always", "Always"], ["never", "Never"]],
+  () => prefs.copyButtons || "hover", (v) => { prefs.copyButtons = v; savePrefs(); applyCopyButtons(); });
+$("#prefs-notify-wait").addEventListener("change", (e) => { prefs.notifyWait = e.target.checked; savePrefs(); });
+// Text: − and + beside the numbers.
+stepper($("#prefs-font"));
+stepper($("#prefs-padding"));
 
 async function fillPickerInfo() {
   try {
@@ -459,6 +613,7 @@ async function fillPickerInfo() {
     const remote = info.remote ? `version ${info.remote.version} (API ${info.remote.api})` : "not checked yet";
     $("#prefs-picker").textContent = `On the VM, at ${info.command}: ${remote}. This Pier carries ${info.bundled}.`;
     $("#prefs-reinstall").hidden = !info.installable;
+    $("#prefs-pill-picker").textContent = info.remote ? `picker ${info.remote.version}` : "";
   } catch (error) {
     $("#prefs-picker").textContent = String(error);
   }
@@ -488,9 +643,11 @@ $("#prefs-debug").addEventListener("change", (e) => {
   prefs.debugLogs = e.target.checked;
   savePrefs();
   backend.setLogLevel(prefs.debugLogs).catch(() => {});
-  for (const tab of workspace.tabs()) tab.onLogLevel?.();
+  prefsLogs.onLogLevel?.();
 });
 
+$("#prefs-picker-logcopy").addEventListener("click", () => backend.copyText("~/.local/state/pier-picker/picker.log").then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))));
+$("#prefs-picker-logs").addEventListener("click", () => showPrefsPage("diagnostics"));
 $("#prefs-logfolder").addEventListener("click", () => backend.openLogFolder().catch((error) => prefsNote($("#prefs-diag-note"), String(error))));
 
 /** The report: what Pier knows (Rust side), and what only the interface knows. */
@@ -530,4 +687,43 @@ $("#prefs-report-save").addEventListener("click", async () => {
   } catch (error) {
     prefsNote($("#prefs-diag-note"), `No report: ${error}`);
   }
+});
+
+// A narrow window: the categories on one line, moved by dragging it sideways (held down) or
+// by the wheel; a drag does not open the category it started on.
+{
+  const strip = $("#prefs .prefs-tabs");
+  let start = null, moved = false;
+  strip.addEventListener("pointerdown", (e) => {
+    moved = false;
+    if (e.pointerType !== "mouse" || e.button !== 0 || strip.scrollWidth <= strip.clientWidth) return;
+    start = { x: e.clientX, left: strip.scrollLeft, id: e.pointerId };
+  });
+  strip.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dx = e.clientX - start.x;
+    if (!moved && Math.abs(dx) < 5) return;
+    if (!moved) { moved = true; strip.setPointerCapture(e.pointerId); strip.classList.add("dragging"); }
+    strip.scrollLeft = start.left - dx;
+  });
+  const end = () => { start = null; strip.classList.remove("dragging"); };
+  strip.addEventListener("pointerup", end);
+  strip.addEventListener("pointercancel", end);
+  strip.addEventListener("click", (e) => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true);
+  strip.addEventListener("wheel", (e) => {
+    if (strip.scrollWidth <= strip.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    strip.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+}
+
+// "/" anywhere but a field or a terminal: the search of where you are (Settings', else the
+// conversations').
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  const at = document.activeElement;
+  if (at?.closest?.("input, textarea, select, [contenteditable='true'], .xterm") || !$("#menu").hidden || document.querySelector(".overlay:not([hidden])")) return;
+  e.preventDefault();
+  if (!$("#prefs").hidden) { $("#prefs-search").focus(); return; }
+  workspace.find("conversations")?.search?.();
 });

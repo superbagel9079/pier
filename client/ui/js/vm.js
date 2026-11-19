@@ -1,7 +1,5 @@
-// What the VM tells as it changes. One watch (see api_watch in the picker) feeds every
-// tab: a tab says what it follows (vm.follow) and listens (vm.on). Nothing is asked
-// again and again: the picker sends a part only when it changed. While the watch is
-// being reopened (the connection dropped), tabs keep what they last showed.
+// What the VM tells as it changes. One watch (api_watch in the picker) feeds every tab: a tab
+// says what it follows (vm.follow) and listens (vm.on).
 
 /** JSON with sorted keys: the same value always gives the same text. */
 function canon(value) {
@@ -14,16 +12,43 @@ const vm = (() => {
   // projects: the Pis and recent projects; activity: {project, file} of one conversation;
   // setup and checkpoints: a project; contexts: everything given to Pis; log: new lines.
   const want = { projects: true, contexts: false, activity: null, setup: null, checkpoints: null, log: false, conversations: false, approvals: true, team: true, labs: false };
-  const latest = {};
+  const latest = {}; // what the tabs see
+  const raw = {};    // what the VM sent (patches go on it)
   const listeners = {};
+  // Conversations deleted and Pis stopped here, kept out of the lists at once and while a
+  // late answer of the VM still has them (a Pi takes a moment to end): path or slot -> when.
+  const gone = new Map();
+  const GONE_FOR = 60000;
+  const piKey = (pi) => `${pi.slot}@${pi.last_attached ?? ""}`;
+  function shown(message) {
+    if (message.kind !== "conversations" || !message.data || !gone.size) return message;
+    const now = Date.now();
+    for (const [key, at] of gone) if (now - at > GONE_FOR) gone.delete(key);
+    // A Pi by its name and start: names come back (-r1…), and a new Pi under a stopped one's
+    // name must show.
+    const hidden = new Set((message.data.projects || []).flatMap((p) => (p.pis || []).filter((pi) => gone.has(piKey(pi))).map((pi) => pi.slot)));
+    const projects = (message.data.projects || []).map((p) => ({ ...p,
+      sessions: (p.sessions || []).filter((s) => !gone.has(s.path)).map((s) => (s.slot && hidden.has(s.slot) ? { ...s, slot: null } : s)),
+      pis: (p.pis || []).filter((pi) => !hidden.has(pi.slot)) }));
+    return { ...message, data: { ...message.data, projects } };
+  }
+  function dispatch(message) {
+    latest[message.kind] = message;
+    for (const handler of listeners[message.kind] || []) {
+      try {
+        handler(message);
+      } catch (error) {
+        uiLog("error", "vm-handler", { kind: message.kind, msg: String(error), trace: error?.stack?.slice(0, 3000) });
+      }
+    }
+  }
   let active = false; // connected: the watch should be running
   let running = false;
   let retry = null;
   let watchId = null; // the id of the watch this side started last
 
-  // While the window is hidden (in the tray, minimized), only the projects are followed:
-  // they bring the "Pi finished" notifications. The panels' parts come back when the
-  // window does, rebuilt fresh; nothing is computed on the VM for a window nobody sees.
+  // Window hidden: only projects are followed (for "Pi finished" notices);
+  // the panels' parts come back, rebuilt, with the window.
   const quiet = () => (document.hidden ? { ...Object.fromEntries(Object.keys(want).map((k) => [k, null])), projects: want.projects, approvals: want.approvals, team: want.team } : want);
   // A message to the watch that fails is said in the log, not dropped in silence.
   const sent = (what) => (error) => uiLog("warn", "watch-set-failed", { what, msg: String(error) });
@@ -35,7 +60,7 @@ const vm = (() => {
     if (!message?.kind) return;
     if (message.patch) {
       // Only what changed (WATCH_PATCHED in the picker), on top of the last whole one.
-      const before = latest[message.kind];
+      const before = raw[message.kind];
       if (!before?.data || canon(before.for) !== canon(message.for)) {
         backend.watchSet({ poke: true }).catch(() => {}); // nothing to put it on: the whole again
         return;
@@ -53,14 +78,8 @@ const vm = (() => {
       const projects = message.patch.order.map((key) => message.patch.changed[key] ?? edit(key)).filter(Boolean);
       message = { kind: message.kind, for: message.for, data: { ...message.patch.rest, projects } };
     }
-    latest[message.kind] = message;
-    for (const handler of listeners[message.kind] || []) {
-      try {
-        handler(message);
-      } catch (error) {
-        uiLog("error", "vm-handler", { kind: message.kind, msg: String(error), trace: error?.stack?.slice(0, 3000) });
-      }
-    }
+    raw[message.kind] = message;
+    dispatch(shown(message));
   });
 
   // A word to the watch at least every 30 s: one that hears nothing for a while knows
@@ -100,6 +119,7 @@ const vm = (() => {
     watchId = null;
     clearTimeout(retry);
     for (const kind of Object.keys(latest)) delete latest[kind];
+    for (const kind of Object.keys(raw)) delete raw[kind];
   }
 
   /** Follow something else: {activity: {project, file}}, {setup: null}... */
@@ -110,6 +130,7 @@ const vm = (() => {
       want[kind] = value;
       sent[kind] = value;
       delete latest[kind];
+      delete raw[kind];
     }
     if (running && Object.keys(sent).length && !document.hidden) backend.watchSet(sent).catch((error) => uiLog("warn", "watch-set-failed", { what: "follow", msg: String(error) }));
   }
@@ -131,5 +152,16 @@ const vm = (() => {
     return canon(message.for) === canon(want[message.kind]);
   }
 
-  return { start, stop, follow, on, poke, current, latest: (kind) => latest[kind] };
+  /** A conversation deleted ({path}) or a Pi stopped ({slot}): out of the lists now, and the
+   *  VM asked again at once. */
+  function forget({ path, slot }) {
+    if (path) gone.set(path, Date.now());
+    // The Pi of that name now (its start tells it from a later one of the same name).
+    const pi = slot && (raw.conversations?.data?.projects || []).flatMap((p) => p.pis || []).find((x) => x.slot === slot);
+    if (pi) gone.set(piKey(pi), Date.now());
+    if (raw.conversations) dispatch(shown(raw.conversations));
+    poke();
+  }
+
+  return { start, stop, follow, on, poke, forget, current, latest: (kind) => latest[kind] };
 })();

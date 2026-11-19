@@ -1,6 +1,5 @@
-//! The watch: one SSH channel, kept open, on which the picker tells what changes on the
-//! VM ("pi-pick --api watch", JSON lines both ways). It replaces the interface asking
-//! every few seconds, each time with a new command: see api_watch in the picker.
+//! The watch: one SSH channel, kept open, on which the picker tells what changes on the VM
+//! ("pi-pick --api watch", JSON lines), replacing the interface polling (api_watch).
 
 use std::sync::atomic::{AtomicU32, Ordering};
 

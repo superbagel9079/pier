@@ -1,7 +1,7 @@
 # Reads Pier repeats every few seconds: logged only at debug level, unless they fail.
-API_READS = {"version", "projects", "ls", "file", "config", "models", "shares", "activity", "diff", "contexts",
+API_READS = {"version", "projects", "ls", "file", "image-read", "session-messages", "config", "models", "pi-default-read", "providers", "shares", "activity", "diff", "contexts",
              "setup", "log", "checkpoints", "checkpoint-diff", "copy-diff", "resources",
-             "skill-read", "gallery", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs", "lab-journal"}
+             "skill-read", "gallery", "gallery-media", "gallery-package", "skills-search", "skill-page", "forges", "repo", "approvals", "worktrees", "team", "collaborators", "labs"}
 # Fields of a reply worth a place in the log line.
 API_LOGGED = ("saved", "removed", "reference", "count", "mountpoint", "stopped", "id", "restored", "safety", "typed")
 
@@ -58,11 +58,24 @@ API_COMMANDS = {
     "version": lambda home, config, a: api_version(home, config),
     "projects": lambda home, config, a: api_projects(home, config),
     "ls": lambda home, config, a: api_ls(home, a[0]),
+    "fs-new": lambda home, config, a: api_fs_new(home, a[0], a[1], a[2]),
+    "fs-rename": lambda home, config, a: api_fs_rename(home, a[0], a[1], a[2]),
+    "fs-copy": lambda home, config, a: api_fs_copy(home, a[0], a[1]),
+    "fs-delete": lambda home, config, a: api_fs_delete(home, a[0], a[1]),
     "file": lambda home, config, a: api_file(home, a[0], a[1]),
+    "image-read": lambda home, config, a: api_image_read(home, a[0], a[1]),
+    "model-images": lambda home, config, a: api_model_images(home, a[0]),
     "config": lambda home, config, a: api_config(home),
     "config-set": lambda home, config, a: config_set(home, a[0], config_value(read_stdin_text())),
     "models": lambda home, config, a: api_models(home),
+    # Pi's default model alone, at once (not `pi --list-models`): Settings shows the true one.
+    "pi-default-read": lambda home, config, a: {"default": pi_default_model(home), "thinking": pi_default_thinking(home)},
+    "providers": lambda home, config, a: api_providers(home),
+    "provider-save": lambda home, config, a: api_provider_save(home, a[0], stdin_bytes(PROVIDER_MAX_BYTES)),
+    "provider-delete": lambda home, config, a: api_provider_delete(home, a[0]),
+    "fs-write": lambda home, config, a: api_fs_write(home, a[0], a[1], a[2], stdin_bytes(FILE_VIEW_MAX)),
     "pi-default": lambda home, config, a: api_pi_default(home, a[0]),
+    "pi-thinking": lambda home, config, a: api_pi_thinking(home, a[0] if a else ""),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
     "type": lambda home, config, a: api_type(home, typed_text(a[0]), a[1], a[2]),
@@ -87,6 +100,7 @@ API_COMMANDS = {
     "label": lambda home, config, a: api_label(home, a[0], a[1], a[2], a[3]),
     "mark": lambda home, config, a: api_mark(home, a[0], a[1], a[2], a[3]),
     "session-delete": lambda home, config, a: api_session_delete(home, a[0], a[1]),
+    "session-messages": lambda home, config, a: api_session_messages(home, a[0], a[1]),
     "category-rename": lambda home, config, a: api_category_rename(home, a[0], a[1], a[2]),
     "conversations": lambda home, config, a: api_conversations(home),
     "copy-manifest": lambda home, config, a: api_copy_manifest(home, a[0]),
@@ -98,6 +112,10 @@ API_COMMANDS = {
     "skill-delete": lambda home, config, a: api_skill_delete(home, a[0], a[1], a[2]),
     "skill-import": lambda home, config, a: api_skill_import(home, a[0], a[1], a[2], sys.stdin.buffer),
     "gallery": lambda home, config, a: api_gallery(home, a[0]),
+    "gallery-media": lambda home, config, a: api_gallery_media(home, a),
+    "gallery-package": lambda home, config, a: api_gallery_package(home, a[0]),
+    "skills-search": lambda home, config, a: api_skills_search(home, a[0]),
+    "skill-page": lambda home, config, a: api_skill_page(home, a[0]),
     "forges": lambda home, config, a: api_forges(home),
     "forge-add": lambda home, config, a: api_forge_add(home, a[0], a[1], stdin_bytes(4096)),
     "forge-remove": lambda home, config, a: api_forge_remove(home, a[0]),
@@ -110,7 +128,6 @@ API_COMMANDS = {
     "team": lambda home, config, a: api_team(home, a[0]),
     "labs": lambda home, config, a: api_labs(home),
     "labs-settings": lambda home, config, a: api_labs_settings(home, read_stdin_text()),
-    "lab-journal": lambda home, config, a: api_lab_journal(home, a[0] or "60"),
     "lab-action": lambda home, config, a: api_lab_action(home, a[0], a[1], a[2]),
     "machine-add": lambda home, config, a: api_machine_add(home, a[0], a[1], a[2], a[3], a[4], read_stdin_text()),
     "lab-new": lambda home, config, a: api_lab_new(home, a[0], a[1], read_stdin_text()),

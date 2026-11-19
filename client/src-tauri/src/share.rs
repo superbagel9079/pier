@@ -1,12 +1,5 @@
-//! Lending a folder of this computer to the VM, live, without copying it.
-//!
-//! On the VM, `pi-pick --share-serve MOUNT` runs sshfs in passive mode: sshfs speaks
-//! SFTP over its stdin and stdout, which are this SSH channel, and this module answers
-//! as the SFTP server. The VM therefore sees exactly one folder of this computer, and
-//! nothing listens on any network port. Read-only unless the user allowed writing.
-//!
-//! Every path sshfs asks for is confined to the shared folder: ".." cannot climb out,
-//! and a symlink or junction pointing outside is refused once resolved.
+//! Lends a folder to the VM live: sshfs runs in passive mode over this SSH channel and this
+//! module answers as SFTP server. Read-only unless allowed; ".." and outside links refused.
 
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -32,9 +25,8 @@ pub struct ShareFs {
     writable: bool,
     handles: HashMap<String, Open>,
     next: u64,
-    /// Set when the share is stopped (see revoker): every request is refused from then
-    /// on. Unmounting on the VM is lazy, and a process of Pi still inside the folder
-    /// would otherwise go on reading, and writing, through this server.
+    /// Set when the share stops (see revoker): all requests are refused from then on, as the
+    /// VM's lazy unmount would let a process of Pi still inside keep reading and writing.
     revoked: Arc<AtomicBool>,
 }
 
@@ -90,9 +82,8 @@ impl ShareFs {
         for part in Self::virtual_path(path)? {
             full.push(part);
         }
-        // Existing paths (a link too, even one pointing nowhere) are checked once links
-        // are resolved; a path being created is checked through its parent. Anything
-        // that cannot be resolved is refused.
+        // Existing paths (links too, even dangling) are checked once resolved; a path being
+        // created is checked through its parent. What cannot be resolved is refused.
         let exists = std::fs::symlink_metadata(&full).is_ok();
         let anchor = if exists { Some(full.clone()) } else { full.parent().map(Path::to_path_buf) };
         let inside = anchor.and_then(|a| a.canonicalize().ok()).is_some_and(|real| real.starts_with(&self.root));
@@ -141,9 +132,8 @@ fn attrs(path: &Path) -> Result<FileAttributes, StatusCode> {
     fs::metadata(path).map(|m| FileAttributes::from(&m)).map_err(status_of)
 }
 
-/// The work of one request, off the async runtime when it can be: a file of OneDrive
-/// "online only", or a slow disk, then blocks one thread for a moment, never the tasks
-/// that terminals and the watch run on.
+/// The work of one request, off the async runtime when it can be: a OneDrive "online only"
+/// file or slow disk then blocks one thread, never the tasks terminals and the watch run on.
 fn blocking<T>(work: impl FnOnce() -> T) -> T {
     use tokio::runtime::{Handle, RuntimeFlavor};
     match Handle::try_current() {

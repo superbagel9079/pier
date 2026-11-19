@@ -252,10 +252,11 @@ def ignored_dir(project, name):
 
 def type_into_pi(pi, text):
     """Type text into the prompt of a running Pi. Never presses Enter."""
+    if pi.get("rpc"):
+        return False  # Pi in RPC mode has no prompt to type into: Pier's conversation view does it
     text = "".join(ch for ch in text if ch.isprintable())
-    # send-keys takes a pane: "=name:" is the session's active pane, "=" makes the
-    # match exact. Without the colon, tmux reads the target as a window name.
-    # "--": a text starting with "-" is text, not an option of send-keys.
+    # send-keys target "=name:" is the session's active pane ("=" exact match; without the
+    # colon tmux reads a window name). "--": text starting with "-" is text, not an option.
     return run_quiet(tmux_cmd("send-keys", "-t", f"={pi['name']}:", "-l", "--", text))
 
 
@@ -368,7 +369,144 @@ def api_ls(home, path):
             "entries": entries[:LS_LIMIT], "truncated": truncated}
 
 
-FILE_VIEW_MAX = 1024 * 1024  # what Pier shows of a file: a 50 MB log would freeze it
+# --- the Files panel's own changes: new, rename, duplicate, delete ---------------------
+#
+# Inside the project only, never in .git, never following a link: the folder is opened
+# from the project down (open_folder), the entry itself is never followed (a link is
+# renamed, copied or removed as the link). What Pi in its sandbox could swap meanwhile
+# gains it nothing it could not already do to its own project.
+
+FS_NAME_MAX = 255
+COPY_TRIES = 100
+
+
+def fs_name(name):
+    """A name for a new or renamed entry: one segment, printable, not . .. or .git."""
+    if (not name or name in (".", "..", ".git") or "/" in name or "\0" in name
+            or any(ord(c) < 32 or ord(c) == 127 for c in name) or len(name.encode("utf-8")) > FS_NAME_MAX):
+        raise ApiError(f"not a usable name: {name!r}")
+    return name
+
+
+def fs_target(home, project, rel):
+    """rel, a path in the project, as (project, its folder resolved inside the project,
+    its name). Never the project itself, nor anything in .git."""
+    if not SAFE_FD:
+        raise ApiError("changing files from Pier needs Linux")
+    top = resolve_inside(home, project)
+    parts = [p for p in str(rel).split("/") if p not in ("", ".")]
+    if not parts or ".." in parts or ".git" in parts:
+        raise ApiError(f"not a path in the project: {rel}")
+    folder = os.path.realpath(os.path.join(top, *parts[:-1]))
+    if not within(folder, top) or not os.path.isdir(folder):
+        raise ApiError(f"not a folder of the project: {'/'.join(parts[:-1])}")
+    return top, folder, parts[-1]
+
+
+def fs_exists(dir_fd, name):
+    try:
+        os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def api_fs_new(home, project, rel, kind):
+    """A new empty file or folder in the project; one already there is refused."""
+    top, folder, name = fs_target(home, project, rel)
+    fs_name(name)
+    if kind not in ("file", "dir"):
+        raise ApiError(f"not a kind: {kind}")
+    fd = open_folder(top, folder)
+    try:
+        if kind == "dir":
+            os.mkdir(name, 0o755, dir_fd=fd)
+        else:
+            write_new_at(fd, name, b"", 0o644)
+    except FileExistsError:
+        raise ApiError(f"{name} already exists")
+    except OSError as exc:
+        raise ApiError(f"cannot create {name}: {exc.strerror or exc}")
+    finally:
+        os.close(fd)
+    return {"created": os.path.join(folder, name)}
+
+
+def api_fs_rename(home, project, rel, new_name):
+    """Rename an entry in its folder; a name already taken is refused."""
+    top, folder, name = fs_target(home, project, rel)
+    fs_name(new_name)
+    if new_name == name:
+        return {"renamed": os.path.join(folder, name)}
+    fd = open_folder(top, folder)
+    try:
+        if not fs_exists(fd, name):
+            raise ApiError(f"{name} is not there any more")
+        # shortcut: checked then renamed (Python has no renameat2 NOREPLACE); only a Pi
+        # writing that very name between the two lines loses its file.
+        if fs_exists(fd, new_name):
+            raise ApiError(f"{new_name} already exists")
+        os.rename(name, new_name, src_dir_fd=fd, dst_dir_fd=fd)
+    except OSError as exc:
+        raise ApiError(f"cannot rename {name}: {exc.strerror or exc}")
+    finally:
+        os.close(fd)
+    return {"renamed": os.path.join(folder, new_name)}
+
+
+def copy_name(name, n):
+    """notes.md -> "notes copy.md", then "notes copy 2.md"; .env -> ".env copy"."""
+    stem, dot, ext = name.rpartition(".") if "." in name[1:] else (name, "", "")
+    base = f"{stem} copy" if n == 1 else f"{stem} copy {n}"
+    return f"{base}.{ext}" if dot else base
+
+
+def api_fs_copy(home, project, rel):
+    """Duplicate a plain file beside itself, under the first free "copy" name."""
+    top, folder, name = fs_target(home, project, rel)
+    src = open_regular(os.path.join(folder, name), root=top, follow=False)
+    if src is None:
+        raise ApiError(f"only a plain file can be duplicated: {name}")
+    fd = None
+    try:
+        mode = stat.S_IMODE(os.fstat(src).st_mode)
+        fd = open_folder(top, folder)
+        for n in range(1, COPY_TRIES + 1):
+            target = copy_name(name, n)
+            if len(target.encode("utf-8")) > FS_NAME_MAX:
+                raise ApiError(f"{name}: its copy's name would be too long")
+            try:
+                out = os.open(target, NEW_FILE, mode, dir_fd=fd)
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise ApiError(f"{COPY_TRIES} copies of {name} already")
+        with os.fdopen(out, "wb") as dst, os.fdopen(os.dup(src), "rb") as source:
+            shutil.copyfileobj(source, dst)
+    except OSError as exc:
+        raise ApiError(f"cannot duplicate {name}: {exc.strerror or exc}")
+    finally:
+        os.close(src)
+        if fd is not None:
+            os.close(fd)
+    return {"copied": os.path.join(folder, target)}
+
+
+def api_fs_delete(home, project, rel):
+    """Delete an entry and all it holds (a link: the link itself), for good."""
+    top, folder, name = fs_target(home, project, rel)
+    full = os.path.join(folder, name)
+    if not os.path.lexists(full):
+        raise ApiError(f"{name} is not there any more")
+    try:
+        remove_entry(top, full)
+    except OSError as exc:
+        raise ApiError(f"cannot delete {name}: {exc.strerror or exc}")
+    return {"deleted": full}
+
+
+FILE_VIEW_MAX = 4 * 1024 * 1024  # what Pier shows (and saves) of a file: a 50 MB log would freeze it
 BINARY_PROBE = 8192
 
 
@@ -383,7 +521,8 @@ def api_file(home, path, file):
     rel = os.path.relpath(full, project).replace(os.sep, "/")
     try:
         with open_plain(full, project) as handle:
-            size = os.fstat(handle.fileno()).st_size
+            info = os.fstat(handle.fileno())
+            size = info.st_size
             data = handle.read(FILE_VIEW_MAX + 1)
     except OSError as exc:
         raise ApiError(f"cannot read {rel}: {exc.strerror or exc}")
@@ -393,7 +532,59 @@ def api_file(home, path, file):
     text = None if binary else data.decode("utf-8", "replace")
     if truncated and text and "\n" in text:
         text = text[:text.rindex("\n") + 1]  # no half line at the end
-    return {"file": rel, "project": project, "size": size, "binary": binary, "truncated": truncated, "text": text}
+    return {"file": rel, "project": project, "size": size, "binary": binary, "truncated": truncated, "text": text,
+            "mtime": str(info.st_mtime_ns)}
+
+
+IMAGE_READ_MAX = 8 * 1024 * 1024
+
+
+def api_image_read(home, path, file):
+    """An image given to Pi (.pi-images of the project), for its thumbnail in Pier's
+    conversation view: {mime, data (base64)}. Nothing else of the project is read so."""
+    import base64
+    project = resolve_inside(home, path)
+    file = (file or "").lstrip("@")
+    full = os.path.realpath(os.path.join(project, file))
+    if not within(full, os.path.join(project, ".pi-images")):
+        raise ApiError(f"not an image given to Pi: {file}")
+    try:
+        with open_plain(full, project) as handle:
+            data = handle.read(IMAGE_READ_MAX + 1)
+    except OSError as exc:
+        raise ApiError(f"cannot read {file}: {exc.strerror or exc}")
+    kind = image_kind(data)
+    if not kind or len(data) > IMAGE_READ_MAX:
+        raise ApiError(f"not an image Pier shows: {file}")
+    return {"mime": "image/jpeg" if kind == "jpg" else f"image/{kind}", "data": base64.b64encode(data).decode()}
+
+
+def api_fs_write(home, path, file, expected, data):
+    """A file of the project saved from Pier's viewer, as it is typed in: its whole text,
+    written only if the file did not change since Pier read it (expected: its mtime then,
+    "-" for no check); else {"conflict": true} and nothing written. A plain file inside the
+    project only, never through a link out of it, never one too big to be shown whole."""
+    project = resolve_inside(home, path)
+    full = os.path.realpath(os.path.join(project, file))
+    if full == project or not within(full, project):
+        raise ApiError(f"not in the project: {file}")
+    rel = os.path.relpath(full, project).replace(os.sep, "/")
+    if len(data) > FILE_VIEW_MAX:
+        raise ApiError(f"too big to save from Pier: {rel}")
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ApiError("the text is not UTF-8")
+    try:
+        info = os.lstat(full)
+    except OSError as exc:
+        raise ApiError(f"cannot save {rel}: {exc.strerror or exc}")
+    if not stat.S_ISREG(info.st_mode):
+        raise ApiError(f"not a plain file: {rel}")
+    if expected != "-" and str(info.st_mtime_ns) != expected:
+        return {"conflict": True, "file": rel, "mtime": str(info.st_mtime_ns)}
+    atomic_write(full, text, project, stat.S_IMODE(info.st_mode))
+    return {"saved": rel, "mtime": str(os.lstat(full).st_mtime_ns)}
 
 
 def mounted_shares(home):

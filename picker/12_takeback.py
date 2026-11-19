@@ -1,14 +1,11 @@
 # --- take back, file by file -------------------------------------------------------------
 #
-# Pier compares a handed-off copy with the original folder on the PC: the picker lists
-# the copy's files with their SHA-256 (copy-manifest), shows one file's difference
-# (copy-diff, the PC's version on stdin), and sends the files chosen (--download-files).
-# The copy is Pi's to write: it is walked through file descriptors (os.fwalk), links are
-# listed but never followed, and only plain files are read.
+# Pier compares a handed-off copy with the PC's folder: copy-manifest (SHA-256 list),
+# copy-diff (PC version on stdin), --download-files. The copy is Pi's to write: walked by
+# descriptor (os.fwalk), links listed never followed, only plain files read.
 
-# Left out of the comparison, as Pier leaves them out of a hand off (copy.rs,
-# take_back_skips): the rebuilt folders at the top only, the systems' files everywhere,
-# and git's own files (never brought back).
+# Left out, as in a hand off (copy.rs, take_back_skips): rebuilt folders at the top only,
+# the systems' files everywhere, and git's own files (never brought back).
 COPY_REBUILT = {"node_modules", "target", "__pycache__", ".venv", "venv"}
 COPY_JUNK = {".git", ".DS_Store", "Thumbs.db"}
 

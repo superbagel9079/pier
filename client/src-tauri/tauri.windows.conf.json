@@ -10,7 +10,9 @@
         "minWidth": 760,
         "minHeight": 480,
         "dragDropEnabled": true,
-        "decorations": false
+        "zoomHotkeysEnabled": true,
+        "decorations": false,
+        "transparent": true
       }
     ]
   }

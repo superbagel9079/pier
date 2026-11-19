@@ -1,12 +1,9 @@
 // Terminal tabs: xterm.js on a channel of the SSH connection.
 
-// ============================================================================
 // Terminal
-// ============================================================================
 
-/** How long the VM takes to answer what is typed: from a key sent to the next output,
- *  as seen here (network, VM, tmux and Pi together). Logged at debug level ("Detailed
- *  logs"), every 30 s while there is something to report. */
+/** Latency from a key sent to the next output (network, VM, tmux and Pi together).
+ *  Logged at debug level ("Detailed logs") every 30 s while there is something to report. */
 function latencyMeter(kind) {
   let waiting = 0;
   let samples = [];
@@ -66,10 +63,8 @@ function makeTerminal(tab, kind) {
   let ended = false;
   let closed = false;
   let starts = 0;          // which start() is current: a late answer of an older one is dropped
-  // The clipboard is set by a program only just after the user acted in this tab: a
-  // key pressed or a mouse button released (real DOM events). Not onData: xterm.js
-  // also fires it for its own answers (cursor position, device attributes, focus and
-  // mouse reports), which the program on the VM can ask for at will. One copy per act.
+  // The clipboard is set only just after a key or mouse release in this tab (real DOM events).
+  // Not onData: xterm.js fires it for its own replies, which the VM can ask for at will.
   let actedAt = 0;
   let ignoredLoggedAt = 0;
   // In a Pi tab the user types all the time, so "just after a key" is nearly always:
@@ -84,16 +79,8 @@ function makeTerminal(tab, kind) {
   let pendingKeys = "";    // a Ctrl-b that turned out to be for Pi, sent with the next key
 
   const visible = () => !tab.pane.hidden && tab.pane.offsetParent !== null;
-  // The width changes when a side opens or folds. An alternate-screen program (the
-  // picker, an editor) redraws itself to the new size, with nothing to keep. A plain
-  // conversation (Pi's regular mode) is different: at a new width Pi clears the screen
-  // and the scrollback and prints the whole conversation again, rewrapped, and xterm
-  // lands at the bottom. So the place being read is held by its text, not by a line
-  // count (the rewrap changes every count): the words at the top of the view are noted
-  // before the fit, and looked for again after xterm's own reflow and after Pi's
-  // reprint. Pi sends its reprint as one synchronized update (ESC[?2026h … ESC[?2026l),
-  // which xterm paints only at its end: the view is put back in place before that paint,
-  // so the conversation does not move on screen.
+  // A new width makes Pi reprint the conversation rewrapped: the place read is held by the
+  // words at the top of the view, put back before the synchronized update paints.
   let held = null;         // { anchor, until }: a place to put back after Pi's reprint
   let reprinting = false;  // a clear came from Pi while a place is held
   let seen = "";           // the end of the last chunk, for a sequence cut in two
@@ -163,9 +150,8 @@ function makeTerminal(tab, kind) {
     return false;
   }
 
-  /** Watches the VM's output while a place is held: a clear, then the end of the
-   *  synchronized update, is Pi's reprint done. Returns what to run once xterm has
-   *  taken the chunk in, or null. */
+  /** Watches the VM's output while a place is held: a clear, then the end of a synchronized
+   *  update, is Pi's reprint done. Returns what to run once xterm took the chunk, or null. */
   function watchReprint(bytes) {
     if (!held) return null;
     if (performance.now() > held.until) { held = null; reprinting = false; seen = ""; return null; }
@@ -190,13 +176,8 @@ function makeTerminal(tab, kind) {
     term.write(bytes, reprinted ? () => { reprinted(); written?.(); } : written);
   }
 
-  // A synchronized update (ESC[?2026h … ESC[?2026l) is given to xterm whole, in one
-  // write. xterm paints nothing during one, but only for a second: a long conversation
-  // reprinted by Pi (at a new width) takes longer than that to come from the VM, and
-  // xterm then showed it being cleared and written again, the view running up and back
-  // down. Held here, it is painted once, finished. The bytes held are acknowledged at
-  // once (the VM is not slowed for them); a hold that does not end is let go after a
-  // while, or past a size.
+  // A synchronized update (ESC[?2026h … ESC[?2026l) goes to xterm whole: it paints nothing in
+  // one, but only for a second. Held bytes are acked at once; a stuck hold is let go.
   const SYNC_ON = new TextEncoder().encode("\x1b[?2026h");
   const SYNC_OFF = new TextEncoder().encode("\x1b[?2026l");
   let gateTail = new Uint8Array(0); // the last bytes, for a marker cut in two
@@ -329,33 +310,25 @@ function makeTerminal(tab, kind) {
         return;
       }
       if (term.cols !== opened[0] || term.rows !== opened[1]) backend.termResize(id, term.cols, term.rows);
-      // A Pi tab joins a Pi that set its terminal modes long ago, on another terminal:
-      // bracketed paste is set here, so that a pasted text with line breaks does not
-      // send each line as a message. (Only this terminal's state: nothing is sent.)
+      // A Pi tab joins a Pi whose modes were set elsewhere: bracketed paste is set here,
+      // pasted line breaks do not send each line as a message. Local state only.
       if (kind === "pi") term.write("\x1b[?2004h");
+      // A shell opened to run something (Is the VM ready's Install): typed once, not kept.
+      if (tab.params?.typeFirst) { backend.termWrite(id, tab.params.typeFirst); delete tab.params.typeFirst; }
     } catch (error) {
       term.write(`\r\n\x1b[1m${String(error)}\x1b[0m\r\n\x1b[2m[press Enter to retry]\x1b[0m\r\n`);
       ended = true;
     }
   }
 
-  // xterm.js sends a plain Enter whatever the modifiers. Pi tells them apart (Shift+Enter
-  // is a new line, Enter sends), so modified Enters go out in CSI-u form, which tmux
-  // passes on with extended-keys set.
-  // Copy and paste. Two ways, a setting (prefs.copyKeys):
-  //   "linux"   (default) Ctrl+Shift+C copies, Ctrl+Shift+V pastes; Ctrl+C and Ctrl+V
-  //             go to the program, as in a Linux terminal: Ctrl+C always interrupts.
-  //   "windows" Ctrl+C copies when text is selected (and interrupts otherwise), Ctrl+V
-  //             pastes, as in Windows Terminal; Ctrl+Shift+C/V work too.
-  // Shift+Insert pastes either way. Pasting lets the window paste: an image goes to Pi
-  // (see context.js), text is typed by xterm.js (as a bracketed paste, so a pasted
-  // command does not run by itself).
+  // xterm.js sends a plain Enter whatever the modifiers: modified Enters go out in CSI-u form
+  // (tmux extended-keys), so Pi tells Shift+Enter from Enter.
+  // Copy and paste (prefs.copyKeys): "linux" (default) Ctrl+Shift+C/V, Ctrl+C interrupts;
+  // "windows" Ctrl+C copies if text is selected, Ctrl+V pastes. Shift+Insert pastes in both.
+  // Images go to Pi (see context.js); text is a bracketed paste, so it does not run by itself.
   //
-  // Copying (prefs.copyMode): "key" (default) copies with Ctrl+Shift+C only; "select"
-  // copies as soon as text is selected. Pi runs in its regular mode and tmux leaves the
-  // mouse alone (see tmux_conf in the picker): selecting is always this terminal's.
-  // When the program filled the clipboard: a note that stays, with what was there
-  // before, to put it back (a "curl … | sh" slipped in while you typed is seen and undone).
+  // prefs.copyMode: "key" (default) copies on Ctrl+Shift+C; "select" copies on selection.
+  // A clipboard filled by a program keeps a note with the old content, to put it back.
   let copyNote = null;
   function dropCopyNote() {
     copyNote?.remove();
@@ -423,16 +396,14 @@ function makeTerminal(tab, kind) {
     }
   });
 
-  // OSC 52: a program sets the clipboard ("ESC ] 52 ; c ; <base64> BEL"), as Pi's copy
-  // commands do (tmux passes them on). Only setting is accepted, never reading it back:
-  // a program on the VM must not read this computer's clipboard.
+  // OSC 52: a program may set the clipboard ("ESC ] 52 ; c ; <base64> BEL"), never read it:
+  // the VM must not read this computer's clipboard.
   const decoder = new TextDecoder();
   term.parser.registerOscHandler(52, (data) => {
     const payload = data.slice(data.indexOf(";") + 1);
     if (!payload || payload === "?" || payload.length > 2 * 1024 * 1024) return true;
-    // Only right after a key typed or a click in this tab (Pi's copy command, a yank in
-    // vim, tmux's copy on mouse release), and once per act: a program on the VM cannot
-    // change this computer's clipboard behind your back.
+    // Only right after a key or click in this tab, once per act: a program on the VM cannot
+    // change the clipboard behind your back.
     const now = performance.now();
     if (now - actedAt > 2000) {
       if (now - ignoredLoggedAt > 10000) {
@@ -466,9 +437,7 @@ function makeTerminal(tab, kind) {
     return true;
   });
 
-  // OSC 7770: Pier's own requests. The picker, run in this tab, asks for Pi to open
-  // in a Pi tab ("open-pi;{project, label, slot, n}") instead of attaching to tmux in
-  // here (see pi_in_tmux in the picker). Only the picker's tabs act on it.
+  // OSC 7770: Pier's requests.
   term.parser.registerOscHandler(7770, (data) => {
     // In a Pi tab, Pier's Rust side names the tmux session shown (see term.rs).
     if (kind === "pi" && data.startsWith("session;")) {
@@ -477,16 +446,6 @@ function makeTerminal(tab, kind) {
       tab.slot = slot;
       renderSessionBadge();
       return true;
-    }
-    if (kind !== "picker" || !data.startsWith("open-pi;")) return true;
-    try {
-      const request = JSON.parse(data.slice("open-pi;".length));
-      if (typeof request.project === "string" && /^pi-[A-Za-z0-9_-]+$/.test(request.slot || "")) {
-        uiLog("info", "open-pi-from-picker", { project: request.project, slot: request.slot });
-        openPiTerminal(request.project, request.label || request.project, ["--slot", request.slot], Number(request.n) || 1);
-      }
-    } catch (error) {
-      uiLog("warn", "open-pi-bad-request", { msg: String(error) });
     }
     return true;
   });
@@ -548,7 +507,7 @@ function makeTerminal(tab, kind) {
       null,
       ["Clear scrollback", () => term.clear()],
       ["Restart", () => tab.restart()],
-      [`New ${kind === "picker" ? "picker" : "shell"} terminal`, () => workspace.add(kind === "picker" ? "picker" : "shell", tab.dock)],
+      ["New shell terminal", () => workspace.add("shell", tab.dock)],
     ], { x: event.clientX, y: event.clientY });
   });
 
@@ -562,6 +521,7 @@ function makeTerminal(tab, kind) {
       if (event.key === "d" && !event.ctrlKey && !event.altKey && !event.metaKey) {
         event.preventDefault();
         flashStatus("detached: Pi keeps running", tab.pane);
+        tab.keepPi = true; // detached on purpose: not stopped with its tab
         workspace.close(tab);
         return true;
       }
@@ -688,9 +648,8 @@ backend.onTermExit((payload) => {
   if (exitedEarly.size > 50) exitedEarly.delete(exitedEarly.keys().next().value);
 });
 
-/** The WebGL renderer: the terminal is drawn by the graphics card, so scrolling a long
- *  history stays smooth. Without WebGL, or when the graphics card loses its context
- *  (driver reset, sleep), the terminal falls back to xterm.js's own DOM renderer. */
+/** The WebGL renderer: the graphics card draws the terminal, so long scrollback stays smooth.
+ *  Without WebGL or after a lost context (driver reset, sleep), the DOM renderer is used. */
 /** The WebGL renderer for term, or null (off, unavailable): what tab.onVisible lets go. */
 function useGpu(term) {
   if (!prefs.gpuTerminal || !window.WebglAddon) return null;

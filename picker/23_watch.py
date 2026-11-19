@@ -1,7 +1,7 @@
 # --- watch: one connection that tells what changes ---------------------------------------
 #
-# --api watch stays open for as long as Pier is connected. Pier writes on its stdin
-# what it wants to follow, one JSON object per line, for example
+# --api watch stays open while Pier is connected. Pier writes on stdin what to follow, one
+# JSON object per line, for example
 #   {"projects": true, "activity": {"project": "/home/leo/work", "file": null},
 #    "setup": "/home/leo/work", "checkpoints": null, "contexts": true, "log": false}
 # (a key left out keeps its value; {"poke": true} refreshes everything now). The picker
@@ -9,31 +9,21 @@
 #   {"kind": "activity", "for": {...}, "data": {...the same reply as --api activity...}}
 #   {"kind": "log", "lines": [...]}            new lines of this program's log
 #   {"kind": "setup", "for": "...", "error": "..."}
-# It replaces Pier asking every few seconds, each time over a new SSH command: a
-# running Pi is seen within a second, and nothing is sent while nothing changes. It
-# ends when its stdin closes, that is, when Pier disconnects.
+# It replaces Pier asking every few seconds over a new SSH command. It ends when stdin closes.
 
 WATCH_TICK = 1.0
-# The longest a part goes without being looked at again; most also look at what they
-# read (file sizes and times) and refresh as soon as that moves.
-# projects and activity watch what they read (see watch_signature), so the period only
-# catches what leaves no trace there: a Pi started without Pier's extension, a file
-# changed on disk by a command rather than by Pi's tools. Each rebuild of projects asks
-# tmux, each one of activity runs git status in its jail: not every second for nothing.
-# team asks the forges (3 requests a repository, against an hourly quota), labs every lab
-# host (over SSH): both follow what changes here at once (their signatures), and the rest
-# at a slow pace.
+# The longest a part goes without a new look; most refresh sooner when what they read moves.
+# This catches what leaves no trace (a Pi without Pier's extension, a command editing files).
+# team (forge quota) and labs (SSH) go slowly.
 WATCH_EVERY = {"projects": 5, "contexts": 4, "activity": 10, "setup": 15, "checkpoints": 10, "log": 1,
                "conversations": 10, "approvals": 30, "team": 300, "labs": 60}
-# Parts built on a thread of their own, as they wait on the network or read much: a lab
-# host off, a forge not answering or 2000 conversations to read no longer hold the others
-# (Pi done, Activity) for as long. Each sends its last result when it has it.
+# Parts on a thread of their own, as they wait on the network or read much: a dead lab host,
+# a silent forge or 2000 conversations no longer hold the others. Each sends its last result.
 WATCH_APART = {"team", "labs", "conversations"}
 # What a "poke" (an action of the user) does not hurry: they ask other machines.
 WATCH_NOT_POKED = {"team", "labs"}
-# Pier says something at least this often (a "ping" when it has nothing else): a watch
-# that hears nothing for WATCH_SILENCE seconds was left by a connection that died
-# without closing, and ends, instead of asking the forges and lab hosts for hours.
+# Pier says something at least this often (a "ping" when idle): a watch silent for
+# WATCH_SILENCE seconds was left by a dead connection and ends, not polling forges for hours.
 WATCH_SILENCE = 150
 # The shortest a part waits between two rebuilds even when its inputs move (a working
 # Pi writes its session file several times a second).
@@ -257,9 +247,9 @@ def api_watch(home, config, stdin=None, stdout=None):
     return 0
 
 
-# Parts sent, after the first time, as what changed only: Conversations is one block of
-# every project's conversations (a megabyte with 2000 of them), and a working Pi changes
-# one of them at each turn. Pier puts the whole back together (vm.js).
+# Parts sent after the first time as what changed only: Conversations is one block of every
+# project's conversations (a megabyte with 2000), and a working Pi changes one each turn.
+# Pier puts the whole back together (vm.js).
 WATCH_PATCHED = {"conversations"}
 
 

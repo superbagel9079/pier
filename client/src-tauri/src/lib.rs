@@ -1,9 +1,5 @@
-//! Pier: desktop companion for a development VM.
-//!
-//! It talks to the VM over one SSH connection: terminals are channels of it, and the
-//! picker's API ("pi-pick --api ...", JSON replies) does the rest. No port is opened
-//! on the VM. The picker itself is built into Pier and installed by it (picker.rs).
-//! Everything that happens is logged (journal.rs), next to the picker's own log.
+//! Pier: desktop companion for a development VM. One SSH connection carries terminals and the
+//! picker's API ("pi-pick --api ...", JSON); no port is opened on the VM. See journal.rs.
 
 #[macro_use]
 mod journal;
@@ -32,7 +28,6 @@ use tauri::ipc::{Channel as Output, InvokeResponseBody};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_updater::UpdaterExt;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -51,15 +46,27 @@ use store::{Settings, Store};
 const API_VERSION: u64 = 22;
 const IMAGE_MAX_BYTES: u64 = 20 * 1024 * 1024;
 const FILE_MAX_BYTES: u64 = 50 * 1024 * 1024;
-/// API commands the interface may call directly: they only read, or type into Pi.
-/// Everything that changes on its own (projects, activity, setup, contexts, restore
-/// points, the VM's log) comes through the watch instead (watch.rs).
+/// API commands the interface may call directly: they only read, or type into Pi. Everything
+/// that changes on its own comes through the watch instead (watch.rs).
 const PASSTHROUGH: &[&str] = &[
     "projects",
     "ls",
+    "fs-new",
+    "fs-rename",
+    "fs-copy",
+    "fs-delete",
+    "fs-write",
     "file",
+    "image-read",
+    "session-messages",
+    "model-images",
+    "setup",
+    "providers",
+    "provider-save",
+    "provider-delete",
     "config",
     "models",
+    "pi-default-read",
     "type",
     "diff",
     "log",
@@ -68,6 +75,10 @@ const PASSTHROUGH: &[&str] = &[
     "resources",
     "skill-read",
     "gallery",
+    "gallery-media",
+    "gallery-package",
+    "skills-search",
+    "skill-page",
     "forges",
     "repo",
     "approvals",
@@ -75,7 +86,6 @@ const PASSTHROUGH: &[&str] = &[
     "team",
     "collaborators",
     "labs",
-    "lab-journal",
 ];
 /// Calls frequent enough to log at debug level only (the shares are also polled here,
 /// while a share mounts).
@@ -102,9 +112,8 @@ struct Share {
 }
 
 impl Share {
-    /// Nothing more is served: called whenever the share leaves the list (stopped, handed
-    /// off, the connection lost), as the VM's lazy unmount leaves a way in to whoever
-    /// is still inside it.
+    /// Nothing more is served once the share leaves the list (stopped, handed off, connection
+    /// lost): the VM's lazy unmount leaves a way in to whoever is still inside it.
     fn revoke(&self) {
         self.revoked.store(true, Ordering::Relaxed);
     }
@@ -147,9 +156,8 @@ struct AppState {
     grants: grants::Grants,
 }
 
-/// Yes or no, asked by Rust in a window of the system: what lets Pi do more than it
-/// could is confirmed there, where a script in the page could neither answer nor skip
-/// it (S13 of the audit of 2026-10-26).
+/// Yes or no, asked by Rust in a system window: what lets Pi do more is confirmed where a
+/// script in the page could neither answer nor skip it.
 pub(crate) async fn confirmed(app: &AppHandle, text: &str) -> bool {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -230,11 +238,8 @@ fn settings(state: &AppState) -> Result<Settings, String> {
     state.store.settings().ok_or_else(|| "No VM configured yet.".to_string())
 }
 
-/// The live connection, reopened silently if it dropped. The lock is held only while
-/// checking or reconnecting, never while a channel opens. A refused password or a
-/// changed key sends the interface back to the login screen at once; a network that
-/// is not back yet (the laptop just woke up) is tried again at the next call, for
-/// RECONNECT_FOR, while the interface says it is reconnecting.
+/// The live connection, reopened silently if dropped; no lock is held while a channel opens.
+/// Bad password or changed key: back to login at once. No network: retried for RECONNECT_FOR.
 async fn connected(app: &AppHandle, state: &AppState, settings: &Settings) -> Result<Arc<Connection>, String> {
     let mut connection = state.connection.lock().await;
     if let Some(live) = connection.as_ref().filter(|c| !c.is_closed()) {
@@ -271,9 +276,8 @@ async fn connected(app: &AppHandle, state: &AppState, settings: &Settings) -> Re
     }
 }
 
-/// After a silent reconnection: the shares ran over the old connection and are gone
-/// with it. They are forgotten here (the VM's dead mounts cleaned) and the interface is
-/// told, to start them again.
+/// After a silent reconnection the shares are gone with the old connection: forgotten here
+/// (the VM's dead mounts cleaned) and the interface told to start them again.
 async fn reconnected(app: &AppHandle, state: &AppState) {
     let dropped: Vec<Share> = state.shares.lock().await.drain().map(|(_, s)| s).collect();
     dropped.iter().for_each(Share::revoke);
@@ -295,9 +299,8 @@ async fn shares_cleanup(app: AppHandle, state: State<'_, AppState>) -> Result<()
 }
 
 /// Runs a command on the VM through the connection (reopened if it dropped).
-/// The longest a command of the picker may take before Pier stops waiting for it (a
-/// picker stuck on a stalled sshfs would hold the interface's promise, and a channel
-/// counted in MaxSessions, for good). Not for what sends a lot (an upload, a hand off).
+/// The longest a picker command may run before Pier stops waiting (a stalled sshfs would hold
+/// a MaxSessions channel for good). Not for uploads or hand offs.
 const VM_EXEC_TIMEOUT: Duration = Duration::from_secs(300);
 const VM_EXEC_UNTIMED_FROM: usize = 1024 * 1024;
 
@@ -317,10 +320,8 @@ async fn vm_exec_from(app: &AppHandle, state: &AppState, command: &str, stdin: i
     }
 }
 
-/// A new channel for a command, a terminal, a share or the watch. Every one of them
-/// is a channel of an SSH connection, and OpenSSH allows a limited number per
-/// connection (MaxSessions, 10 by default): past it, the VM refuses. Pier then opens
-/// another connection, with the password kept in memory, and goes on there.
+/// A new channel for a command, terminal, share or the watch. OpenSSH allows few per link
+/// (MaxSessions, 10): past it Pier opens another connection, password kept in memory.
 async fn vm_channel(app: &AppHandle, state: &AppState) -> Result<russh::Channel<russh::client::Msg>, String> {
     let settings = settings(state)?;
     let mut tries = 0;
@@ -643,6 +644,12 @@ async fn api_call(app: AppHandle, state: State<'_, AppState>, args: Vec<String>)
         moved.extend_from_slice(rest);
         return api(&app, &state, &moved, text.as_bytes()).await;
     }
+    // A file saved from the viewer, a provider saved from Settings: their text (the last
+    // argument) on stdin, as above; a key never on a command line.
+    if matches!(args.first(), Some(&"fs-write") | Some(&"provider-save")) && args.len() >= 2 {
+        let (text, head) = args.split_last().unwrap();
+        return api(&app, &state, head, text.as_bytes()).await;
+    }
     api(&app, &state, &args, &[]).await
 }
 
@@ -687,7 +694,7 @@ fn log_ui(state: State<'_, AppState>, level: String, event: String, fields: Opti
     journal::write(level, &format!("ui.{event}"), &borrowed);
 }
 
-/// The end of Pier's log, for the Logs tab.
+/// The end of Pier's log, for the log viewer (Settings > Diagnostics).
 #[tauri::command]
 fn log_tail(lines: Option<usize>) -> Vec<String> {
     journal::tail(lines.unwrap_or(1000))
@@ -709,6 +716,7 @@ fn log_info() -> Value {
         "path": path.as_ref().map(|p| p.display().to_string()),
         "dir": path.as_ref().and_then(|p| p.parent()).map(|p| p.display().to_string()),
         "debug": journal::debug_enabled(),
+        "version": env!("CARGO_PKG_VERSION"),
     })
 }
 
@@ -725,6 +733,28 @@ fn open_log_folder() -> Result<(), String> {
     };
     std::process::Command::new(opener).arg(&dir).spawn().map_err(|e| format!("{opener}: {e}"))?;
     Ok(())
+}
+
+/// A web page in the system's browser (a package's repository, its site): https only, a
+/// plain address (no space, quote or control character), never a file or a program.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    let plain = url.len() <= 2000
+        && url.starts_with("https://")
+        && url.len() > "https://".len()
+        && url.chars().all(|c| c.is_ascii_graphic() && !matches!(c, '"' | '\'' | '<' | '>' | '`' | '\\' | '^' | '|'));
+    if !plain {
+        return Err("not a web address Pier opens (https only)".into());
+    }
+    let result = if cfg!(windows) {
+        // The URL handler of Windows itself: the address is one argument, no shell reads it.
+        std::process::Command::new("rundll32.exe").arg("url.dll,FileProtocolHandler").arg(&url).spawn()
+    } else if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(&url).spawn()
+    } else {
+        std::process::Command::new("xdg-open").arg(&url).spawn()
+    };
+    result.map(|_| ()).map_err(|e| format!("could not open the browser: {e}"))
 }
 
 /// A report to send when something goes wrong: versions, the connection (never a
@@ -841,18 +871,10 @@ fn show_window(app: &AppHandle) {
     }
 }
 
-fn set_tooltip(app: &AppHandle, text: &str) {
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_tooltip(Some(text));
-    }
-}
-
 // --- updating Pier itself -------------------------------------------------------------
 //
-// Pier reads latest.json in the project's latest GitHub release (tauri.conf.json, plugins >
-// updater). An update is installed only if it was signed with the project's key, whose
-// public half is in tauri.conf.json: a file changed on the way, or from elsewhere, is
-// refused.
+// Updates come from latest.json in the latest GitHub release (tauri.conf.json); installed only
+// if signed with the project's key (public half in tauri.conf.json), else refused.
 
 /// Whether a newer Pier is out: {current, version?, notes?, date?}.
 #[tauri::command]
@@ -898,7 +920,6 @@ async fn update_install(app: AppHandle, state: State<'_, AppState>) -> Result<()
 }
 
 pub fn run() {
-    let paste = paste_shortcut();
     tauri::Builder::default()
         // One Pier at a time: starting it again brings the running one forward (two would
         // fight over the shortcut, the connection and the shares).
@@ -923,15 +944,6 @@ pub fn run() {
         )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(move |app, shortcut, event| {
-                    if shortcut == &paste && event.state() == ShortcutState::Pressed {
-                        tauri::async_runtime::spawn(send_clipboard(app.clone()));
-                    }
-                })
-                .build(),
-        )
         .setup(move |app| {
             let logs = app.path().app_log_dir().unwrap_or_else(|_| std::env::temp_dir().join("pier-logs"));
             let log_file = journal::init(&logs);
@@ -964,10 +976,6 @@ pub fn run() {
                 watch: watch::Watch::default(),
                 grants: grants::Grants::default(),
             });
-            // Another program may own the shortcut: Pier still works from its window.
-            if let Err(err) = app.global_shortcut().register(paste) {
-                log_warn!("shortcut.unavailable", err = err);
-            }
             let show = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -1026,6 +1034,7 @@ pub fn run() {
             disconnect,
             api_call,
             paste_image,
+            image_preview,
             paste_files,
             term_open,
             term_write,
@@ -1036,7 +1045,6 @@ pub fn run() {
             share_stop,
             share_list,
             remove_upload,
-            set_paste_shortcut,
             clipboard_paths,
             pick_folder,
             pick_files,
@@ -1093,8 +1101,8 @@ pub fn run() {
             category_rename,
             config_set,
             pi_default,
+            pi_thinking,
             shares_cleanup,
-            shortcut_status,
             watch_start,
             watch_set,
             log_ui,
@@ -1102,6 +1110,7 @@ pub fn run() {
             set_log_level,
             log_info,
             open_log_folder,
+            open_url,
             diagnostics_report,
             copy_text,
             clipboard_text,
@@ -1141,6 +1150,26 @@ mod tests {
         assert!(is_image(b"RIFF\0\0\0\0WEBPVP8 "));
         assert!(!is_image(b"%PDF-1.7"));
         assert!(!is_image(b"RIFF"));
+    }
+
+    #[test]
+    fn a_conversation_only_takes_known_pi_arguments() {
+        assert_eq!(rpc_command("/home/leo/my blog", &[]).unwrap(), "--rpc-attach '/home/leo/my blog'");
+        assert!(rpc_command("/x", &["--new".into()]).is_ok());
+        assert!(rpc_command("/x", &["--continue".into()]).is_ok());
+        assert_eq!(rpc_command("/x", &["--slot".into(), "pi-work-a1b2c3-r1".into()]).unwrap(), "--rpc-attach '/x' '--slot' 'pi-work-a1b2c3-r1'");
+        assert!(rpc_command("/x", &["--session".into(), "/home/leo/.pi/agent/sessions/--x--/a.jsonl".into()]).is_ok());
+        // An orchestrator or a task still goes through the terminal, for now.
+        for bad in [
+            vec!["--orchestrator".to_string()],
+            vec!["--agent-task".into(), "task".into(), "1".into()],
+            vec!["--session".into(), "/etc/passwd".into()],
+            vec!["--slot".into(), "pi-x; rm -rf ~".into()],
+            vec!["--mode".into(), "json".into()],
+        ] {
+            assert!(rpc_command("/x", &bad).is_err(), "{bad:?}");
+        }
+        assert!(rpc_command("", &[]).is_err());
     }
 
     #[test]
@@ -1223,6 +1252,7 @@ mod tests {
             "category-rename",
             "config-set",
             "pi-default",
+            "pi-thinking",
         ] {
             assert!(!PASSTHROUGH.contains(&command), "{command} must go through its own command");
         }

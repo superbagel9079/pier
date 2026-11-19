@@ -1,14 +1,5 @@
-//! Terminals on the VM, one per tab, each a channel of the one SSH connection: no
-//! new login, no password asked again. Output goes to the tab's xterm.js through a
-//! Tauri channel as raw bytes; keystrokes come back through `write`.
-//!
-//! Two kinds. A plain terminal is a pseudo-terminal running a command (the picker, a
-//! shell). A Pi terminal talks to tmux in control mode (`tmux -C`): tmux keeps Pi
-//! running on the VM but draws nothing; it hands over Pi's own output, untouched,
-//! which xterm.js then renders as if Pi ran here. Pi's history therefore lands in this
-//! terminal's scrollback, and scrolling, selecting and copying happen on this computer.
-//! Through a pseudo-terminal, tmux would redraw its own screen instead, and the
-//! history would never reach here.
+//! Terminals on the VM, one per tab, each a channel of the one SSH connection. A Pi terminal
+//! uses tmux control mode (`tmux -C`) so Pi's raw output reaches xterm.js scrollback.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -23,9 +14,8 @@ use tokio::sync::{Mutex, Notify};
 
 /// Most bytes put in one message to the page.
 const BATCH_MAX: usize = 256 * 1024;
-/// Most bytes sent to a tab and not yet written by its terminal: past this, reading
-/// from the VM waits, and the SSH window then holds back the VM itself. A "cat" of a
-/// big file no longer piles up hundreds of MB in the page.
+/// Most bytes sent to a tab and not yet written by its terminal: past this, reading from the
+/// VM waits, so a "cat" of a big file cannot pile up in the page.
 const UNREAD_MAX: u64 = 16 * 1024 * 1024;
 /// How long a tab may say nothing of what it wrote before it is no longer waited for
 /// (a page that does not count, or that hangs: the terminal must not freeze for good).
@@ -61,9 +51,8 @@ pub struct Terminals {
 }
 
 impl Terminals {
-    /// Starts `command` (or the login shell) in a pseudo-terminal of cols x rows.
-    /// `on_exit` runs once the remote side has finished, with its exit status if it
-    /// gave one.
+    /// Starts `command` (or the login shell) in a pseudo-terminal of cols x rows; `on_exit`
+    /// runs once the remote side finished, with its exit status if any.
     pub async fn open(
         &self,
         channel: Channel<Msg>,
@@ -86,9 +75,26 @@ impl Terminals {
         Ok(id)
     }
 
-    /// Runs `command`, which ends in `tmux -C attach` (the picker's --attach-control),
-    /// without a pseudo-terminal: tmux reads commands on its input and writes
-    /// notifications on its output. Pi is then made to redraw everything (see below).
+    /// Runs `command` without a pseudo-terminal, its output passed on as it comes: Pi in
+    /// RPC mode (the picker's --rpc-attach), JSON lines both ways, nothing to translate.
+    pub async fn open_plain(
+        &self,
+        channel: Channel<Msg>,
+        command: &str,
+        output: Output<InvokeResponseBody>,
+        on_exit: impl FnOnce(u32, Option<u32>) + Send + 'static,
+    ) -> Result<u32> {
+        let (reader, writer) = channel.split();
+        writer.exec(true, command).await?;
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let flow = Arc::new(Flow::default());
+        self.open.lock().await.insert(id, Open { writer: Arc::new(Mutex::new(writer)), control: false, flow: flow.clone() });
+        tokio::spawn(pump(id, reader, output, flow, None, on_exit));
+        Ok(id)
+    }
+
+    /// Runs `command`, which ends in `tmux -C attach`, without a pseudo-terminal: tmux reads
+    /// commands on input, writes notifications on output.
     pub async fn open_control(
         &self,
         channel: Channel<Msg>,
@@ -101,8 +107,7 @@ impl Terminals {
         let (reader, writer) = channel.split();
         writer.exec(true, command).await?;
         // Attaching shows nothing until Pi writes. Two sizes in a row make it redraw
-        // the whole screen, and in its regular mode the whole conversation, which thus
-        // arrives in this terminal's history.
+        // everything, which puts the whole conversation in this terminal's history.
         let (cols, rows) = (cols.max(2), rows.max(3));
         writer.data(resize_command(cols, rows - 1).as_bytes()).await?;
         writer.data(resize_command(cols, rows).as_bytes()).await?;
@@ -202,10 +207,8 @@ async fn pump(
     'reading: while let Some(message) = next.take() {
         match message {
             ChannelMsg::Data { data } | ChannelMsg::ExtendedData { data, ext: 0 } => {
-                // Every message to the page costs a script run, or an IPC round trip
-                // above 1 KB: a screen redraw arriving as dozens of SSH packets made
-                // dozens of them. What has already arrived goes out as one message;
-                // nothing waits for more.
+                // Every message to the page costs a script run (IPC above 1 KB): a redraw
+                // as dozens of SSH packets made dozens. What arrived goes out as one.
                 let mut incoming = data.to_vec();
                 stats.0 += 1;
                 let mut ended = false;
@@ -286,9 +289,8 @@ fn resize_command(cols: u32, rows: u32) -> String {
     format!("refresh-client -C {cols}x{rows}\n")
 }
 
-/// What is typed, as tmux commands: the bytes go to Pi exactly as they are (-H: each
-/// argument is one byte in hexadecimal), so tmux interprets nothing on the way, not
-/// even its prefix key.
+/// What is typed, as tmux commands: bytes go to Pi exactly as they are (-H, one byte per
+/// argument), so tmux interprets nothing, not even its prefix key.
 pub fn send_keys_commands(bytes: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut commands = String::with_capacity(bytes.len() * 3 + bytes.len() / KEYS_PER_COMMAND * 14 + 14);
@@ -304,16 +306,13 @@ pub fn send_keys_commands(bytes: &[u8]) -> String {
     commands
 }
 
-/// Pier's own sequence: only Pier may say which session a tab shows. Written by Pi,
-/// it is defused on the way (also when split across two writes), in both the forms
-/// xterm.js reads: ESC ] and the one-character C1 introducer U+009D (UTF-8 C2 9D).
+/// Pier's own sequence: only Pier may say which session a tab shows. Written by Pi, it is
+/// defused (also if split across writes) in both forms: ESC ] and the C1 introducer U+009D.
 const OWN_OSC: &[u8] = b"\x1b]7770;";
 const OWN_OSC_C1: &[u8] = b"\xc2\x9d7770;";
 
-/// tmux control mode, as it comes: one line per notification. "%output %PANE DATA" is
-/// what the program wrote, with bytes below space and backslashes written as \ooo
-/// (octal). Answers to commands come between "%begin" and "%end" (or "%error"); "%exit"
-/// says the client is detached (the session ended, or someone detached it).
+/// tmux control mode, one line per notification: "%output %PANE DATA" is program output (bytes
+/// below space and \ as \ooo octal); answers sit in "%begin".."%end"; "%exit" detaches.
 pub struct ControlParser {
     lines: crate::lines::Lines,
     in_block: bool,

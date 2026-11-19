@@ -3,9 +3,9 @@
 
 ## The picker
 
-The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 27 October 2026, picker 4.37, on the Debian VM; the CI runs it too, at every push): it drives the picker in a real tmux terminal, and checks with the real programs:
+The `pier-picker-tests.py` suite, to run **on the VM** (it passed entirely on 27 October 2026, picker 4.37, on the Debian VM; the CI runs it too, at every push): it checks the picker with the real programs:
 
-- the screen and its keys, starting Pi (directly and in tmux), the Hindsight key, two Pis in one project and the API that lists them;
+- two Pis in one project and the API that lists them;
 - the real bubblewrap sandbox: what Pi sees, its own `/dev`, `/run` hidden, the TIOCSTI filter, and its network (no direct connection, the proxy refusing what is not allowed);
 - the protections against links and FIFOs Pi could plant (Hindsight key, Setup, removals, writes, the git jail), folder copies;
 - restore points around a real `--exec-pi`, the log, what Setup lists, and moving the folders of the old name (pi-dir-picker).
@@ -42,3 +42,7 @@ GitHub Actions runs them at every push to `main` and every pull request, on Linu
 ## The interface
 
 It was checked in a browser with a fake backend (which also simulates `watch` and two Pis): layout, dragging tabs, menus, Context, Hand off, Conversations, Setup, the palette, themes, narrow widths, picker update, Restore, Logs, report, reconnection; then take back file by file, the clipboard only after a real key, the Logs tab under thousands of lines, dragging a divider, and a collapsed side unfolded for a look.
+
+For the audit of 12 November 2026 the same ran in Chromium with Playwright, in Pier dark and light, at two widths and with reduced motion: see [The UI audit](ui-audit-2026-11-12.md).
+
+The themes have unit tests, which the CI runs on Linux and Windows: `node --test client/test/themes.test.js` from the repository's root, in Node 18 or later, with nothing to install. They cover every built-in theme on every surface (text and dim 4.5:1, the diff lines included; the accent and the edges 3:1), a theme of two colours, a barely readable one, a translucent colour, and the terminal's red.

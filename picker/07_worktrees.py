@@ -1,12 +1,7 @@
 # --- worktrees: several Pis in one git project ---------------------------------------------
 #
-# Two Pis in the same folder step on each other's files. In a git project, the first Pi
-# works in the folder itself, and every other one in a worktree of its own,
-# .pi-worktrees/<its tmux session>, on a branch pi/agent-N-...: they come together by
-# merges or pull requests, as a team does. The worktree has links to the project's
-# .pi-images, .pi-files and .pi-shared, so what is given to that Pi is found. It is
-# removed when its Pi ends without having changed or committed anything; otherwise it
-# stays, listed in Repository > Git, until the user removes it.
+# Two Pis in one folder step on each other's files: the first works in the project, the
+# others in .pi-worktrees/<tmux session> on a pi/agent-N-... branch; removed when unchanged.
 
 WORKTREE_DIR = ".pi-worktrees"
 
@@ -160,11 +155,24 @@ def api_stop(home, path, slot):
     if not pis:
         raise ApiError("no Pi runs there")
     for pi in pis:
-        run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"))
-        forget_pi_sessions()
+        stop_pi(pi)
     # Killed with its session, a Pi cannot clean its worktree up itself: done here.
     tidy_worktrees(project)
     return {"project": project, "stopped": len(pis)}
+
+
+def stop_pi(pi, env=None):
+    """A running Pi gone: its tmux session, or (RPC mode) its host and all it started."""
+    if pi.get("rpc"):
+        pid = rpc_alive(pi["name"])
+        if pid:
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except OSError:
+                pass
+    else:
+        run_quiet(tmux_cmd("kill-session", "-t", f"={pi['name']}"), env)
+    forget_pi_sessions()
 
 
 def start_pi_session(path, extra, env, home, width, height, name=None, worktree=None, role_env=None):

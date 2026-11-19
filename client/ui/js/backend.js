@@ -1,8 +1,6 @@
 // The Rust side, through Tauri's invoke and events.
 
-// ============================================================================
 // Backends
-// ============================================================================
 
 function realBackend() {
   const { invoke, Channel } = tauri.core;
@@ -18,6 +16,7 @@ function realBackend() {
     logInfo: () => invoke("log_info"),
     setLogLevel: (debug) => invoke("set_log_level", { debug }),
     openLogFolder: () => invoke("open_log_folder"),
+    openUrl: (url) => invoke("open_url", { url }),
     report: (extra) => invoke("diagnostics_report", { extra }),
     copyText: (text) => invoke("copy_text", { text }),
     clipboardText: () => invoke("clipboard_text"),
@@ -28,12 +27,12 @@ function realBackend() {
     checkpointCreate: (project, label) => invoke("checkpoint_create", { project, label }),
     stopPi: (project, slot) => invoke("stop_pi", { project, slot }),
     sessionLabel: (project, file, title, category) => invoke("session_label", { project, file, title, category }),
-    shortcutStatus: () => invoke("shortcut_status"),
     sessionMark: (project, file, what, on) => invoke("session_mark", { project, file, what, on }),
     sessionDelete: (project, file) => invoke("session_delete", { project, file }),
     categoryRename: (project, old, name) => invoke("category_rename", { project, old, new: name }),
     configSet: (key, value) => invoke("config_set", { key, value: JSON.stringify(value ?? null) }),
     piDefault: (model) => invoke("pi_default", { model }),
+    piThinking: (level) => invoke("pi_thinking", { level }),
     watchStart: (want) => invoke("watch_start", { want }),
     watchSet: (want) => invoke("watch_set", { want }),
     onVmUpdate: (handler) => listen("vm-update", (event) => handler(event.payload)),
@@ -41,20 +40,21 @@ function realBackend() {
     checkpointRestore: (project, id, files) => invoke("checkpoint_restore", { project, id, files }),
     trustHost: (host, fingerprint) => invoke("trust_host", { host, fingerprint }),
     disconnect: () => invoke("disconnect"),
-    api: (args) => invoke("api_call", { args }),
+    // Not connected, nothing is asked of the VM: each call failed and logged three warnings.
+    api: (args) => (typeof online !== "undefined" && !online ? Promise.reject("Not connected: log in first.") : invoke("api_call", { args })),
     async pasteImage(file, project) {
       const bytes = new Uint8Array(await file.arrayBuffer());
       // Raw body: no JSON encoding of the image. Header values must be ASCII.
       return invoke("paste_image", bytes, { headers: { "x-target": encodeURIComponent(project) } });
     },
     pasteFiles: (paths, project) => invoke("paste_files", { paths, target: project }),
+    imagePreview: (path) => invoke("image_preview", { path }), // an ArrayBuffer
     removeUpload: (path) => invoke("remove_upload", { path }),
     async notify(title, body) {
       const n = tauri.notification;
       if (!(await n.isPermissionGranted()) && (await n.requestPermission()) !== "granted") return;
       n.sendNotification({ title, body });
     },
-    setShortcut: (enabled) => invoke("set_paste_shortcut", { enabled }),
     async termOpen(kind, cols, rows, onBytes, params) {
       // What the terminal has written is told back every 256 KB: Pier holds the VM back
       // when the tab falls far behind (term.rs), rather than piling up its output here.
@@ -134,7 +134,6 @@ function realBackend() {
     updateCheck: () => invoke("update_check"),
     updateInstall: () => invoke("update_install"),
     onUpdateProgress: (handler) => listen("update-progress", (event) => handler(event.payload)),
-    onClipboardSent: (handler) => listen("clipboard-sent", (event) => handler(event.payload)),
     onConnectionLost: (handler) => listen("connection-lost", (event) => handler(event.payload)),
     onConnectionRetrying: (handler) => listen("connection-retrying", () => handler()),
     onConnectionBack: (handler) => listen("connection-back", (event) => handler(event.payload)),

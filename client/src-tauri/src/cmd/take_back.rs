@@ -127,9 +127,8 @@ pub(crate) async fn takeback_diff(app: AppHandle, state: State<'_, AppState>, pa
     api(&app, &state, &["copy-diff", &path, &rel], &mine).await
 }
 
-/// Brings the files chosen from the copy into the original folder, and deletes there
-/// the ones chosen among those Pi deleted. What is replaced or deleted is moved first to
-/// "NAME (before Pi's changes DATE)", next to the original.
+/// Brings the chosen files into the original folder, deletes the chosen ones Pi deleted.
+/// What is replaced or deleted is first moved to "NAME (before Pi's changes DATE)".
 #[tauri::command]
 pub(crate) async fn takeback_apply(
     app: AppHandle,
@@ -216,13 +215,9 @@ pub(crate) async fn takeback_apply(
 pub(crate) const TAKEBACK_MAX: u64 = 600 * 1024 * 1024;
 pub(crate) const TAKEBACK_UNPACKED_MAX: u64 = 2 * 1024 * 1024 * 1024;
 
-/// Unpacks a take-back into `staging` (a folder of its own), then moves its top folder
-/// to `target`. Only folders and plain files whose names mean the same here as on the VM
-/// (takeback::safe_parts): links, devices and the like are skipped (a link could point
-/// anywhere on this computer), and so are "x.exe:Zone.Identifier" (written as the mark of
-/// x.exe, it would take it off) and "NUL". Every file is marked as coming from elsewhere
-/// (Mark of the Web), so Windows warns before running or opening it; a mark that cannot
-/// be written stops the take back.
+/// Unpacks into `staging`, then moves the top folder to `target`. Skips links (they could
+/// point anywhere), devices, "NUL", ":Zone.Identifier", unsafe names (takeback::safe_parts).
+/// Every file gets the Mark of the Web; a mark that cannot be written stops the take back.
 pub(crate) fn unpack_takeback(archive: &std::path::Path, staging: &std::path::Path, target: &std::path::Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(staging)?;
     let mut tar = tar::Archive::new(std::fs::File::open(archive)?);

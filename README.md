@@ -5,7 +5,7 @@
 Two pieces:
 
 - **Pier** (`client/`), a desktop app for Windows (macOS and Linux builds exist, not yet tried by hand).
-- **The picker** (`pier-picker.py`, installed on the VM as `~/bin/pi-pick`): a terminal screen to choose a folder and start Pi there, and the API Pier talks to. Pier carries it and installs it itself.
+- **The picker** (`pier-picker.py`, installed on the VM as `~/bin/pi-pick`): Pier's side on the VM: it starts Pi and answers Pier (its API), over SSH. It has no screen of its own. Pier carries it and installs it itself.
 
 ## Words used here
 
@@ -13,7 +13,7 @@ Two pieces:
 |---|---|
 | **Pi** | the coding agent, running on the VM |
 | **the VM** | the Linux machine (Debian 13) where Pi runs; your laptop only shows it |
-| **the picker** (`pi-pick`) | chooses the folder Pi starts in, and answers Pier (its API) |
+| **the picker** (`pi-pick`) | starts Pi where Pier asks, and answers Pier (its API) |
 | **Pier** | the desktop app on the laptop |
 | **a project** | a folder of the VM where Pi works; Pi sees only it (its sandbox) |
 | **a share** | a folder of the laptop lent to Pi live, read-only or not |
@@ -103,13 +103,15 @@ All of it, with its limits: [Security](docs/security.md). To report a flaw: [SEC
 | [Outages and recovery](docs/troubleshooting.md) | what happens when something stops |
 | [Files and locations](docs/files.md) | every file on the VM, on the PC, in this repository |
 | [The picker's API](docs/api.md) | the commands Pier calls |
-| [Tests](docs/tests.md) | the suite on the VM, the unit tests, the Rust tests |
+| [Tests](docs/tests.md) | the suite on the VM, the unit tests, the Rust tests, the interface |
+| [Design](docs/design.md) | the look, the dithered pi mark, motion, the accessibility floor |
+| [The UI audit of 12 November 2026](docs/ui-audit-2026-11-12.md) | what it found, what changed, what is left |
 | [Known limits, and ideas for later](docs/limits.md) | what is left to check, and what could come |
 
 ## Contributing, releasing
 
 - The picker lives in `picker/NN_*.py`: edit the parts, then `python3 tools/bundle.py` writes `pier-picker.py` (the CI checks they match).
-- Tests: `python3 -B pier-picker-unit.py` anywhere, `pier-picker-tests.py` on a VM (the CI runs both), `cargo test` in `client/src-tauri`.
+- Tests: `python3 -B pier-picker-unit.py` anywhere, `pier-picker-tests.py` on a VM (the CI runs both), `cargo test` in `client/src-tauri`, `node --test client/test/themes.test.js` for the themes' contrast (Node 18 or later).
 - Releases: [RELEASING.md](RELEASING.md). Security reports: [SECURITY.md](SECURITY.md).
 
 ## License

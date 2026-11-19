@@ -1,18 +1,24 @@
 // Given to Pi, a view of Activity: what was given to each project's Pi; Hand off; paste and drop.
 
-// ============================================================================
 // Context: everything given to a project's Pi
-// ============================================================================
 //
-// Whatever is pasted, dropped or added goes where it belongs: an image or a file is
-// copied into the project and mentioned in Pi; a folder makes Pier ask whether to
-// share it live (read-only, or read and write) or to copy it. The panel lists what
-// each project holds, read from the VM, plus the shares remembered on this computer,
-// and anything can be taken back with its ×.
+// Pasted, dropped or added things go where they belong: an image or file is copied into the
+// project and mentioned in Pi; a folder asks: share live (read-only or read-write) or copy.
+// The panel lists what each project holds (from the VM, plus remembered shares), with ×.
 
 const previews = new Map(); // saved path on the VM -> blob URL, for this session's pastes
 
 /** A pasted image's preview let go: its blob URL freed, not kept until Pier quits. */
+
+/** A reference typed into Pi's message: the conversation of this project shown (or one
+ *  open), where it waits for you to send it; a Pi in tmux gets it typed into its prompt. */
+function mentionToPi(text, project) {
+  const mine = (t) => t.kind === "chat" && t.params?.project === project && t.mention;
+  const tab = (mine(currentTab || {}) && currentTab) || workspace.tabs().find(mine);
+  if (tab) { workspace.show(tab); tab.mention(text); return Promise.resolve(); }
+  return backend.api(["type", `${text} `, project]);
+}
+
 function forgetPreview(path) {
   const url = previews.get(path);
   if (url) URL.revokeObjectURL(url);
@@ -125,7 +131,7 @@ function makeContext(tab) {
     const actions = el("div");
     actions.className = "row-actions";
     actions.append(
-      link("mention", "Type its reference into Pi", () => backend.api(["type", `${kind === "copy" ? "" : "@"}${relative}${kind === "copy" ? "/" : ""} `, context.project])),
+      link("mention", "Type its reference into Pi", () => mentionToPi(`${kind === "copy" ? "" : "@"}${relative}${kind === "copy" ? "/" : ""}`, context.project)),
       iconLink("×", `Delete it from the VM${kind === "copy" ? " (the original folder on this computer is not touched)" : ""}`, async () => {
         await backend.removeUpload(info.path);
         forgetPreview(info.path);
@@ -157,7 +163,7 @@ function makeContext(tab) {
       actions.append(...takeBackActions(share, context));
     } else if (share.state === "live") {
       actions.append(
-        link("mention", "Type its folder into Pi", () => backend.api(["type", `${share.relative}/ `, context.project])),
+        link("mention", "Type its folder into Pi", () => mentionToPi(`${share.relative}/`, context.project)),
         iconLink("×", "Stop sharing (the folder on this computer is not touched)", async () => {
           await backend.shareStop(share.id, true);
           notify(`Stopped sharing ${share.local}.`);
@@ -214,7 +220,7 @@ function makeContext(tab) {
   }
 
   function iconLink(text, title, action) {
-    const b = el("button", { className: "icon", textContent: text, title });
+    const b = text === "×" ? el("button", { className: "icon", title }, svgIcon("x")) : el("button", { className: "icon", textContent: text, title });
     b.addEventListener("click", async () => { b.disabled = true; await busy(action); refresh(); });
     return b;
   }
@@ -296,10 +302,13 @@ function askFolderNow(path) {
   $("#give-folder-name").textContent = path.split(/[\\/]/).filter(Boolean).pop() || path;
   $("#give-folder-path").textContent = path;
   dialog.hidden = false;
+  // Modal for the keyboard too: Tab stays inside, Escape is Cancel, the focus comes back.
+  const release = trapDialog($(".dialog", dialog), () => $("#give-folder-cancel").click());
   $("#give-folder-ro").focus();
   return new Promise((resolve) => {
     const choose = (choice) => {
       dialog.hidden = true;
+      release();
       for (const [id, handler] of handlers) $(id).removeEventListener("click", handler);
       resolve(choice);
     };
@@ -315,16 +324,22 @@ function askFolderNow(path) {
   });
 }
 
-// ============================================================================
 // Hand off: Pi keeps working with this computer off
-// ============================================================================
 //
-// Pi runs on the VM and does not need this computer, except for live shares: those
-// folders live here. Hand off turns each live share into a copy at the same path on
-// the VM (read-only shares stay read-only), so Pi, even mid-task, keeps its files.
+// Pi runs on the VM and needs this computer only for live shares. Hand off turns each into a
+// copy at the same path on the VM (read-only stays read-only), so Pi keeps its files.
+
+/** The hand-off dialog closed: its keyboard trap let go, the focus back where it was. */
+let releaseHandOff = null;
+function closeHandOff() {
+  $("#handoff").hidden = true;
+  releaseHandOff?.();
+  releaseHandOff = null;
+}
 
 async function openHandOff() {
   const live = await backend.shareList();
+  if (!$("#handoff").hidden) return; // a double click: already open, and trapped once
   const list = $("#handoff-shares");
   list.replaceChildren();
   for (const share of live) {
@@ -340,9 +355,9 @@ async function openHandOff() {
     );
     list.append(li);
   }
-  $("#handoff-none").hidden = live.length > 0;
   showError($("#handoff-error"), "");
   $("#handoff").hidden = false;
+  releaseHandOff = trapDialog($("#handoff .dialog"), closeHandOff);
   $("#handoff-go").focus();
 }
 
@@ -364,35 +379,28 @@ async function handOff() {
   // Rebuilt folders at a folder's top stay on this computer: said, not silent.
   const leftOut = left.length ? ` Left out (rebuilt on the VM: npm install, cargo build…): ${left.join("; ")}.` : "";
   go.disabled = false;
-  go.textContent = "Hand off";
+  go.textContent = "Copy them, then disconnect";
   if (failed.length) {
     showError($("#handoff-error"), `Not handed off, still live (this computer must stay on for them): ${failed.join("; ")}`);
     givenToPi()?.refresh?.();
     return;
   }
-  $("#handoff").hidden = true;
-  if ($("#handoff-disconnect").checked) {
-    await leave();
-    toLogin(`Handed off. Pi keeps working on the VM: you can turn this computer off. Log in again to see what it did.${leftOut}`);
-  } else {
-    givenToPi()?.refresh?.();
-    if (leftOut) flashStatus(`Handed off.${leftOut}`);
-  }
+  closeHandOff();
+  await leave();
+  showOffline(`Copied to the VM. Pi keeps working there: you can turn this computer off. Connect again to see what it did.${leftOut}`);
 }
 
-$("#btn-handoff").addEventListener("click", openHandOff);
-$("#handoff-go").addEventListener("click", handOff);
-$("#handoff-cancel").addEventListener("click", () => { $("#handoff").hidden = true; });
-// Escape closes these two dialogs too, as it does the others.
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (!$("#give-folder").hidden) { e.preventDefault(); $("#give-folder-cancel").click(); }
-  else if (!$("#handoff").hidden) { e.preventDefault(); $("#handoff").hidden = true; }
+$("#handoff-leave").addEventListener("click", async () => {
+  closeHandOff();
+  await leave();
+  showOffline();
 });
+$("#handoff-go").addEventListener("click", handOff);
+$("#handoff-cancel").addEventListener("click", closeHandOff);
 
 /** What was given to Pi: Activity's view (Activity opened if it was closed). */
 function contextTab({ reveal = false } = {}) {
-  const project = workspace.find("project") || workspace.add("project", prefs.panelSide === "left" ? "left" : "right");
+  const project = workspace.find("project") || workspace.add("project", "right");
   if (reveal) project.showGiven();
   return project.given;
 }
@@ -400,10 +408,8 @@ function contextTab({ reveal = false } = {}) {
 /** Given to Pi, if it is open somewhere. */
 const givenToPi = () => workspace.find("project")?.given;
 
-// Ctrl+V anywhere in the window, terminals included. An image goes to Pi; files and
-// folders copied in the file manager go through Context (folders ask first). The
-// focus stays where it was, so you keep typing your question. Text pastes are left
-// alone: pasting text in a terminal works as usual.
+// Ctrl+V anywhere in the window: an image goes to Pi; copied files and folders go through
+// Context (folders ask first). Focus stays put; text pastes are left alone.
 document.addEventListener("paste", async (event) => {
   if ($("#workspace").hidden) return;
   const items = [...(event.clipboardData?.items || [])];
@@ -413,17 +419,21 @@ document.addEventListener("paste", async (event) => {
   event.preventDefault();
   event.stopPropagation();
   const focused = document.activeElement;
+  // In a conversation's message field: to that conversation (as chips above its text).
+  const chat = workspace.tabs().find((t) => t.kind === "chat" && t.give && t.pane.contains(focused));
   const paths = hasFiles ? await backend.clipboardPaths() : [];
+  if (chat) {
+    if (paths.length) await chat.give(paths);
+    else if (image) await chat.attachImage(image.getAsFile());
+    return;
+  }
   if (paths.length) await contextTab().give(paths);
   else if (image) await contextTab().sendImage(image.getAsFile());
   focused?.focus?.();
 }, true);
 
-backend.onClipboardSent((results) => contextTab().handleResults(results));
 
-// ============================================================================
 // Files and folders dropped on the window
-// ============================================================================
 
 backend.onDragDrop((kind, paths, position) => {
   const x = position ? position.x / devicePixelRatio : -1;
@@ -431,6 +441,9 @@ backend.onDragDrop((kind, paths, position) => {
   const name = position ? workspace.dockAtPoint(x, y) : null;
   for (const d of DOCKS) workspace.docks[d].el.classList.toggle("drop-over", kind === "over" && d === name);
   if (kind !== "drop" || !paths.length || $("#workspace").hidden) return;
-  // Everything dropped goes through Context, which asks about folders.
+  // On a conversation shown in the middle: to it (its project, mentioned in its message).
+  // Elsewhere, through Context, which asks about folders.
+  const shown = name ? workspace.docks[name]?.active : null; // the pane dropped on, whichever
+  if (isCenterDock(name) && shown?.kind === "chat" && shown.give) { shown.give(paths); return; }
   contextTab({ reveal: true }).give(paths);
 });

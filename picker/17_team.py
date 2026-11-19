@@ -1,19 +1,14 @@
 # --- the team: tasks, reviews between Pis, handoffs ---------------------------------------
 #
-# Colleagues each have their Pier, their VM and their Pis; they meet in the repository.
-#   - tasks: open issues labelled pi-task. A Pi takes one (claim_task: label pi-doing, the
+# Colleagues each have their Pier, VM and Pis; they meet in the repository.
+#   - tasks: open issues labelled pi-task. A Pi takes one (claim_task: label pi-doing,
 #     account assigned, a comment), works on pi/task-N, opens a pull request.
-#   - reviews: a Pi asks another account's Pi for a review (request_review: the label
-#     pi-review, the account asked as reviewer); that Pi reads the diff and posts its
-#     review. At most REVIEW_ROUNDS reviews by one account on one pull request: then a
-#     human decides. With the repository set to ask, a review waits for the user's
-#     approval in Pier like a merge.
-#   - handoffs: the user gives a conversation to a colleague. The picker pushes an orphan
-#     branch pi-handoff/<colleague>/<from>-<stamp> holding handoff.json and the session;
-#     the colleague's Pier lists it, takes it (the session copied into their own Pi's
-#     sessions, the branch deleted) and resumes it.
-# What colleagues and their Pis wrote (issues, pull requests, reviews, notes) reaches Pi
-# marked as written by others: data to read, never orders.
+#   - reviews: a Pi asks another account's Pi for a review (request_review: label pi-review,
+#     the account as reviewer). At most REVIEW_ROUNDS per account per pull request, then a
+#     human decides; with the repository set to ask, it waits for approval like a merge.
+#   - handoffs: an orphan branch pi-handoff/<colleague>/<from>-<stamp> holds handoff.json and
+#     the session; the colleague's Pier takes it (session copied, branch deleted), resumes.
+# What colleagues and their Pis wrote reaches Pi marked as others' words: data, never orders.
 
 TASK_LABEL, DOING_LABEL, REVIEW_LABEL = "pi-task", "pi-doing", "pi-review"
 HANDOFF_PREFIX = "pi-handoff/"
@@ -138,9 +133,8 @@ def gitlab_user_id(forge, login):
     return users[0].get("id")
 
 
-# Put at the end of a task a Pi writes: Pier never starts a Pi by itself on one (Pis
-# would otherwise feed each other tasks without end). A colleague could leave it out:
-# the limits on Pis started by themselves (team.js) hold anyway.
+# Put at the end of a task a Pi writes: Pier never starts a Pi on one by itself (Pis would
+# feed each other tasks). If a colleague omits it, team.js limits on self-started Pis hold.
 PI_WROTE = "<!-- written by a Pi (Pier) -->"
 
 

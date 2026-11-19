@@ -1,7 +1,5 @@
 // The palette (Ctrl+Shift+K, everywhere, terminals included): type a few letters to reach
-// anything — a tab, a closed panel, a project (new Pi, last conversation, setup), a
-// conversation, a setting, a theme — and Enter. As in editors: nothing to aim at, no
-// panel to find first.
+// a tab, panel, project, conversation, setting or theme, then Enter.
 
 const palette = (() => {
   const box = $("#palette");
@@ -15,11 +13,11 @@ const palette = (() => {
   /** Everything the palette can do now: [kind, label, detail, action]. */
   function collect() {
     const out = [];
-    const side = prefs.panelSide === "left" ? "left" : "right";
-    for (const tab of workspace.tabs()) out.push(["tab", tab.title, `${tab.dock}`, () => workspace.show(tab)]);
-    for (const kind of ["conversations", "project", "setup", "repository", "logs", ...(labsOn() ? ["labs"] : [])]) {
-      if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind, side)]);
+    for (const tab of workspace.tabs()) out.push(["tab", tab.title, { left: "left side", right: "right side" }[tab.dock] || "", () => workspace.show(tab), tab]);
+    for (const kind of ["conversations", "project", ...(labsOn() ? ["labs"] : [])]) {
+      if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind)]);
     }
+    out.push(["panel", "Repository", "right side", () => showRepository()]);
     const projects = new Map();
     for (const p of [...(lastProjects?.running || []), ...(lastProjects?.recent || [])]) projects.set(p.path, { label: p.label, running: p.running });
     const conversations = vm.latest("conversations")?.data?.projects || [];
@@ -27,7 +25,7 @@ const palette = (() => {
     for (const [path, p] of projects) {
       out.push(["project", `${p.label}: new Pi`, p.running ? "running" : "", () => openPiTerminal(path, p.label, p.running ? ["--new"] : [])]);
       out.push(["project", `${p.label}: last conversation`, "", () => openPiTerminal(path, p.label, ["--continue"])]);
-      out.push(["project", `${p.label}: setup`, "", () => (workspace.find("setup") || workspace.add("setup", side))?.openProject?.(path)]);
+      out.push(["project", `${p.label}: settings`, "its instructions, what Pi loads, its mark", () => openProjectSettings(path)]);
     }
     for (const p of conversations) {
       for (const s of p.sessions.slice(0, 100)) {
@@ -41,31 +39,21 @@ const palette = (() => {
     for (const button of document.querySelectorAll("#prefs .prefs-tabs button")) {
       out.push(["setting", `Settings: ${button.textContent}`, "", () => { openPrefs(); showPrefsPage(button.dataset.page); }]);
     }
-    const panel = (kind) => workspace.find(kind) || workspace.add(kind, side);
-    for (const button of document.querySelectorAll("#tpl-setup")[0]?.content.querySelectorAll(".setup-pages .mode") || []) {
-      out.push(["page", `Project: ${button.textContent}`, button.title || "", () => { const t = panel("setup"); workspace.show(t); t?.showPage?.(button.dataset.page); }]);
-    }
+    const panel = (kind) => workspace.find(kind) || workspace.add(kind);
     for (const [mode, label, detail] of [["activity", "Activity", "what Pi read and changed"], ["files", "Files", "the project's files"],
       ["restore", "Restore points", "undo what Pi did: go back to before a prompt"]]) {
       out.push(["page", `Activity: ${label}`, detail, () => { const t = panel("project"); workspace.show(t); t?.setMode?.(mode); }]);
     }
     out.push(["action", "Waiting for you", "Pi's requests: approve or refuse", () => waiting.show()]);
-    out.push(["action", "Open a folder…", "start Pi in a folder of the VM", () => openFolderPicker()]);
-    out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
-    out.push(["action", "Keep working without this PC…", "hand off: your shares become copies on the VM", () => openHandOff()]);
+    if (online) { // what needs the VM, once connected
+      out.push(["action", "Start a project…", "a folder of the VM, or a new one", () => openFolderPicker()]);
+      out.push(["action", "Is the VM ready?", "what Pier needs on the VM", () => openVmReady()]);
+    }
     out.push(["page", "Activity: Given to Pi", "images, files, folders and shares given to Pi", () => contextTab({ reveal: true })]);
-    out.push(["action", "New shell", "", () => workspace.add("shell", workspace.find("main")?.dock || "center")]);
-    out.push(["action", `Panels on the ${side === "left" ? "right" : "left"}`, "layout", () => {
-      prefs.panelSide = side === "left" ? "right" : "left";
-      savePrefs();
-      placePanels();
-    }]);
+    if (online) out.push(["action", "New shell", "", () => workspace.add("shell", "center")]);
     out.push(["action", "Reset layout", "layout", () => placePanels()]);
-    out.push(["action", workspace.find("logs") ? "Close the Logs tab" : "Open the Logs tab", "diagnostics", () => {
-      const logs = workspace.find("logs");
-      if (logs) workspace.close(logs); else workspace.add("logs", side);
-    }]);
-    for (const theme of [{ id: "system", name: "follow the system" }, ...allThemes()]) {
+    out.push(["action", "Logs", "Settings > Diagnostics", () => { openPrefs(); showPrefsPage("diagnostics"); }]);
+    for (const theme of [{ id: "system", name: "Follow the system" }, ...allThemes()]) {
       if (theme.id !== prefs.theme) out.push(["theme", `Theme: ${theme.name}`, "", () => { prefs.theme = theme.id; savePrefs(); applyTheme(); }]);
     }
     return out;
@@ -84,28 +72,53 @@ const palette = (() => {
     return total;
   }
 
+  // As the proposals' A (Raycast): the results in groups, an icon on each line.
+  const GROUPS = { tab: "Tabs", panel: "Panels", project: "Projects", conversation: "Conversations", page: "Pages", action: "Actions", setting: "Settings", theme: "Themes" };
+  const ICONS = { panel: "panel-right", project: "folder", conversation: "message-square", page: "info", setting: "settings", theme: "palette" };
+  const ACTION_ICONS = { "Settings": "settings", "Waiting for you": "inbox", "Start a project…": "folder-plus", "Is the VM ready?": "circle-check", "New shell": "terminal", "Reset layout": "panel-left", "Logs": "scroll-text" };
+  const iconOf = ([kind, label, , , tab]) => kind === "tab"
+    ? (tab?.kind === "chat" || tab?.kind === "conversations" ? "message-square" : KINDS[tab?.kind]?.terminal ? "terminal" : tab?.dock === "right" ? "panel-right" : "file")
+    : kind === "action" ? ACTION_ICONS[label] || "play" : ICONS[kind] || "chevron-right";
+  // In its group, a line needs no "Settings: " or "Theme: " before it.
+  const shortLabel = ([kind, label]) => kind === "setting" ? label.replace(/^Settings: /, "") : kind === "theme" ? label.replace(/^Theme: /, "") : label;
+
   function render() {
     const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    shown = words.length
+    let found = words.length
       ? items.map((item, i) => [score(item, words), i, item]).filter(([s]) => s >= 0).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , item]) => item)
       : items.filter(([kind]) => kind !== "theme" && kind !== "conversation").concat(items.filter(([kind]) => kind === "conversation").slice(0, 8));
-    shown = shown.slice(0, 60);
+    found = found.slice(0, 60);
+    // Grouped by kind, the groups in the order of their best line (the order above when
+    // nothing is typed); the arrows go down the lines as drawn.
+    const groups = new Map();
+    for (const item of found) {
+      if (!groups.has(item[0])) groups.set(item[0], []);
+      groups.get(item[0]).push(item);
+    }
+    shown = [...groups.values()].flat();
     selected = Math.min(selected, Math.max(0, shown.length - 1));
-    list.replaceChildren(...shown.map(([kind, label, detail], i) => {
-      const li = el("li", { className: i === selected ? "selected" : "" },
-        el("span", { className: "kind", textContent: kind }),
-        el("span", { className: "label", textContent: label }),
-        el("span", { className: "detail", textContent: detail }));
-      li.addEventListener("mousemove", () => { if (selected !== i) { selected = i; mark(); } });
-      li.addEventListener("click", () => run(i));
-      return li;
-    }));
+    const rows = [];
+    let i = 0;
+    for (const [kind, group] of groups) {
+      rows.push(el("li", { className: "group", textContent: GROUPS[kind] || kind, role: "presentation" }));
+      for (const item of group) {
+        const at = i++;
+        const li = el("li", { className: at === selected ? "selected" : "" }, svgIcon(iconOf(item)),
+          el("span", { className: "label", textContent: shortLabel(item) }),
+          el("span", { className: "detail", textContent: item[2] }));
+        li.dataset.i = at;
+        li.addEventListener("mousemove", () => { if (selected !== at) { selected = at; mark(); } });
+        li.addEventListener("click", () => run(at));
+        rows.push(li);
+      }
+    }
+    list.replaceChildren(...rows);
     if (!shown.length) list.append(el("li", { className: "empty", textContent: "Nothing matches." }));
   }
 
   function mark() {
-    [...list.children].forEach((li, i) => li.classList.toggle("selected", i === selected));
-    list.children[selected]?.scrollIntoView({ block: "nearest" });
+    for (const li of list.querySelectorAll("li[data-i]")) li.classList.toggle("selected", Number(li.dataset.i) === selected);
+    list.querySelector(`li[data-i="${selected}"]`)?.scrollIntoView({ block: "nearest" });
   }
 
   function run(i) {
@@ -118,12 +131,21 @@ const palette = (() => {
     try { item[3](); } catch (error) { uiLog("warn", "palette-failed", { msg: String(error) }); }
   }
 
+  let release = null; // undoes the keyboard trap while open (trapDialog)
+
   function open() {
     if ($("#workspace").hidden) return; // not connected: nothing to reach
+    if (!box.hidden) { input.focus(); return; } // already open
+    // A dialog is already asking something: the palette would open under it and the
+    // dialog would take its keys. It waits for the answer.
+    if ([...document.querySelectorAll('[aria-modal="true"]')].some((n) => n.getClientRects().length)) return;
     if (!vm.latest("conversations")) { vm.follow({ conversations: true }); followed = true; }
     items = collect();
     input.value = "";
     selected = 0;
+    // Modal like Pier's other dialogs: Tab stays inside, Escape closes it from anywhere,
+    // and the focus goes back where it was (a terminal, most often).
+    release = trapDialog($(".palette-box", box), close);
     box.hidden = false;
     render();
     input.focus();
@@ -131,6 +153,8 @@ const palette = (() => {
 
   function close() {
     box.hidden = true;
+    release?.();
+    release = null;
     if (followed) {
       followed = false;
       vm.follow({ conversations: workspace.find("conversations")?.shown === true });

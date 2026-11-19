@@ -8,66 +8,96 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Icons: Lucide (ISC licence, lucide.dev), stroke 1.5. -->
+  <!-- Icons: Lucide (lucide.dev, ISC licence); files' types from Catppuccin VSCode Icons (MIT licence, (c) 2023 Catppuccin). -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="i-ft-bash" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 15.5c-.7 0-1.5-.8-1.5-1.5V5c0-.7.8-1.5 1.5-1.5h9c.7 0 1.5.8 1.5 1.5v9c0 .7-.8 1.5-1.5 1.5z"/><path d="m1.2 3.8l3.04-2.5S5.17.5 5.7.5h8.4c.66 0 1.4.73 1.4 1.4v7.73a2.7 2.7 0 0 1-.7 1.75l-2.68 3.51"/><path d="M6 8.75c0-.69-.54-1.25-1.2-1.25h-.6c-.66 0-1.2.56-1.2 1.25S3.54 10 4.2 10h.6c.66 0 1.2.56 1.2 1.25s-.54 1.25-1.2 1.25h-.6c-.66 0-1.2-.56-1.2-1.25M4.5 6.5v1m0 5v1"/></g></symbol><symbol id="i-ft-binary" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 1.5h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2"/><path d="M10.5 9.5h1v3.05M6 9.5h1c.28 0 .5.22.5.5v2a.5.5 0 0 1-.5.5H6a.5.5 0 0 1-.5-.5v-2c0-.28.22-.5.5-.5m4-6h1c.28 0 .5.22.5.5v2a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5V4c0-.28.22-.5.5-.5m-4.5 0h1v3.05"/></g></symbol><symbol id="i-ft-c" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M4.056 12.952a7.05 7.05 0 0 0 9.944 0l-1.79-1.783a4.513 4.513 0 0 1-6.364 0a4.47 4.47 0 0 1 0-6.338a4.513 4.513 0 0 1 6.364 0l.895-.891l.895-.892a7.05 7.05 0 0 0-9.944 0a6.98 6.98 0 0 0 0 9.904" clip-rule="evenodd"/></symbol><symbol id="i-ft-config" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.711" d="M7.997 9.694a1.726 1.695 0 1 0 0-3.39a1.726 1.695 0 0 0 0 3.39m3.021-6.78l3.021 5.085l-3.021 5.085H4.976L1.955 7.999l3.021-5.085z"/></symbol><symbol id="i-ft-cpp" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M2.556 12.952a7.05 7.05 0 0 0 9.944 0l-1.79-1.783a4.513 4.513 0 0 1-6.364 0a4.47 4.47 0 0 1 0-6.338a4.513 4.513 0 0 1 6.364 0l.895-.891l.895-.892a7.05 7.05 0 0 0-9.944 0a6.98 6.98 0 0 0 0 9.904" clip-rule="evenodd"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M7.5 6v4M5.514 8h3.999m3.973-2v4M11.5 8h4"/></symbol><symbol id="i-ft-css" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h8A2.5 2.5 0 0 1 14.5 4v8a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 12V4A2.5 2.5 0 0 1 4 1.5"/><path stroke-width=".814" d="M10.24 11.53c0 .58.438 1.038.96 1.035l.453-.004c.522-.003.949-.451.949-1.033c0-.58-.427-1.065-.95-1.065h-.451c-.523 0-.95-.486-.95-1.066s.427-1.038.95-1.038h.452c.522 0 .951.458.951 1.039M6.8 11.529c0 .58.438 1.04.96 1.036l.465-.004c.523-.003.936-.451.936-1.031s-.409-1.066-.931-1.066h-.47c-.522 0-.949-.485-.949-1.066c0-.58.427-1.037.95-1.037h.451c.523 0 .964.457.964 1.037M3.407 11.53c0 .58.438 1.052.96 1.052h.452c.522 0 .95-.457.95-1.038m.01-2.131c0-.58-.437-1.038-.96-1.038h-.451c-.523 0-.96.468-.96 1.05v2.118"/></g></symbol><symbol id="i-ft-csv" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M1.5 3.5c0-.54.48-1 1.08-1H6.5l1.54 1h5.38c.6 0 1.08.44 1.08.98l-.09 9.04c0 .54-.48.98-1.08.98H2.58c-.6 0-1.08-.44-1.08-.98zm2 4v4m3-4v4m3-4v4m3-4v4m-9 0h9m-9-2h9m-9-2h9"/></symbol><symbol id="i-ft-database" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M8 6.5c3.59 0 6.5-1.4 6.5-2.68S11.59 1.5 8 1.5S1.5 2.54 1.5 3.82S4.41 6.5 8 6.5M14.5 8c0 .83-1.24 1.79-3.25 2.2s-4.49.41-6.5 0S1.5 8.83 1.5 8m13 4.18c0 .83-1.24 1.6-3.25 2c-2.01.42-4.49.42-6.5 0c-2.01-.4-3.25-1.17-3.25-2m0-8.3v8.3m13-8.3v8.3"/></symbol><symbol id="i-ft-docker" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M.5 8.5H11l.75-.5a5.35 5.35 0 0 1 0-3.5c1 .6 1 1.88 1.74 2c.77-.09 1.23.01 2 .52c0 0-.97 1.77-2.5 1.98c-1.93 3.65-4.5 5.5-6.98 5.5C0 14.5.5 8.5.5 8.5m1 0v-2m0 0h8m-6 2v-4m0 0h4m-2-2h2m-2 6v-6m2 6v-6m2 6v-2"/></symbol><symbol id="i-ft-env" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M5.5 8.5V12m0-6.5V4m0 4.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3m5 3.5v-1.5m0-3V4m0 6.5a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3M4 1.5h8A2.5 2.5 0 0 1 14.5 4v8a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 12V4A2.5 2.5 0 0 1 4 1.5"/></symbol><symbol id="i-ft-file" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M13.5 6.5v6a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h4.01m-.01 0l5 5h-4a1 1 0 0 1-1-1z"/></symbol><symbol id="i-ft-folder" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5H12c.83 0 1.5.67 1.5 1.5v6c0 .83-.67 1.5-1.5 1.5H2A1.5 1.5 0 0 1 .5 12V3.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v1"/></symbol><symbol id="i-ft-folder-open" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m1.87 8l.7-2.74a1 1 0 0 1 .96-.76h10.94a1 1 0 0 1 .97 1.24l-1.75 7a1 1 0 0 1-.97.76H2A1.5 1.5 0 0 1 .5 12V3.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v1"/></symbol><symbol id="i-ft-git" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="M8.5 10.5a1 1 0 0 1-1 1a1 1 0 0 1-1-1a1 1 0 0 1 1-1a1 1 0 0 1 1 1m0-6a1 1 0 0 1-1 1a1 1 0 0 1-1-1a1 1 0 0 1 1-1a1 1 0 0 1 1 1m3 3a1 1 0 0 1-1 1a1 1 0 0 1-1-1a1 1 0 0 1 1-1a1 1 0 0 1 1 1m-4-2v4m-1-6l-1-1m4 4l-1-1"/><path stroke="currentColor" d="m9.06 1.06l5.88 5.88a1.5 1.5 0 0 1 0 2.12l-5.88 5.88a1.5 1.5 0 0 1-2.12 0L1.06 9.06a1.5 1.5 0 0 1 0-2.12l5.88-5.88a1.5 1.5 0 0 1 2.12 0"/></g></symbol><symbol id="i-ft-go" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m15.48 8.06l-4.85.48m4.85-.48a4.98 4.98 0 0 1-4.54 5.42a5 5 0 1 1 2.95-8.66l-1.7 1.84a2.5 2.5 0 0 0-4.18 2.06c.05.57.3 1.1.69 1.51c.25.27 1 .83 1.78.82c.8-.02 1.58-.25 2.07-.81c0 0 .8-.96.68-1.88M2.5 8.5l-2 .01m1.5 2h1.5m-2-3.99l2-.02"/></symbol><symbol id="i-ft-html" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="M1.5 1.5h13L13 13l-5 2l-5-2z"/><path stroke="currentColor" d="M11 4.5H5l.25 3h5.5l-.25 3l-2.5 1l-2.5-1l-.08-1"/></g></symbol><symbol id="i-ft-image" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="M11.5 6A1.5 1.5 0 0 1 10 7.5A1.5 1.5 0 0 1 8.5 6A1.5 1.5 0 0 1 10 4.5A1.5 1.5 0 0 1 11.5 6"/><path stroke="currentColor" d="M7.5 13.5L11 10c.5-.5 1.5-.5 2 0l1.5 1.5"/><path stroke="currentColor" d="m1.5 9.5l2-2C4 7 5 7 5.5 7.5l4 4"/><path stroke="currentColor" d="M3 2.5h10c.83 0 1.5.67 1.5 1.5v8c0 .83-.67 1.5-1.5 1.5H3A1.5 1.5 0 0 1 1.5 12V4c0-.83.67-1.5 1.5-1.5"/></g></symbol><symbol id="i-ft-java" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="M10.73 8.41c.57 3 1.59 5.83 2.77 7.09c-6.63-3.45-9.76-1.75-10.5 0c-.66-3.4-.54-5.74.09-7.78"/><path stroke="currentColor" d="M8.5 7c.63.34 1.82 1.07 2.24 1.41c-.54-2.9-.64-5.96-.74-7.91c-2.13.58-5.73 1.98-6.9 7.22c.52-.69 1.72-1.05 2.4-1.22"/><path stroke="currentColor" d="M5.5 7A1.5 1.5 0 0 0 7 8.5A1.5 1.5 0 0 0 8.5 7A1.5 1.5 0 0 0 7 5.5A1.5 1.5 0 0 0 5.5 7"/></g></symbol><symbol id="i-ft-javascript" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 11a1.5 1.5 0 0 0 3 0V7.5m5 1.25c0-.69-.537-1.25-1.2-1.25h-.6c-.663 0-1.2.56-1.2 1.25S10.037 10 10.7 10h.6c.663 0 1.2.56 1.2 1.25s-.537 1.25-1.2 1.25h-.6c-.663 0-1.2-.56-1.2-1.25"/><path d="M4 1.5h8c1.385 0 2.5 1.115 2.5 2.5v8c0 1.385-1.115 2.5-2.5 2.5H4A2.495 2.495 0 0 1 1.5 12V4c0-1.385 1.115-2.5 2.5-2.5"/></g></symbol><symbol id="i-ft-json" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M4.5 2.5H4c-.75 0-1.5.75-1.5 1.5v2c0 1.1-1 2-1.83 2c.83 0 1.83.9 1.83 2v2c0 .75.75 1.5 1.5 1.5h.5m7-11h.5c.75 0 1.5.75 1.5 1.5v2c0 1.1 1 2 1.83 2c-.83 0-1.83.9-1.83 2v2c0 .74-.75 1.5-1.5 1.5h-.5m-6.5-3a.5.5 0 1 0 0-1a.5.5 0 0 0 0 1m3 0a.5.5 0 1 0 0-1a.5.5 0 0 0 0 1m3 0a.5.5 0 1 0 0-1a.5.5 0 0 0 0 1"/></symbol><symbol id="i-ft-license" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M4.5 13.5h7M8.01 1v12.06M1.5 3.5h3l1.5-1h4l1.5 1h3M.5 10L3 4.48L5.5 10C4 11 2 11 .5 10m10 0L13 4.48L15.5 10c-1.5 1-3.5 1-5 0"/></symbol><symbol id="i-ft-lock" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.744" d="M12.36 7.104c.482 0 .872.39.872.872v5.23c0 .481-.39.871-.872.871H3.639a.87.87 0 0 1-.872-.871v-5.23c0-.482.39-.872.872-.872zm-6.977 0V4.488a2.617 2.617 0 0 1 5.234 0v2.616"/></symbol><symbol id="i-ft-log" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3.5h9v11h-9z"/><path d="M11.5 3.45V1.5h-9v11h1.95m3.05-5h3m-3 3h3"/></g></symbol><symbol id="i-ft-lua" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="M10.5 7A1.5 1.5 0 0 1 9 8.5A1.5 1.5 0 0 1 7.5 7A1.5 1.5 0 0 1 9 5.5A1.5 1.5 0 0 1 10.5 7"/><path stroke="currentColor" d="M7 2.5a6.5 6.5 0 1 0 0 13a6.5 6.5 0 0 0 0-13m7-2a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3"/></g></symbol><symbol id="i-ft-makefile" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="m9.24 8.47l-5.28 5.58c-.56.6-1.47.6-2.04 0a1.57 1.57 0 0 1 0-2.14L7.2 6.32"/><path stroke="currentColor" d="m13.74 8.03l-.86-.93a2.46 2.46 0 0 1-.64-1.68v-.65l-1.89-2.04A3.7 3.7 0 0 0 7.63 1.5H5.5l.64.61A4.72 4.72 0 0 1 7.5 5.57v1.16l1.46 1.5h1.71l1.57 1.42m-.74.85l3-3"/></g></symbol><symbol id="i-ft-markdown" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m9.25 8.25l2.25 2.25l2.25-2.25M3.5 11V5.5l2.04 3l1.96-3V11m4-.5V5M1.65 2.5h12.7c.59 0 1.15.49 1.15 1v9c0 .51-.56 1-1.15 1H1.65c-.59 0-1.15-.49-1.15-1V3.58c0-.5.56-1.08 1.15-1.08"/></symbol><symbol id="i-ft-pdf" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M2.8 14.34c1.81-1.25 3.02-3.16 3.91-5.5c.9-2.33 1.86-4.33 1.44-6.63c-.06-.36-.57-.73-.83-.7c-1.02.06-.95 1.21-.85 1.9c.24 1.71 1.56 3.7 2.84 5.56c1.27 1.87 2.32 2.16 3.78 2.26c.5.03 1.25-.14 1.37-.58c.77-2.8-9.02-.54-12.28 2.08c-.4.33-.86 1-.6 1.46c.2.36.87.4 1.23.15h0Z"/></symbol><symbol id="i-ft-php" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M.5 12.5v.74c0 .76.774 1.26 1.5 1.26c.938 0 1.5-.5 1.5-1.255V6c0-1.715 1.494-3.478 3.65-3.501c2.344 0 3.85 1.558 3.85 3c.166 2.99-1.422 4.137-3.504 5v4h8.002V9c.041-.635-.56-1.844-1.367-2.5c-.937-.692-2.073-.997-3.131-1m.5 9v-3M6 6.5a.5.5 0 1 0 0-1a.5.5 0 0 0 0 1"/></symbol><symbol id="i-ft-python" viewBox="0 0 16 16"><g fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="currentColor" d="M8.5 5.5h-3m6 0V3c0-.8-.7-1.5-1.5-1.5H7c-.8 0-1.5.7-1.5 1.5v2.5H3c-.8 0-1.5.7-1.5 1.5v2c0 .8.7 1.5 1.48 1.5"/><path stroke="currentColor" d="M10.5 10.5h-3m-3 0V13c0 .8.7 1.5 1.5 1.5h3c.8 0 1.5-.7 1.5-1.5v-2.5H13c.8 0 1.5-.7 1.5-1.5V7c0-.8-.7-1.5-1.48-1.5H11.5c0 1.5 0 2-1 2h-2"/><path stroke="currentColor" d="M2.98 10.5H4.5c0-1.5 0-2 1-2h2m0-5"/></g></symbol><symbol id="i-ft-ruby" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M1.5 9.06v2.5c.02.86.36 1.61.9 2.15c1.76 1.76 5.71.65 8.84-2.47c3.12-3.13 4.23-7.08 2.47-8.84a3.1 3.1 0 0 0-2.15-.9h-2.5M14.5 4l-.25 10.25L4 14.5m4.39-6.11c2.34-2.35 3.29-5.2 2.12-6.37S6.49 1.8 4.14 4.14C1.8 6.5.85 9.34 2.02 10.51s4.02.22 6.37-2.12M5.5 14.5l.25-3.75L11 11l-.25-5.25l3.75-.25"/></symbol><symbol id="i-ft-rust" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 9.5Q8 13.505.5 9.5l1-1l-1-2l2-.5V4.5h2l.5-2l1.5 1l1.5-2l1.5 2l1.5-1l.5 2h2V6l2 .5l-1 2z"/><path d="M6.5 7.5a1 1 0 0 1-1 1a1 1 0 0 1-1-1a1 1 0 0 1 1-1a1 1 0 0 1 1 1m5 0a1 1 0 0 1-1 1a1 1 0 0 1-1-1a1 1 0 0 1 1-1a1 1 0 0 1 1 1M4 11.02c-.67.37-1.5.98-1.5 2.23s1.22 1.22 2 1.25v-2M12 11c.67.37 1.5 1 1.5 2.25s-1.22 1.22-2 1.25v-2"/></g></symbol><symbol id="i-ft-svelte" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12.86 6.72s1.39-1.98.08-3.87C11.286.763 9.44 1.6 9.44 1.6S6.15 3.35 4.33 4.59c-1.4 1-2.24 2.26-1.03 4.37c1.22 2.1 4.58 1.21 4.58 1.21"/><path d="M3.14 9.28s-1.39 1.98-.08 3.87c1.31 1.9 3.5 1.24 3.5 1.24s3.29-1.74 5.11-2.98c1.4-1 2.24-2.26 1.03-4.37c-1.22-2.1-4.58-1.21-4.58-1.21M6.3 6.96l4.14-2.56m-4.92 7.25L9.66 9.1"/></g></symbol><symbol id="i-ft-svg" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m4.54 10l6.92-4m-6.92 4a1.5 1.5 0 1 0-2.6 1.5a1.5 1.5 0 0 0 2.6-1.5M8 4v8m0-8a1.5 1.5 0 1 0 0-3a1.5 1.5 0 0 0 0 3M4.54 6l6.92 4M4.54 6a1.5 1.5 0 1 0-2.6-1.5A1.5 1.5 0 0 0 4.54 6M8 12a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3m3.46-2a1.5 1.5 0 1 0 2.6 1.5a1.5 1.5 0 0 0-2.6-1.5m0-4a1.5 1.5 0 1 0 2.6-1.5a1.5 1.5 0 0 0-2.6 1.5"/></symbol><symbol id="i-ft-text" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 6.5v6a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h4.01"/><path d="m8.5 1.5l5 5h-4a1 1 0 0 1-1-1zm-3 10h5m-5-3h5m-5-3h1"/></g></symbol><symbol id="i-ft-toml" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M3.5 1.5h-2v13h2m9-13h2v13h-2m-8-11h7v3h-2v6h-3v-6h-2z"/></symbol><symbol id="i-ft-typescript" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h8A2.5 2.5 0 0 1 14.5 4v8a2.5 2.5 0 0 1-2.5 2.5H4A2.5 2.5 0 0 1 1.5 12V4A2.5 2.5 0 0 1 4 1.5"/><path d="M12.5 8.75c0-.69-.54-1.25-1.2-1.25h-.6c-.66 0-1.2.56-1.2 1.25S10.04 10 10.7 10h.6c.66 0 1.2.56 1.2 1.25s-.54 1.25-1.2 1.25h-.6c-.66 0-1.2-.56-1.2-1.25m-3-3.75v5M5 7.5h3"/></g></symbol><symbol id="i-ft-vue" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M1 1.5h5.44L8 4.56L9.56 1.5H15l-6.99 13z"/><path d="M12.05 1.73L8 9.28L3.95 1.73"/></g></symbol><symbol id="i-ft-xml" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5L1 8l3.5 3.5m7-7L15 8l-3.5 3.5M9.5 2l-3 12"/></symbol><symbol id="i-ft-yaml" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M2.5 1.5h3l3 4l3-4h3l-9 13h-3L7 8z"/></symbol><symbol id="i-ft-zip" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linejoin="round" d="M5.5 10v1m1-2v1m-1-2v1m1-2v1m-1-2v1m1-2v1m-1-2v1m0-3v1m1 0v1m7 2.5v6a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h4.01m-.01 0l5 5h-4a1 1 0 0 1-1-1z"/></symbol><symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></g></symbol><symbol id="i-database" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></g></symbol><symbol id="i-box" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></g></symbol><symbol id="i-rocket" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></g></symbol><symbol id="i-book-open" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></g></symbol><symbol id="i-code" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></g></symbol><symbol id="i-cpu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/><path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/></g></symbol><symbol id="i-cloud" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></g></symbol><symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></g></symbol><symbol id="i-zap" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></g></symbol><symbol id="i-heart" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></g></symbol><symbol id="i-star" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"/></g></symbol><symbol id="i-music" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></g></symbol><symbol id="i-image" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></g></symbol><symbol id="i-smartphone" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></g></symbol><symbol id="i-gamepad-2" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><line x1="6" x2="10" y1="11" y2="11"/><line x1="8" x2="8" y1="9" y2="13"/><line x1="15" x2="15.01" y1="12" y2="12"/><line x1="18" x2="18.01" y1="10" y2="10"/><path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.545-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.151A4 4 0 0 0 17.32 5z"/></g></symbol><symbol id="i-bot" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></g></symbol><symbol id="i-brain" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></g></symbol><symbol id="i-leaf" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></g></symbol><symbol id="i-coffee" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M10 2v2"/><path d="M14 2v2"/><path d="M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1"/><path d="M6 2v2"/></g></symbol><symbol id="i-house" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></g></symbol><symbol id="i-briefcase" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></g></symbol><symbol id="i-wrench" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></g></symbol><symbol id="i-layers" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></g></symbol><symbol id="i-graduation-cap" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></g></symbol><symbol id="i-camera" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></g></symbol><symbol id="i-puzzle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></g></symbol><symbol id="i-sparkles" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></g></symbol><symbol id="i-server" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/></g></symbol><symbol id="i-activity" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol><symbol id="i-circle-arrow-up" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m16 12l-4-4l-4 4m4 4V8"/></g></symbol><symbol id="i-flask-conical" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2M6.453 15h11.094M8.5 2h7"/></symbol><symbol id="i-folder-cog" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M10.3 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.98a2 2 0 0 1 1.69.9l.66 1.2A2 2 0 0 0 12 6h8a2 2 0 0 1 2 2v3.3m-7.695 8.23l.923-.382m0-2.296l-.923-.383m2.547-1.241l-.383-.923m.383 6.467l-.383.924m2.679-6.468l.383-.923m-.001 7.391l-.382-.924m1.624-3.92l.924-.383m-.924 2.679l.924.383"/><circle cx="18" cy="18" r="3"/></g></symbol><symbol id="i-git-branch" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/></g></symbol><symbol id="i-inbox" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/></g></symbol><symbol id="i-message-square" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"/></symbol><symbol id="i-scroll-text" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 12h-5m5-4h-5m9 9V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/></g></symbol><symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="m21 21l-4.34-4.34"/><circle cx="11" cy="11" r="8"/></g></symbol><symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0a2.34 2.34 0 0 0 3.319 1.915a2.34 2.34 0 0 1 2.33 4.033a2.34 2.34 0 0 0 0 3.831a2.34 2.34 0 0 1-2.33 4.033a2.34 2.34 0 0 0-3.319 1.915a2.34 2.34 0 0 1-4.659 0a2.34 2.34 0 0 0-3.32-1.915a2.34 2.34 0 0 1-2.33-4.033a2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></g></symbol><symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 6L9 17l-5-5"/></symbol><symbol id="i-chevron-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m9 18l6-6l-6-6"/></symbol><symbol id="i-circle-alert" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></g></symbol><symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></g></symbol><symbol id="i-ellipsis" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></g></symbol><symbol id="i-file-code" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5m-10 4.5L8 15l2 2.5m4-5l2 2.5l-2 2.5"/></g></symbol><symbol id="i-folder" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol><symbol id="i-pin" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4a1 1 0 0 1 1 1z"/></symbol><symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 12h14m-7-7v14"/></symbol><symbol id="i-terminal" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 19h8M4 17l6-6l-6-6"/></symbol><symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M2.062 12.348a1 1 0 0 1 0-.696a10.75 10.75 0 0 1 19.876 0a1 1 0 0 1 0 .696a10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></g></symbol><symbol id="i-eye-off" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575a1 1 0 0 1 0 .696a10.8 10.8 0 0 1-1.444 2.49m-6.41-.679a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151a1 1 0 0 1 0-.696a10.75 10.75 0 0 1 4.446-5.143M2 2l20 20"/></g></symbol><symbol id="i-file" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/></g></symbol><symbol id="i-file-text" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10 9H8m8 4H8m8 4H8"/></g></symbol><symbol id="i-refresh-cw" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M3 12a9 9 0 0 1 9-9a9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5m5 4a9 9 0 0 1-9 9a9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></g></symbol><symbol id="i-archive" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="20" height="5" x="1.5" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8m-10 4h4"/></g></symbol><symbol id="i-archive-restore" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="20" height="5" x="1.5" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2M20 8v11a2 2 0 0 1-2 2h-2m-7-6l3-3l3 3m-3-3v9"/></g></symbol><symbol id="i-arrow-left" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m12 19l-7-7l7-7m7 7H5"/></symbol><symbol id="i-at-sign" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></g></symbol><symbol id="i-wrap-text" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="m16 16l-2 2l2 2M3 12h15a3 3 0 1 1 0 6h-4M3 18h7M3 6h18"/></g></symbol><symbol id="i-minus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M5 12h14"/></symbol><symbol id="i-chevron-down" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m6 9l6 6l6-6"/></symbol><symbol id="i-copy" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="14" height="14" x="8" y="8" rx="1.5" ry="1.5"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></symbol><symbol id="i-external-link" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol><symbol id="i-git-compare" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7m-7 3H8a2 2 0 0 1-2-2V9"/></g></symbol><symbol id="i-history" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M3 12a9 9 0 1 0 9-9a9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5m4-1v5l4 2"/></g></symbol><symbol id="i-network" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="6" height="6" x="16" y="16" rx="1"/><rect width="6" height="6" x="1.5" y="16" rx="1"/><rect width="6" height="6" x="9" y="1.5" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3m-7-4V8"/></g></symbol><symbol id="i-palette" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 22a1 1 0 0 1 0-20a10 9 0 0 1 10 9a5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></g></symbol><symbol id="i-pencil" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497zM15 5l4 4"/></symbol><symbol id="i-play" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></symbol><symbol id="i-send" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11zm7.318-19.539l-10.94 10.939"/></symbol><symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" rx="1.5"/></symbol><symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 11v6m4-6v6m5-11v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol><symbol id="i-copy-plus" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 12v6m-3-3h6"/><rect width="14" height="14" x="8" y="8" rx="1.5" ry="1.5"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></g></symbol><symbol id="i-file-plus" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5M9 15h6m-3 3v-6"/></g></symbol><symbol id="i-folder-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 10v6m-3-3h6m5 7a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol><symbol id="i-folder-tree" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Zm0 11a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1ZM3 5a2 2 0 0 0 2 2h3"/><path d="M3 3v13a2 2 0 0 0 2 2h3"/></g></symbol><symbol id="i-gift" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 7v14m8-10v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8m3.5-4a1 1 0 0 1 0-5A4.8 8 0 0 1 12 7a4.8 8 0 0 1 4.5-5a1 1 0 0 1 0 5"/><rect width="18" height="4" x="3" y="7" rx="1"/></g></symbol><symbol id="i-panel-left" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="1.5"/><path d="M9 3v18"/></g></symbol><symbol id="i-panel-left-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="1.5"/><path d="M9 3v18m7-6l-3-3l3-3"/></g></symbol><symbol id="i-panel-bottom" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="1.5"/><path d="M3 15h18"/></g></symbol><symbol id="i-panel-right" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="1.5"/><path d="M15 3v18"/></g></symbol><symbol id="i-panel-right-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><rect width="18" height="18" x="3" y="3" rx="1.5"/><path d="M15 3v18M8 9l3 3l-3 3"/></g></symbol><symbol id="i-arrow-up" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m5 12l7-7l7 7m-7 7V5"/></symbol><symbol id="i-chevrons-up-down" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m7 15l5 5l5-5M7 9l5-5l5 5"/></symbol><symbol id="i-circle-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="m16 9l-5.5 5.5L8 12"/></g></symbol><symbol id="i-loader-circle" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol><!-- Logos of providers and forges: Simple Icons (CC0), Lobe Icons (MIT) for DeepSeek, OpenRouter, Groq, LM Studio, Together. --><symbol id="i-logo-anthropic" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z"/></g></symbol><symbol id="i-logo-openai" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/></g></symbol><symbol id="i-logo-google" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></g></symbol><symbol id="i-logo-mistral" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M17.143 3.429v3.428h-3.429v3.429h-3.428V6.857H6.857V3.43H3.43v13.714H0v3.428h10.286v-3.428H6.857v-3.429h3.429v3.429h3.429v-3.429h3.428v3.429h-3.428v3.428H24v-3.428h-3.43V3.429z"/></g></symbol><symbol id="i-logo-ollama" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M16.361 10.26a.894.894 0 0 0-.558.47l-.072.148.001.207c0 .193.004.217.059.353.076.193.152.312.291.448.24.238.51.3.872.205a.86.86 0 0 0 .517-.436.752.752 0 0 0 .08-.498c-.064-.453-.33-.782-.724-.897a1.06 1.06 0 0 0-.466 0zm-9.203.005c-.305.096-.533.32-.65.639a1.187 1.187 0 0 0-.06.52c.057.309.31.59.598.667.362.095.632.033.872-.205.14-.136.215-.255.291-.448.055-.136.059-.16.059-.353l.001-.207-.072-.148a.894.894 0 0 0-.565-.472 1.02 1.02 0 0 0-.474.007Zm4.184 2c-.131.071-.223.25-.195.383.031.143.157.288.353.407.105.063.112.072.117.136.004.038-.01.146-.029.243-.02.094-.036.194-.036.222.002.074.07.195.143.253.064.052.076.054.255.059.164.005.198.001.264-.03.169-.082.212-.234.15-.525-.052-.243-.042-.28.087-.355.137-.08.281-.219.324-.314a.365.365 0 0 0-.175-.48.394.394 0 0 0-.181-.033c-.126 0-.207.03-.355.124l-.085.053-.053-.032c-.219-.13-.259-.145-.391-.143a.396.396 0 0 0-.193.032zm.39-2.195c-.373.036-.475.05-.654.086-.291.06-.68.195-.951.328-.94.46-1.589 1.226-1.787 2.114-.04.176-.045.234-.045.53 0 .294.005.357.043.524.264 1.16 1.332 2.017 2.714 2.173.3.033 1.596.033 1.896 0 1.11-.125 2.064-.727 2.493-1.571.114-.226.169-.372.22-.602.039-.167.044-.23.044-.523 0-.297-.005-.355-.045-.531-.288-1.29-1.539-2.304-3.072-2.497a6.873 6.873 0 0 0-.855-.031zm.645.937a3.283 3.283 0 0 1 1.44.514c.223.148.537.458.671.662.166.251.26.508.303.82.02.143.01.251-.043.482-.08.345-.332.705-.672.957a3.115 3.115 0 0 1-.689.348c-.382.122-.632.144-1.525.138-.582-.006-.686-.01-.853-.042-.57-.107-1.022-.334-1.35-.68-.264-.28-.385-.535-.45-.946-.03-.192.025-.509.137-.776.136-.326.488-.73.836-.963.403-.269.934-.46 1.422-.512.187-.02.586-.02.773-.002zm-5.503-11a1.653 1.653 0 0 0-.683.298C5.617.74 5.173 1.666 4.985 2.819c-.07.436-.119 1.04-.119 1.503 0 .544.064 1.24.155 1.721.02.107.031.202.023.208a8.12 8.12 0 0 1-.187.152 5.324 5.324 0 0 0-.949 1.02 5.49 5.49 0 0 0-.94 2.339 6.625 6.625 0 0 0-.023 1.357c.091.78.325 1.438.727 2.04l.13.195-.037.064c-.269.452-.498 1.105-.605 1.732-.084.496-.095.629-.095 1.294 0 .67.009.803.088 1.266.095.555.288 1.143.503 1.534.071.128.243.393.264.407.007.003-.014.067-.046.141a7.405 7.405 0 0 0-.548 1.873c-.062.417-.071.552-.071.991 0 .56.031.832.148 1.279L3.42 24h1.478l-.05-.091c-.297-.552-.325-1.575-.068-2.597.117-.472.25-.819.498-1.296l.148-.29v-.177c0-.165-.003-.184-.057-.293a.915.915 0 0 0-.194-.25 1.74 1.74 0 0 1-.385-.543c-.424-.92-.506-2.286-.208-3.451.124-.486.329-.918.544-1.154a.787.787 0 0 0 .223-.531c0-.195-.07-.355-.224-.522a3.136 3.136 0 0 1-.817-1.729c-.14-.96.114-2.005.69-2.834.563-.814 1.353-1.336 2.237-1.475.199-.033.57-.028.776.01.226.04.367.028.512-.041.179-.085.268-.19.374-.431.093-.215.165-.333.36-.576.234-.29.46-.489.822-.729.413-.27.884-.467 1.352-.561.17-.035.25-.04.569-.04.319 0 .398.005.569.04a4.07 4.07 0 0 1 1.914.997c.117.109.398.457.488.602.034.057.095.177.132.267.105.241.195.346.374.43.14.068.286.082.503.045.343-.058.607-.053.943.016 1.144.23 2.14 1.173 2.581 2.437.385 1.108.276 2.267-.296 3.153-.097.15-.193.27-.333.419-.301.322-.301.722-.001 1.053.493.539.801 1.866.708 3.036-.062.772-.26 1.463-.533 1.854a2.096 2.096 0 0 1-.224.258.916.916 0 0 0-.194.25c-.054.109-.057.128-.057.293v.178l.148.29c.248.476.38.823.498 1.295.253 1.008.231 2.01-.059 2.581a.845.845 0 0 0-.044.098c0 .006.329.009.732.009h.73l.02-.074.036-.134c.019-.076.057-.3.088-.516.029-.217.029-1.016 0-1.258-.11-.875-.295-1.57-.597-2.226-.032-.074-.053-.138-.046-.141.008-.005.057-.074.108-.152.376-.569.607-1.284.724-2.228.031-.26.031-1.378 0-1.628-.083-.645-.182-1.082-.348-1.525a6.083 6.083 0 0 0-.329-.7l-.038-.064.131-.194c.402-.604.636-1.262.727-2.04a6.625 6.625 0 0 0-.024-1.358 5.512 5.512 0 0 0-.939-2.339 5.325 5.325 0 0 0-.95-1.02 8.097 8.097 0 0 1-.186-.152.692.692 0 0 1 .023-.208c.208-1.087.201-2.443-.017-3.503-.19-.924-.535-1.658-.98-2.082-.354-.338-.716-.482-1.15-.455-.996.059-1.8 1.205-2.116 3.01a6.805 6.805 0 0 0-.097.726c0 .036-.007.066-.015.066a.96.96 0 0 1-.149-.078A4.857 4.857 0 0 0 12 3.03c-.832 0-1.687.243-2.456.698a.958.958 0 0 1-.148.078c-.008 0-.015-.03-.015-.066a6.71 6.71 0 0 0-.097-.725C8.997 1.392 8.337.319 7.46.048a2.096 2.096 0 0 0-.585-.041Zm.293 1.402c.248.197.523.759.682 1.388.03.113.06.244.069.292.007.047.026.152.041.233.067.365.098.76.102 1.24l.002.475-.12.175-.118.178h-.278c-.324 0-.646.041-.954.124l-.238.06c-.033.007-.038-.003-.057-.144a8.438 8.438 0 0 1 .016-2.323c.124-.788.413-1.501.696-1.711.067-.05.079-.049.157.013zm9.825-.012c.17.126.358.46.498.888.28.854.36 2.028.212 3.145-.019.14-.024.151-.057.144l-.238-.06a3.693 3.693 0 0 0-.954-.124h-.278l-.119-.178-.119-.175.002-.474c.004-.669.066-1.19.214-1.772.157-.623.434-1.185.68-1.382.078-.062.09-.063.159-.012z"/></g></symbol><symbol id="i-logo-gitea" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M4.209 4.603c-.247 0-.525.02-.84.088-.333.07-1.28.283-2.054 1.027C-.403 7.25.035 9.685.089 10.052c.065.446.263 1.687 1.21 2.768 1.749 2.141 5.513 2.092 5.513 2.092s.462 1.103 1.168 2.119c.955 1.263 1.936 2.248 2.89 2.367 2.406 0 7.212-.004 7.212-.004s.458.004 1.08-.394c.535-.324 1.013-.893 1.013-.893s.492-.527 1.18-1.73c.21-.37.385-.729.538-1.068 0 0 2.107-4.471 2.107-8.823-.042-1.318-.367-1.55-.443-1.627-.156-.156-.366-.153-.366-.153s-4.475.252-6.792.306c-.508.011-1.012.023-1.512.027v4.474l-.634-.301c0-1.39-.004-4.17-.004-4.17-1.107.016-3.405-.084-3.405-.084s-5.399-.27-5.987-.324c-.187-.011-.401-.032-.648-.032zm.354 1.832h.111s.271 2.269.6 3.597C5.549 11.147 6.22 13 6.22 13s-.996-.119-1.641-.348c-.99-.324-1.409-.714-1.409-.714s-.73-.511-1.096-1.52C1.444 8.73 2.021 7.7 2.021 7.7s.32-.859 1.47-1.145c.395-.106.863-.12 1.072-.12zm8.33 2.554c.26.003.509.127.509.127l.868.422-.529 1.075a.686.686 0 0 0-.614.359.685.685 0 0 0 .072.756l-.939 1.924a.69.69 0 0 0-.66.527.687.687 0 0 0 .347.763.686.686 0 0 0 .867-.206.688.688 0 0 0-.069-.882l.916-1.874a.667.667 0 0 0 .237-.02.657.657 0 0 0 .271-.137 8.826 8.826 0 0 1 1.016.512.761.761 0 0 1 .286.282c.073.21-.073.569-.073.569-.087.29-.702 1.55-.702 1.55a.692.692 0 0 0-.676.477.681.681 0 1 0 1.157-.252c.073-.141.141-.282.214-.431.19-.397.515-1.16.515-1.16.035-.066.218-.394.103-.814-.095-.435-.48-.638-.48-.638-.467-.301-1.116-.58-1.116-.58s0-.156-.042-.27a.688.688 0 0 0-.148-.241l.516-1.062 2.89 1.401s.48.218.583.619c.073.282-.019.534-.069.657-.24.587-2.1 4.317-2.1 4.317s-.232.554-.748.588a1.065 1.065 0 0 1-.393-.045l-.202-.08-4.31-2.1s-.417-.218-.49-.596c-.083-.31.104-.691.104-.691l2.073-4.272s.183-.37.466-.497a.855.855 0 0 1 .35-.077z"/></g></symbol><symbol id="i-logo-forgejo" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M16.7773 0c1.6018 0 2.9004 1.2986 2.9004 2.9005s-1.2986 2.9004-2.9004 2.9004c-1.0854 0-2.0315-.596-2.5288-1.4787H12.91c-2.3322 0-4.2272 1.8718-4.2649 4.195l-.0007 2.1175a7.0759 7.0759 0 0 1 4.148-1.4205l.1176-.001 1.3385.0002c.4973-.8827 1.4434-1.4788 2.5288-1.4788 1.6018 0 2.9004 1.2986 2.9004 2.9005s-1.2986 2.9004-2.9004 2.9004c-1.0854 0-2.0315-.596-2.5288-1.4787H12.91c-2.3322 0-4.2272 1.8718-4.2649 4.195l-.0007 2.319c.8827.4973 1.4788 1.4434 1.4788 2.5287 0 1.602-1.2986 2.9005-2.9005 2.9005-1.6018 0-2.9004-1.2986-2.9004-2.9005 0-1.0853.596-2.0314 1.4788-2.5287l-.0002-9.9831c0-3.887 3.1195-7.0453 6.9915-7.108l.1176-.001h1.3385C14.7458.5962 15.692 0 16.7773 0ZM7.2227 19.9052c-.6596 0-1.1943.5347-1.1943 1.1943s.5347 1.1943 1.1943 1.1943 1.1944-.5347 1.1944-1.1943-.5348-1.1943-1.1944-1.1943Zm9.5546-10.4644c-.6596 0-1.1944.5347-1.1944 1.1943s.5348 1.1943 1.1944 1.1943c.6596 0 1.1943-.5347 1.1943-1.1943s-.5347-1.1943-1.1943-1.1943Zm0-7.7346c-.6596 0-1.1944.5347-1.1944 1.1943s.5348 1.1943 1.1944 1.1943c.6596 0 1.1943-.5347 1.1943-1.1943s-.5347-1.1943-1.1943-1.1943Z"/></g></symbol><symbol id="i-logo-github" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></g></symbol><symbol id="i-logo-gitlab" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"/></g></symbol><symbol id="i-logo-deepseek" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.156-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.093.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.217-.329.14a5.526 5.526 0 01-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 00-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.093-.432-.779-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 01-.465.137 9.597 9.597 0 00-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-1.004-1.682-.595-2.113-.926 1.096-1.296 2.746-2.642 3.392-7.003.05-.347.007-.565 0-.845-.004-.17.035-.237.23-.256a4.173 4.173 0 001.545-.475c1.396-.763 1.96-2.015 2.093-3.517.02-.23-.004-.467-.247-.588zM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.739.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.167-1.361-.802-2.5-1.86-3.301-3.307-.774-1.393-1.224-2.887-1.298-4.482-.02-.386.093-.522.477-.592a4.696 4.696 0 011.529-.039c2.132.312 3.946 1.265 5.468 2.774.868.86 1.525 1.887 2.202 2.891.72 1.066 1.494 2.082 2.48 2.914.348.292.625.514.891.677-.802.09-2.14.11-3.054-.614zm1-6.44a.306.306 0 01.415-.287.302.302 0 01.2.288.306.306 0 01-.31.307.303.303 0 01-.304-.308zm3.11 1.596c-.2.081-.399.151-.59.16a1.245 1.245 0 01-.798-.254c-.274-.23-.47-.358-.552-.758a1.73 1.73 0 01.016-.588c.07-.327-.008-.537-.239-.727-.187-.156-.426-.199-.688-.199a.559.559 0 01-.254-.078c-.11-.054-.2-.19-.114-.358.028-.054.16-.186.192-.21.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.391.451.462.576.685.914.176.265.336.537.445.848.067.195-.019.354-.25.452z"></path></g></symbol><symbol id="i-logo-openrouter" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M16.804 1.957l7.22 4.105v.087L16.73 10.21l.017-2.117-.821-.03c-1.059-.028-1.611.002-2.268.11-1.064.175-2.038.577-3.147 1.352L8.345 11.03c-.284.195-.495.336-.68.455l-.515.322-.397.234.385.23.53.338c.476.314 1.17.796 2.701 1.866 1.11.775 2.083 1.177 3.147 1.352l.3.045c.694.091 1.375.094 2.825.033l.022-2.159 7.22 4.105v.087L16.589 22l.014-1.862-.635.022c-1.386.042-2.137.002-3.138-.162-1.694-.28-3.26-.926-4.881-2.059l-2.158-1.5a21.997 21.997 0 00-.755-.498l-.467-.28a55.927 55.927 0 00-.76-.43C2.908 14.73.563 14.116 0 14.116V9.888l.14.004c.564-.007 2.91-.622 3.809-1.124l1.016-.58.438-.274c.428-.28 1.072-.726 2.686-1.853 1.621-1.133 3.186-1.78 4.881-2.059 1.152-.19 1.974-.213 3.814-.138l.02-1.907z"></path></g></symbol><symbol id="i-logo-groq" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M12.036 2c-3.853-.035-7 3-7.036 6.781-.035 3.782 3.055 6.872 6.908 6.907h2.42v-2.566h-2.292c-2.407.028-4.38-1.866-4.408-4.23-.029-2.362 1.901-4.298 4.308-4.326h.1c2.407 0 4.358 1.915 4.365 4.278v6.305c0 2.342-1.944 4.25-4.323 4.279a4.375 4.375 0 01-3.033-1.252l-1.851 1.818A7 7 0 0012.029 22h.092c3.803-.056 6.858-3.083 6.879-6.816v-6.5C18.907 4.963 15.817 2 12.036 2z"></path></g></symbol><symbol id="i-logo-lmstudio" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M2.84 2a1.273 1.273 0 100 2.547h14.107a1.273 1.273 0 100-2.547H2.84zM7.935 5.33a1.273 1.273 0 000 2.548H22.04a1.274 1.274 0 000-2.547H7.935zM3.624 9.935c0-.704.57-1.274 1.274-1.274h14.106a1.274 1.274 0 010 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM1.273 12.188a1.273 1.273 0 100 2.547H15.38a1.274 1.274 0 000-2.547H1.273zM3.624 16.792c0-.704.57-1.274 1.274-1.274h14.106a1.273 1.273 0 110 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM13.029 18.849a1.273 1.273 0 100 2.547h9.698a1.273 1.273 0 100-2.547h-9.698z" fill-opacity=".3"></path><path d="M2.84 2a1.273 1.273 0 100 2.547h10.287a1.274 1.274 0 000-2.547H2.84zM7.935 5.33a1.273 1.273 0 000 2.548H18.22a1.274 1.274 0 000-2.547H7.935zM3.624 9.935c0-.704.57-1.274 1.274-1.274h10.286a1.273 1.273 0 010 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM1.273 12.188a1.273 1.273 0 100 2.547H11.56a1.274 1.274 0 000-2.547H1.273zM3.624 16.792c0-.704.57-1.274 1.274-1.274h10.286a1.273 1.273 0 110 2.547H4.898c-.703 0-1.274-.57-1.274-1.273zM13.029 18.849a1.273 1.273 0 100 2.547h5.78a1.273 1.273 0 100-2.547h-5.78z"></path></g></symbol><symbol id="i-logo-together" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M17.385 11.23a4.615 4.615 0 100-9.23 4.615 4.615 0 000 9.23zm0 10.77a4.615 4.615 0 100-9.23 4.615 4.615 0 000 9.23zm-10.77 0a4.615 4.615 0 100-9.23 4.615 4.615 0 000 9.23z" opacity=".2"></path><circle cx="6.615" cy="6.615" r="4.615"></circle></g></symbol><symbol id="i-bell" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></g></symbol><symbol id="i-info" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></g></symbol><symbol id="i-sliders-horizontal" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 5H3m9 14H3M14 3v4m2 10v4m5-9h-9m9 7h-5m5-14h-7m-6 5v4m0-2H3"/></symbol><symbol id="i-square-pen" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></g></symbol><symbol id="i-undo-2" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></g></symbol><symbol id="i-x" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18 6L6 18M6 6l12 12"/></symbol><symbol id="i-github" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5c.08-1.25-.27-2.48-1-3.5c.28-1.15.28-2.35 0-3.5c0 0-1 0-3 1.5c-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5c-.39.49-.68 1.050-.85 1.65S8.93 17.38 9 18v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></g></symbol><symbol id="i-gitlab" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m22 13.29l-3.33-10a.4.4 0 0 0-.14-.18a.38.38 0 0 0-.22-.11a.4.4 0 0 0-.23.07a.4.4 0 0 0-.14.18l-2.26 6.67H8.32L6.1 3.26a.4.4 0 0 0-.1-.18a.38.38 0 0 0-.26-.08a.4.4 0 0 0-.23.07a.4.4 0 0 0-.14.18L2 13.29a.74.74 0 0 0 .27.83L12 21l9.69-6.88a.71.71 0 0 0 .31-.83"/></symbol><symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M12 3v12m5-7l-5-5l-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></g></symbol><symbol id="i-paperclip" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></symbol></svg>
+  <!-- Not connected: the name, the connection, an update. Once connected, the rail and the
+       docks' own bars take over (and the window moves by them). -->
   <header id="topbar">
     <span class="logo">Pier</span>
-    <button id="status" class="link dim" title="The connection, the picker on the VM: Settings > Connection" disabled>not connected</button>
-    <span id="target" class="dim" hidden></span>
+    <button id="status" class="link dim" aria-live="polite" title="The connection, the picker on the VM: Settings > Overview" disabled>not connected</button>
     <nav>
-      <button id="btn-update" class="link" hidden title="A new Pier is out: see what changed and install it"></button>
-      <button id="btn-palette" class="link" hidden title="Go anywhere: tabs, projects, conversations, settings (Ctrl+Shift+K)">search <kbd>Ctrl Shift K</kbd></button>
-      <button id="btn-waiting" class="link" hidden title="Pi's requests waiting for your approval, all in one list"></button>
-      <button id="btn-handoff" class="link" hidden title="Hand off: your shares become copies on the VM, so Pi keeps working with this computer off">keep working without this PC…</button>
-      <button id="btn-prefs" class="link" hidden>settings</button>
-      <button id="btn-disconnect" class="link" hidden>disconnect</button>
+      <button id="btn-update" class="link" data-update hidden title="A new Pier is out: see what changed and install it"></button>
     </nav>
-    <!-- Windows: Pier draws its own title bar (tauri.windows.conf.json); see main.js. -->
-    <div id="window-buttons" hidden>
-      <button id="win-min" title="Minimize" aria-label="Minimize"></button>
-      <button id="win-max" title="Maximize" aria-label="Maximize"></button>
-      <button id="win-close" title="Close" aria-label="Close"></button>
-    </div>
   </header>
+  <!-- Windows: Pier draws its own title bar (tauri.windows.conf.json), in the top right corner
+       over whatever bar is there; see main.js. -->
+  <div id="window-buttons" hidden>
+    <button id="win-min" title="Minimize" aria-label="Minimize"></button>
+    <button id="win-max" title="Maximize" aria-label="Maximize"></button>
+    <button id="win-close" title="Close" aria-label="Close"></button>
+  </div>
 
   <!-- The palette (Ctrl+Shift+K): anything, by a few letters. -->
   <div id="palette" class="overlay palette" hidden>
     <div class="palette-box" role="dialog" aria-label="Go to">
-      <input id="palette-input" type="text" placeholder="a tab, a project, a conversation, a setting…" spellcheck="false" autocomplete="off">
+      <label class="palette-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="palette-input" type="text" aria-label="Go to" placeholder="Search tabs, projects, conversations, settings" spellcheck="false" autocomplete="off"></label>
       <ul id="palette-list"></ul>
-      <p class="hint">↑ ↓ to choose, Enter to go, Esc to close. Ctrl+Shift+K, from anywhere.</p>
+      <p class="palette-keys" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> choose</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span><span class="gap"></span><span><kbd>Ctrl+Shift+K</kbd> from anywhere</span></p>
     </div>
   </div>
 
   <!-- Connected: three docks; any tab can live in any of them. -->
   <main id="workspace" hidden>
+    <!-- The rail: what the top bar held, as icons; the connection at its foot when the left
+         side is closed (otherwise at the foot of the left side). -->
+    <nav id="rail" aria-label="Pier">
+      <button id="rail-new" class="rail-btn" title="New conversation" aria-label="New conversation"><svg class="i" aria-hidden="true"><use href="#i-square-pen"/></svg></button>
+      <button id="btn-conversations" class="rail-btn" aria-pressed="true" title="Conversations" aria-label="Conversations"><svg class="i" aria-hidden="true"><use href="#i-message-square"/></svg></button>
+      <button id="btn-palette" class="rail-btn" hidden title="Search: tabs, projects, conversations, settings (Ctrl+Shift+K)" aria-label="Search, Ctrl+Shift+K"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg></button>
+      <button id="btn-waiting" class="rail-btn" title="Pi's requests waiting for your approval" aria-label="Waiting for you"><svg class="i" aria-hidden="true"><use href="#i-inbox"/></svg><span class="badge" aria-hidden="true" hidden></span></button>
+      <!-- A narrow window: one square per project; a click opens its conversations over the middle. -->
+      <div id="rail-projects" role="group" aria-label="Projects"></div>
+      <span class="rail-gap"></span>
+      <button id="rail-update" class="rail-btn" data-update hidden><svg class="i" aria-hidden="true"><use href="#i-circle-arrow-up"/></svg></button>
+      <button id="btn-prefs" class="rail-btn" hidden title="Settings" aria-label="Settings"><svg class="i" aria-hidden="true"><use href="#i-settings"/></svg></button>
+    </nav>
     <aside class="dock side" id="dock-left" data-dock="left">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab">+</button>
-        <button class="icon collapse" title="Collapse"></button>
       </div>
       <div class="panes"></div>
+      <div class="dock-foot"><button id="status-foot" class="status-line" data-state="lost"><span class="bars" aria-hidden="true"><i></i><i></i><i></i></span><span></span></button></div>
     </aside>
     <div class="splitter" data-dock="left" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
     <section class="dock" id="dock-center" data-dock="center">
-      <div class="dock-head">
-        <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab">+</button>
+      <!-- The middle's header: what is shown, its project, the two sides' toggles. -->
+      <div class="center-head">
+        <button id="toggle-left" class="icon-btn" aria-pressed="true" title="Hide the conversations" aria-label="Hide the conversations"><svg class="i" aria-hidden="true"><use href="#i-panel-left-close"/></svg></button>
+        <span id="head-title" class="head-title"></span>
+        <span id="target" class="dim" hidden></span>
+        <span class="head-gap"></span>
+        <button id="toggle-right" class="icon-btn" aria-pressed="true" title="Hide Activity" aria-label="Hide Activity"><svg class="i" aria-hidden="true"><use href="#i-panel-right-close"/></svg></button>
       </div>
-      <div class="panes"></div>
+      <!-- The middle's panes (workspace.js): a group of tabs each, side by side or one above
+           the other, as tmux's; one group until a tab is dragged to a pane's edge or Ctrl+\. -->
+      <div class="center-grid">
+        <div class="pane-group" data-dock="center">
+          <div class="dock-head">
+            <div class="tabs" role="tablist"></div>
+            <button class="icon add" title="Add a tab" aria-label="Add a tab" aria-haspopup="menu"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
+          </div>
+          <div class="panes"></div>
+        </div>
+      </div>
     </section>
     <div class="splitter" data-dock="right" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
     <aside class="dock side" id="dock-right" data-dock="right">
       <div class="dock-head">
         <div class="tabs" role="tablist"></div>
-        <button class="icon add" title="Add a tab">+</button>
-        <button class="icon collapse" title="Collapse"></button>
       </div>
       <div class="panes"></div>
     </aside>
   </main>
 
   <!-- Not connected: where the VM is, the password, the fingerprint. -->
-  <section id="connect">
+  <!-- Not connected, a VM known: a card at the bottom left (the proposals' 2C). -->
+  <div id="connect-card" class="connect-card" role="status" hidden>
+    <div><b>Not connected</b><span id="connect-card-target"></span></div>
+    <div class="btns"><button id="connect-card-go" type="button">Connect</button><button id="connect-card-edit" class="secondary" type="button">Change…</button></div>
+  </div>
+  <button id="connect-close" class="icon-btn connect-close" type="button" title="Close: Pier stays open, not connected" aria-label="Close"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+  <section id="connect" hidden>
     <div id="view-setup" hidden>
       <h1>Connect to your VM</h1>
       <form id="setup-form" method="dialog" autocomplete="off">
@@ -123,13 +153,18 @@
     </div>
 
     <div id="view-trust" hidden>
-      <h1 id="trust-title">First contact</h1>
-      <p id="trust-text"></p>
-      <pre id="trust-fingerprint"></pre>
-      <p class="hint">To check it, on the machine itself:<br><code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code></p>
-      <div class="actions">
-        <button id="btn-trust">Trust it</button>
+      <!-- The proposals' D: the key said in words, the fingerprint and its check folded. -->
+      <div class="trust-head"><span class="lc-icon"><svg class="i" aria-hidden="true"><use href="#i-server"/></svg></span><h1 id="trust-title">Is this your VM?</h1><p id="trust-text"></p></div>
+      <div class="trust-key"><div id="trust-art" class="trust-art" aria-hidden="true"></div><p id="trust-words" class="trust-words"></p></div>
+      <p id="trust-words-note" class="trust-words-note">Its key, as a picture and in words: the same each time you connect to this VM. If they change, it is not the same machine.</p>
+      <details id="trust-more" class="trust-more"><summary>Show the full fingerprint</summary>
+      <div class="trust-print"><span id="trust-algo" class="trust-algo"></span><code id="trust-fingerprint"></code><button id="trust-copy" type="button" class="icon-btn" title="Copy the fingerprint" aria-label="Copy the fingerprint"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+      <p class="hint trust-how">To compare, run this on the machine itself:</p>
+      <div class="trust-print trust-cmd"><code id="trust-command">ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code><button id="trust-copy-command" type="button" class="icon-btn" title="Copy the command" aria-label="Copy the command"><svg class="i" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+      </details>
+      <div class="actions trust-actions">
         <button id="btn-untrust" class="secondary">Cancel</button>
+        <button id="btn-trust">Trust it</button>
       </div>
     </div>
   </section>
@@ -138,74 +173,63 @@
        The connection itself is changed from the login screen. -->
   <section id="prefs" class="settings" hidden aria-labelledby="prefs-title">
     <nav class="settings-nav" aria-label="Settings">
-      <button id="prefs-close" class="link back" title="Back to the terminals and panels (Esc)">‹ Back to Pier</button>
-      <input id="prefs-search" type="search" placeholder="search settings" aria-label="Search settings" spellcheck="false" autocomplete="off">
+      <button id="prefs-close" class="link back" title="Back to the terminals and panels (Esc)"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to Pier</button>
+      <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="prefs-search" type="search" placeholder="Search settings" aria-label="Search settings" aria-keyshortcuts="/" spellcheck="false" autocomplete="off"><kbd class="key" aria-hidden="true">/</kbd></label>
       <div class="prefs-tabs" role="tablist" aria-orientation="vertical">
-        <p class="settings-group">Pi</p>
-        <button role="tab" data-page="agents" title="Models: Pi's default, the orchestrator, workers, helpers">Agents</button>
-        <button role="tab" data-page="network" title="The sandbox, where Pi may connect">Network &amp; sandbox</button>
-        <button role="tab" data-page="extensions" title="Pi's version, its packages, skills, extensions, prompt templates, the gallery">Extensions &amp; skills</button>
-        <button role="tab" data-page="git" title="Your accounts on GitHub, GitLab, Gitea: Pi pushes and opens pull requests through them">Git &amp; forges</button>
-        <button role="tab" data-page="labs" title="Disposable machines where Pi may do anything">Labs</button>
         <p class="settings-group">Pier</p>
-        <button role="tab" data-page="appearance" title="Theme, fonts, where the panels go">Appearance</button>
-        <button role="tab" data-page="terminals">Terminals</button>
-        <button role="tab" data-page="behavior" title="What Pier does by itself: shares, notifications, the shortcut">Behavior</button>
-        <p class="settings-group">System</p>
-        <button role="tab" data-page="connection" title="The VM, the picker on it">Connection</button>
-        <button role="tab" data-page="updates">Updates</button>
-        <button role="tab" data-page="diagnostics">Diagnostics</button>
+        <button role="tab" data-page="general" data-lede="How Pier's window is laid out and behaves."><svg class="i" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>General</span></button>
+        <button role="tab" data-page="appearance" data-lede="Theme, gradient, fonts and the window."><svg class="i" aria-hidden="true"><use href="#i-palette"/></svg><span>Appearance</span></button>
+        <button role="tab" data-page="conversations" data-lede="What the conversation view shows and does."><svg class="i" aria-hidden="true"><use href="#i-message-square"/></svg><span>Conversations</span></button>
+        <button role="tab" data-page="notifications" data-lede="When Pier tells you something, and how."><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></button>
+        <p class="settings-group">Pi</p>
+        <button role="tab" data-page="models" data-lede="Pi's default, and which models the pickers show."><svg class="i" aria-hidden="true"><use href="#i-brain"/></svg><span>Models</span></button>
+        <button role="tab" data-page="providers" data-lede="Where Pi's models come from: their address and key, kept on the VM."><svg class="i" aria-hidden="true"><use href="#i-cloud"/></svg><span>Providers</span></button>
+        <button role="tab" data-page="agents" data-lede="Several Pis at once: workers, helpers, an orchestrator."><svg class="i" aria-hidden="true"><use href="#i-bot"/></svg><span>Agents</span></button>
+        <button role="tab" data-page="extensions" data-lede="Skills, extensions, prompts and packages Pi loads in every project."><svg class="i" aria-hidden="true"><use href="#i-puzzle"/></svg><span>Extensions</span></button>
+        <button role="tab" data-page="sandbox" data-lede="What Pi may touch on the VM."><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg><span>Sandbox</span></button>
+        <button role="tab" data-page="network" data-lede="Where Pi may connect, from its sandbox."><svg class="i" aria-hidden="true"><use href="#i-globe"/></svg><span>Network</span></button>
+        <button role="tab" data-page="git" data-lede="Your accounts: Pi pushes and opens pull requests through them."><svg class="i" aria-hidden="true"><use href="#i-git-branch"/></svg><span>Git &amp; forges</span></button>
+        <p class="settings-group">The VM</p>
+        <button role="tab" data-page="overview" data-lede="The VM Pier is connected to, and the picker on it."><svg class="i" aria-hidden="true"><use href="#i-server"/></svg><span>Overview</span></button>
+        <button role="tab" data-page="projects" data-lede="Each folder of the VM where Pi works."><svg class="i" aria-hidden="true"><use href="#i-folder"/></svg><span>Projects</span></button>
+        <button role="tab" data-page="labs" data-lede="Throwaway machines where Pi may do anything."><svg class="i" aria-hidden="true"><use href="#i-flask-conical"/></svg><span>Labs</span></button>
+        <button role="tab" data-page="diagnostics" data-lede="Logs and a report, when something goes wrong."><svg class="i" aria-hidden="true"><use href="#i-activity"/></svg><span>Diagnostics</span></button>
+        <p class="settings-group">More</p>
+        <button role="tab" data-page="terminals" data-lede="Pi in its own screen, in tmux, as before 2.0."><svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg><span>Terminals</span></button>
+        <button role="tab" data-page="about" data-lede="Pier's version and its updates."><svg class="i" aria-hidden="true"><use href="#i-info"/></svg><span>About</span></button>
       </div>
     </nav>
 
     <div class="prefs-pages">
-      <h1 id="prefs-title">Settings</h1>
+      <div class="prefs-head"><div><h1 id="prefs-title">Settings</h1><p id="prefs-lede"></p></div><span id="prefs-act"></span></div>
       <p id="prefs-nothing" class="dim" hidden>No setting matches.</p>
+      <section class="prefs-page" data-page="models" data-title="Models" role="tabpanel" hidden></section>
+      <section class="prefs-page" data-page="providers" data-title="Providers" role="tabpanel" hidden></section>
       <section class="prefs-page" data-page="agents" data-title="Agents" role="tabpanel" hidden></section>
-      <section class="prefs-page" data-page="network" data-title="Network &amp; sandbox" role="tabpanel" hidden></section>
-      <section class="prefs-page" data-page="extensions" data-title="Extensions &amp; skills" role="tabpanel" hidden>
-        <div class="toolbar">
-          <label for="ext-project">Project</label>
-          <select id="ext-project" title="Its own skills and packages are shown with yours"></select>
+      <section class="prefs-page" data-page="sandbox" data-title="Sandbox" role="tabpanel" hidden></section>
+      <section class="prefs-page" data-page="network" data-title="Network" role="tabpanel" hidden></section>
+      <section class="prefs-page needs-vm" data-page="extensions" data-title="Extensions &amp; skills" role="tabpanel" hidden>
+        <!-- As the mock-up's option A: what to show, then the project whose own are listed with yours. -->
+        <button type="button" id="ext-back" class="link back-to" hidden></button>
+        <div id="ext-title" class="project-title" hidden></div>
+        <div class="toolbar ext-bar">
+          <span id="ext-tabs" class="seg" role="tablist" aria-label="What to show"></span>
+          <span class="head-gap"></span>
+          <select id="ext-project" aria-label="Project" title="Its own skills and packages are listed with yours"></select>
         </div>
-        <p class="hint">Yours apply to every project; a project's own (in its .pi folder) to that project only. Both are listed, each marked.</p>
-        <h2>Pi and its packages</h2>
-        <ul id="ext-packages" class="resource-items resources"></ul>
-        <div id="ext-package-tools"></div>
-        <h2>Skills, extensions, prompt templates</h2>
         <div id="ext-manager"></div>
+        <ul id="ext-packages" class="resource-items resources"></ul>
+        <div id="ext-pack" hidden>
+          <div id="ext-package-tools"></div>
+        </div>
       </section>
-      <section class="prefs-page" data-page="git" data-title="Git &amp; forges" role="tabpanel" hidden></section>
+      <section class="prefs-page needs-vm" data-page="git" data-title="Git &amp; forges" role="tabpanel" hidden></section>
 
       <section class="prefs-page" data-page="appearance" data-title="Appearance" role="tabpanel" hidden>
-      <h2>Theme and fonts</h2>
-      <div class="grid">
-        <label for="prefs-theme">Theme</label>
-        <select id="prefs-theme"></select>
-        <label for="prefs-font">Terminal font size</label>
-        <input id="prefs-font" type="number" min="8" max="28">
-        <label for="prefs-termfont">Terminal font</label>
-        <select id="prefs-termfont"></select>
-        <label for="prefs-padding">Space around the terminal's text (px)</label>
-        <input id="prefs-padding" type="number" min="0" max="40">
-      </div>
-      <input id="prefs-termfont-other" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
-      <p id="prefs-termfont-note" class="hint" hidden></p>
-      <details class="prefs-more">
-      <summary>More: Pier's font, your own themes</summary>
-      <div class="grid">
-        <label for="prefs-uifont">Pier's font (panels, menus, settings)</label>
-        <select id="prefs-uifont"></select>
-      </div>
-      <input id="prefs-uifont-other" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
-      <div id="theme-swatches" class="swatches" aria-hidden="true"></div>
-      <div class="actions">
-        <button id="theme-import" class="secondary">Import a VS Code or Zed theme…</button>
-        <button id="theme-customize" class="secondary">Customize…</button>
-        <button id="theme-delete" class="link" hidden>delete this theme</button>
-        <input id="theme-file" type="file" accept=".json,application/json" multiple hidden>
-      </div>
-      <p class="hint">VS Code: a theme's .json, found in its "themes" folder (on GitHub, or in ~/.vscode/extensions on a computer that has it). Zed: a theme .json from zed.dev/themes or ~/.config/zed/themes. A Zed file can hold several themes: all are added.</p>
+      <!-- The themes as a gallery (the proposals' 5A): each with its colours; the one in use
+           can be customized, yours deleted; the last card imports a VS Code or Zed theme. -->
+      <h2>Theme</h2>
+      <div id="theme-gallery" class="theme-gallery" role="radiogroup" aria-label="Theme"></div>
       <p id="theme-error" class="error" hidden></p>
       <div id="theme-editor" class="theme-editor" hidden>
         <label>Name <input id="theme-name"></label>
@@ -219,82 +243,179 @@
           <button id="theme-cancel" class="secondary">Cancel</button>
         </div>
       </div>
-      </details>
-
-      </section>
-
-      <section class="prefs-page" data-page="layout" data-title="Layout" role="tabpanel" hidden>
-      <h2>Where the panels go</h2>
-      <div class="grid">
-        <label for="prefs-side">Panels (Conversations, Activity, Project, Repository)</label>
-        <select id="prefs-side"><option value="right">on the right</option><option value="left">on the left</option></select>
+      <!-- What the gallery drives: the list (its value and change event), the file chooser. -->
+      <div hidden>
+        <select id="prefs-theme" aria-hidden="true" tabindex="-1"></select>
+        <div id="theme-swatches"></div>
+        <button id="theme-import" tabindex="-1">Import</button>
+        <button id="theme-customize" tabindex="-1">Customize</button>
+        <button id="theme-delete" tabindex="-1">Delete</button>
+        <input id="theme-file" type="file" accept=".json,application/json" multiple>
       </div>
-      <p class="hint">The terminals stay in the middle. Each tab can still go anywhere: drag it onto another bar, right-click it, or choose here.</p>
-      <div id="prefs-layout" class="grid"></div>
-      <div class="actions"><button id="prefs-reset" class="secondary">Reset layout</button></div>
-      </section>
-
-      <section class="prefs-page" data-page="behavior" data-title="Behavior" role="tabpanel" hidden>
-      <label class="check"><input id="prefs-shortcut" type="checkbox"> <span><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> sends the clipboard's image from anywhere</span></label>
-      <p id="prefs-shortcut-note" class="notice" hidden>Another program already uses <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd>: Pier cannot have it. Close that program (an older Pier still in the tray?), then turn this off and on again.</p>
-      <label class="check"><input id="prefs-autostop" type="checkbox"> <span>Stop a share when the Pi of its project ends</span></label>
-      <label class="check"><input id="prefs-notify" type="checkbox"> <span>Notify me when a Pi finishes working (while Pier is in the background)</span></label>
-      <label class="check"><input id="prefs-clear" type="checkbox"> <span>When a project's Pi ends, also delete the images, files and folder copies given to it</span></label>
-      <label class="check"><input id="prefs-resume" type="checkbox"> <span>After reconnecting, resume the shares of projects whose Pi still runs (otherwise they wait, paused)</span></label>
-      </section>
-
-      <section class="prefs-page" data-page="terminals" data-title="Terminals" role="tabpanel" hidden>
-      <div class="grid">
-        <label for="prefs-copykeys">Copy and paste in terminals</label>
-        <select id="prefs-copykeys">
-          <option value="linux">Ctrl+Shift+C / Ctrl+Shift+V (Linux)</option>
-          <option value="windows">Ctrl+C on a selection / Ctrl+V (Windows)</option>
-        </select>
-        <label for="prefs-copymode">Copying in terminals</label>
-        <select id="prefs-copymode">
-          <option value="key">select, then Ctrl+Shift+C</option>
-          <option value="select">as soon as text is selected</option>
-        </select>
+      <h2>Accent colour</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span id="prefs-accent-label">Accent colour</span><span>Links, file names, what is selected. The theme's own, or one of yours for every theme.</span></div>
+          <div id="prefs-accent-mode" class="seg" role="radiogroup" aria-labelledby="prefs-accent-label"><button role="radio" data-v="theme">Theme</button><button role="radio" data-v="custom">Custom</button></div></div>
+        <div class="set accent-palette" id="prefs-accent-palette" hidden>
+          <div id="prefs-accent-swatches" class="accent-swatches" role="radiogroup" aria-label="Accent colours"></div>
+          <label class="accent-any" title="Any colour, from the full palette"><input id="prefs-accent-pick" type="color" aria-label="Any colour"><span>Any colour…</span></label>
+        </div>
       </div>
-      <p class="hint">Linux: Ctrl+C always interrupts the program and Ctrl+V goes to it. Right click: copy, paste, select all, clear. Ctrl+ and Ctrl- change the text size, Ctrl+0 resets it. Pi scrolls and selects smoothly in its regular mode ("tuiMode": "regular" in ~/.pi/agent/settings.json).</p>
-      <label class="check"><input id="prefs-focus" type="checkbox"> <span>Focus follows the mouse: the terminal or panel under the pointer gets the keyboard, without a click</span></label>
-      <label class="check"><input id="prefs-gpu" type="checkbox"> <span>Draw terminals with the graphics card (smooth scrolling). Turn it off if text looks wrong; terminals opened after the change use it.</span></label>
+      <h2>Gradient</h2>
+      <div id="grad-gallery" class="grad-gallery" role="radiogroup" aria-label="Gradient style"></div>
+      <p id="grad-where" class="hint grad-where" aria-live="polite"></p>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-grad-intensity"><span>Intensity</span><span>From a hint of colour to vivid.</span></label><input id="prefs-grad-intensity" type="range" min="5" max="60" step="1"></div>
+        <div class="set"><div class="what"><span id="prefs-grad-colors-label">Colours</span><span>The accent's, or two of yours.</span></div>
+          <div id="prefs-grad-colors" class="seg" role="radiogroup" aria-labelledby="prefs-grad-colors-label"><button role="radio" data-v="accent">Accent</button><button role="radio" data-v="custom">Custom</button></div>
+          <span id="prefs-grad-own" class="grad-own" hidden><input id="prefs-grad-c1" type="color" aria-label="First colour"><input id="prefs-grad-c2" type="color" aria-label="Second colour"></span></div>
+        <div class="set"><label class="what" for="prefs-grad-grain"><span>Grain</span><span>A fine texture over it, as on paper.</span></label><input id="prefs-grad-grain" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-sides"><span>Around the window</span><span>The rail, the conversations, Details and the bars at the top: one gradient across the window.</span></label><input id="prefs-grad-sides" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-newtab"><span>New tab and the quick start</span></label><input id="prefs-grad-newtab" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-working"><span>While Pi works</span><span>The frame of the message field.</span></label><input id="prefs-grad-working" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-empty"><span>Empty screens</span><span>A conversation not started, Details with nothing open.</span></label><input id="prefs-grad-empty" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-grad-buttons"><span>Main buttons</span><span>Approve, Connect, Send, a window's main action.</span></label><input id="prefs-grad-buttons" type="checkbox"></div>
+      </div>
+      <h2>Fonts</h2>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-uifont"><span>Pier's font</span><span>Panels, menus, the conversation, the settings.</span></label><select id="prefs-uifont"></select></div>
+        <div class="set"><label class="what" for="prefs-termfont"><span>Code font</span><span>Files, commands, the terminal.</span></label><select id="prefs-termfont"></select></div>
+      </div>
+      <h2>Window</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span id="prefs-corners-label">Corners</span><span>Buttons, menus, cards and fields.</span></div>
+          <div id="prefs-corners" class="seg" role="radiogroup" aria-labelledby="prefs-corners-label"><button role="radio" data-v="0">Square</button><button role="radio" data-v="4">Slight</button><button role="radio" data-v="8">Round</button></div></div>
+        <div class="set"><label class="what" for="prefs-mica"><span>Mica</span><span>The window takes a tint of your wallpaper, as Windows 11's Explorer (Windows 11 only).</span></label><input id="prefs-mica" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-menublur"><span>Translucent menus and notifications</span><span>Menus, the command palette and Pier's notifications let what is behind them show through, blurred.</span></label><input id="prefs-menublur" type="checkbox"></div>
+      </div>
+      <input id="prefs-termfont-other" aria-label="Another terminal font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
+      <input id="prefs-uifont-other" aria-label="Another interface font, by name" placeholder="a font installed on this computer, then Enter" spellcheck="false" autocomplete="off" hidden>
+      <p id="prefs-termfont-note" class="hint" hidden></p>
+      </section>
+
+      <section class="prefs-page" data-page="general" data-title="General" role="tabpanel" hidden>
+      <h2>Layout</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span id="prefs-layout-label">Where the panels go</span><span>The conversations, the middle, Details: which side, which order.</span></div>
+          <div id="prefs-layout" class="layout-tiles" role="radiogroup" aria-labelledby="prefs-layout-label">
+            <button type="button" role="radio" data-v="both"><i class="lay" aria-hidden="true"><b class="p"></b><b class="m"></b><b class="p r"></b></i><span>Conversations left</span></button>
+            <button type="button" role="radio" data-v="details"><i class="lay" aria-hidden="true"><b class="m"></b><b class="p r"></b></i><span>Details only</span></button>
+          </div></div>
+        <div class="set"><label class="what" for="prefs-rail"><span>Keep the rail</span><span>Its icons stay on the left when the conversations are folded.</span></label><input id="prefs-rail" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-focus"><span>Focus follows the mouse</span><span>The panel under the pointer takes the keyboard.</span></label><input id="prefs-focus" type="checkbox"></div>
+      </div>
+      <h2>Files given to Pi</h2>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-autostop"><span>Stop a share when its Pi ends</span><span>A folder shared live is closed with the conversation.</span></label><input id="prefs-autostop" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-resume"><span>Resume shares after reconnecting</span><span>Shares come back by themselves once Pier is connected again.</span></label><input id="prefs-resume" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-clear"><span>Delete what was given when a Pi ends</span><span>Pasted images and copied files leave the VM with the conversation.</span></label><input id="prefs-clear" type="checkbox"></div>
+      </div>
+      </section>
+
+      <section class="prefs-page" data-page="conversations" data-title="Conversations" role="tabpanel" hidden>
+      <div class="rows">
+        <div class="set"><div class="what"><span id="prefs-fold-label">When a Pi finishes</span><span>Its steps fold into one line: "Thought twice, ran 3 commands".</span></div>
+          <button id="prefs-fold" class="pick" type="button" aria-haspopup="menu" aria-labelledby="prefs-fold-label"><span></span></button></div>
+        <div class="set"><div class="what"><span id="prefs-copybtn-label">Copy buttons</span><span>On code blocks: under the pointer, always or never.</span></div>
+          <button id="prefs-copybtn" class="pick" type="button" aria-haspopup="menu" aria-labelledby="prefs-copybtn-label"><span></span></button></div>
+        <div id="conv-image-slot" hidden></div>
+      </div>
+      </section>
+
+      <section class="prefs-page" data-page="notifications" data-title="Notifications" role="tabpanel" hidden>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-notify"><span>When a Pi finishes</span><span>A Windows notification, unless Pier is in front.</span></label><button id="prefs-notify-test" class="secondary quiet" type="button">Send a test</button><input id="prefs-notify" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-notify-wait"><span>When a Pi waits for you</span><span>A question or a choice it asks in a conversation.</span></label><input id="prefs-notify-wait" type="checkbox"></div>
+        <!-- What it looks like (the proposals' 6B), as connect.js sends it. -->
+        <div class="set notify-preview" aria-hidden="true"><span class="what"><span>Preview</span><span>What it looks like, in the corner of the screen.</span></span>
+          <div class="toast-preview"><div class="app"><span class="mark">P</span>Pier<span class="when">now</span></div><div class="t">Pi finished</div><div class="b">~/work is waiting for you</div></div></div>
+      </div>
+      </section>
+
+      <section class="prefs-page needs-vm" data-page="terminals" data-offline="Terminals run on your VM: connect to it, then choose how they behave." data-title="Terminals" role="tabpanel" hidden>
+      <!-- Off: what tmux gives, and one button, as Labs. On: the switch, then the terminals' options (prefs.js). -->
+      <div id="term-welcome" class="labs-welcome" hidden>
+        <svg class="i" aria-hidden="true"><use href="#i-terminal"/></svg>
+        <h2>Pi in its own screen</h2>
+        <ul>
+          <li>Conversations open in Pi's own terminal interface, in tmux, instead of Pier's conversation view (as before 2.0).</li>
+          <li>Pi keeps running in tmux when Pier closes; you come back to the same screen.</li>
+          <li>Pi's screen gets the terminal's options below: font, copy and paste.</li>
+        </ul>
+        <div class="actions"><button id="term-turn-on" class="secondary">Use tmux</button><span class="dim small">tmux must be on the VM.</span></div>
+      </div>
+      <div id="term-on" class="rows" hidden>
+        <div class="set"><label class="what" for="prefs-pi-terminal"><span>Pi in a terminal (tmux)</span><span>Conversations open in Pi's own screen instead of Pier's conversation view, as before 2.0.</span></label><input id="prefs-pi-terminal" type="checkbox"></div>
+      </div>
+      <div id="prefs-term-more" hidden>
+      <h2>Display</h2>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-font"><span>Font size</span><span>Ctrl+ and Ctrl- change it in a terminal, Ctrl+0 resets it.</span></label><input id="prefs-font" type="number" min="8" max="28"></div>
+        <div class="set"><label class="what" for="prefs-padding"><span>Space around the text</span><span>In pixels.</span></label><input id="prefs-padding" type="number" min="0" max="40"></div>
+        <div class="set"><label class="what" for="prefs-gpu"><span>Draw with the graphics card</span><span>Smooth scrolling. Turn it off if text looks wrong; terminals opened after the change use it.</span></label><input id="prefs-gpu" type="checkbox"></div>
+      </div>
+      <h2>Copy and paste</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span id="prefs-copykeys-label">Keys</span><span>As on Linux, Ctrl+C always interrupts the program. As on Windows, it copies a selection, else interrupts. A right click offers copy and paste either way.</span></div>
+          <div id="prefs-copykeys" class="seg" role="radiogroup" aria-labelledby="prefs-copykeys-label"><button role="radio" data-v="linux">Ctrl+Shift+C, V</button><button role="radio" data-v="windows">Ctrl+C, V</button></div></div>
+        <div class="set"><div class="what"><span id="prefs-copymode-label">Copying</span><span>When selected text goes to the clipboard.</span></div>
+          <div id="prefs-copymode" class="seg" role="radiogroup" aria-labelledby="prefs-copymode-label"><button role="radio" data-v="key">With the keys</button><button role="radio" data-v="select">On selecting</button></div></div>
+      </div>
+      </div>
       </section>
 
 
       <section class="prefs-page" data-page="diagnostics" data-title="Diagnostics" role="tabpanel" hidden>
-      <label class="check"><input id="prefs-debug" type="checkbox"> <span>Detailed logs: every call, here and on the VM. For tracking a problem down; the log grows faster.</span></label>
-      <p class="hint">Pier's log: <code id="prefs-logpath">?</code><br>The picker's, on the VM: <code>~/.local/state/pier-picker/picker.log</code></p>
-      <div class="actions wrap">
-        <button id="prefs-report" class="secondary">Copy a report</button>
-        <button id="prefs-report-save" class="secondary">Save a report…</button>
-        <button id="prefs-logfolder" class="link">open the log folder</button>
+      <h2>Logs</h2>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-debug"><span>Detailed logs</span><span>Every call, here and on the VM. For tracking a problem down; the log grows faster.</span></label><input id="prefs-debug" type="checkbox"></div>
+        <div class="set"><div class="what"><span>Where they are</span><span>Pier's: <span id="prefs-logpath" class="log-path selectable">?</span>. The picker's, on the VM: <span class="log-path selectable">~/.local/state/pier-picker/picker.log</span></span></div><button id="prefs-logfolder" class="secondary">Open the folder</button></div>
+        <div class="set"><div class="what"><span>A report</span><span>The versions, the connection (never a password), and the end of both logs.</span></div><div class="btns"><button id="prefs-report" class="secondary">Copy</button><button id="prefs-report-save" class="secondary">Save…</button></div></div>
       </div>
-      <p class="hint">A report holds the versions, the connection (never a password), and the end of both logs: what is needed to understand a problem.</p>
       <p id="prefs-diag-note" class="notice" hidden></p>
+      <h2>The logs, live</h2>
+      <div id="prefs-logs"></div>
       </section>
 
-      <section class="prefs-page" data-page="labs" data-title="Labs" role="tabpanel" hidden>
-      <label class="check"><input id="labs-enabled" type="checkbox"> <span>Labs: disposable machines where Pi may do anything (install packages, run services, Docker), made on lab hosts you add, and your machines over SSH. Pi stays in its own sandbox: it drives them from there. Turning this on sets nothing up: without a lab host, no lab.</span></label>
-      <p id="labs-state" class="dim"></p>
+      <section class="prefs-page needs-vm" data-page="labs" data-title="Labs" role="tabpanel" hidden>
+      <!-- Off: what Labs are, and one button (the mock-up's option B). On: the switch, then the groups. -->
+      <div id="labs-welcome" class="labs-welcome" hidden>
+        <svg class="i" aria-hidden="true"><use href="#i-flask-conical"/></svg>
+        <h2>Throwaway machines for Pi</h2>
+        <ul>
+          <li>Pi is root there: packages, services, Docker, all allowed. It stays in its own sandbox and drives them from there.</li>
+          <li>Nothing of your VM or home: only what Pi copies in.</li>
+          <li>Gone after their lifetime; Reset brings one back clean. Every command Pi runs there is written in the Labs tab.</li>
+        </ul>
+        <div class="actions"><button id="labs-turn-on" class="secondary">Turn on Labs</button><span class="dim small">Then add a lab host: a VM with Incus.</span></div>
+      </div>
+      <div class="rows labs-on" hidden>
+        <div class="set"><label class="what" for="labs-enabled"><span>Labs</span><span id="labs-state"></span></label><input id="labs-enabled" type="checkbox"></div>
+      </div>
       <pre id="labs-install" hidden></pre>
       <p id="labs-relogin" class="hint" hidden>Then reconnect Pier, so the picker's next SSH login is in the incus group. For virtual machines too, set the VM's CPU type to host in Proxmox (Hardware &gt; Processors).</p>
+      <!-- On: hosts, limits, networks, machines, one section under the other (the proposals' B). -->
       <div class="labs-on" hidden>
-        <h2>Lab hosts</h2>
-        <p class="hint">Where labs are made: a VM with Incus. Another VM you add (Pier runs Incus there over SSH, with its key), or Pi's own VM if you choose it. New labs go to the default host, unless Pi or New lab… names another. No host, no lab.</p>
+        <div class="labs-pane" data-pane="hosts">
+        <h2>Hosts</h2>
+        <p class="hint">A VM with Incus where labs are made: another VM you add, or Pi's own.</p>
         <ul id="labs-hosts" class="resource-items"></ul>
         <div class="actions wrap">
           <button id="labs-host-add" class="secondary">Add a lab host…</button>
           <button id="labs-host-local" class="link">Use Pi's VM as a lab host</button>
         </div>
+        </div>
+        <div class="labs-pane" data-pane="limits">
         <h2>Limits</h2>
-        <div id="labs-limits" class="grid"></div>
-        <details class="labs-networks">
-        <summary>Advanced networks: VLANs, networks between labs</summary>
-        <p class="hint">What a lab can be plugged into. Incus's NAT gives the internet through the lab host, and your firewall never sees the lab. A VLAN of your firewall makes the lab a machine of its own there: the firewall gives its address and applies its rules. A network between labs only has no way out: for a router, a DMZ, a VPN between labs. A lab can be on several at once (New lab…, or Pi's lab_create).</p>
+        <p class="hint">For each new lab.</p>
+        <div id="labs-limits" class="rows"></div>
+        </div>
+        <div class="labs-pane labs-networks" data-pane="networks">
+        <h2>Networks</h2>
+        <p class="hint">The internet through the host, a VLAN of your firewall, or other labs only.</p>
         <ul id="labs-networks" class="resource-items"></ul>
         <details class="labs-howto">
-          <summary>Add a network (an admin, once for each)</summary>
+          <summary>How to add a network</summary>
           <p class="hint">On the VM. Then let your account use it, with every network it should see (your own NAT, often incusbr-1000, included). The README tells it in full (Labs: networks).</p>
           <pre>&#35; a VLAN of the firewall, on a trunk card of the VM (Proxmox: no VLAN tag on it)
 sudo incus network create pier-labs-30 --type=macvlan parent=ens19 vlan=30
@@ -309,50 +430,59 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
           <p id="labs-vlan-state" class="hint"></p>
           <pre id="labs-vlan-commands" hidden></pre>
         </div>
-        </details>
-        <h2>Machines</h2>
-        <ul id="labs-machines" class="resource-items"></ul>
-        <div id="labs-key" hidden>
-          <p class="hint">Pier's key, to put in ~/.ssh/authorized_keys on each machine:</p>
-          <pre id="labs-key-text"></pre>
         </div>
+        <div class="labs-pane" data-pane="machines">
+        <h2>Machines</h2>
+        <p class="hint">Computers of yours Pi may use over SSH, with Pier's key in their ~/.ssh/authorized_keys.</p>
+        <ul id="labs-machines" class="resource-items"></ul>
         <div class="actions wrap">
           <button id="labs-machine-add" class="secondary">Add a machine…</button>
-          <button id="labs-key-copy" class="link">copy Pier's key</button>
-          <button id="labs-open" class="link">open the Labs tab</button>
+          <button id="labs-key-copy" class="link">Copy Pier's key</button>
+        </div>
         </div>
       </div>
       <p id="labs-error" class="error" hidden></p>
-      <p class="hint">A lab is a throwaway Linux machine on one of your lab hosts. Pi is root there, with nothing of your VM or home, only what Pi copies in. A lab on the internet network gives Pi the internet. It goes after its lifetime, and goes back to its clean state on Reset. Every command Pi runs in a lab or on a machine is written in the Labs tab.</p>
       </section>
 
-      <section class="prefs-page" data-page="updates" data-title="Updates" role="tabpanel" hidden>
-      <p id="update-state" class="dim">Not checked yet.</p>
-      <div id="update-found" hidden>
-        <pre id="update-notes"></pre>
-        <div class="actions">
-          <button id="update-install">Install and restart</button>
+      <section class="prefs-page" data-page="about" data-title="About" role="tabpanel" hidden>
+      <div class="pills"><span class="pill" id="about-version"></span><span class="pill state" id="about-state" data-state="lost"></span></div>
+      <div class="rows">
+        <div class="set update-status">
+          <div class="what"><span id="update-title">Look for a new Pier</span><span><span id="update-state">Installed and restarted when you say so.</span> <button id="update-whatsnew" class="link" type="button" aria-expanded="false" aria-controls="update-found" hidden>What's new</button></span></div>
           <span id="update-progress" class="dim small" hidden></span>
+          <button id="update-install" class="secondary quiet" type="button" hidden>Restart to update</button>
+          <button id="update-check" class="secondary quiet" type="button">Check now</button>
         </div>
+        <div class="set update-notes-row" id="update-found" hidden><div id="update-notes" class="update-notes"></div></div>
+        <div class="set"><label class="what" for="prefs-updatecheck"><span>Look by itself</span><span>At startup, then every 6 hours. Only versions signed with the project's key are installed; the picker on the VM follows.</span></label><input id="prefs-updatecheck" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-releasenotes"><span>Release notes</span><span>Show what changed after an update.</span></label><input id="prefs-releasenotes" type="checkbox"></div>
       </div>
-      <div class="actions"><button id="update-check" class="secondary">Check now</button></div>
-      <label class="check"><input id="prefs-updatecheck" type="checkbox"> <span>Look for a new Pier at startup, then every 6 hours</span></label>
       <p id="update-error" class="error" hidden></p>
-      <p class="hint">New versions come from the project's releases on GitHub. Pier installs one only if it was signed with the project's key: a file changed on the way, or from elsewhere, is refused. Shares are stopped before Pier restarts. The picker on the VM follows: Pier updates it when it carries a newer one.</p>
       </section>
 
-      <section class="prefs-page" data-page="connection" data-title="Connection" role="tabpanel" hidden>
-      <p id="prefs-connection" class="dim"></p>
-      <p class="hint">To change the address, port or bastion: disconnect, then "change connection" on the login screen.</p>
+      <section class="prefs-page needs-vm" data-page="projects" data-title="Projects" role="tabpanel" hidden></section>
+      <section class="prefs-page" data-page="overview" data-title="Overview" role="tabpanel" hidden>
+      <div class="pills"><span class="pill state" id="prefs-status-row" data-state="lost"></span><span class="pill" id="prefs-connection"></span><span class="pill" id="prefs-pill-picker"></span></div>
+      <h2>Connection</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span>Address</span><span>To change it: disconnect, then "change connection" on the login screen.</span></div><span id="prefs-address" class="value code"></span></div>
+      </div>
       </section>
 
       <section class="prefs-page" data-page="picker" data-title="The picker" role="tabpanel" hidden>
-      <h2>The picker</h2>
-      <p class="hint">The picker is the program on the VM that Pier talks to (pi-pick): it lists projects, starts the Pis and keeps their history.</p>
-      <p id="prefs-picker" class="dim"></p>
-      <label class="check"><input id="prefs-autoupdate" type="checkbox"> <span>Update the picker on the VM by itself when this Pier carries a newer one</span></label>
-      <div class="actions"><button id="prefs-reinstall" class="secondary">Install Pier's picker on the VM again</button></div>
+      <h2>Picker</h2>
+      <div class="rows">
+        <div class="set"><label class="what" for="prefs-autoupdate"><span>Update it by itself</span><span>A newer picker is installed at the next connection.</span></label><input id="prefs-autoupdate" type="checkbox"></div>
+        <div class="set"><div class="what"><span>Its log</span><span class="code">~/.local/state/pier-picker/picker.log</span></div><div class="btns"><button id="prefs-picker-logcopy" class="secondary quiet" type="button">Copy path</button><button id="prefs-picker-logs" class="secondary quiet" type="button">Open logs</button></div></div>
+        <div class="set"><div class="what"><span>Install it again</span><span id="prefs-picker"></span></div><button id="prefs-reinstall" class="secondary quiet">Install again</button></div>
+      </div>
       <p id="prefs-picker-note" class="notice" hidden></p>
+      <div id="prefs-danger">
+      <h2>Danger zone</h2>
+      <div class="rows">
+        <div class="set"><div class="what"><span>Disconnect</span><span>Pis keep working on the VM; folders shared from this PC stop.</span></div><button id="btn-disconnect" class="secondary danger" hidden>Disconnect</button></div>
+      </div>
+      </div>
       </section>
     </div>
   </section>
@@ -371,19 +501,18 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
     </div>
   </div>
 
-  <!-- Hand off: Pi keeps working on the VM with this computer off. -->
+  <!-- Disconnect with folders shared live: copy them to the VM (hand off), or just go. -->
   <div id="handoff" class="overlay" hidden>
     <div class="dialog" role="dialog" aria-labelledby="handoff-title">
-      <h1 id="handoff-title">Hand off to Pi</h1>
-      <p>Pi runs on the VM and keeps working with this computer off. Only folders shared live depend on this computer: each becomes a copy on the VM, at the same place, so Pi keeps its files even in the middle of a task.</p>
+      <h1 id="handoff-title">Folders are shared with Pi</h1>
+      <p>Pi runs on the VM and keeps working after you disconnect, but these folders live on this computer: disconnected, Pi loses them. Copied to the VM, at the same place, Pi keeps its files even in the middle of a task.</p>
       <ul id="handoff-shares" class="handoff-list"></ul>
-      <p id="handoff-none" class="dim">No folder is shared live: there is nothing to copy, this computer can be turned off as it is.</p>
-      <label class="check"><input id="handoff-disconnect" type="checkbox" checked> <span>Disconnect when done</span></label>
       <p class="hint">No notification can reach you while Pier is off: log in again to see what Pi did, in Activity. Bring a copy back from Activity > Given to Pi.</p>
       <p id="handoff-error" class="error" hidden></p>
       <div class="actions end">
         <button id="handoff-cancel" class="secondary">Cancel</button>
-        <button id="handoff-go">Hand off</button>
+        <button id="handoff-leave" class="secondary">Just disconnect</button>
+        <button id="handoff-go">Copy them, then disconnect</button>
       </div>
     </div>
   </div>
@@ -408,11 +537,15 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
 
   <template id="tpl-conversations">
     <div class="pane-conversations">
-      <div class="toolbar">
-        <input class="conversation-filter" type="search" placeholder="search every conversation" spellcheck="false">
-        <label class="check small"><input class="show-archived" type="checkbox"> archived</label>
+      <div class="panel-head">
+        <span class="panel-title">Conversations</span>
+        <button class="icon-btn new-btn" title="Start a project: a folder of the VM, or a new one" aria-label="Start a project"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
+        <button class="icon-btn display-btn" aria-haspopup="menu" title="Display options" aria-label="Display options"><svg class="i" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg></button>
       </div>
-      <p class="hint count"></p>
+      <div class="toolbar" hidden>
+        <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input class="conversation-filter" type="search" aria-label="Search every conversation" aria-keyshortcuts="/" placeholder="Search conversations" spellcheck="false"><kbd class="key" aria-hidden="true">/</kbd></label>
+      </div>
+      <p class="hint count" hidden></p>
       <p class="error" hidden></p>
       <ul class="sessions all-conversations"></ul>
     </div>
@@ -429,126 +562,65 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
     </div>
   </template>
 
-  <template id="tpl-setup">
-    <div class="pane-setup">
-      <div class="toolbar">
-        <select class="setup-project" title="The project to set up"></select>
-        <button class="link follow" hidden>back to the Pi in use</button>
-        <span class="state dim small"></span>
-      </div>
-      <p class="notice" hidden></p>
-      <p class="error" hidden></p>
-      <p class="setup-summary small"></p>
-      <span class="switch setup-pages" role="group">
-        <button class="mode" data-page="instructions" title="AGENTS.md, and what Pi reads at startup">Instructions</button><button class="mode" data-page="advanced" title="System prompt, MCP servers, default model">Advanced</button>
-      </span>
-
-      <section class="setup-page" data-page="instructions">
-      <div class="box-instructions">
-        <h2>Instructions <span class="file-name dim small"></span></h2>
-        <p class="hint">Read by Pi at the start of every session in this project, like a project's instructions in Claude.</p>
-        <textarea class="editor" spellcheck="false" rows="12"></textarea>
-        <div class="editor-bar">
-          <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
-          <span class="bar-tools"><button class="link insert" title="Add a ready-made section to fill in: commands, conventions, git rules…">add a section ▾</button> <button class="link ask-pi" title="Pi reads the project and writes this file itself: the request is typed into Pi, press Enter there">let Pi write it</button> <button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
-          <span class="bar-buttons"><button class="secondary revert">Revert</button><button class="save">Save</button></span>
-        </div>
-        <ul class="history-list" hidden></ul>
-      </div>
-
-        <details class="startup-box">
-          <summary>What Pi reads at startup</summary>
-          <ol class="startup"></ol>
-          <p class="trust dim small"></p>
-        </details>
-      </section>
-
-      <section class="setup-page" data-page="advanced" hidden>
-        <h2>MCP servers and model</h2>
-        <p class="hint">MCP servers are added on the VM: <code>pi mcp add …</code>.</p>
-        <ul class="startup advanced-list"></ul>
-        <h2>Pi's system prompt</h2>
-        <div class="box-append">
-          <h3>Added to the system prompt <span class="file-name dim small"></span></h3>
-          <p class="hint global-note" hidden></p>
-        <textarea class="editor" spellcheck="false" rows="5"></textarea>
-        <div class="editor-bar">
-          <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
-          <span class="bar-tools"><button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
-          <span class="bar-buttons"><button class="secondary revert">Revert</button><button class="save">Save</button></span>
-        </div>
-        <ul class="history-list" hidden></ul>
-        </div>
-        <div class="box-system">
-          <h3>Replaces the system prompt <span class="file-name dim small"></span></h3>
-          <p class="hint">Replaces Pi's own instructions entirely, including how it uses its tools. Leave it empty unless you know why you need it.</p>
-          <p class="hint global-note" hidden></p>
-        <textarea class="editor" spellcheck="false" rows="5"></textarea>
-        <div class="editor-bar">
-          <span class="bar-info"><span class="tokens dim small"></span><span class="unsaved small" hidden>unsaved</span></span>
-          <span class="bar-tools"><button class="link history-toggle" title="Every save keeps the previous version: restore one">earlier versions</button></span>
-          <span class="bar-buttons"><button class="secondary revert">Revert</button><button class="save">Save</button></span>
-        </div>
-        <ul class="history-list" hidden></ul>
-        </div>
-      </section>
-    </div>
-  </template>
 
   <template id="tpl-project">
     <div class="pane-project">
       <div class="toolbar">
         <span class="root"></span>
-        <select class="which-pi" hidden title="Several Pis run here: whose work to show"></select>
-        <button class="link undo-prompt" title="The project as it was before the latest prompt (what is there now is saved first)">↶︎ Undo last prompt</button>
+        <button class="link undo-prompt" title="The project as it was before the latest prompt (what is there now is saved first)"><svg class="i" aria-hidden="true"><use href="#i-undo-2"/></svg><span>Undo last prompt</span></button>
         <span class="agent dim"></span>
         <span class="switch" role="group">
-          <button class="mode active" data-mode="activity">Activity</button><button class="mode" data-mode="files">Files</button><button class="mode" data-mode="given" title="What was given to Pi: images, files, folders, shares">Given to Pi</button><button class="mode" data-mode="restore" title="Undo what Pi did: the project as it was before a prompt">Restore</button>
+          <button class="mode active" data-mode="activity" title="Details: what waits for you, what Pi changed, the context" aria-label="Details"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg></button><button class="mode" data-mode="files" title="Files: the project's files" aria-label="Files"><svg class="i" aria-hidden="true"><use href="#i-folder-tree"/></svg></button><button class="mode" data-mode="repository" title="Repository: what Pi asks, its pull requests, its worktrees, the team" aria-label="Repository"><svg class="i" aria-hidden="true"><use href="#i-git-branch"/></svg></button><button class="mode" data-mode="given" title="Given to Pi: images, files, folders, shares" aria-label="Given to Pi"><svg class="i" aria-hidden="true"><use href="#i-gift"/></svg></button><button class="mode" data-mode="restore" title="Restore: the project as it was before a prompt" aria-label="Restore"><svg class="i" aria-hidden="true"><use href="#i-history"/></svg></button>
         </span>
       </div>
-      <p class="usage" hidden></p>
       <p class="error" hidden></p>
+      <!-- Nothing of a project in the middle (the New tab page): Details and Files wait for one. -->
+      <div class="no-conversation-note"><svg class="i" aria-hidden="true"><use href="#i-message-square"/></svg><p>Open a conversation</p><p>What Pi waits for, changes and reads, and the project's files, show here.</p></div>
       <div class="view-activity"></div>
       <div class="view-given" hidden></div>
+      <div class="view-repository" hidden></div>
       <div class="view-files" hidden>
-        <div class="toolbar">
-          <label class="check small"><input type="checkbox" class="show-hidden"> hidden</label>
-          <span class="legend dim small">◐ reading · ● read · ✎ modifying · ✓ modified · ! failed · M/A/?? git</span>
-          <button class="link refresh">refresh</button>
+        <div class="toolbar files-bar">
+          <select class="files-sort" aria-label="Sort the files" title="Sort the files"><option value="name">Name</option><option value="type">Type</option><option value="size">Size</option><option value="date">Date modified</option></select>
+          <button class="icon-btn new-file" title="New file" aria-label="New file"><svg class="i" aria-hidden="true"><use href="#i-file-plus"/></svg></button>
+          <button class="icon-btn new-folder" title="New folder" aria-label="New folder"><svg class="i" aria-hidden="true"><use href="#i-folder-plus"/></svg></button>
+          <button class="icon-btn show-hidden" aria-pressed="false" title="Show hidden files" aria-label="Show hidden files"><svg class="i" aria-hidden="true"><use href="#i-eye-off"/></svg></button>
+          <button class="icon-btn refresh" title="Refresh" aria-label="Refresh"><svg class="i" aria-hidden="true"><use href="#i-refresh-cw"/></svg></button>
         </div>
-        <ul class="tree" role="tree"></ul>
+        <ul class="tree" role="tree" title="Beside each file, what Pi did to it: an eye, read; a pencil, being changed; a tick, changed (how many edits); a plus, new; a warning, failed. A dot on a folder: something in it. Right-click a file for more."></ul>
       </div>
       <div class="view-restore" hidden>
         <p class="notice restore-note" hidden></p>
         <ul class="points"></ul>
         <div class="toolbar save-row">
-          <input class="point-name" placeholder="name (optional)" maxlength="120">
+          <input class="point-name" aria-label="Name of the restore point (optional)" placeholder="name (optional)" maxlength="120">
           <button class="secondary save-point">Save a restore point now</button>
           <button class="link refresh-points">refresh</button>
         </div>
         <p class="hint">The project is saved when Pi starts, as each prompt arrives and when Pi stops working. Going back removes the files created since and puts the others as they were; what is there now is saved first, so it can be undone too. Not saved: what your .gitignore leaves out (node_modules, build output, .env…), what you gave Pi (.pi-images, .pi-files, shares), and files over 50 MB. Pi is not told: say what you undid.</p>
       </div>
-      <p class="hint files-hint">Double-click a file to mention it in Pi (<code>@path</code>).</p>
     </div>
   </template>
 
   <template id="tpl-logs">
     <div class="pane-logs">
-      <div class="toolbar">
-        <span class="switch" role="group"><button class="mode active" data-source="devbox" title="This computer: connection, calls to the VM, terminals, shares, the interface">Pier</button><button class="mode" data-source="vm" title="The picker on the VM: what each call did, Pi starting and stopping, restore points">VM</button></span>
-        <select class="level" title="Lowest level shown">
-          <option value="3">everything</option>
-          <option value="2" selected>info and above</option>
-          <option value="1">warnings and errors</option>
-          <option value="0">errors only</option>
+      <!-- As a table (the proposals' 8B): which log, a filter, the lowest level, follow. -->
+      <div class="toolbar log-bar">
+        <span class="seg" role="group" aria-label="Which log"><button class="mode active" data-source="devbox" title="This computer: connection, calls to the VM, terminals, shares, the interface">Pier</button><button class="mode" data-source="vm" title="The picker on the VM: what each call did, Pi starting and stopping, restore points">VM</button></span>
+        <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input class="search" type="search" aria-label="Filter the log" placeholder="Filter" spellcheck="false"></label>
+        <select class="level" aria-label="Lowest level shown" title="Lowest level shown">
+          <option value="3">Everything</option>
+          <option value="2" selected>Info and above</option>
+          <option value="1">Warnings and errors</option>
+          <option value="0">Errors only</option>
         </select>
-        <input class="search" type="search" placeholder="filter" spellcheck="false">
-        <label class="check small"><input type="checkbox" class="follow" checked> follow</label>
-        <button class="link copy-report" title="Versions, connection and the end of both logs, on the clipboard">copy a report</button>
       </div>
       <p class="error" hidden></p>
-      <p class="hint debug-hint" hidden>Detailed logs are off: debug lines are not written. Turn them on in Settings, Diagnostics.</p>
-      <div class="log-lines"></div>
+      <p class="hint debug-hint" hidden>Detailed logs are off: debug lines are not written. Turn them on above.</p>
+      <div class="log-table">
+        <div class="log-head" aria-hidden="true"><span>Time</span><span>Level</span><span>Event</span><span>Details</span></div>
+        <div class="log-lines"></div>
+      </div>
       <p class="hint">Times are local here; in the files they are UTC. A call to the VM has the same req=… in both logs.</p>
     </div>
   </template>
@@ -574,6 +646,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
   <script src="js/viewer.js"></script>
   <script src="js/takeback.js"></script>
   <script src="js/conversations.js"></script>
+  <script src="js/chat.js"></script>
   <script src="js/resources.js"></script>
   <script src="js/approvals.js"></script>
   <script src="js/git.js"></script>

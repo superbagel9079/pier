@@ -1,12 +1,8 @@
 // Pi's requests waiting for the user: a merge, a review, a repository to create, a command
 // on a machine. the top bar, Repository > Git and the Labs tab show them the same way.
 
-// ============================================================================
-// Each request shows exactly what will be done: the command whole, the pull request with
-// the commit it is at, the account a repository goes to. Then what Pi says, marked as
-// Pi's, then Refuse and Approve. The picker does what the request holds and nothing else:
-// a pull request that moved on since is not merged (see "approvals" in the picker).
-// ============================================================================
+// Each request shows exactly what will be done, then what Pi says, marked as Pi's. The picker
+// does only what the request holds: a pull request that moved on is not merged.
 
 const MERGE_NAMES = { merge: "merge commit", squash: "squash", rebase: "rebase" };
 
@@ -40,6 +36,23 @@ function prFacts(args, method) {
     ? `at commit ${String(args.sha).slice(0, 12)} of ${args.repo}${method ? ` · ${MERGE_NAMES[method] || method}` : ""}`
     : "asked by an older picker, without the commit it is for: approving it does nothing; ask Pi again");
   return facts;
+}
+
+/** A request in one sentence, for the Details card ("Pi asks to merge #12, ... into main."). */
+function approvalSentence(a) {
+  const args = a.args || {};
+  if (a.kind === "merge") return `Pi asks to merge #${args.number}${args.title ? `, "${visibleText(args.title)}",` : ""} into ${args.base || "its base"}.`;
+  if (a.kind === "review") return `Pi asks to post a review of #${args.number}: ${String(args.verdict || "").replace("_", " ")}.`;
+  if (a.kind === "create_repo") return `Pi asks to create the repository ${visibleText(args.name || "")}${args.private === false ? " (public)" : ""}.`;
+  if (a.kind === "workers") return `Pi asks to start worker Pis, up to ${args.max} at once.`;
+  if (a.kind === "lab") return args.op === "lab_run" ? `Pi asks to run a command on ${args.machine}.` : `Pi asks to ${visibleText(args.what || args.op || "act")} on ${args.machine}.`;
+  return `Pi asks: ${visibleText(String(a.kind))}.`;
+}
+
+/** A line of a command to approve: its words kept whole (a line breaks between words,
+ *  never after "--"), the spaces as they are, so what is copied is the command itself. */
+function commandLine(line) {
+  return el("span", { className: "cl" }, ...(line ? line.split(/(\s+)/).filter(Boolean).map((part) => (/^\s+$/.test(part) ? part : el("span", { className: "w", textContent: part }))) : [" "]));
 }
 
 /** One request, in a list: what it asks, what exactly will be done, what Pi says, then
@@ -96,11 +109,43 @@ function approvalItem(a, answer) {
     el("div", { className: "approval-what", textContent: `Pi asks to ${visibleText(what)}` }),
     ...facts.filter(Boolean).map((text) => el("div", { className: "approval-fact", textContent: visibleText(text) })),
     whole === null ? null : a.kind === "lab"
-      ? el("pre", { className: "approval-whole command", textContent: commandShown(whole) })
+      ? el("pre", { className: "approval-whole command" }, ...commandShown(whole).split("\n").map(commandLine))
       : el("pre", { className: "approval-whole", textContent: visibleText(whole, { lines: true }) }),
     size && a.kind === "lab" ? el("div", { className: "dim small", textContent: size }) : null,
     note ? el("div", { className: "error small", textContent: note }) : null,
     a.reason ? el("div", { className: "approval-reason", textContent: `Pi says: ${visibleText(a.reason)}` }) : null,
     el("div", { className: "approval-asked dim small", textContent: `${projectLabel(a.project)} · asked ${new Date(a.at * 1000).toLocaleString()}` }),
     el("div", { className: "approval-actions" }, refuse, approve));
+}
+
+/** A request waiting, as a line (Details' card, the Waiting window): its dot, what it
+ *  asks, where and when, ✕ (refuse) and ✓ (approve); its detail under it when open.
+ *  openSet: the ids unfolded by a click, kept so on redraws. */
+function waitRow(a, open, openSet = null) {
+  const answer = async (yes) => {
+    try {
+      await backend.approvalAnswer(a.id, yes);
+      flashStatus(yes ? "Approved: done as shown" : "Refused: Pi is told");
+      vm.poke();
+    } catch (e) { flashStatus(String(e)); }
+  };
+  const full = approvalItem(a, answer);
+  const [refuse, approve] = $(".approval-actions", full).children;
+  for (const sel of [".approval-what", ".approval-actions", ".approval-asked"]) $(sel, full)?.remove();
+  const icon = (b, name, label) => { b.className = "icon-btn wait-answer"; b.replaceChildren(svgIcon(name)); b.setAttribute("aria-label", label); b.title = label; return b; };
+  const said = approvalSentence(a).replace(/^Pi asks(?: to|:) /, "").replace(/\.$/, "");
+  const when = a.at ? new Date(a.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  const head = el("button", { type: "button", className: "wait-head" },
+    el("span", { className: "wait-dot", "aria-hidden": "true" }),
+    el("span", { className: "what" }, el("span", { textContent: said[0].toUpperCase() + said.slice(1) }), el("span", { textContent: [projectLabel(a.project), when].filter(Boolean).join(" · ") })));
+  head.setAttribute("aria-expanded", String(open));
+  const detail = el("div", { className: "wait-detail", hidden: !open }, ...full.childNodes);
+  head.addEventListener("click", () => {
+    const now = detail.hidden;
+    detail.hidden = !now;
+    head.setAttribute("aria-expanded", String(now));
+    if (now) openSet?.add(a.id); else openSet?.delete(a.id);
+  });
+  return el("div", { className: "wait-row" },
+    el("div", { className: "wait-line" }, head, icon(refuse, "x", "Refuse"), icon(approve, "check", "Approve")), detail);
 }

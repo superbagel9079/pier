@@ -1,9 +1,66 @@
 // A stand-in for the Rust side, so that the interface can be tried in a browser:
 // open index.html outside Pier and log in with the password "demo".
 
+/** A Pi in RPC mode, for the mock: Pier's commands in, Pi's events out (see chat.js). */
+function mockPi(onBytes, params) {
+  const out = (record) => onBytes(new TextEncoder().encode(`${JSON.stringify(record)}\n`));
+  const later = (ms, record) => setTimeout(() => out(record), ms);
+  const resumed = params?.args?.[0] === "--session";
+  let state = { model: { provider: "anthropic", id: "claude-sonnet-5-5", contextWindow: 200000 }, thinkingLevel: "medium", isStreaming: false,
+    sessionName: resumed ? "Write the release notes" : null };
+  const usage = (cost) => ({ input: 1200, output: 340, cacheRead: 8000, cacheWrite: 0, totalTokens: 9540, cost: { total: cost } });
+  const history = resumed ? [
+    { role: "user", content: [{ type: "text", text: "Write the release notes for 2.0, from the changelog." }] },
+    { role: "assistant", usage: usage(0.06), content: [
+      { type: "thinking", thinking: "The changelog already has a 2.0 section, so the notes can follow it: what is new, what changed, what was fixed." },
+      { type: "toolCall", id: "t1", name: "read", arguments: { path: "/home/leo/work/CHANGELOG.md" } },
+      { type: "toolCall", id: "t2", name: "edit", arguments: { path: "/home/leo/work/RELEASE-NOTES.md" } },
+      { type: "text", text: "The notes are in `RELEASE-NOTES.md`: what is new, what changed, and what was fixed, taken from the changelog since 1.9." }] },
+    { role: "toolResult", toolCallId: "t1", content: [{ type: "text", text: "# Changelog\n\n## 2.0\n- Workspace: three docks, tabs that move\n- Activity groups what Pi did by prompt\n- Labs: throwaway machines (optional)\n\n## 1.9\n- picker.command moved to [picker] command" }] },
+    { role: "toolResult", toolCallId: "t2", content: [{ type: "text", text: "Edited RELEASE-NOTES.md: +9 -0" }] },
+  ] : [];
+  setTimeout(() => out({ type: "pier_attached", slot: "pi-work-a1b2c3-r1", project: params?.project, fresh: !resumed }), 30);
+  const answer = (id, command, data) => out({ type: "response", id, command, success: true, data });
+  const run = (text) => {
+    state.isStreaming = true;
+    out({ type: "agent_start" });
+    out({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+    later(100, { type: "message_start", message: { role: "assistant", content: [] } });
+    ["Look at the README first, ", "then answer from it."].forEach((delta, i) => later(250 + i * 150, { type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta } }));
+    later(600, { type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: { id: "t9", name: "read", arguments: { path: "/home/leo/work/README.md" } } } });
+    later(650, { type: "tool_execution_start", toolCallId: "t9", toolName: "read", args: { path: "/home/leo/work/README.md" } });
+    later(1100, { type: "tool_execution_end", toolCallId: "t9", toolName: "read", isError: false, durationMs: 420,
+      result: { content: [{ type: "text", text: "# Pier\n\nPi on a Linux VM, used from your laptop.\n\nTwo pieces: the desktop app, and the picker on the VM.\n\n## Install\n\nDownload Pier, connect, done." }] } });
+    const reply = "The README says Pier runs Pi on a VM from your laptop, in two pieces: the app and the picker. See `README.md`.\n\n```sh\nls -la ~/work\n```";
+    reply.match(/[\s\S]{1,24}/g).forEach((delta, i) => later(1300 + i * 80, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 2, delta } }));
+    const done = 1400 + Math.ceil(reply.length / 24) * 80;
+    later(done, { type: "message_end", message: { role: "assistant", usage: usage(0.02), content: [{ type: "text", text: reply }] } });
+    later(done + 50, { type: "agent_end", messages: [] });
+    setTimeout(() => { state.isStreaming = false; out({ type: "agent_settled", aborted: false }); }, done + 100);
+  };
+  const handle = (data) => {
+    for (const line of String(data).split("\n").filter(Boolean)) {
+      const c = JSON.parse(line);
+      if (c.type === "get_state") answer(c.id, c.type, state);
+      else if (c.type === "get_messages") answer(c.id, c.type, { messages: history });
+      else if (c.type === "get_available_models") answer(c.id, c.type, { models: [{ provider: "anthropic", id: "claude-sonnet-5-5" }, { provider: "anthropic", id: "claude-opus-5-5" }] });
+      else if (c.type === "get_available_thinking_levels") answer(c.id, c.type, { levels: ["off", "low", "medium", "high"] });
+      else if (c.type === "set_model") { state = { ...state, model: { provider: c.provider, id: c.modelId } }; answer(c.id, c.type, {}); }
+      else if (c.type === "set_thinking_level") { state = { ...state, thinkingLevel: c.level }; answer(c.id, c.type, {}); }
+      else if (c.type === "prompt") { answer(c.id, c.type, { disposition: "started" }); run(c.message); }
+      else if (c.type === "steer") answer(c.id, c.type, {});
+      else if (c.type === "abort") { answer(c.id, c.type, {}); state.isStreaming = false; out({ type: "agent_settled", aborted: true }); }
+    }
+  };
+  handle.pi = handle;
+  return handle;
+}
+
 function mockBackend() {
   let saved = null;
   let mockClipboard = "";
+  const mockWritten = {}; // files saved from the viewer
+  let mockProviders = [{ name: "bifrost", baseUrl: "http://gateway:8080/v1", api: "openai-completions", models: ["claude-fable-5-2", "deepseek-v4.1-flash"], key: true, keyEnv: "" }];
   const updateListeners = [];
   const labsState = { settings: { enabled: false, max: 3, ttl_hours: 24, network: "open", cpu: 2, memory_gib: 4, disk_gib: 20, image: "debian/13" },
     labs: [{ name: "db-tests", host: "lab-box", description: "Postgres 16 for the integration tests", project: "/home/leo/work", image: "debian/13", vm: false, network: "open", docker: true, status: "Running", address: "10.88.1.12", expires: Date.now() / 1000 + 5 * 3600 }],
@@ -22,6 +79,7 @@ function mockBackend() {
     { number: 10, title: "Add an export to CSV", author: "leo", taken: false, url: "https://github.com/leo/work/issues/10" },
   ];
   let trusted = false;
+  let mockThinking = ""; // Pi's default thinking level (Settings > Models)
   let pickerVersion = "4.36"; // the demo's VM has an old picker: Pier updates it
   const logLines = [];
   const logListeners = [];
@@ -30,7 +88,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.53" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.75" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -136,21 +194,22 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.53") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.53", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.53" };
+      if (pickerVersion !== "4.75") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.75", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.75" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.53", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.53";
-      return { status: "connected", bundled: "4.53", version: { version: "4.53", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.75", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.75";
+      return { status: "connected", bundled: "4.75", version: { version: "4.75", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.53" ? 22 : 21 }, bundled: "4.53", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.75" ? 22 : 21 }, bundled: "4.75", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
-    logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
+    logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs, version: "0.7.6" }),
     setLogLevel: async () => {},
     openLogFolder: async () => {},
+    openUrl: async (url) => { flashStatus(`would open ${url}`); },
     report: async (extra) => `Pier diagnostic report (demo)\n${extra}\n--- Pier log ---\n${logLines.join("\n")}`,
     copyText: async (text) => { mockClipboard = text; },
     clipboardText: async () => mockClipboard,
@@ -179,15 +238,58 @@ function mockBackend() {
           skills: [...mockSkills.map((s) => item("skills", s.name, s.scope, null, s.enabled, true)), item("skills", "recall", "user", "npm:pi-hindsight", true, false)],
           extensions: [item("extensions", "memory", "user", "npm:pi-hindsight", true, false)],
           prompts: [item("prompts", "review", "user", null, true, false)],
+          mcp: [{ name: "github", scope: "user", from: "~/.pi/agent/mcp.json", kind: "http", enabled: true, description: "Issues and pull requests" }],
           pier: [{ name: "pier-session.ts", enabled: true, setting: "track_sessions", description: "says which conversation this Pi writes and whether it works; no tool, nothing sent" },
             { name: "pier-git.ts", enabled: true, setting: "git_tools", description: "git tools for the forge (push, pull requests, tasks), through the picker" },
             { name: "pier-labs.ts", enabled: false, setting: null, description: "the labs' tools (disposable machines), once a lab host is set up in Labs" }] };
       }
       if (args[0] === "gallery") {
-        return { query: args[1], results: [
-          { name: "pi-hindsight", source: "npm:pi-hindsight", version: "0.4.2", publisher: "vectorize", description: "Long-term memory for Pi" },
-          { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", description: "Code review skills" },
+        return { query: args[1], from: "pi.dev", results: [
+          { name: "billion-context", source: "npm:billion-context", publisher: "ranxianglei", downloads: "3.5M/mo", monthly: 3520997, updated: 1794905865, types: [], repo: "https://github.com/ranxianglei/billion-context", description: "A context-compression plugin: small context windows, 5x fewer tokens, month-long sessions." },
+          { name: "pi-mcp-adapter", source: "npm:pi-mcp-adapter", publisher: "nicopreme", downloads: "2.1M/mo", monthly: 2079369, updated: 1793771013, types: ["extension"], repo: "https://github.com/nicobailon/pi-mcp-adapter", description: "MCP (Model Context Protocol) adapter extension for Pi" },
+          { name: "pi-hindsight", source: "npm:pi-hindsight", version: "0.4.2", publisher: "vectorize", downloads: "40k/mo", monthly: 40000, updated: 1794000000, types: ["extension", "skill"], description: "Long-term memory for Pi" },
+          { name: "pi-mcp-extension", source: "npm:pi-mcp-extension", publisher: "irahardianto", downloads: "1M/mo", monthly: 1000000, updated: 1794800000, types: ["extension"], description: "Full-featured, lightweight MCP extension: stdio, SSE and HTTP transports, OAuth 2.1." },
+          { name: "@acme/pi-review", source: "npm:@acme/pi-review", version: "1.0.3", publisher: "acme", downloads: "2k/mo", monthly: 2000, updated: 1794950000, types: ["skill"], description: "Code review skills" },
         ].filter((p) => !args[1] || p.name.includes(args[1]) || p.description.toLowerCase().includes(args[1].toLowerCase())) };
+      }
+      if (args[0] === "skills-search") {
+        if ((args[1] || "").length === 1) return { query: args[1], skills: [], short: true };
+        if (!args[1]) return { query: "", top: true, skills: [ // skills.sh's most installed (its home page)
+          { name: "find-skills", repo: "vercel-labs/skills", skill: "find-skills", installs: 4436719, page: "https://skills.sh/vercel-labs/skills/find-skills", source: "skills:vercel-labs/skills/find-skills" },
+          { name: "agent-browser", repo: "vercel-labs/agent-browser", skill: "agent-browser", installs: 1598737, page: "https://skills.sh/vercel-labs/agent-browser/agent-browser", source: "skills:vercel-labs/agent-browser/agent-browser" },
+        ] };
+        return { query: args[1], skills: [
+          { name: "vercel-react-best-practices", repo: "vercel-labs/agent-skills", skill: "vercel-react-best-practices", installs: 911662, page: "https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices", source: "skills:vercel-labs/agent-skills/vercel-react-best-practices" },
+          { name: "notes", repo: "acme/skills", skill: "notes", installs: 1200, page: "https://skills.sh/acme/skills/notes", source: "skills:acme/skills/notes" },
+        ] };
+      }
+      if (args[0] === "skill-page") {
+        return { source: args[1], repo: "https://github.com/vercel-labs/agent-skills", page: "https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices",
+          description: "React and Next.js performance optimization guidelines from Vercel Engineering.", readme: "# Vercel React Best Practices\n\nSeventy rules in eight categories.\n\n## When to apply\n\n- writing components\n- reviewing code\n" };
+      }
+      if (args[0] === "gallery-package") {
+        return { name: args[1], version: "1.2.0", license: "MIT", repo: "https://github.com/example/" + args[1], npm: "https://www.npmjs.com/package/" + args[1], homepage: null, keywords: [],
+          readme: `# ${args[1]}
+
+<p align="center"><img src="banner.png"></p>
+
+What it does, in a few lines.
+
+## Install
+
+\`\`\`sh
+pi install npm:${args[1]}
+\`\`\`
+
+- one
+- two
+` };
+      }
+      if (args[0] === "gallery-media") {
+        // A picture drawn here for two of them, none for the others (as pi.dev).
+        const picture = (a, b) => { const c = document.createElement("canvas"); c.width = 160; c.height = 90; const g = c.getContext("2d"); const f = g.createLinearGradient(0, 0, 160, 90); f.addColorStop(0, a); f.addColorStop(1, b); g.fillStyle = f; g.fillRect(0, 0, 160, 90); return c.toDataURL("image/png"); };
+        const known = { "billion-context": ["#3b4b8a", "#7a4ba8"], "pi-mcp-extension": ["#1f5f6b", "#2f8f6f"] };
+        return { media: Object.fromEntries(args.slice(1).map((n) => [n, known[n] ? picture(...known[n]) : null])) };
       }
       if (args[0] === "repo") {
         return { project: args[1], local: true, branch: "pi/fix-login",
@@ -225,7 +327,7 @@ function mockBackend() {
         };
       }
       if (args[0] === "version") {
-        return { version: "4.53", checks: [
+        return { version: "4.75", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
@@ -255,13 +357,63 @@ function mockBackend() {
         const rust = Array.from({ length: 60 }, (_, i) => i % 12 === 0
           ? `/// Parses feed number ${i}.\npub fn parse_${i}(body: &str) -> Result<Feed, Error> {`
           : i % 12 === 11 ? "}\n" : `    let items = body.lines().filter(|l| !l.is_empty()).count(); // ${i}\n    if items > ${i * 10} { return Err(Error::TooMany(items)); }`).join("\n");
-        const text = samples[rel] ?? (rel.endsWith(".rs") ? `use std::collections::HashMap;\n\n${rust}\n` : "");
-        return { file: rel, project: args[1], size: text.length, binary: false, truncated: false, text };
+        const saved = mockWritten[`${args[1]}/${rel}`];
+        const text = saved?.text ?? samples[rel] ?? (rel.endsWith(".rs") ? `use std::collections::HashMap;\n\n${rust}\n` : "");
+        return { file: rel, project: args[1], size: text.length, binary: false, truncated: false, text, mtime: saved?.mtime || "1" };
       }
+      if (args[0] === "fs-write") {
+        const [, project, rel, expected, text] = args;
+        const key = `${project}/${rel}`;
+        const now = mockWritten[key]?.mtime || "1";
+        if (expected !== "-" && expected !== now) return { conflict: true, file: rel, mtime: now };
+        mockWritten[key] = { text, mtime: String(Date.now()) };
+        return { saved: rel, mtime: mockWritten[key].mtime };
+      }
+      if (args[0] === "pi-default-read") return { default: "anthropic/claude-sonnet-5-5", thinking: mockThinking };
+      if (args[0] === "providers") return { providers: mockProviders, path: "/home/leo/.pi/agent/models.json" };
+      if (args[0] === "provider-save") {
+        const body = JSON.parse(args[2]);
+        const old = mockProviders.find((x) => x.name === args[1]);
+        const next = { name: args[1], baseUrl: body.baseUrl, api: body.api, models: body.models, key: Boolean(body.apiKey) || Boolean(old?.key), keyEnv: "" };
+        mockProviders = [...mockProviders.filter((x) => x.name !== args[1]), next].sort((x, y) => x.name.localeCompare(y.name));
+        return { saved: args[1] };
+      }
+      if (args[0] === "provider-delete") { mockProviders = mockProviders.filter((x) => x.name !== args[1]); return { removed: args[1] }; }
       if (args[0] === "ls") {
         const dir = args[1] || "/home/leo";
         if (dir === "/home/leo") return { path: dir, label: "~", entries: [{ name: "work", kind: "dir", path: "/home/leo/work" }, { name: "clients", kind: "dir", path: "/home/leo/clients" }], truncated: false };
         return { entries: (files[dir] || []).map((e) => ({ size: 0, hidden: false, ...e, path: `${dir}/${e.name}` })), truncated: false };
+      }
+      // The Files panel's changes, on the tree above.
+      if (args[0]?.startsWith("fs-")) {
+        const [cmd, project, rel, extra] = args;
+        const parts = rel.split("/");
+        const name = parts.pop();
+        const dir = [project, ...parts].join("/");
+        const list = (files[dir] ||= []);
+        const at = list.findIndex((e) => e.name === name);
+        if (cmd === "fs-new") {
+          if (at >= 0) throw `${name} already exists`;
+          list.push({ name, kind: extra, size: 0, mtime: Date.now() / 1000, hidden: name.startsWith(".") });
+          if (extra === "dir") files[`${dir}/${name}`] = [];
+          return { created: `${dir}/${name}` };
+        }
+        if (at < 0) throw `${name} is not there any more`;
+        if (cmd === "fs-rename") {
+          if (list.some((e) => e.name === extra)) throw `${extra} already exists`;
+          list[at] = { ...list[at], name: extra, hidden: extra.startsWith(".") };
+          return { renamed: `${dir}/${extra}` };
+        }
+        if (cmd === "fs-copy") {
+          const dot = name.lastIndexOf(".");
+          const copyName = (n) => (dot > 0 ? `${name.slice(0, dot)} copy${n > 1 ? ` ${n}` : ""}${name.slice(dot)}` : `${name} copy${n > 1 ? ` ${n}` : ""}`);
+          let n = 1;
+          while (list.some((e) => e.name === copyName(n))) n++;
+          list.push({ ...list[at], name: copyName(n) });
+          return { copied: `${dir}/${copyName(n)}` };
+        }
+        list.splice(at, 1);
+        return { deleted: `${dir}/${name}` };
       }
       if (args[0] === "activity") {
         tick++;
@@ -465,14 +617,14 @@ function mockBackend() {
       return { removed: path };
     },
     notify: async (title, body) => { console.log("notification:", title, body); },
-    setShortcut: async () => {},
-    async termOpen(kind, cols, rows, onBytes) {
+    async termOpen(kind, cols, rows, onBytes, params) {
       const id = nextTerm++;
+      if (kind === "chat") { echoes[id] = mockPi(onBytes, params); return id; }
       echoes[id] = onBytes;
       setTimeout(() => onBytes(new TextEncoder().encode(`demo: ${kind} terminal ${cols}x${rows}\r\n$ `)), 50);
       return id;
     },
-    termWrite(id, data) { echoes[id]?.(new TextEncoder().encode(data === "\r" ? "\r\n$ " : data)); },
+    termWrite(id, data) { echoes[id]?.(typeof echoes[id].pi === "function" ? data : new TextEncoder().encode(data === "\r" ? "\r\n$ " : data)); },
     termResize() {},
     termClose() {},
     async shareStart(path, writable) {
@@ -490,7 +642,6 @@ function mockBackend() {
     pickFolder: async () => "C:\\Users\\leo\\Documents\\mockups",
     pickFiles: async () => ["C:\\Users\\leo\\Documents\\notes.pdf"],
     onDragDrop() {},
-    onClipboardSent() {},
     updateCheck: async () => ({ current: "0.6.0", version: "0.7.0", date: "2026-10-20 09:00:00 +00:00",
       notes: ["- Per-repository Git settings", "- A font for Pier in Settings", "- 13 more themes"].join("\n") }),
     async updateInstall() {
@@ -530,7 +681,6 @@ function mockBackend() {
       mockLog("info", "vm.label", { args: `${file} ${category}` });
       return { file, title, category };
     },
-    shortcutStatus: async () => false,
     async sessionDelete(project, file) {
       if (mockPis.some((p) => p.file === file)) throw new Error("a Pi runs this conversation: stop it first");
       mockDeleted.add(file);
@@ -545,6 +695,7 @@ function mockBackend() {
       if (value === null) delete mockConfig[key]; else mockConfig[key] = value;
       return { key, value: value ?? mockConfigDefaults[key], default: value === null };
     },
+    async piThinking(level) { mockThinking = level; return { thinking: level }; },
     async piDefault(model) {
       if (!model.includes("/")) throw "a model as provider/id";
       mockPiDefault = model;

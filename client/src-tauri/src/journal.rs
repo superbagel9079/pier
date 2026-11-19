@@ -1,19 +1,7 @@
-//! Pier's log: one line per event, in the app's log folder (on Windows,
-//! %LOCALAPPDATA%\app.devbox.client\logs\pier.log):
-//!
+//! Pier's log, one line per event, same shape and `req` as the picker's log on the VM (UTC):
 //!   2026-10-12T14:32:01.123Z INFO  vm.paste-image req=7f3a-12 ms=41 sent=48213
-//!
-//! The same shape as the picker's log on the VM, in UTC like it, and the `req` of a call
-//! is written on both sides: the two logs read side by side. Values are bare words, or
-//! quoted like JSON strings when they hold spaces or quotes. Lines below a line,
-//! indented, belong to it (a panic's details).
-//!
-//! What never comes here: passwords, what is typed in a terminal, what is typed into
-//! Pi (only its length), the content of files. Paths, host names and user names do:
-//! they are what a bug report needs, and the report says so before it is shared.
-//!
-//! Debug lines (every read the interface polls, terminal sizes...) are written only
-//! when "Detailed logs" is on. The file is rotated at 5 MB, 3 files kept.
+//! Never logged: passwords, terminal input, what is typed into Pi, file contents. Paths, host
+//! and user names are (a bug report needs them). Debug lines need "Detailed logs".
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -105,7 +93,7 @@ pub fn enabled(level: Level) -> bool {
     level as u8 <= LEVEL.load(Ordering::Relaxed)
 }
 
-/// Called with every line written: the Logs tab follows the log live.
+/// Called with every line written: the log viewer (Settings > Diagnostics) follows it live.
 pub fn set_listener(listener: impl Fn(&str) + Send + Sync + 'static) {
     if let Some(logger) = LOGGER.get() {
         *logger.listener.lock().unwrap() = Some(Box::new(listener));

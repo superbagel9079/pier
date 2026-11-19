@@ -1,13 +1,8 @@
 // The Team page of Repository, giving a conversation to a colleague, and what waits for this
 // account's Pis wherever the user is.
 
-// ============================================================================
-// Colleagues each have their Pier, their VM and their Pis; they meet in the repository
-// (see "the team" in the picker): tasks are issues labelled pi-task, a Pi asks another
-// account's Pis for a review, a conversation is handed to a colleague on a pi-handoff/
-// branch. Pier starts a Pi on a task or a review with a fixed prompt the picker writes
-// (--agent-task): never with what a colleague wrote.
-// ============================================================================
+// Colleagues meet in the repository ("the team" in the picker): tasks are issues labelled
+// pi-task, handoffs a pi-handoff/ branch. Pi gets a fixed picker prompt, never colleague text.
 
 const AGENT_WAKE_LABELS = {
   off: ["Do nothing", "Tasks, reviews and conversations for you are listed here; nothing else happens."],
@@ -170,12 +165,13 @@ function makeTeamManager(box, currentProject) {
   }
 
   function taskDialog() {
-    const title = el("input", { placeholder: "what to do, in a line", spellcheck: false });
+    const title = el("input", { id: "task-title", placeholder: "what to do, in a line", spellcheck: false });
     const description = el("textarea", { className: "editor", rows: 8, placeholder: "the details: what done looks like, files, constraints", spellcheck: false });
+    description.setAttribute("aria-label", "Details");
     const problem = dialogError();
     const go = el("button", { textContent: "Add the task" });
     const dialog = resourceDialog("A task for the Pis", [
-      el("div", { className: "grid fields" }, el("label", { textContent: "Title" }), title), description,
+      el("div", { className: "grid fields" }, el("label", { htmlFor: "task-title", textContent: "Title" }), title), description,
       el("p", { className: "hint", textContent: "An issue labelled pi-task in the repository: every Pi of the team can take it." }), problem], [go]);
     go.addEventListener("click", async () => {
       go.disabled = true;
@@ -210,13 +206,26 @@ async function giveDialog(project, session) {
   const other = el("input", { placeholder: "their login on the forge", spellcheck: false, hidden: people.collaborators.length > 0 });
   if (!people.collaborators.length) who.value = OTHER;
   who.addEventListener("change", () => { other.hidden = who.value !== OTHER; if (!other.hidden) other.focus(); });
-  const note = el("textarea", { className: "editor", rows: 4, placeholder: "a word for them: where you stopped, what is left (optional)", spellcheck: false });
+  const note = el("textarea", { rows: 3, placeholder: "Where you stopped, what is left (optional)", spellcheck: true });
+  note.id = "give-note";
+  who.id = "give-to";
+  other.setAttribute("aria-label", "Their login on the forge");
   const problem = dialogError();
-  const go = el("button", { textContent: "Give it" });
-  const dialog = resourceDialog(`Give "${conversationTitle(session)}" to a colleague`, [
-    el("div", { className: "grid fields" }, el("label", { textContent: "To" }), el("div", {}, who, other)), note,
-    el("p", { className: "hint", textContent: "The whole conversation goes to the repository, on a branch for them: everything said in it, including what was pasted (a key, a password) and what Pi read. Everyone who can read this repository can read it too, and it stays readable by its commit after the branch is deleted: Pier refuses a public repository. Its branch, if it is a pi/… one, is pushed too. They take it from their Team page; the branch is then deleted." }),
-    problem], [go]);
+  const go = el("button", { type: "button" }, svgIcon("send"), el("span", { textContent: "Give it" }));
+  // As the proposals' A: who, a word, then what goes with it in three points (the whole of
+  // it on the callout's tooltip).
+  const callout = el("div", { className: "give-callout", title: "On a branch for them: everything said in it, what was pasted (a key, a password) and what Pi read. Everyone who can read this repository can read it, and it stays readable by its commit after the branch is deleted: Pier refuses a public repository. Its branch, if a pi/… one, is pushed too. They take it from their Team page; the branch is then deleted." },
+    svgIcon("circle-alert"),
+    el("div", {}, el("p", { className: "t", textContent: "The whole conversation goes to the repository" }),
+      el("ul", {}, el("li", { textContent: "Everything said in it, pasted keys and passwords included" }),
+        el("li", { textContent: "Readable by whoever reads the repository, even later" }),
+        el("li", { textContent: "Refused on a public repository" }))));
+  const dialog = resourceDialog("Give to a colleague", [
+    el("p", { className: "give-sub", textContent: `${conversationTitle(session)} · ${projectLabel(project)}` }),
+    el("div", { className: "give-field" }, el("label", { htmlFor: "give-to", textContent: "To" }), who, other),
+    el("div", { className: "give-field" }, el("label", { htmlFor: "give-note", textContent: "A word for them" }), note),
+    callout, problem], [go]);
+  dialog.box?.classList.add("give");
   go.addEventListener("click", async () => {
     const to = who.value === OTHER ? other.value.trim() : who.value;
     go.disabled = true;
@@ -228,10 +237,8 @@ async function giveDialog(project, session) {
   });
 }
 
-// What waits for this account's Pis, wherever the user is: a notification for each new
-// one, and with the repository set to "Start a Pi by itself", a Pi on it (one per round,
-// AUTO_PER_HOUR an hour and AUTO_PER_DAY a day at most, never on a task a Pi wrote:
-// Pis asking each other would otherwise start Pis without end).
+// What waits for this account's Pis: a notification per new one and, with "Start a Pi by itself",
+// a Pi (AUTO_PER_HOUR / AUTO_PER_DAY at most; never on a task a Pi wrote: Pis would loop).
 const AUTO_PER_HOUR = 3;
 const AUTO_PER_DAY = 10;
 const AUTO_KEY = "pier.team.autoStarted";

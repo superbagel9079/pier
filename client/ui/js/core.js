@@ -1,14 +1,74 @@
-// Pier interface. Plain script, no bundler: Tauri injects window.__TAURI__
-// (app.withGlobalTauri), xterm.js comes from vendor/. Outside Tauri, a mock backend
-// stands in, so the page can be checked in a browser.
+// Pier interface. Plain script, no bundler: Tauri injects window.__TAURI__; xterm.js: vendor/.
+// Outside Tauri a mock backend stands in, so the page can be checked in a browser.
 
 const tauri = window.__TAURI__ || null;
 const backend = tauri ? realBackend() : mockBackend();
 const $ = (selector, root = document) => root.querySelector(selector);
 
 /** A new element: el("span", { className: "x", textContent: "y" }, child, "text"). */
+/** An icon from the sprite in index.html (Lucide), in the text's colour, hidden from readers. */
+/** A search field with its magnifier, as Search settings (the label is its frame). */
+function searchBox(input) {
+  return el("label", { className: "search-field" }, svgIcon("search"), input);
+}
+
+function svgIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "i");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+
+// A file's icon by its name (Catppuccin's, in the text's colour): "ft-python" for x.py.
+const FT_EXT = {
+  py: "python", pyi: "python", js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
+  ts: "typescript", tsx: "typescript", mts: "typescript", rs: "rust", go: "go", java: "java", kt: "java",
+  c: "c", h: "c", cc: "cpp", cpp: "cpp", cxx: "cpp", hpp: "cpp", rb: "ruby", php: "php", lua: "lua",
+  sh: "bash", bash: "bash", zsh: "bash", fish: "bash", ps1: "bash", md: "markdown", mdx: "markdown",
+  json: "json", jsonl: "json", json5: "json", toml: "toml", yml: "yaml", yaml: "yaml", xml: "xml",
+  html: "html", htm: "html", css: "css", scss: "css", sass: "css", less: "css", vue: "vue", svelte: "svelte",
+  svg: "svg", png: "image", jpg: "image", jpeg: "image", gif: "image", webp: "image", ico: "image", bmp: "image",
+  txt: "text", rst: "text", adoc: "text", log: "log", csv: "csv", tsv: "csv", pdf: "pdf",
+  zip: "zip", tar: "zip", gz: "zip", tgz: "zip", xz: "zip", bz2: "zip", "7z": "zip", rar: "zip",
+  db: "database", sqlite: "database", sqlite3: "database", sql: "database", lock: "lock",
+  ini: "config", cfg: "config", conf: "config", env: "env", exe: "binary", bin: "binary", so: "binary", dll: "binary", o: "binary",
+  // Built and debug files (a build's output: .pdb, .exp, .lib beside the .exe and .dll), packages.
+  pdb: "binary", exp: "binary", lib: "binary", a: "binary", obj: "binary", ilk: "binary", dylib: "binary", wasm: "binary",
+  pyc: "binary", pyd: "binary", class: "binary", node: "binary", msi: "binary", rlib: "binary", rmeta: "binary", d: "text",
+  jar: "zip", war: "zip", whl: "zip", deb: "zip", rpm: "zip", apk: "zip", nupkg: "zip", crate: "zip", zst: "zip", iso: "zip", dmg: "zip",
+  bat: "bash", cmd: "bash", psm1: "bash", psd1: "bash", nu: "bash",
+  properties: "config", editorconfig: "config", reg: "config", service: "config", desktop: "config", plist: "xml", csproj: "xml", vcxproj: "xml",
+  sln: "config", props: "xml", targets: "xml", hcl: "config", tf: "config", nix: "config", gradle: "java", scala: "java", groovy: "java",
+  jpe: "image", avif: "image", tif: "image", tiff: "image", heic: "image", psd: "image",
+  markdown: "markdown", org: "text", tex: "text", diff: "text", patch: "text", out: "log", err: "log",
+  parquet: "database", duckdb: "database", mdb: "database", ndjson: "json", geojson: "json", ipynb: "json", yarnrc: "yaml",
+};
+// Dotfiles by their name: the shell's, the tools' settings.
+const FT_NAME = { ".bashrc": "bash", ".zshrc": "bash", ".profile": "bash", ".bash_profile": "bash", ".inputrc": "config",
+  ".npmrc": "config", ".nvmrc": "config", ".editorconfig": "config", ".prettierrc": "json", ".eslintrc": "json", ".babelrc": "json",
+  ".dockerignore": "docker", "cargo.lock": "lock", "go.sum": "lock", "go.mod": "go", "requirements.txt": "python", "pyproject.toml": "python" };
+function fileTypeIcon(path) {
+  const name = String(path).split("/").pop().toLowerCase();
+  if (/^\.env(\.|$)/.test(name)) return "ft-env";
+  if (/^\.git(ignore|attributes|modules)$/.test(name)) return "ft-git";
+  if (/^(dockerfile|containerfile|docker-compose\.ya?ml|compose\.ya?ml)$/.test(name)) return "ft-docker";
+  if (/^(makefile|gnumakefile|justfile)$/.test(name)) return "ft-makefile";
+  if (/^(license|licence|copying)(\.|$)/.test(name)) return "ft-license";
+  if (FT_NAME[name]) return `ft-${FT_NAME[name]}`;
+  const ext = name.includes(".", 1) ? name.split(".").pop() : "";
+  return `ft-${FT_EXT[ext] || (ext ? "file" : "text")}`;
+}
+
 function el(tag, props = {}, ...children) {
-  const node = Object.assign(document.createElement(tag), props);
+  const node = document.createElement(tag);
+  // "aria-…" and "data-…" are attributes, not properties: assigned, they did nothing.
+  for (const [key, value] of Object.entries(props)) {
+    if (key.startsWith("aria-") || key.startsWith("data-")) node.setAttribute(key, value);
+    else node[key] = value;
+  }
   for (const child of children) if (child !== null && child !== undefined && child !== false) node.append(child);
   // A button that is a glyph (×, ⋯, ‹, ▸): a screen reader says its title, not
   // "multiplication sign".
@@ -16,9 +76,8 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-/** A cost in dollars, or "" for none: two significant digits, at least two decimals
- *  ($0.00027, $0.0034, $0.042, $0.42, $1.23). Cheap models spend fractions of a cent
- *  a request, which a fixed $0.000 would show as nothing. */
+/** A cost in dollars, or "" for none: two significant digits, at least two decimals ($0.0034).
+ *  Cheap models spend fractions of a cent a request; a fixed $0.000 would show nothing. */
 function dollars(cost) {
   if (!(cost > 0)) return "";
   if (cost < 0.00001) return "<$0.00001";
@@ -32,9 +91,8 @@ function isGlyph(text) {
   return value.length > 0 && value.length <= 3 && !/[\p{L}\p{N}]/u.test(value);
 }
 
-/** Pier's dialogs, made modal for the keyboard and for screen readers: named by their
- *  title, focus kept inside (Tab and Shift+Tab go round), Escape closes, and the focus
- *  goes back where it was. Returns what undoes it. */
+/** Pier's dialogs made modal: named by their title, focus kept inside, Escape closes,
+ *  focus goes back where it was. Returns what undoes it. */
 function trapDialog(box, close) {
   const before = document.activeElement;
   box.setAttribute("role", "dialog");
@@ -47,7 +105,8 @@ function trapDialog(box, close) {
   const onKey = (e) => {
     // Gone from the page some other way: the trap lets go, and keys go on as before.
     if (!document.contains(box)) { document.removeEventListener("keydown", onKey, true); return; }
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+    // A field that undoes itself on Escape (a name being typed in place) keeps it.
+    if (e.key === "Escape" && e.target.dataset?.ownEscape === undefined) { e.preventDefault(); e.stopPropagation(); close(); return; }
     if (e.key !== "Tab") return;
     const items = [...box.querySelectorAll("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])")]
       .filter((n) => !n.disabled && !n.hidden && n.offsetParent !== null);
@@ -64,9 +123,8 @@ function trapDialog(box, close) {
   };
 }
 
-/** Text from the VM or a forge as it really is, for what the user decides on: characters
- *  that do not show (control, invisible, direction-changing, unusual spaces) appear as
- *  ⟨U+202E⟩. lines: newlines and tabs kept (a command, a review), else shown as ⏎ and ⇥. */
+/** Text from the VM or a forge as it is, for what the user decides on: hidden characters show
+ *  as ⟨U+202E⟩. lines: keep newlines and tabs (a command, a review), else show ⏎ and ⇥. */
 function visibleText(text, { lines = false } = {}) {
   let value = String(text ?? "");
   if (lines) value = value.replace(/\r\n/g, "\n");
@@ -86,13 +144,13 @@ let target = null;          // the Pi in use: {path, label, slot, n} or null
 let running = new Set();    // projects where a Pi runs
 let lastProjects = null;    // the last "projects" answer, shared by the tabs
 
-// ============================================================================
 // Preferences (this computer only)
-// ============================================================================
 
-const PREFS_DEFAULT = { theme: "system", fontSize: 13, shortcut: true, autostop: true, notify: true, clearOnEnd: false, resume: false, customThemes: [],
+const PREFS_DEFAULT = { theme: "system", fontSize: 13, autostop: true, notify: true, clearOnEnd: true, resume: false, customThemes: [],
   autoUpdatePicker: true, updateCheck: true, debugLogs: false, focusFollowsMouse: false, gpuTerminal: true, copyKeys: "linux", copyMode: "key",
-  panelSide: "right", termFont: "", termPadding: 8, uiFont: "" };
+  termFont: "", termPadding: 8, uiFont: "", corners: 0, piTerminal: false, menuBlur: false, accent: "", mica: false, railAlways: true,
+  gradStyle: "aurora", gradIntensity: 22, gradCustom: false, gradC1: "#4c8dff", gradC2: "#a371f7", gradGrain: false,
+  gradNewTab: true, gradWorking: true, gradEmpty: false, gradButtons: false, gradSides: true };
 const prefs = (() => {
   try { return { ...PREFS_DEFAULT, ...JSON.parse(localStorage.getItem("devbox.prefs")) }; } catch { return { ...PREFS_DEFAULT }; }
 })();
@@ -100,6 +158,12 @@ const prefs = (() => {
 if (!prefs.paddingDefault8) {
   if (prefs.termPadding === 6) prefs.termPadding = 8;
   prefs.paddingDefault8 = true;
+}
+// What was given to a Pi (pasted images, files, copies) deleted when it ends: on by default
+// now, and turned on once where it was saved off before.
+if (!prefs.clearDefaultOn) {
+  prefs.clearOnEnd = true;
+  prefs.clearDefaultOn = true;
 }
 // Before themes, the choice was "dark" or "light".
 prefs.theme = { dark: "devbox-dark", light: "devbox-light" }[prefs.theme] || prefs.theme;
@@ -120,15 +184,85 @@ function applyTermPadding() {
 }
 applyTermPadding();
 
-/** Pier's own font (Settings > Appearance): the terminals' by default, a console font
- *  chosen apart, or the system's sans. */
-const UI_SANS = "__sans__";
+/** Pier's own font (Settings > Appearance): the system's sans by default, the terminals'
+ *  font, or any font chosen apart. "__sans__" was the sans when the terminals' was the default. */
+const UI_TERM = "__term__";
 const UI_SANS_FAMILY = '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif';
+if (prefs.uiFont === "__sans__") prefs.uiFont = "";
 function uiFontFamily() {
-  if (prefs.uiFont === UI_SANS) return UI_SANS_FAMILY;
+  if (prefs.uiFont === UI_TERM) return termFontFamily();
   const name = String(prefs.uiFont || "").replace(/["'`;\{}<>]/g, "").trim().slice(0, 60);
-  return name ? `"${name}", ${termFontFamily()}` : termFontFamily();
+  return name ? `"${name}", ${UI_SANS_FAMILY}` : UI_SANS_FAMILY;
 }
+
+/** Corners (Settings > Appearance): 0 (square), 4 or 8 px, on every box. */
+function applyCorners() {
+  const px = [0, 4, 8].includes(Number(prefs.corners)) ? Number(prefs.corners) : 0;
+  document.documentElement.style.setProperty("--r", `${px}px`);
+}
+applyCorners();
+
+/** Ctrl+Alt+V types the clipboard image's reference into Pi's prompt in tmux: taken from
+ *  Windows only when Pi runs there (Settings > Terminals), not for the conversation view. */
+
+/** Mica (Appearance, Windows 11): the window takes a tint of the wallpaper, as the
+ *  Explorer's; the window is transparent (tauri.windows.conf.json), the panels let it
+ *  through. Elsewhere (Windows 10, the browser preview) the effect is refused: in the
+ *  preview a wallpaper is drawn behind the page instead, to see it. */
+function applyMica() {
+  const on = Boolean(prefs.mica);
+  const root = document.documentElement;
+  root.classList.toggle("mica", on);
+  applyTheme(); // the surfaces' colours, solid or not
+  const win = tauri?.window?.getCurrentWindow?.();
+  root.classList.toggle("mica-preview", on && !win);
+  if (!win?.setEffects) return;
+  (on ? win.setEffects({ effects: ["mica"] }) : win.clearEffects()).catch((error) => uiLog("warn", "mica-failed", { msg: String(error) }));
+}
+
+/** The gradient (Appearance): its style, its strength, its colours (the accent's or two
+ *  chosen), its grain, and where it goes, as classes and variables on the root
+ *  (style.css draws it). */
+const GRAD_STYLES = ["off", "aurora", "mesh", "linear", "glow", "dusk", "horizon", "halo", "corners", "dawn", "prism", "tide"];
+function applyGradient() {
+  const root = document.documentElement;
+  const style = GRAD_STYLES.includes(prefs.gradStyle) ? prefs.gradStyle : "aurora";
+  for (const s of GRAD_STYLES) root.classList.toggle(`grad-${s}`, s === style);
+  root.classList.toggle("grad-grain", Boolean(prefs.gradGrain) && style !== "off");
+  const on = style !== "off";
+  root.classList.toggle("grad-in-newtab", on && prefs.gradNewTab);
+  root.classList.toggle("grad-in-working", on && prefs.gradWorking);
+  root.classList.toggle("grad-in-empty", on && prefs.gradEmpty);
+  root.classList.toggle("grad-in-buttons", on && prefs.gradButtons);
+  root.classList.toggle("grad-in-sides", on && prefs.gradSides);
+  root.style.setProperty("--gi", `${Math.min(60, Math.max(5, Number(prefs.gradIntensity) || 22))}%`);
+  if (prefs.gradCustom) {
+    root.style.setProperty("--g1", prefs.gradC1);
+    root.style.setProperty("--g2", prefs.gradC2);
+  } else {
+    root.style.removeProperty("--g1");
+    root.style.removeProperty("--g2");
+  }
+}
+applyGradient();
+
+/** Translucent menus (Appearance): what is behind them shows through, blurred. */
+function applyMenuBlur() {
+  document.documentElement.classList.toggle("menus-blur", Boolean(prefs.menuBlur));
+}
+applyMenuBlur();
+
+/** Copy buttons on code blocks (Conversations): under the pointer, always, never. */
+function applyCopyButtons() {
+  document.documentElement.dataset.copy = prefs.copyButtons || "hover";
+}
+applyCopyButtons();
+
+/** Keep the rail (Appearance): its icons stay on the left when the conversations are hidden. */
+function applyRail() {
+  document.documentElement.classList.toggle("rail-always", prefs.railAlways !== false);
+}
+applyRail();
 
 /** The two faces of the panels, as CSS variables: the interface, and what is code
  *  (paths, branches, logs, diffs) in the terminals' font. Set again when either changes. */
@@ -142,13 +276,10 @@ function savePrefs() {
   try { localStorage.setItem("devbox.prefs", JSON.stringify(prefs)); } catch { /* storage off */ }
 }
 
-// ============================================================================
 // Logging: the interface writes into Pier's log (see journal.rs)
-// ============================================================================
 //
-// What goes there: the interface's own errors (exceptions, failed promises), every
-// error it shows the user, and the main steps (connecting, installing the picker,
-// restoring). Never a password or what is typed.
+// What goes there: its own errors, every error shown to the user, the main steps (connecting,
+// installing the picker, restoring). Never a password or what is typed.
 
 function uiLog(level, event, fields = {}) {
   try { backend.log(level, event, fields)?.catch?.(() => {}); } catch { /* the log is best effort */ }
@@ -172,9 +303,7 @@ function whereOf(node) {
   return node.id || node.closest("[id]")?.id || node.className || "?";
 }
 
-// ============================================================================
 // Themes (see themes.js): built-in, imported from VS Code or Zed, or customized
-// ============================================================================
 
 function allThemes() {
   return [...BUILTIN_THEMES, ...prefs.customThemes];
@@ -195,6 +324,33 @@ function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = theme.dark ? "dark" : "light";
   for (const key of UI_KEYS) root.style.setProperty(`--${key}`, theme.ui[key]);
+  // Mica (Appearance): the wallpaper's tint as much on the sides as in the middle (more
+  // there made the left a different colour); the panel's own colour tells them apart.
+  root.style.setProperty("--mica-side", alpha(theme.ui.panel, 0.8));
+  root.style.setProperty("--mica-mid", alpha(theme.ui.bg, 0.8));
+  // With Mica, the cards, fields and hovers let it through too (else they stay solid).
+  root.style.setProperty("--field", prefs.mica ? alpha(theme.ui.field, 0.55) : theme.ui.field);
+  root.style.setProperty("--hover", prefs.mica ? alpha(theme.ui.hover, 0.6) : theme.ui.hover);
+  // An accent chosen in Appearance stays over every theme's ("" follows the theme).
+  const own = /^#[0-9a-f]{6}$/i.test(prefs.accent || "") ? prefs.accent : "";
+  if (own) root.style.setProperty("--accent", own);
+  // Links and file names: the accent, unless it is only the text's colour (Pier's own
+  // themes): then a blue that reads on the theme.
+  const neutral = !own && String(theme.ui.accent).toLowerCase() === String(theme.ui.fg).toLowerCase();
+  root.style.setProperty("--link", own || (neutral ? (theme.dark ? "#8cc4ff" : "#0b5cad") : theme.ui.accent));
+  // The gradient's colours: the accent's family only, what the theme shows (its terminal's
+  // blue or cyan, never seen in the interface, brought colours the theme does not have). A
+  // coloured theme: its accent, two hues beside it on the warm side, a blend with the text,
+  // a deeper accent. A black and white theme (its accent its text): its accent and text and
+  // blends of them, grey. Two chosen apart (Custom) replace the first two (applyGradient).
+  const accent = own || theme.ui.accent;
+  const fg = theme.ui.fg;
+  const blend = (a, b, p) => `color-mix(in srgb, ${a} ${p}%, ${b})`;
+  const turn = (deg) => `oklch(from ${accent} l c calc(h + ${deg}))`;
+  const tones = !neutral
+    ? [accent, turn(28), blend(accent, fg, 55), turn(52), `oklch(from ${accent} calc(l * 0.8) c h)`]
+    : [accent, fg, blend(accent, fg, 60), blend(accent, theme.ui.bg, 70), blend(fg, accent, 60)];
+  tones.forEach((c, i) => root.style.setProperty(`--tg${i + 1}`, c));
   // The file viewer's syntax colors: the terminal's, when the theme has them.
   for (const key of ["magenta", "green", "yellow", "blue", "cyan"]) {
     if (theme.terminal?.[key]) root.style.setProperty(`--ansi-${key}`, theme.terminal[key]);
@@ -250,12 +406,8 @@ function flashStatus(text, near) {
   const toast = $("#toast");
   toast.textContent = "";
   requestAnimationFrame(() => { toast.textContent = text; }); // shown, then filled: read out
-  // In the top right corner of the terminal (or panel) it is about; else at the bottom
-  // right of the window, where it covers no tab bar ("picker installed" at a connection).
-  const pane = near || document.activeElement?.closest?.(".pane");
-  const box = pane && pane.offsetParent !== null ? pane.getBoundingClientRect() : { top: innerHeight - 64, right: innerWidth };
-  toast.style.top = `${Math.round(box.top + 8)}px`;
-  toast.style.right = `${Math.round(innerWidth - box.right + 14)}px`;
+  // Always at the bottom right of the window, where Windows puts its notifications (CSS).
+  toast.style.top = toast.style.right = "";
   toast.hidden = false;
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => { toast.hidden = true; }, 2000);
@@ -282,3 +434,14 @@ function fontKey(event) {
 document.addEventListener("keydown", (event) => {
   if (!event.defaultPrevented && !$("#workspace").hidden && !event.target.closest?.(".xterm")) fontKey(event);
 });
+
+// Pier's mark: π in braille, made into characters by asciify-engine (braille mode, 20
+// columns) from a drawn π. Shown on the first page, above the VM.
+const PIER_ART = [
+  "⣿⢿⣿⣿⣿⣿⣿⣿⣿⠿",
+  "⠀⢸⣿⣿⠀⢨⣿⣿⠂",
+  "⠀⢘⣿⣿⠀⠨⣿⣿⣅⡀",
+  "⠀⠸⠿⠻⠀⠀⠛⠿⠿⠃",
+].join("\n");
+// The empty braille cell (U+2800) is drawn as faint dots by some fonts: a plain space instead.
+function pierMark() { return el("pre", { className: "pier-mark", textContent: PIER_ART.replace(/⠀/g, " "), "aria-hidden": "true" }); }

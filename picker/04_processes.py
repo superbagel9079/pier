@@ -165,9 +165,8 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
         mounts.setdefault(os.path.realpath(os.path.expanduser(path)), "ro")
     for path in [project, os.path.join(home, ".pi"), *config["sandbox_write"]]:
         mounts[os.path.realpath(os.path.expanduser(path))] = "rw"
-    # --dev: a /dev of its own (the user's other terminals, /dev/pts, stay out of
-    # reach); /run/user: the user's session bus and systemd would start programs
-    # outside the sandbox.
+    # --dev: a /dev of its own (other terminals, /dev/pts, stay out); /run/user hidden:
+    # the session bus would start programs outside the sandbox.
     args = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
             "--tmpfs", "/tmp", "--tmpfs", "/home", *run_hidden()]
     if not within(home, "/home"):
@@ -178,19 +177,16 @@ def sandbox_argv(argv, project, home, config, env, network=None, git_socket=None
     for path in sorted(mounts, key=lambda m: (m.count(os.sep), m)):
         if os.path.exists(path):
             args += ["--bind" if mounts[path] == "rw" else "--ro-bind", path, path]
-    # The conversations of every project are in ~/.pi/agent/sessions: a Pi would read
-    # what was said in the others, and write in them an order it finds there when the
-    # user goes on with one. Only this project's folders come back, by descriptor (a
-    # link put there by another Pi cannot give a folder elsewhere).
+    # ~/.pi/agent/sessions holds every project's conversations: only this project's
+    # folders come back, by descriptor (a link from another Pi cannot point elsewhere).
     pi_home = os.path.realpath(os.path.join(home, ".pi"))
     every = os.path.realpath(os.path.join(agent_dir(), "sessions"))
     if within(every, pi_home) and every != pi_home and os.path.isdir(every):
         args += ["--tmpfs", every]
         for fd, folder in sessions:
             args += ["--bind-fd", str(fd), folder] if bwrap_takes("--bind-fd") else ["--bind", folder, folder]
-    # What Pier gives each Pi (see pier_dir) is the picker's, out of reach: its
-    # extensions read-only, and the folder its own state goes to. ~/.pi/pier, where an
-    # older picker kept them, is hidden.
+    # What Pier gives each Pi (see pier_dir) is the picker's: extensions read-only, its
+    # state folder writable. ~/.pi/pier, where an older picker kept them, is hidden.
     legacy = os.path.join(pi_home, "pier")
     if os.path.isdir(legacy) and not os.path.islink(legacy):
         args += ["--tmpfs", legacy]
