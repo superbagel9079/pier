@@ -974,7 +974,31 @@ class Conversations(Home):
         self.assertEqual(ok.groups(), ("vercel-labs", "agent-skills", "vercel-react-best-practices"))
         for bad in ("skills:a/b", "skills:a/b/c d", "skills:a/b/c;rm", "npm:x", "skills:a/b/--global", "skills:-a/b/c", "skills:a/.b/c"):
             self.assertIsNone(m.SKILL_SOURCE_RE.fullmatch(bad), bad)
-        self.assertEqual(m.api_skills_search(self.home, "a"), {"query": "a", "skills": [], "short": True})
+        # Under two letters: skills.sh's most installed, from its home page; offline, type two letters.
+        import urllib.request
+
+        class Answer(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+
+        def offline(request, timeout=None):
+            raise OSError("offline")
+
+        page = (r'{\"source\":\"vercel-labs/skills\",\"skillId\":\"find-skills\",\"name\":\"find-skills\",\"installs\":42}'
+                r'{\"source\":\"-bad/repo\",\"skillId\":\"x\",\"name\":\"x\",\"installs\":1}')
+        old = urllib.request.urlopen
+        try:
+            urllib.request.urlopen = lambda request, timeout=None: Answer(page.encode())
+            m._SKILLS_SEARCH.clear()
+            top = m.api_skills_search(self.home, "a")
+            self.assertEqual([s["source"] for s in top["skills"]], ["skills:vercel-labs/skills/find-skills"])
+            self.assertTrue(top["top"])
+            urllib.request.urlopen = offline
+            m._SKILLS_SEARCH.clear()
+            self.assertEqual(m.api_skills_search(self.home, "a"), {"query": "", "skills": [], "short": True})
+        finally:
+            urllib.request.urlopen = old
+            m._SKILLS_SEARCH.clear()
 
     def test_rpc_light_keeps_the_delta_only(self):
         # A streamed piece without the message so far; a tool call's pieces dropped.
