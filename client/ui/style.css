@@ -2366,12 +2366,9 @@ button.secondary.danger:is(#_#_, button):hover:not(:disabled) { background: colo
 /* Menus (M2): the choice in use, a row of the accent's tint. */
 .menu button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .menu button.on:hover, .menu button.on:focus-visible { background: color-mix(in srgb, var(--accent) 26%, transparent); }
-/* Appearance (A4): a theme or a gradient chosen, a tick in the accent's colour. */
-.theme-card.on::after, .grad-thumb.on::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 5px; height: 10px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .grad-thumb { border-color: transparent; }
 .grad-thumb.on { border-color: transparent; box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 14%, transparent); }
-/* Where the panels go, as the theme cards (A4): no frame, the one chosen tinted with a tick. */
+/* Where the panels go, as the theme cards: no frame, the one chosen in the accent's tint. */
 .layout-tiles button { position: relative; border-color: transparent; background: var(--field); }
 .layout-tiles button[aria-checked="true"] { border-color: transparent; background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.layout-tiles button[aria-checked="true"]::after { content: ""; position: absolute; right: 9px; bottom: 9px; width: 4px; height: 8px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 .layout-tiles button[aria-checked="true"] .lay { border-color: transparent; }
