@@ -174,7 +174,7 @@
   <section id="prefs" class="settings" hidden aria-labelledby="prefs-title">
     <nav class="settings-nav" aria-label="Settings">
       <button id="prefs-close" class="link back" title="Back to the terminals and panels (Esc)"><svg class="i" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back to Pier</button>
-      <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="prefs-search" type="search" placeholder="Search settings" aria-label="Search settings" spellcheck="false" autocomplete="off"></label>
+      <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input id="prefs-search" type="search" placeholder="Search settings" aria-label="Search settings" aria-keyshortcuts="/" spellcheck="false" autocomplete="off"><kbd class="key" aria-hidden="true">/</kbd></label>
       <div class="prefs-tabs" role="tablist" aria-orientation="vertical">
         <p class="settings-group">Pier</p>
         <button role="tab" data-page="general" data-lede="How Pier's window is laid out and behaves."><svg class="i" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>General</span></button>
@@ -543,7 +543,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         <button class="icon-btn display-btn" aria-haspopup="menu" title="Display options" aria-label="Display options"><svg class="i" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg></button>
       </div>
       <div class="toolbar" hidden>
-        <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input class="conversation-filter" type="search" aria-label="Search every conversation" placeholder="Search conversations" spellcheck="false"></label>
+        <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input class="conversation-filter" type="search" aria-label="Search every conversation" aria-keyshortcuts="/" placeholder="Search conversations" spellcheck="false"><kbd class="key" aria-hidden="true">/</kbd></label>
       </div>
       <p class="hint count" hidden></p>
       <p class="error" hidden></p>

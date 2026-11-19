@@ -229,7 +229,7 @@ async function drawSettingsPage(page, again, draw) {
 // --- Each page's action, on the right of its title ----------------------------------
 
 function pageAction(icon, text, run) {
-  const b = el("button", { type: "button", className: "secondary page-act" }, svgIcon(icon), el("span", { textContent: text }));
+  const b = el("button", { type: "button", className: "page-act" }, svgIcon(icon), el("span", { textContent: text }));
   b.addEventListener("click", () => run(b));
   return b;
 }
@@ -272,7 +272,7 @@ function drawModels(again) {
         flashStatus("Pi's default thinking saved");
         drawModels(false);
       } catch (error) { noticeSetter(thinkError)(String(error)); }
-    }, false, { mark: v === piThinking ? svgIcon("check") : el("span") }])));
+    }, false, { mark: v === piThinking ? svgIcon("check") : el("span"), current: v === piThinking }])));
     const out = [el("div", { className: "rows" }, el("div", { className: "set" },
       el("div", { className: "what" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), el("span", { textContent: "Every new conversation starts on it." }), defError), def),
       el("div", { className: "set" },

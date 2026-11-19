@@ -321,6 +321,7 @@ function makeConversations(tab) {
   /** The rail's speech bubble: every project again. */
   tab.showAll = () => { only = null; render(); };
   // A mark changed elsewhere (Settings > Projects): read again, drawn again.
+  tab.search = () => { workspace.show(tab); searching(true); }; // "/" (prefs.js)
   tab.reloadLooks = () => { try { view.looks = JSON.parse(localStorage.getItem(STORE))?.looks || view.looks; } catch { /* kept */ } redraw(); };
   tab.filtered = () => Boolean(alone());
 

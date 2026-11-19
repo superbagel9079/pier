@@ -593,7 +593,7 @@ for (const [id, key] of [["prefs-copykeys", "copyKeys"], ["prefs-copymode", "cop
 function choiceButton(button, options, get, set) {
   const show = () => { $("span", button).textContent = (options.find(([v]) => v === get()) || options[0])[1]; };
   button.addEventListener("click", () => showMenu(button, options.map(([v, label]) => [label, () => { set(v); show(); }, false,
-    { mark: v === get() ? svgIcon("check") : el("span") }])));
+    { mark: v === get() ? svgIcon("check") : el("span"), current: v === get() }])));
   show();
   return show;
 }
@@ -716,3 +716,14 @@ $("#prefs-report-save").addEventListener("click", async () => {
     e.preventDefault();
   }, { passive: false });
 }
+
+// "/" anywhere but a field or a terminal: the search of where you are (Settings', else the
+// conversations').
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+  const at = document.activeElement;
+  if (at?.closest?.("input, textarea, select, [contenteditable='true'], .xterm") || !$("#menu").hidden || document.querySelector(".overlay:not([hidden])")) return;
+  e.preventDefault();
+  if (!$("#prefs").hidden) { $("#prefs-search").focus(); return; }
+  workspace.find("conversations")?.search?.();
+});

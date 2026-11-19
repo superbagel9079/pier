@@ -667,7 +667,7 @@ li > .meta { display: flex; flex-direction: column; min-width: 0; flex: 1; } /* 
   background: var(--bg); border: 1px solid var(--line); color: var(--fg); text-align: left; }
 .pick:hover { background: var(--bg); border-color: var(--dim); }
 .pick > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick::after { content: "▾"; color: var(--dim); font-size: 12px; }
+.pick::after { content: ""; flex: none; width: 6px; height: 6px; margin: 0 2px 3px 0; border: solid var(--dim); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 /* A model field: typed into, so a field, drawn as a pick. */
 /* Theme settings */
 .swatches { display: flex; gap: var(--s1); margin: var(--s2) 0 2px; flex-wrap: wrap; }
@@ -1191,9 +1191,9 @@ button.row-main:hover { background: none; }
 /* The theme gallery (Appearance, the proposals' 5A) */
 .theme-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); margin-bottom: var(--s2); }
 .theme-cell { position: relative; min-width: 0; }
-.theme-card { width: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); color: var(--fg); text-align: left; }
-.theme-card:hover { background: var(--field); border-color: var(--dim); }
-.theme-card.on { border-color: var(--fg); box-shadow: inset 0 0 0 1px var(--fg); }
+.theme-card { position: relative; width: 100%; display: flex; flex-direction: column; gap: var(--s2); padding: var(--s2); background: var(--field); border: 1px solid transparent; border-radius: var(--r); color: var(--fg); text-align: left; }
+.theme-card:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.theme-card.on { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .theme-card .name { font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .theme-preview { display: flex; height: 36px; overflow: hidden; border-radius: max(0px, calc(var(--r) - 2px)); border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent); }
 .theme-preview i { flex: 1; }
@@ -1805,11 +1805,11 @@ input[type="checkbox"]::before { background:
     linear-gradient(-45deg, transparent calc(50% - .8px), var(--accent) calc(50% - .8px), var(--accent) calc(50% + .8px), transparent calc(50% + .8px)); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"] { border-color: color-mix(in srgb, var(--fg) 30%, transparent); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"]::before { background: color-mix(in srgb, var(--fg) 45%, transparent); }
-:is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input, .switch-hint > input)[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
-:is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"]:checked::before { background: var(--bg); }
+:is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input, .switch-hint > input)[type="checkbox"]:checked { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); }
+:is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input, .switch-hint > input)[type="checkbox"]:checked::before { background: var(--accent); }
 .qs-step.on { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
 .look-choice[aria-pressed="true"] { outline-color: var(--accent); }
-.grad-thumb.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
 .folder-card[aria-selected="true"] { border-color: var(--accent); }
 .rail-btn[aria-pressed="true"]::before, .rail-proj.on::before { background: var(--accent); }
 .pane-project > .toolbar .switch .mode.active::after { background: var(--accent); }
@@ -2298,9 +2298,9 @@ textarea { resize: none; }
 #prefs-danger:has(#btn-disconnect[hidden]) { display: none; }
 /* Outlined: a list of the same action (Popular's Connect), and Disconnect in red. */
 /* Outlined in the accent's colour: seen at once, quieter than a filled button. */
-#prefs .prefs-page button.secondary.quiet, #prefs-act .page-act { background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); font-weight: 400; }
+#prefs .prefs-page button.secondary.quiet { background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); font-weight: 400; }
 #prefs #btn-disconnect.danger { background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); border-color: transparent; color: var(--red, #f85149); font-weight: 400; }
-#prefs .prefs-page button.secondary.quiet:hover, #prefs-act .page-act:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+#prefs .prefs-page button.secondary.quiet:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 #prefs #btn-disconnect.danger:hover { background: color-mix(in srgb, var(--red, #f85149) 24%, transparent); }
 .model-group { margin-bottom: var(--s2); }
 .model-group > summary { list-style: none; display: flex; align-items: center; gap: var(--s2); min-height: 32px; cursor: pointer; font-weight: 600; }
@@ -2345,3 +2345,33 @@ textarea { resize: none; }
 .pkg-tools .pick.pkg-filter { width: auto; border-color: transparent; border-radius: var(--r); }
 /* After the bars' own padding: room for the magnifier, always. */
 .search-field input[type="search"] { padding-left: calc(var(--s2) + 14px + var(--s2)); }
+
+/* --- Pier's controls, one of each everywhere (the controls' board: B1+B5, S5, R1+R4, L1+L3, M2, A4) --- */
+/* Buttons (B1): the accent's tint, no border; red for what removes. The one filled button of a
+   place is a plain <button> (the main one: Connect, Send, Approve, a settings page's own action).
+   The :is(#_, button) gives it an id's weight, over the older rules of each place. */
+button.secondary:is(#_, button) { background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); }
+button.secondary:is(#_, button):hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+button.secondary.danger:is(#_, button) { background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); color: var(--red, #f85149); }
+button.secondary.danger:is(#_, button):hover:not(:disabled) { background: color-mix(in srgb, var(--red, #f85149) 24%, transparent); }
+#prefs-act .page-act { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 var(--s3); }
+#prefs-act .page-act .i { width: 14px; height: 14px; }
+/* Search (R1 + R4's key): the field's tint, the accent's edge when typing in it, its key. */
+.search-field input:focus { border-color: color-mix(in srgb, var(--accent) 60%, transparent); outline: none; }
+.search-field .key { position: absolute; right: 8px; top: 50%; translate: 0 -50%; font: 11px/16px var(--code); color: var(--dim); background: color-mix(in srgb, var(--fg) 8%, transparent); padding: 0 5px; border-radius: max(0px, calc(var(--r) - 2px)); pointer-events: none; }
+.search-field:has(.key) input { padding-right: 28px; }
+.search-field input:focus ~ .key, .search-field input:not(:placeholder-shown) ~ .key { display: none; }
+/* Lists (L1): no border, the field's tint. */
+.pick { border-color: transparent; }
+/* Menus (M2): the choice in use, a row of the accent's tint. */
+.menu button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.menu button.on:hover, .menu button.on:focus-visible { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+/* Appearance (A4): a theme or a gradient chosen, a tick in the accent's colour. */
+.theme-card.on::after, .grad-thumb.on::after { content: ""; position: absolute; right: 8px; bottom: 8px; width: 5px; height: 10px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.grad-thumb { border-color: transparent; }
+.grad-thumb.on { border-color: transparent; box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 14%, transparent); }
+/* Where the panels go, as the theme cards (A4): no frame, the one chosen tinted with a tick. */
+.layout-tiles button { position: relative; border-color: transparent; background: var(--field); }
+.layout-tiles button[aria-checked="true"] { border-color: transparent; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.layout-tiles button[aria-checked="true"]::after { content: ""; position: absolute; right: 9px; bottom: 9px; width: 4px; height: 8px; border: solid var(--accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.layout-tiles button[aria-checked="true"] .lay { border-color: transparent; }

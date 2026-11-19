@@ -98,7 +98,7 @@ function pickify(select, variant = "") {
     select.value = o.value;
     select.dispatchEvent(new Event("change", { bubbles: true }));
     label();
-  }, o.disabled, { icon: o.value === select.value ? "check" : null }])));
+  }, o.disabled, { icon: o.value === select.value ? "check" : null, current: o.value === select.value }])));
   // Set in code (prefs.js fills and sets them): the button follows.
   const own = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
   Object.defineProperty(select, "value", { get() { return own.get.call(this); }, set(v) { own.set.call(this, v); label(); } });
