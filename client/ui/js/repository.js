@@ -19,6 +19,8 @@ function makeRepository(tab) {
   }
   for (const b of tab.pane.querySelectorAll(".repository-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
   const where = $$(".repository-project");
+  where.hidden = Boolean(tab.project); // in Settings > Projects: the project is the page's title
+  where.style.display = tab.project ? "none" : "";
   const label = () => { where.textContent = project() ? projectLabel(project()) : "no Pi in use: start one in a project"; };
 
   tab.showPage = showPage;

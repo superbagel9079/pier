@@ -44,7 +44,7 @@ function settingsPageShown(page) {
   else if (page === "sandbox") drawSandbox();
   else if (page === "network") drawNetwork();
   else if (page === "git") drawForges();
-  else if (page === "extensions") drawExtensions();
+  else if (page === "extensions") { extInto(extHome()); drawExtensions(); }
   else if (page === "projects") drawProjects();
 }
 
@@ -540,6 +540,7 @@ function openProjectSettings(project, sub = null) {
 function drawProjects() {
   const section = $('#prefs .prefs-page[data-page="projects"]');
   projectsRepo?.onClose?.(); // the Repository shown before: its listeners go
+  extInto(extHome()); // Extensions' parts back in their page (a project's shows them in its own)
   projectsRepo = null;
   if (!online) { section.replaceChildren(); return; }
   const data = vm.latest("conversations")?.data;
@@ -599,7 +600,7 @@ function drawProjects() {
   // Its pages, as tabs: General, Instructions and Repository here, Extensions on its own page.
   const tabs = el("span", { className: "seg project-tabs", role: "tablist" });
   for (const [key, label, go] of [["general", "General"], ["instructions", "Instructions"],
-    ["extensions", "Extensions", () => { extProject = p.project; extFromProject = true; showPrefsPage("extensions"); }],
+    ["extensions", "Extensions"],
     ["repository", "Repository"]]) {
     const b = el("button", { type: "button", role: "tab", textContent: label });
     b.setAttribute("aria-selected", String((projectsSub || "general") === key));
@@ -613,6 +614,17 @@ function drawProjects() {
   }, (look) => $(".pbadge", title)?.replaceWith(projectBadge(p.project, look)));
   if (projectsSub === "instructions") {
     section.replaceChildren(back, title, tabs, promptCards(p.project));
+    return;
+  }
+  if (projectsSub === "extensions") {
+    // Its Extensions here: the Extensions page's parts, moved in while this tab is shown.
+    extProject = p.project;
+    extFromProject = true;
+    const host = el("div", { className: "project-extensions" });
+    section.replaceChildren(back, title, tabs, host);
+    extInto(host);
+    $("#prefs-act").replaceChildren(PAGE_ACTIONS.extensions());
+    drawExtensions();
     return;
   }
   if (projectsSub === "repository") {
@@ -849,6 +861,15 @@ let extProject = null;  // the project whose own resources are shown with yours
 let extParts = null;    // {manager, tools, showTab}
 let extFromProject = false; // shown from Settings > Projects: that project's, its name on top
 let extTab = "installed"; // the tab shown: installed or browse
+
+/** Extensions' parts (its bar, its lists, Browse): in their page, or in a project's page. They
+ *  stay in the document either way (their lists are drawn again once read). */
+const extHome = () => $('#prefs .prefs-page[data-page="extensions"]');
+function extInto(host) {
+  for (const part of [$(".ext-bar"), $("#ext-manager"), $("#ext-packages"), $("#ext-pack")]) {
+    if (part && part.parentElement !== host && !(part.id === "ext-packages" && part.closest("#ext-manager"))) host.append(part);
+  }
+}
 
 /** From Project's "manage": that project's own resources, with yours. */
 function settingsExtensionsFor(project) {
