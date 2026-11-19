@@ -48,7 +48,9 @@ document.addEventListener("mousemove", (event) => {
   // The top bar while not connected; then the rail and the docks' bars, where nothing is
   // (not on a tab: a tab is dragged to another dock).
   document.addEventListener("mousedown", (event) => {
-    if (event.button !== 0 || !event.target.closest("#topbar, #rail, .dock-head, .center-head, .pane-project > .toolbar .switch, .settings-nav")) return;
+    // In Settings: the menu's room, a page's title and its sentence, and the strip above them.
+    const settingsTop = event.target.matches?.(".prefs-pages") && event.offsetY < 48;
+    if (event.button !== 0 || (!settingsTop && !event.target.closest("#topbar, #rail, .dock-head, .center-head, .pane-project > .toolbar .switch, .settings-nav, .prefs-head"))) return;
     if (event.target.closest("button, a, input, select, textarea, [role=tab], .tab, .menu, .prefs-tabs")) return;
     if (event.detail === 2) win.toggleMaximize();
     else win.startDragging();

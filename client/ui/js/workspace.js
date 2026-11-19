@@ -43,7 +43,7 @@ const workspace = (() => {
   const centerEl = $("#dock-center");
   const grid = $(".center-grid", centerEl);
   for (const name of DOCKS) {
-    const node = name === "center" ? $('.group[data-dock="center"]', centerEl) : $(`#dock-${name}`);
+    const node = name === "center" ? $('.pane-group[data-dock="center"]', centerEl) : $(`#dock-${name}`);
     docks[name] = {
       name, el: node, side: name !== "center", tabs: [], active: null, collapsed: false,
       width: defaultLayout()[name]?.width || 320, splitter: $(`.splitter[data-dock="${name}"]`),
@@ -75,7 +75,7 @@ const workspace = (() => {
 
   function newGroup() {
     const name = `center-${++groupSeq}`;
-    const node = el("div", { className: "group" });
+    const node = el("div", { className: "pane-group" });
     node.dataset.dock = name;
     const plus = el("button", { className: "icon add", title: "Add a tab", "aria-label": "Add a tab", "aria-haspopup": "menu" }, svgIcon("plus"));
     plus.addEventListener("click", (event) => showMenu(event.currentTarget, addChoices(name)));

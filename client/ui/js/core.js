@@ -338,16 +338,17 @@ function applyTheme() {
   // themes): then a blue that reads on the theme.
   const neutral = !own && String(theme.ui.accent).toLowerCase() === String(theme.ui.fg).toLowerCase();
   root.style.setProperty("--link", own || (neutral ? (theme.dark ? "#8cc4ff" : "#0b5cad") : theme.ui.accent));
-  // The gradient's colours: only the theme's own palette. A coloured theme: its accent, then
-  // its terminal's magenta, cyan, yellow (the warm one of dusk and dawn) and blue. A black and
-  // white theme (its accent its text): its accent and text and blends of them, grey, never a
-  // colour it does not have. Two chosen apart (Custom) replace the first two (applyGradient).
+  // The gradient's colours: the accent's family only, what the theme shows (its terminal's
+  // blue or cyan, never seen in the interface, brought colours the theme does not have). A
+  // coloured theme: its accent, two hues beside it on the warm side, a blend with the text,
+  // a deeper accent. A black and white theme (its accent its text): its accent and text and
+  // blends of them, grey. Two chosen apart (Custom) replace the first two (applyGradient).
   const accent = own || theme.ui.accent;
   const fg = theme.ui.fg;
   const blend = (a, b, p) => `color-mix(in srgb, ${a} ${p}%, ${b})`;
-  const t = theme.terminal || {};
-  const tones = !neutral && t.magenta && t.cyan && t.yellow && t.blue
-    ? [accent, t.magenta, t.cyan, t.yellow, t.blue]
+  const turn = (deg) => `oklch(from ${accent} l c calc(h + ${deg}))`;
+  const tones = !neutral
+    ? [accent, turn(28), blend(accent, fg, 55), turn(52), `oklch(from ${accent} calc(l * 0.8) c h)`]
     : [accent, fg, blend(accent, fg, 60), blend(accent, theme.ui.bg, 70), blend(fg, accent, 60)];
   tones.forEach((c, i) => root.style.setProperty(`--tg${i + 1}`, c));
   // The file viewer's syntax colors: the terminal's, when the theme has them.

@@ -390,11 +390,11 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 .tab .tab-actions { display: none; flex: 0 0 auto; align-items: center; }
 .tab .tab-actions .icon { display: grid; place-items: center; height: 28px; padding: 0 var(--s1); min-width: 0; }
 .tab .tab-actions .icon .i { width: 14px; height: 14px; }
-#dock-center .group > .dock-head { min-height: 36px; border-bottom: 1px solid var(--line); padding: 0 var(--s3); gap: var(--s1); align-items: center; }
-#dock-center .group > .dock-head .tabs { flex: 0 1 auto; align-items: center; gap: var(--s1); padding: 0; } /* the + right after the last tab */
+#dock-center .pane-group > .dock-head { min-height: 36px; border-bottom: 1px solid var(--line); padding: 0 var(--s3); gap: var(--s1); align-items: center; }
+#dock-center .pane-group > .dock-head .tabs { flex: 0 1 auto; align-items: center; gap: var(--s1); padding: 0; } /* the + right after the last tab */
 #dock-center .tab { height: 28px; margin: 0; padding: 0 var(--s1) 0 var(--s3); }
-#dock-center .group > .dock-head > button.icon { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; font-size: 18px; color: var(--dim); }
-#dock-center .group > .dock-head > button.icon:hover { background: var(--hover); color: var(--fg); }
+#dock-center .pane-group > .dock-head > button.icon { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; font-size: 18px; color: var(--dim); }
+#dock-center .pane-group > .dock-head > button.icon:hover { background: var(--hover); color: var(--fg); }
 .tab:hover .tab-actions, .tab.active .tab-actions { display: flex; }
 .tab:not(.active):not(:hover) { padding-right: var(--s3); }
 .tab-rename { padding: 0 var(--s1); min-width: 4em; max-width: 16em; }
@@ -1159,8 +1159,8 @@ button.row-main:hover { background: none; }
 .prefs-page ul.resource-items > li:hover { background: none; }
 .prefs-page .gallery .desc { font-family: var(--ui); }
 /* The middle's +: the icon, level with the header's toggle above when no tab is open. */
-#dock-center .group > .dock-head .tabs:empty { display: none; }
-#dock-center .group > .dock-head > button.add .i { width: 16px; height: 16px; }
+#dock-center .pane-group > .dock-head .tabs:empty { display: none; }
+#dock-center .pane-group > .dock-head > button.add .i { width: 16px; height: 16px; }
 /* The palette (ui.js pickPalette): a menu with its own search on top. */
 .menu.palette { position: fixed; z-index: 30; max-height: min(420px, calc(100vh - 16px)); padding: 0; overflow: hidden; }
 .palette-search { display: flex; flex-direction: row; align-items: center; gap: var(--s2); height: 40px; padding: 0 var(--s3); border-bottom: 1px solid var(--line); color: var(--dim); }
@@ -1654,12 +1654,12 @@ html.mica.grad-in-sides #workspace :is(#dock-left, #dock-right).over { backgroun
 html:is(.grad-in-sides, .mica) #workspace .pane-project > .toolbar .switch { background: transparent; -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
 /* Not around the window: the middle showing it (a new tab, an empty conversation) carries it
    whole, its bars at the top too. */
-html.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(.group > .panes > .empty.launcher),
-html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(.group > .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--bg); }
-html.mica.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(.group > .panes > .empty.launcher),
-html.mica.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(.group > .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--mica-mid); }
-html.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(.group > .panes > .empty.launcher) :is(.center-head, .dock-head, .panes, .empty.launcher),
-html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(.group > .panes > .pane:not([hidden]) .chat-empty:not([hidden])) :is(.center-head, .dock-head, .panes, .pane:not([hidden]), .pane:not([hidden]) .chat) { background: transparent; }
+html.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(.pane-group > .panes > .empty.launcher),
+html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(.pane-group > .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--bg); }
+html.mica.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(.pane-group > .panes > .empty.launcher),
+html.mica.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(.pane-group > .panes > .pane:not([hidden]) .chat-empty:not([hidden])) { background: var(--grain-layer), var(--grad), var(--mica-mid); }
+html.grad-in-newtab:not(.grad-in-sides) #workspace #dock-center:has(.pane-group > .panes > .empty.launcher) :is(.center-head, .dock-head, .panes, .empty.launcher),
+html.grad-in-empty:not(.grad-in-sides) #workspace #dock-center:has(.pane-group > .panes > .pane:not([hidden]) .chat-empty:not([hidden])) :is(.center-head, .dock-head, .panes, .pane:not([hidden]), .pane:not([hidden]) .chat) { background: transparent; }
 /* Settings show the style chosen at once: drawn once on the window, the column clear over it. */
 html:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--bg); }
 html.mica:not(.grad-off) .settings { background: var(--grain-layer), var(--grad), var(--mica-mid); }
@@ -2236,10 +2236,10 @@ textarea { resize: none; }
 .split { flex: 1; min-width: 0; min-height: 0; display: flex; }
 .split.col { flex-direction: column; }
 .split > .cell { display: flex; min-width: 0; min-height: 0; }
-.group { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
-.center-grid.many .group { outline: 1px solid var(--line); outline-offset: -1px; }
-.center-grid.many .group.focus > .dock-head { box-shadow: inset 0 -2px 0 var(--accent); }
-.group.attn::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6; box-shadow: inset 0 0 0 2px var(--warn, #d29922); border-radius: var(--r); }
+.pane-group { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.center-grid.many .pane-group { outline: 1px solid var(--line); outline-offset: -1px; }
+.center-grid.many .pane-group.focus > .dock-head { box-shadow: inset 0 -2px 0 var(--accent); }
+.pane-group.attn::after { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6; box-shadow: inset 0 0 0 2px var(--warn, #d29922); border-radius: var(--r); }
 .gutter { flex: 0 0 5px; background: transparent; cursor: col-resize; position: relative; z-index: 7; }
 .split.col > .gutter { cursor: row-resize; }
 .gutter:hover, .gutter.dragging { background: color-mix(in srgb, var(--accent) 45%, transparent); }
@@ -2366,8 +2366,13 @@ button.secondary.danger:is(#_#_, button):hover:not(:disabled) { background: colo
 /* Menus (M2): the choice in use, a row of the accent's tint. */
 .menu button.on { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .menu button.on:hover, .menu button.on:focus-visible { background: color-mix(in srgb, var(--accent) 26%, transparent); }
-.grad-thumb.on { box-shadow: inset 0 0 0 999px color-mix(in srgb, var(--accent) 24%, transparent); color: var(--accent); font-weight: 600; }
+/* The gradient chosen: framed in the accent (a tint alone is lost in the colours), its name too. */
+.grad-thumb.on { box-shadow: inset 0 0 0 2px var(--accent); color: var(--accent); font-weight: 600; }
 /* Where the panels go, as the theme cards: no frame, the one chosen in the accent's tint. */
 .layout-tiles button { position: relative; border-color: transparent; background: var(--field); }
 .layout-tiles button[aria-checked="true"] { border-color: transparent; background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .layout-tiles button[aria-checked="true"] .lay { border-color: transparent; }
+/* Pi's lists: a bullet's room, not the browser's 40 px; the items a little apart. */
+.answer :is(ul, ol) { padding-left: 1.4em; margin: 6px 0; }
+.answer li { margin: 2px 0; }
+.answer li::marker { color: var(--dim); }
