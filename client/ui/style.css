@@ -2417,3 +2417,5 @@ body:has(#window-buttons:not([hidden])) .prefs-pages { padding-top: 48px; }
 .repo-chip.failure { color: var(--red, #f85149); background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); }
 .repo-list .wait-row { padding: 0; }
 .repo-list .wait-line { padding: var(--s1) var(--s2) var(--s1) var(--s3); }
+.repo-head .what > .wrap { white-space: normal; }
+.repo-actions { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 0 0 var(--s2) calc(28px + var(--s3)); }

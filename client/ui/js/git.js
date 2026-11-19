@@ -95,13 +95,15 @@ function makeGitManager(box, currentProject, onLoad = null) {
         el("div", { className: "what" }, el("span", { textContent: data.link.repo }),
           el("span", { textContent: [data.link.default_branch, data.branch ? `here ${data.branch}` : ""].filter(Boolean).join(" · ") })), refresh));
     } else {
+      // Its sentence, then what to do on a line of its own (the panel is narrow).
+      const button = (text, run) => { const b = el("button", { type: "button", className: "secondary", textContent: text }); b.addEventListener("click", () => run(b)); return b; };
       const actions = data.forges.length
-        ? [["Connect…", () => linkDialog()], ["Create…", () => createDialog()]]
-        : Object.entries(FORGE_LABELS).map(([kind, label]) => [`${label}…`, () => accountDialog(kind)]);
+        ? [button("Connect…", () => linkDialog()), button("Create…", () => createDialog())]
+        : [button("Add an account", (b) => showMenu(b, Object.entries(FORGE_LABELS).map(([kind, label]) => [label, () => accountDialog(kind), false, { icon: FORGE_ICONS[kind] || "git-branch" }])))];
       body.append(el("div", { className: "repo-head" }, logo,
         el("div", { className: "what" }, el("span", { textContent: "Not connected yet" }),
-          el("span", { textContent: data.forges.length ? "Where Pi pushes its pi/… branches and opens pull requests." : "An account on a forge first: its token stays on the VM." })),
-        ...actions.map(([text, run]) => { const b = el("button", { type: "button", className: "secondary", textContent: text }); b.addEventListener("click", run); return b; })));
+          el("span", { className: "wrap", textContent: data.forges.length ? "Where Pi pushes its pi/… branches and opens pull requests." : "Pi pushes its branches and opens pull requests through an account on a forge; its token stays on the VM." }))),
+        el("div", { className: "repo-actions" }, ...actions));
     }
     const group = (label, count, rows) => {
       body.append(el("h3", { className: count && label === "Waiting for you" ? "repo-label hot" : "repo-label" },
