@@ -185,18 +185,18 @@ input[type="checkbox"]:checked::before { visibility: visible; }
 input[type="checkbox"]:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
 input[type="checkbox"]:disabled { opacity: .5; cursor: not-allowed; }
 
-/* Buttons: the main one filled in the theme's accent, the others a chip; actions in a row are
-   words. */
+/* Buttons: the main one (one a place) the accent's strong tint, not opaque; the others its
+   light tint (below, button.secondary); actions in a row are words. */
 button {
   font: inherit;
-  background: var(--accent);
-  color: var(--bg);
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+  color: var(--fg);
   border: 1px solid transparent;
   border-radius: var(--r);
   padding: var(--s1) var(--s3);
   cursor: pointer;
 }
-button:hover { background: color-mix(in srgb, var(--accent) 85%, var(--bg)); }
+button:hover { background: color-mix(in srgb, var(--accent) 50%, transparent); }
 button.secondary { background: var(--chip); color: var(--fg); }
 button.secondary:hover { background: var(--hover); }
 button.link { background: none; border: none; color: var(--dim); padding: 0; }
@@ -1220,7 +1220,7 @@ button.row-main:hover { background: none; }
 .toast-preview .t { font-weight: 600; font-size: 14px; }
 .toast-preview .b { color: var(--dim); font-size: 13px; }
 /* Updates: a status row (the proposals' 7B) */
-.set > button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.set > button.primary { background: color-mix(in srgb, var(--accent) 38%, transparent); color: var(--fg); border-color: transparent; }
 .set > button.primary:hover { background: color-mix(in srgb, var(--accent) 85%, var(--bg)); }
 .update-notes-row { background: var(--bg); }
 .update-notes { white-space: pre-line; font-size: 13px; color: var(--dim); padding-left: 32px; }
@@ -1265,9 +1265,10 @@ button.row-main:hover { background: none; }
 .wait-head .what > :first-child { overflow-wrap: anywhere; }
 .wait-head .what > :last-child { font-size: 12px; line-height: 16px; color: var(--dim); }
 .wait-dot { width: 8px; height: 8px; margin-top: 6px; flex: none; border-radius: 50%; background: var(--yellow, #d29922); }
-.wait-answer { border: 1px solid var(--line); flex: none; }
-.wait-answer:last-child { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-.wait-answer:last-child:hover { background: color-mix(in srgb, var(--fg) 85%, var(--bg)); color: var(--bg); }
+.wait-answer:is(#_#_, button) { flex: none; border: 1px solid transparent; background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); color: var(--red, #f85149); }
+.wait-answer:is(#_#_, button):hover { background: color-mix(in srgb, var(--red, #f85149) 24%, transparent); }
+.wait-answer:last-child:is(#_#_, button) { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--fg); }
+.wait-answer:last-child:is(#_#_, button):hover { background: color-mix(in srgb, var(--accent) 34%, transparent); }
 .wait-detail { padding: 0 var(--s4) var(--s3) calc(var(--s4) + 8px + var(--s3)); font-size: 12px; }
 .wait-detail .approval-whole { margin-top: 0; }
 .wait-detail .approval-reason { font-style: normal; color: var(--dim); }
@@ -1343,8 +1344,7 @@ body:not(.in-workspace) .connect-close, #connect-close:not(#connect *) { display
 .qs { width: min(440px, 90%); display: flex; flex-direction: column; gap: var(--s2); }
 .qs h2 { margin: 0; font-size: 18px; line-height: 26px; }
 .qs > p { margin: 0 0 var(--s3); color: var(--dim); }
-.qs-step { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); background: var(--field); border: 1px solid var(--line); border-radius: var(--r); }
-.qs-step.on { border-color: var(--fg); }
+.qs-step { display: flex; align-items: center; gap: var(--s3); padding: var(--s3) var(--s4); background: color-mix(in srgb, var(--fg) 6%, transparent); border: 1px solid transparent; border-radius: var(--r); }
 .qs-step:not(.on):not(.done) { opacity: .7; }
 .qs-step .n { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border: 1px solid var(--dim); border-radius: 50%; font-size: 12px; color: var(--dim); }
 .qs-step.done .n { background: var(--green, #3fb950); border-color: transparent; color: #fff; }
@@ -1398,7 +1398,7 @@ html.mica.grad-in-newtab #workspace .empty.launcher { background: var(--grain-la
 .grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); }
 .grad-in-working .composer.working { border-color: transparent; background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(90deg, var(--g1), var(--g2), var(--g1)) border-box; background-size: 100% 100%, 200% 100%; animation: composer-work 3s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .grad-in-working .composer.working { animation: none; } }
-.grad-in-buttons :is(.set > button.primary, .qs-step button, #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop), .wait-answer:last-child) {
+.grad-in-buttons :is(.set > button.primary, .qs-step button, #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop)) {
   background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); border-color: transparent; }
 /* The thumbnails (Appearance) */
 .grad-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--s2); margin-bottom: var(--s3); }
@@ -1479,7 +1479,7 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .field-error { display: block; margin-top: 4px; font-size: 12px; line-height: 16px; color: var(--red, #f85149); }
 [aria-invalid="true"]:is(input, select, textarea) { border-color: var(--red, #f85149); }
 /* First contact: the fingerprint in a field of its own, whole and wrapped; copy at its end. */
-.trust-print { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s3); border: 1px solid var(--line); border-radius: var(--r); background: var(--field); margin: var(--s3) 0; }
+.trust-print { display: flex; align-items: flex-start; gap: var(--s2); padding: var(--s3); border-radius: var(--r); background: color-mix(in srgb, var(--fg) 6%, transparent); margin: var(--s3) 0; }
 .trust-print code { flex: 1; min-width: 0; font-family: var(--code); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; background: none; padding: 0; }
 .trust-algo { flex: none; font-size: 11px; line-height: 20px; padding: 0 6px; border-radius: var(--r); background: var(--hover); color: var(--dim); }
 .trust-algo:empty { display: none; }
@@ -1540,9 +1540,9 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .dialog.folder-dialog { width: min(520px, 100%); }
 .folder-label { margin: var(--s3) 0 var(--s1); font-size: 11px; color: var(--dim); }
 .folder-recent { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2); }
-.folder-card { display: flex; flex-direction: row; align-items: center; gap: var(--s3); min-height: 44px; padding: var(--s2) var(--s3); text-align: left; background: none; border: 1px solid var(--line); color: var(--fg); }
-.folder-card:hover { background: var(--hover); }
-.folder-card[aria-selected="true"] { border-color: color-mix(in srgb, var(--fg) 45%, transparent); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.folder-card { display: flex; flex-direction: row; align-items: center; gap: var(--s3); min-height: 44px; padding: var(--s2) var(--s3); text-align: left; background: color-mix(in srgb, var(--fg) 6%, transparent); border: 1px solid transparent; color: var(--fg); }
+.folder-card:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.folder-card[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .folder-card .pbadge { width: 24px; height: 24px; font-size: 11px; }
 .folder-card .tx { display: flex; flex-direction: column; min-width: 0; }
 .folder-card .tx > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1553,7 +1553,7 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .folder-crumbs button:hover { color: var(--fg); background: var(--hover); }
 .folder-crumbs button.here { color: var(--fg); font-weight: 600; }
 .folder-crumbs .sep { color: var(--dim); opacity: .6; }
-.folder-box { display: flex; flex-direction: column; height: 200px; overflow-y: auto; padding: var(--s1); border: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 40%, transparent); }
+.folder-box { display: flex; flex-direction: column; height: 200px; overflow-y: auto; padding: var(--s1); border-radius: var(--r); background: color-mix(in srgb, var(--fg) 6%, transparent); }
 .folder-row { display: flex; flex-direction: row; align-items: center; gap: var(--s3); min-height: 32px; padding: 0 var(--s3); text-align: left; background: none; border: 0; color: var(--fg); flex: none; }
 .folder-row .i { width: 15px; height: 15px; color: var(--dim); flex: none; }
 .folder-row:hover { background: var(--hover); }
@@ -1577,7 +1577,7 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .login-card { width: min(360px, 90%); display: flex; flex-direction: column; gap: var(--s3); padding: var(--s5); border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); border-radius: var(--r);
   background: color-mix(in srgb, var(--raise) 62%, transparent); -webkit-backdrop-filter: blur(20px) saturate(1.4); backdrop-filter: blur(20px) saturate(1.4); box-shadow: 0 18px 50px rgb(0 0 0 / .3); color: var(--fg); }
 .lc-head { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; margin-bottom: var(--s2); }
-.lc-icon { width: 48px; height: 48px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: var(--r); color: var(--dim); }
+.lc-icon { width: 48px; height: 48px; display: grid; place-items: center; background: color-mix(in srgb, var(--fg) 6%, transparent); border-radius: var(--r); color: var(--dim); }
 .lc-icon .i { width: 22px; height: 22px; }
 .lc-head b { font-size: 16px; line-height: 22px; font-weight: 600; }
 .lc-head small { font-family: var(--code); font-size: 12px; color: var(--dim); overflow-wrap: anywhere; }
@@ -1616,13 +1616,13 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .qs-bastion { display: flex; flex-direction: column; gap: var(--s3); }
 .qs-bastion .lc-row > .lc-field:last-child { flex: 0 0 88px; }
 /* The key, drawn and said: its picture beside its four words. */
-.trust-key { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); border: 1px solid var(--line); border-radius: var(--r); background: color-mix(in srgb, var(--bg) 40%, transparent); }
+.trust-key { display: flex; align-items: center; gap: var(--s4); padding: var(--s3) var(--s4); border-radius: var(--r); background: color-mix(in srgb, var(--fg) 6%, transparent); }
 .trust-art { display: grid; grid-template-columns: repeat(8, 12px); grid-auto-rows: 12px; gap: 2px; flex: none; }
 .trust-art i { display: block; border-radius: min(var(--r), 2px); background: color-mix(in srgb, var(--fg) 6%, transparent); }
 .trust-key .trust-words { flex: 1; padding: 0; border: 0; background: none; text-align: left; }
 /* The first step's "Advanced" (the proposals' A): a framed line with a chevron that unfolds
    in the same frame; the bastion a switch, then one field. The way back in the header. */
-.qs-adv { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--r); }
+.qs-adv { display: flex; flex-direction: column; background: color-mix(in srgb, var(--fg) 6%, transparent); border-radius: var(--r); overflow: clip; }
 .qs-advanced { display: flex; flex-direction: row; align-items: center; gap: var(--s2); height: 36px; padding: 0 var(--s3); background: none; border: 0; color: var(--fg); text-align: left; font-size: 13px; }
 .qs-advanced:hover { background: var(--hover); }
 .qs-advanced .i { width: 14px; height: 14px; color: var(--dim); transition: transform .12s ease-out; }
@@ -1807,10 +1807,10 @@ input[type="checkbox"]::before { background:
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input)[type="checkbox"]::before { background: color-mix(in srgb, var(--fg) 45%, transparent); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input, .switch-hint > input)[type="checkbox"]:checked { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: var(--accent); }
 :is(.set > input, .setting-row.toggle .setting-head > input, .qs-switch > input, .switch-hint > input)[type="checkbox"]:checked::before { background: var(--accent); }
-.qs-step.on { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.qs-step.on { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .look-choice[aria-pressed="true"] { outline-color: var(--accent); }
 
-.folder-card[aria-selected="true"] { border-color: var(--accent); }
+
 .rail-btn[aria-pressed="true"]::before, .rail-proj.on::before { background: var(--accent); }
 .pane-project > .toolbar .switch .mode.active::after { background: var(--accent); }
 @media (max-width: 720px) { .prefs-tabs button[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--accent); } }
@@ -2003,7 +2003,7 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 .prompt-body .prompt-foot { display: flex; justify-content: flex-end; gap: var(--s2); padding: 6px var(--s4) var(--s3); border: 0; }
 .prompt-body > .error { margin: 0 var(--s4) var(--s2); }
 /* Number fields in the settings: the fields' tint (not the page's ground), − and + on their sides. */
-.stepper { display: inline-flex; align-items: stretch; flex: none; height: 32px; background: color-mix(in srgb, var(--fg) 6%, transparent); }
+.stepper { display: inline-flex; align-items: stretch; flex: none; height: 32px; background: color-mix(in srgb, var(--fg) 6%, transparent); border-radius: var(--r); overflow: clip; }
 .stepper > input[type="number"] { width: 56px !important; height: 32px; padding: 0 !important; text-align: center; border: 0 !important; background: transparent !important; }
 .stepper > .step { width: 32px; display: grid; place-items: center; padding: 0; background: none; border: 0; color: var(--dim); }
 .stepper > .step:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); color: var(--fg); }
@@ -2349,11 +2349,11 @@ textarea { resize: none; }
 /* --- Pier's controls, one of each everywhere (the controls' board: B1+B5, S5, R1+R4, L1+L3, M2, A4) --- */
 /* Buttons (B1): the accent's tint, no border; red for what removes. The one filled button of a
    place is a plain <button> (the main one: Connect, Send, Approve, a settings page's own action).
-   The :is(#_, button) gives it an id's weight, over the older rules of each place. */
-button.secondary:is(#_, button) { background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); }
-button.secondary:is(#_, button):hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 28%, transparent); }
-button.secondary.danger:is(#_, button) { background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); color: var(--red, #f85149); }
-button.secondary.danger:is(#_, button):hover:not(:disabled) { background: color-mix(in srgb, var(--red, #f85149) 24%, transparent); }
+   The :is(#_#_, button) gives it two ids' weight, over the older rules of each place (#connect's too). */
+button.secondary:is(#_#_, button) { background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); }
+button.secondary:is(#_#_, button):hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+button.secondary.danger:is(#_#_, button) { background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); color: var(--red, #f85149); }
+button.secondary.danger:is(#_#_, button):hover:not(:disabled) { background: color-mix(in srgb, var(--red, #f85149) 24%, transparent); }
 #prefs-act .page-act { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 var(--s3); }
 #prefs-act .page-act .i { width: 14px; height: 14px; }
 /* Search (R1 + R4's key): the field's tint, the accent's edge when typing in it, its key. */
