@@ -414,7 +414,13 @@ const installsText = (n) => (typeof n !== "number" ? "" : n >= 1e6 ? `${(n / 1e6
  *  on each row. A click opens the package's own page (Back to packages): its facts, its
  *  picture, its links (GitHub, npm, its site) and its README. */
 function makePackageTools(box, currentProject, onDone, scope = () => "user") {
-  const KINDS = [["", "All kinds"], ["extension", "Extensions"], ["skill", "Skills"], ["prompt", "Prompts"], ["theme", "Themes"]];
+  // What a package is for, read in its name and description (pi.dev gives no category):
+  // a package may have several roles. shortcut: words, not tags; pi.dev's own categories once it has some.
+  const KINDS = [["", "All roles"], ["memory", "Memory", /memor|recall|remember|hindsight|knowledge/i],
+    ["web", "Web and search", /\bweb\b|search|browser|fetch|\burl|scrap|crawl/i], ["mcp", "MCP", /\bmcp\b|model context protocol/i],
+    ["git", "Git and review", /\bgit|pull request|\bpr\b|review|commit/i], ["context", "Context and tokens", /context|token|compress|compact|summar/i],
+    ["agents", "Agents and tasks", /agent|task|todo|\bplan|workflow|orchestr/i], ["models", "Models and providers", /\bmodel|provider|openai|anthropic|gemini|ollama|\bllm/i]];
+  const hasRole = (p, k) => !k || KINDS.find(([key]) => key === k)[2].test(`${p.name} ${p.description || ""}`);
   const SORTS = [["installs", "Most installed"], ["recent", "Recently updated"], ["name", "Name"]];
   let kind = "", sort = "installs";
   // Where from: pi.dev's packages (pi install), or skills.sh's skills (npx skills add, for Pi).
@@ -501,12 +507,12 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
 
   /** The list as filtered and sorted now; featured without a search or a kind. */
   function render() {
-    const shown = all.filter((p) => !kind || (p.types || []).includes(kind));
+    const shown = all.filter((p) => from === "skills" || hasRole(p, kind));
     const by = { installs: (a, b) => (b.monthly || 0) - (a.monthly || 0), recent: (a, b) => (b.updated || 0) - (a.updated || 0), name: (a, b) => a.name.localeCompare(b.name) }[sort];
     if (all.some((p) => p.monthly != null || sort === "name")) shown.sort(by); // npm's answer has no counts: its own order
     const rows = shown.map(row);
     results.replaceChildren(...rows.map(([r]) => r));
-    if (!shown.length) results.append(el("p", { className: "dim small", textContent: all.length ? "No package of this kind here." : "Nothing found." }));
+    if (!shown.length) results.append(el("p", { className: "dim small", textContent: all.length ? "No package with this role here." : "Nothing found." }));
     rows.forEach(([, t]) => t.refresh());
     showPackageMedia(rows.map(([, t]) => t));
     const plain = !query && !kind && from === "packages";
@@ -549,11 +555,12 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     where.textContent = answer.from === "npm" ? "From the npm registry (pi.dev did not answer), asked from the VM." : "From pi.dev/packages, asked from the VM.";
     render();
   }
-  /** skills.sh's search (as `npx skills find`): two letters at least, no list without them. */
+  /** skills.sh's search (as `npx skills find`, two letters at least); before that, its most
+   *  installed (its home page's ranking, read by the picker). */
   async function searchSkills() {
     featured.hidden = featuredHead.hidden = true;
     where.textContent = "From skills.sh, asked from the VM. Installed with npx skills add, for Pi (.agents/skills).";
-    if (query.length < 2) {
+    if (query.length === 1) {
       all = [];
       results.replaceChildren(el("p", { className: "dim small", textContent: "Type what you look for: skills.sh searches from two letters." }));
       return;
@@ -567,6 +574,11 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
       return;
     }
     if (input.value.trim() !== query || from !== "skills") return;
+    if (answer.short) {
+      all = [];
+      results.replaceChildren(el("p", { className: "dim small", textContent: "Type what you look for: skills.sh searches from two letters." }));
+      return;
+    }
     all = (answer.skills || []).map((s) => ({ name: s.name, description: "", publisher: s.repo, downloads: installsText(s.installs), monthly: s.installs, types: ["skill"],
       source: s.source, repo: `https://github.com/${s.repo}`, page: s.page, isSkill: true }));
     render();

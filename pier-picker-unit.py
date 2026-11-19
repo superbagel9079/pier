@@ -329,6 +329,18 @@ class Checks(unittest.TestCase):
 
 # --- sessions ------------------------------------------------------------------------------
 
+class SkillsTop(unittest.TestCase):
+    """skills.sh's ranking read from its home page: well-formed ones only, in order, once each."""
+
+    def test_entries(self):
+        page = ('x{\\"source\\":\\"vercel-labs/skills\\",\\"skillId\\":\\"find-skills\\",\\"name\\":\\"find-skills\\",\\"installs\\":4436719,\\"weekly\\":[1]}'
+                '{\\"source\\":\\"-evil/repo\\",\\"skillId\\":\\"x\\",\\"name\\":\\"x\\",\\"installs\\":9}'
+                '{\\"source\\":\\"vercel-labs/skills\\",\\"skillId\\":\\"find-skills\\",\\"name\\":\\"find-skills\\",\\"installs\\":1}')
+        skills = m.skills_from_home(page)
+        self.assertEqual([s["source"] for s in skills], ["skills:vercel-labs/skills/find-skills"])
+        self.assertEqual(skills[0]["installs"], 4436719)
+
+
 class Thinking(Home):
     """Pi's default thinking level: written in its settings.json, put back, refused when unknown."""
 

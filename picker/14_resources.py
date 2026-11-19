@@ -472,7 +472,7 @@ def api_skills_search(home, query):
     import urllib.request
     query = " ".join((query or "").split())[:100]
     if len(query) < 2:
-        return {"query": query, "skills": [], "short": True}
+        return skills_top(urllib)
     cached = _SKILLS_SEARCH.get(query)
     if cached and time.monotonic() - cached[0] < 600:
         return cached[1]
@@ -499,6 +499,47 @@ def api_skills_search(home, query):
             break
     reply = {"query": query, "skills": skills}
     remember(_SKILLS_SEARCH, query, (time.monotonic(), reply), 50)
+    return reply
+
+
+# One skill of skills.sh's ranking, as its home page carries it (escaped, in its page data).
+_SKILL_ENTRY_RE = re.compile(r'\{\\"source\\":\\"(?P<source>[^"\\]{1,200})\\",\\"skillId\\":\\"(?P<skill>[^"\\]{1,200})\\",'
+                             r'\\"name\\":\\"(?P<name>[^"\\]{1,200})\\",\\"installs\\":(?P<installs>\d{1,12})')
+
+
+def skills_from_home(page):
+    """skills.sh's ranking from its home page (most installed first; it has no API for it),
+    each as the search gives them; only well-formed owner/repo/skill."""
+    skills = []
+    for entry in _SKILL_ENTRY_RE.finditer(page):
+        owner, _, repo = entry["source"].partition("/")
+        skill = entry["skill"]
+        if not (REPO_PART_RE.fullmatch(owner) and REPO_PART_RE.fullmatch(repo) and SKILL_NAME_RE.fullmatch(skill)):
+            continue
+        if any(s["source"] == f"skills:{owner}/{repo}/{skill}" for s in skills):
+            continue
+        skills.append({"name": entry["name"], "repo": f"{owner}/{repo}", "skill": skill, "installs": int(entry["installs"]),
+                       "page": f"https://skills.sh/{owner}/{repo}/{skill}", "source": f"skills:{owner}/{repo}/{skill}"})
+        if len(skills) >= GALLERY_SIZE:
+            break
+    return skills
+
+
+def skills_top(urllib):
+    """The skills most installed, before anything is typed; when the home page cannot be
+    read, the short answer (type two letters) as before."""
+    cached = _SKILLS_SEARCH.get("")
+    if cached and time.monotonic() - cached[0] < 600:
+        return cached[1]
+    try:
+        request = urllib.request.Request("https://www.skills.sh/", headers={"User-Agent": f"pier-picker/{VERSION}"})
+        with urllib.request.urlopen(request, timeout=10) as answer:
+            skills = skills_from_home(answer.read(4 * 1024 * 1024).decode("utf-8", "replace"))
+    except OSError as exc:
+        log("info", "skills.top-failed", err=str(exc)[:200])
+        skills = []
+    reply = {"query": "", "skills": skills, "top": True} if skills else {"query": "", "skills": [], "short": True}
+    remember(_SKILLS_SEARCH, "", (time.monotonic(), reply), 50)
     return reply
 
 

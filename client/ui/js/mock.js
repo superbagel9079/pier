@@ -253,7 +253,11 @@ function mockBackend() {
         ].filter((p) => !args[1] || p.name.includes(args[1]) || p.description.toLowerCase().includes(args[1].toLowerCase())) };
       }
       if (args[0] === "skills-search") {
-        if ((args[1] || "").length < 2) return { query: args[1], skills: [], short: true };
+        if ((args[1] || "").length === 1) return { query: args[1], skills: [], short: true };
+        if (!args[1]) return { query: "", top: true, skills: [ // skills.sh's most installed (its home page)
+          { name: "find-skills", repo: "vercel-labs/skills", skill: "find-skills", installs: 4436719, page: "https://skills.sh/vercel-labs/skills/find-skills", source: "skills:vercel-labs/skills/find-skills" },
+          { name: "agent-browser", repo: "vercel-labs/agent-browser", skill: "agent-browser", installs: 1598737, page: "https://skills.sh/vercel-labs/agent-browser/agent-browser", source: "skills:vercel-labs/agent-browser/agent-browser" },
+        ] };
         return { query: args[1], skills: [
           { name: "vercel-react-best-practices", repo: "vercel-labs/agent-skills", skill: "vercel-react-best-practices", installs: 911662, page: "https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices", source: "skills:vercel-labs/agent-skills/vercel-react-best-practices" },
           { name: "notes", repo: "acme/skills", skill: "notes", installs: 1200, page: "https://skills.sh/acme/skills/notes", source: "skills:acme/skills/notes" },
