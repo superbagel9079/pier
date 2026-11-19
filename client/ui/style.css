@@ -1228,7 +1228,7 @@ button.row-main:hover { background: none; }
 /* The live logs as a table (Diagnostics, the proposals' 8B): time, level as a tag,
    event, details cut to a line; a click unfolds a row. */
 #prefs-logs .log-bar { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s2); }
-#prefs-logs .log-bar .search { flex: 1; min-width: 0; height: 32px; padding: 0 var(--s3); background: var(--bg); border: 1px solid var(--line); }
+#prefs-logs .log-bar .search { width: 100%; height: 32px; padding-right: var(--s3); }
 #prefs-logs .log-bar .pick { width: 180px; }
 .seg .mode { height: 26px; padding: 0 var(--s3); background: none; border: 0; color: var(--dim); border-radius: max(0px, calc(var(--r) - 2px)); }
 .seg .mode:hover { background: none; color: var(--fg); }
@@ -2019,9 +2019,8 @@ button.secondary:hover:not(:disabled), .set > button.secondary:hover, .set .btns
 button.switch-hint { padding: 0; background: none; border: 0; cursor: pointer; }
 /* Every button of the settings as Connect: the theme's accent, its text the ground's colour,
    no edge, 32 px high; a shade darker under the pointer (the gradient with Main buttons on). */
-#prefs .prefs-page button.secondary { height: 32px; padding: 0 var(--s3); background: var(--accent); border: 1px solid transparent; color: var(--bg); font-weight: 400; display: inline-flex; align-items: center; gap: 6px; }
-#prefs .prefs-page button.secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, var(--bg)); }
-.grad-in-buttons #prefs .prefs-page button.secondary { background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); }
+#prefs .prefs-page button.secondary { height: 32px; padding: 0 var(--s3); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); font-weight: 400; display: inline-flex; align-items: center; gap: 6px; }
+#prefs .prefs-page button.secondary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 28%, transparent); }
 #prefs .prefs-page button.secondary:disabled { opacity: .5; }
 #prefs .prefs-page button.secondary .i { width: 14px; height: 14px; }
 /* The texts for Pi in Pier's own font, growing with their text: no grip in the corner. */
@@ -2299,11 +2298,10 @@ textarea { resize: none; }
 #prefs-danger:has(#btn-disconnect[hidden]) { display: none; }
 /* Outlined: a list of the same action (Popular's Connect), and Disconnect in red. */
 /* Outlined in the accent's colour: seen at once, quieter than a filled button. */
-#prefs .prefs-page button.secondary.quiet, #prefs-act .page-act { background: color-mix(in srgb, var(--accent) 14%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent); color: var(--fg); font-weight: 400; }
-#prefs #btn-disconnect.danger { background: none; border-color: var(--line); color: var(--fg); font-weight: 400; }
-#prefs .prefs-page button.secondary.quiet:hover, #prefs-act .page-act:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
-#prefs #btn-disconnect.danger:hover { background: var(--hover); }
-#prefs #btn-disconnect.danger { color: var(--red, #f85149); border-color: color-mix(in srgb, var(--red, #f85149) 40%, var(--line)); }
+#prefs .prefs-page button.secondary.quiet, #prefs-act .page-act { background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid transparent; color: var(--fg); font-weight: 400; }
+#prefs #btn-disconnect.danger { background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); border-color: transparent; color: var(--red, #f85149); font-weight: 400; }
+#prefs .prefs-page button.secondary.quiet:hover, #prefs-act .page-act:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+#prefs #btn-disconnect.danger:hover { background: color-mix(in srgb, var(--red, #f85149) 24%, transparent); }
 .model-group { margin-bottom: var(--s2); }
 .model-group > summary { list-style: none; display: flex; align-items: center; gap: var(--s2); min-height: 32px; cursor: pointer; font-weight: 600; }
 .model-group > summary::-webkit-details-marker { display: none; }
@@ -2337,3 +2335,13 @@ textarea { resize: none; }
 .prefs-page .rows { overflow: clip; }
 /* Every search field of the settings as Search settings: the field's tint, no black. */
 #prefs .prefs-page input[type="search"] { background-color: color-mix(in srgb, var(--fg) 6%, transparent); border: 1px solid var(--edge, transparent); }
+
+/* Search fields of the settings with their magnifier: the frame takes the field's room. */
+.host-bar > .search-field, .resource-bar > .search-field { flex: 1; min-width: 0; }
+.pkg-tools > .search-field { flex: 0 1 340px; min-width: 160px; margin-left: auto; }
+.pkg-tools > .search-field input { width: 100%; margin: 0; }
+#prefs-logs .log-bar .search-field { flex: 1; min-width: 0; }
+/* Browse's lists as Pier's other lists: the value and ▾, no border, as wide as their words. */
+.pkg-tools .pick.pkg-filter { width: auto; border-color: transparent; border-radius: var(--r); }
+/* After the bars' own padding: room for the magnifier, always. */
+.search-field input[type="search"] { padding-left: calc(var(--s2) + 14px + var(--s2)); }

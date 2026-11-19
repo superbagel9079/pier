@@ -7,6 +7,11 @@ const $ = (selector, root = document) => root.querySelector(selector);
 
 /** A new element: el("span", { className: "x", textContent: "y" }, child, "text"). */
 /** An icon from the sprite in index.html (Lucide), in the text's colour, hidden from readers. */
+/** A search field with its magnifier, as Search settings (the label is its frame). */
+function searchBox(input) {
+  return el("label", { className: "search-field" }, svgIcon("search"), input);
+}
+
 function svgIcon(name) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "i");

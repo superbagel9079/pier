@@ -331,7 +331,7 @@ function modelList() {
       if (needle) box.open = true;
     }
   });
-  return el("div", { className: "model-list" }, el("div", { className: "toolbar host-bar" }, field), ...blocks);
+  return el("div", { className: "model-list" }, el("div", { className: "toolbar host-bar" }, searchBox(field)), ...blocks);
 }
 
 /** Conversations' image model: a row of the page's card, once the VM's config is known. */
@@ -592,7 +592,7 @@ function drawProjects() {
       const needle = field.value.trim().toLowerCase();
       for (const r of rows) r.hidden = Boolean(needle) && !r.dataset.name.includes(needle);
     });
-    section.replaceChildren(el("div", { className: "toolbar host-bar" }, field), el("div", { className: "rows project-list" }, ...rows));
+    section.replaceChildren(el("div", { className: "toolbar host-bar" }, searchBox(field)), el("div", { className: "rows project-list" }, ...rows));
     return;
   }
   const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: "Back to projects" }));
@@ -781,7 +781,7 @@ function drawNetwork(again) {
     });
     const allowed = [...own, ...builtin].filter((h) => !isOff(h)).length;
     out.push(el("h2", {}, el("span", { textContent: "Allowed places" }), el("span", { className: "aside", textContent: `${own.length + builtin.length} places, ${allowed} allowed` })));
-    out.push(el("div", { className: "toolbar host-bar" }, field, add), error, box);
+    out.push(el("div", { className: "toolbar host-bar" }, searchBox(field), add), error, box);
     if (!piModels) loadPiModels().then(() => { if (!$("#prefs").hidden && prefsPage === "network") drawNetwork(false); });
     return out;
   });

@@ -53,7 +53,7 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
   const off = el("p", { className: "hint", textContent: "Off: Pi leaves it out at its next start. Nothing is deleted." });
   // Without its bar (Settings > Extensions, as the board): Add is the page's own, on top.
   box.replaceChildren(
-    el("div", { className: "toolbar resource-bar", hidden: !bar }, filter, add, refresh),
+    el("div", { className: "toolbar resource-bar", hidden: !bar }, searchBox(filter), add, refresh),
     error, notice, ...(top ? [top] : []), list, off);
 
   let data = null;
@@ -430,11 +430,11 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
     fromTab("skills", "Skills", "skills.sh's skills (npx skills add, for Pi)"));
   const input = el("input", { type: "search", placeholder: "Search packages, or type a source: npm:…, git:…, https://…", spellcheck: false });
   input.setAttribute("aria-label", "Search the packages");
-  const kindBtn = el("button", { type: "button", className: "pkg-filter" });
-  const sortBtn = el("button", { type: "button", className: "pkg-filter" });
+  const kindBtn = el("button", { type: "button", className: "pick pkg-filter" });
+  const sortBtn = el("button", { type: "button", className: "pick pkg-filter" });
   const label = () => {
-    kindBtn.replaceChildren(el("span", { textContent: KINDS.find(([k]) => k === kind)[1] }), svgIcon("chevron-down"));
-    sortBtn.replaceChildren(el("span", { textContent: SORTS.find(([k]) => k === sort)[1] }), svgIcon("chevron-down"));
+    kindBtn.replaceChildren(el("span", { textContent: KINDS.find(([k]) => k === kind)[1] }));
+    sortBtn.replaceChildren(el("span", { textContent: SORTS.find(([k]) => k === sort)[1] }));
   };
   label();
   function drawFrom() {
@@ -453,7 +453,7 @@ function makePackageTools(box, currentProject, onDone, scope = () => "user") {
   const results = el("div", { className: "pkg-list" });
   const where = el("p", { className: "hint pkg-from" });
   const listView = el("div", { className: "pkg-view" },
-    el("div", { className: "pkg-tools" }, fromSeg, kindBtn, sortBtn, input),
+    el("div", { className: "pkg-tools" }, fromSeg, kindBtn, sortBtn, searchBox(input)),
     warning,
     featuredHead, featured,
     allHead,

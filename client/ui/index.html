@@ -606,7 +606,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <!-- As a table (the proposals' 8B): which log, a filter, the lowest level, follow. -->
       <div class="toolbar log-bar">
         <span class="seg" role="group" aria-label="Which log"><button class="mode active" data-source="devbox" title="This computer: connection, calls to the VM, terminals, shares, the interface">Pier</button><button class="mode" data-source="vm" title="The picker on the VM: what each call did, Pi starting and stopping, restore points">VM</button></span>
-        <input class="search" type="search" aria-label="Filter the log" placeholder="Filter" spellcheck="false">
+        <label class="search-field"><svg class="i" aria-hidden="true"><use href="#i-search"/></svg><input class="search" type="search" aria-label="Filter the log" placeholder="Filter" spellcheck="false"></label>
         <select class="level" aria-label="Lowest level shown" title="Lowest level shown">
           <option value="3">Everything</option>
           <option value="2" selected>Info and above</option>
