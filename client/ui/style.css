@@ -427,7 +427,7 @@ body.own-titlebar #workspace.right-open .pane-project > .toolbar .switch { paddi
 /* The usual arrow over terminals, not a text cursor; selecting text still works. */
 .pane.terminal .xterm, .pane.terminal .xterm-screen, .pane.terminal .xterm-viewport, .pane.terminal .xterm-rows { cursor: default; }
 
-.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: var(--s2); padding: var(--s3); color: var(--dim); }
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: safe center; height: 100%; gap: var(--s2); padding: var(--s3); color: var(--dim); }
 .empty.launcher { overflow: auto; }
 .lgroup { width: min(520px, 90%); display: flex; flex-direction: column; gap: var(--s2); }
 .llabel { margin: var(--s5) 0 var(--s1); font-size: var(--t-small); line-height: 16px; color: var(--dim); }
@@ -2376,3 +2376,6 @@ button.secondary.danger:is(#_#_, button):hover:not(:disabled) { background: colo
 .answer :is(ul, ol) { padding-left: 1.4em; margin: 6px 0; }
 .answer li { margin: 2px 0; }
 .answer li::marker { color: var(--dim); }
+/* Settings under Pier's own window buttons (Windows): a page's title and its action start
+   below them, never under them in a narrow window. */
+body:has(#window-buttons:not([hidden])) .prefs-pages { padding-top: 48px; }
