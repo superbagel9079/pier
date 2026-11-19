@@ -37,7 +37,11 @@ function openPrefs() {
   $("#prefs-diag-note").hidden = true;
   fillPickerInfo();
   fillLabsPrefs();
-  backend.logInfo().then((info) => { $("#prefs-logpath").textContent = info.path || "?"; }).catch(() => {});
+  backend.logInfo().then((info) => {
+    $("#prefs-logpath").textContent = info.path || "?";
+    if (info.version) $("#about-version").textContent = `Pier ${info.version}`;
+  }).catch(() => {});
+  $("#prefs-releasenotes").checked = prefs.releaseNotes !== false;
   showSettingsPage(prefsPage);
   if ($("#prefs").hidden) {
     // The workspace stays as it was behind (terminals run on), only out of sight.
@@ -567,8 +571,8 @@ $("#prefs-pi-terminal").addEventListener("change", (e) => {
 function showTerminalPage() {
   $("#term-welcome").hidden = prefs.piTerminal;
   $("#term-on").hidden = !prefs.piTerminal;
-  // The terminals' own options (font, copy and paste) are every terminal's: shown either way.
-  $("#prefs-term-more").hidden = false;
+  // Off: only what tmux gives and its button; on, the terminals' options under it.
+  $("#prefs-term-more").hidden = !prefs.piTerminal;
 }
 $("#term-turn-on").addEventListener("click", () => {
   const box = $("#prefs-pi-terminal");

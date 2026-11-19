@@ -12,12 +12,16 @@ function showUpdate(info) {
   button.textContent = updateFound ? `update to ${updateFound.version}` : "";
   rail.title = updateFound ? `Pier ${updateFound.version} is out: see what changed and install it` : "";
   rail.setAttribute("aria-label", updateFound ? `Update to ${updateFound.version}` : "Update");
-  // The status row: up to date, or the new one, what changed (folded) and Restart.
-  $("#update-title").textContent = updateFound ? `Pier ${updateFound.version} is out` : info ? "Pier is up to date" : "Pier";
+  // The pills (its version, up to date or the new one), then the row: Check now, or the new
+  // one, what changed (folded) and Restart.
+  if (info?.current) $("#about-version").textContent = `Pier ${info.current}`;
+  const pill = $("#about-state");
+  pill.textContent = updateFound ? `${updateFound.version} is out` : info ? "Up to date" : "";
+  pill.dataset.state = updateFound ? "slow" : "ok";
+  $("#update-title").textContent = updateFound ? `Pier ${updateFound.version} is out` : "Look for a new Pier";
   $("#update-state").textContent = updateFound
     ? `You have ${updateFound.current}${updateFound.date ? ` · ${updateFound.date.slice(0, 10)}` : ""} ·`
-    : info ? `Version ${info.current}.` : "Not checked yet.";
-  $("use", $(".update-icon")).setAttribute("href", updateFound ? "#i-circle-arrow-up" : "#i-circle-check");
+    : "Installed and restarted when you say so.";
   $(".update-status").classList.toggle("new", Boolean(updateFound));
   $("#update-whatsnew").hidden = !updateFound;
   $("#update-install").hidden = !updateFound;
@@ -87,9 +91,12 @@ $("#update-install").addEventListener("click", async () => {
   const button = $("#update-install");
   button.disabled = true;
   $("#update-error").hidden = true;
+  // What changed, shown once Pier has restarted on it (Release notes).
+  try { localStorage.setItem("pier.updated", JSON.stringify({ version: updateFound.version, notes: updateFound.notes || "" })); } catch { /* not kept */ }
   try {
     await backend.updateInstall(); // Pier restarts once it is installed
   } catch (e) {
+    try { localStorage.removeItem("pier.updated"); } catch { /* none */ }
     showError($("#update-error"), String(e));
     $("#update-progress").hidden = true;
   } finally {
@@ -97,4 +104,15 @@ $("#update-install").addEventListener("click", async () => {
   }
 });
 
+$("#prefs-releasenotes").addEventListener("change", (e) => { prefs.releaseNotes = e.target.checked; savePrefs(); });
+
+/** After an update: what changed in the version now running, once (Release notes). */
+function showReleaseNotes() {
+  let done = null;
+  try { done = JSON.parse(localStorage.getItem("pier.updated")); localStorage.removeItem("pier.updated"); } catch { /* none */ }
+  if (!done?.version || prefs.releaseNotes === false) return;
+  resourceDialog(`What's new in Pier ${done.version}`, [el("div", { className: "update-notes", textContent: done.notes || "No notes for this version." })], []);
+}
+
 scheduleUpdateChecks();
+setTimeout(showReleaseNotes, 1500); // once the window is drawn

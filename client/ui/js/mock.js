@@ -206,7 +206,7 @@ function mockBackend() {
     pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.74" ? 22 : 21 }, bundled: "4.74", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
-    logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
+    logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs, version: "0.7.6" }),
     setLogLevel: async () => {},
     openLogFolder: async () => {},
     openUrl: async (url) => { flashStatus(`would open ${url}`); },

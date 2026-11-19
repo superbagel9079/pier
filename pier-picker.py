@@ -6267,7 +6267,7 @@ def api_pi_thinking(home, value):
             settings.pop("defaultThinkingLevel", None)
 
     write_settings("user", None, change)
-    log("info", "pi.default-thinking", level=value or "-")
+    log("info", "pi.default-thinking", thinking=value or "-")
     return {"thinking": pi_default_thinking(home)}
 
 

@@ -329,6 +329,21 @@ class Checks(unittest.TestCase):
 
 # --- sessions ------------------------------------------------------------------------------
 
+class Thinking(Home):
+    """Pi's default thinking level: written in its settings.json, put back, refused when unknown."""
+
+    def test_set_then_cleared(self):
+        self.assertEqual(m.api_pi_thinking(self.home, "high"), {"thinking": "high"})
+        with open(self.path(".pi", "agent", "settings.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f)["defaultThinkingLevel"], "high")
+        self.assertEqual(m.api_pi_thinking(self.home, ""), {"thinking": ""})
+        self.assertEqual(m.pi_default_thinking(self.home), "")
+
+    def test_unknown_level_refused(self):
+        with self.assertRaises(m.ApiError):
+            m.api_pi_thinking(self.home, "--everything")
+
+
 class Sessions(Home):
     def session(self, *entries, partial=""):
         folder = m.sessions_root()

@@ -178,11 +178,13 @@ function openFolderPicker(start = null) {
     const path = made?.created;
     if (!path) return;
     dialog.close();
+    closePrefs(); // opened from Settings > Projects: the conversation is in the workspace
     openPiTerminal(path, projectLabel(path), ["--new"]);
   }
   function start_() {
     if (newName()) { create(); return; }
     dialog.close();
+    closePrefs();
     const path = chosen || here;
     openPiTerminal(path, projectLabel(path), []);
   }

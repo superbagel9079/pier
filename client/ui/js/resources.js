@@ -199,7 +199,7 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
     if (!(await ask(`Put the skill ${name} in the bin? Pi stops loading it; it stays recoverable on the VM.`))) return;
     try {
       const done = await backend.skillDelete(where, currentProject(), name);
-      say(`${name} is in the bin: ${done.kept}`);
+      flashStatus(`${name} removed (kept in the picker's bin on the VM)`);
       load();
     } catch (e) { showError(error, String(e)); }
   }

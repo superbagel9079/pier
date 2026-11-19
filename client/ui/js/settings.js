@@ -240,7 +240,7 @@ const PAGE_ACTIONS = {
     flashStatus(`Connected: ${forge.login} on ${FORGE_LABELS[forge.kind]}`);
     drawForges();
   }), false, { icon: FORGE_ICONS[kind] || "git-branch" }]))),
-  projects: () => pageAction("plus", "Add project", () => { closePrefs(); openFolderPicker(); }),
+  projects: () => pageAction("plus", "Add project", () => openFolderPicker()), // Settings stay behind until Pi starts
   extensions: () => pageAction("plus", "Add", (b) => extParts?.manager.addMenu(b)),
 };
 

@@ -716,6 +716,7 @@ fn log_info() -> Value {
         "path": path.as_ref().map(|p| p.display().to_string()),
         "dir": path.as_ref().and_then(|p| p.parent()).map(|p| p.display().to_string()),
         "debug": journal::debug_enabled(),
+        "version": env!("CARGO_PKG_VERSION"),
     })
 }
 

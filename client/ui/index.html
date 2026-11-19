@@ -445,18 +445,17 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       </section>
 
       <section class="prefs-page" data-page="about" data-title="About" role="tabpanel" hidden>
-      <!-- A status row (the proposals' 7B): up to date, or a new Pier with what changed. -->
-      <h2>Pier</h2>
+      <div class="pills"><span class="pill" id="about-version"></span><span class="pill state" id="about-state" data-state="lost"></span></div>
       <div class="rows">
         <div class="set update-status">
-          <svg class="i update-icon" aria-hidden="true"><use href="#i-circle-check"/></svg>
-          <div class="what"><span id="update-title">Pier</span><span><span id="update-state">Not checked yet.</span> <button id="update-whatsnew" class="link" type="button" aria-expanded="false" aria-controls="update-found" hidden>What's new</button></span></div>
+          <div class="what"><span id="update-title">Look for a new Pier</span><span><span id="update-state">Installed and restarted when you say so.</span> <button id="update-whatsnew" class="link" type="button" aria-expanded="false" aria-controls="update-found" hidden>What's new</button></span></div>
           <span id="update-progress" class="dim small" hidden></span>
-          <button id="update-install" class="secondary" type="button" hidden>Restart to update</button>
-          <button id="update-check" class="secondary" type="button">Check now</button>
+          <button id="update-install" class="secondary quiet" type="button" hidden>Restart to update</button>
+          <button id="update-check" class="secondary quiet" type="button">Check now</button>
         </div>
         <div class="set update-notes-row" id="update-found" hidden><div id="update-notes" class="update-notes"></div></div>
-        <div class="set"><label class="what" for="prefs-updatecheck"><span>Look for a new Pier</span><span>At startup, then every 6 hours. Only versions signed with the project's key are installed; the picker on the VM follows.</span></label><input id="prefs-updatecheck" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-updatecheck"><span>Look by itself</span><span>At startup, then every 6 hours. Only versions signed with the project's key are installed; the picker on the VM follows.</span></label><input id="prefs-updatecheck" type="checkbox"></div>
+        <div class="set"><label class="what" for="prefs-releasenotes"><span>Release notes</span><span>Show what changed after an update.</span></label><input id="prefs-releasenotes" type="checkbox"></div>
       </div>
       <p id="update-error" class="error" hidden></p>
       </section>
