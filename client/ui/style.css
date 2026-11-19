@@ -1398,7 +1398,7 @@ html.mica.grad-in-newtab #workspace .empty.launcher { background: var(--grain-la
 .grad-in-empty .chat:has(> .chat-empty:not([hidden])), .grad-in-empty .pane:has(> .pane-project.no-conversation) { background: var(--grain-layer), var(--grad), var(--bg); }
 .grad-in-working .composer.working { border-color: transparent; background: linear-gradient(var(--field), var(--field)) padding-box, linear-gradient(90deg, var(--g1), var(--g2), var(--g1)) border-box; background-size: 100% 100%, 200% 100%; animation: composer-work 3s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .grad-in-working .composer.working { animation: none; } }
-.grad-in-buttons :is(.set > button.primary, .qs-step button, #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop)) {
+.grad-in-buttons :is(.set > button.primary, .qs-step button:not(.qs-advanced):not(.secondary), #connect-card-go, #connect form button[type="submit"], .dialog .actions button:not(.secondary):not(.link), .composer .send:not(.stop)) {
   background: linear-gradient(120deg, var(--g1), var(--g2)); color: var(--grad-ink); border-color: transparent; }
 /* The thumbnails (Appearance) */
 .grad-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--s2); margin-bottom: var(--s3); }
