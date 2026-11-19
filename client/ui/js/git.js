@@ -51,7 +51,7 @@ function forgeAccountDialog(chosen = "github", done = () => {}) {
   token.focus();
 }
 
-function makeGitManager(box, currentProject) {
+function makeGitManager(box, currentProject, onLoad = null) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
   const body = el("div");
@@ -71,10 +71,12 @@ function makeGitManager(box, currentProject) {
       data.worktrees = (await backend.api(["worktrees", project]).catch(() => ({ worktrees: [] }))).worktrees;
     } catch (e) {
       showError(error, String(e));
+      onLoad?.(null, String(e));
       return;
     }
     if (data.error) showError(error, data.error);
     render();
+    onLoad?.(data);
   }
 
   const action = linkButton;
@@ -289,6 +291,8 @@ function makeGitManager(box, currentProject) {
   let loadedFor = null;
   return {
     load,
+    linkDialog: () => linkDialog(),
+    createDialog: () => createDialog(),
     shown() { if (currentProject() !== loadedFor) { loadedFor = currentProject(); load(); } },
   };
 }

@@ -4,7 +4,7 @@
 function makeRepository(tab) {
   tab.pane.append($("#tpl-repository").content.cloneNode(true));
   const $$ = (sel) => $(sel, tab.pane);
-  const project = () => tab.project || target?.path || null; // Settings > Projects gives its own
+  const project = () => target?.path || null;
   const gitManager = makeGitManager($$(".git-manager"), project);
   const teamManager = makeTeamManager($$(".team-manager"), project);
   let page = prefs.repositoryPage === "team" ? "team" : "git";
@@ -19,8 +19,6 @@ function makeRepository(tab) {
   }
   for (const b of tab.pane.querySelectorAll(".repository-pages .mode")) b.addEventListener("click", () => showPage(b.dataset.page));
   const where = $$(".repository-project");
-  where.hidden = Boolean(tab.project); // in Settings > Projects: the project is the page's title
-  where.style.display = tab.project ? "none" : "";
   const label = () => { where.textContent = project() ? projectLabel(project()) : "no Pi in use: start one in a project"; };
 
   tab.showPage = showPage;

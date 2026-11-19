@@ -527,7 +527,6 @@ function providerDialog(p, from = null) {
 
 let projectsOpen = null; // the project whose page is shown, else the list
 let projectsSub = null;  // "instructions" or "repository": that page of the project
-let projectsRepo = null; // the Repository panel shown in a project's page
 /** Settings > Projects at a project (and its Instructions page): from Conversations' menu. */
 function openProjectSettings(project, sub = null) {
   projectsOpen = project;
@@ -539,9 +538,7 @@ function openProjectSettings(project, sub = null) {
  *  instructions, what Pi loads, its mark, its repository, its path. */
 function drawProjects() {
   const section = $('#prefs .prefs-page[data-page="projects"]');
-  projectsRepo?.onClose?.(); // the Repository shown before: its listeners go
   extInto(extHome()); // Extensions' parts back in their page (a project's shows them in its own)
-  projectsRepo = null;
   if (!online) { section.replaceChildren(); return; }
   const data = vm.latest("conversations")?.data;
   if (!data) {
@@ -628,11 +625,9 @@ function drawProjects() {
     return;
   }
   if (projectsSub === "repository") {
-    // The Repository panel, for this project, read while this page is shown.
-    const box = el("div", { className: "settings-repository" });
+    const box = el("div", {}, el("p", { className: "dim", textContent: "Asking the VM…" }));
     section.replaceChildren(back, title, tabs, box);
-    projectsRepo = { pane: box, project: p.project, get shown() { return !$("#prefs").hidden && prefsPage === "projects" && projectsSub === "repository"; } };
-    makeRepository(projectsRepo);
+    projectRepository(p.project, box);
     return;
   }
   const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
@@ -644,6 +639,63 @@ function drawProjects() {
     el("div", { className: "rows" },
       row("Its mark", "A colour, a letter, an icon or a picture: click it to change.", markBtn),
       row("Its path", p.project, copy)));
+}
+
+/** A project's Repository, as its settings (the proposals' A): the repository it is
+ *  connected to, what Pi may do with it, and its activity in one line, the Repository panel
+ *  of the window a click away. Read through the Git panel's manager (its dialogs too). */
+function projectRepository(project, box) {
+  const error = el("p", { className: "error", hidden: true });
+  const git = makeGitManager(el("div"), () => project, (data, problem) => {
+    if (!box.isConnected) return;
+    if (!data) { box.replaceChildren(el("p", { className: "error", textContent: problem })); return; }
+    const row = (name, words, ...controls) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), ...controls);
+    const button = (text, run, className = "secondary") => {
+      const b = el("button", { type: "button", className, textContent: text });
+      b.addEventListener("click", run);
+      return b;
+    };
+    const out = [el("h2", { textContent: "Its repository" })];
+    const forge = data.link && data.forges.find((f) => f.id === data.link.forge);
+    if (!data.forges.length) {
+      out.push(el("div", { className: "rows" }, row("No account on a forge yet", "Pi pushes its branches and opens pull requests through one: GitHub, GitLab, Gitea.",
+        button("Add an account", () => showPrefsPage("git")))));
+    } else if (!data.link) {
+      out.push(el("div", { className: "rows" }, row("Not connected yet", "A repository of yours, where Pi pushes its pi/… branches.",
+        button("Connect…", () => git.linkDialog()), button("Create…", () => git.createDialog()))));
+    } else {
+      let host = forge?.url || "";
+      try { host = new URL(host).host; } catch { /* as written */ }
+      const unlink = button("Unlink", async () => {
+        if (!(await ask(`Unlink this project from ${data.link.repo}? Pi can no longer push nor open pull requests for it. Nothing is deleted, there or here.`))) return;
+        try { await backend.repoUnlink(project); git.load(); } catch (e) { showError(error, String(e)); }
+      }, "secondary danger");
+      const logo = el("span", { className: "avatar", "aria-hidden": "true" }, svgIcon(/forgejo|codeberg/i.test(forge?.url || "") ? "logo-forgejo" : FORGE_ICONS[forge?.kind] || "git-branch"));
+      out.push(el("div", { className: "rows" }, el("div", { className: "set" }, logo,
+        el("div", { className: "what" }, el("span", { textContent: data.link.repo }),
+          el("span", { textContent: [host, forge?.login, `default branch ${data.link.default_branch}`, data.branch ? `here: ${data.branch}` : ""].filter(Boolean).join(" · ") })), unlink)));
+      // What Pi may do with it, and how a pull request is merged: saved as soon as chosen.
+      const link = data.link;
+      const save = async (mode, method) => {
+        try { Object.assign(link, await backend.repoSettings(project, mode, method, link.agents || "")); git.load(); } catch (e) { showError(error, String(e)); }
+      };
+      const mode = el("button", { type: "button", className: "pick", "aria-haspopup": "menu" }, el("span"));
+      const method = el("button", { type: "button", className: "pick", "aria-haspopup": "menu" }, el("span"));
+      choiceButton(mode, Object.entries(REPO_MODES).map(([v, [label]]) => [v, label]), () => link.mode || "ask", (v) => save(v, link.merge_method || "merge"));
+      choiceButton(method, Object.entries(MERGE_LABELS), () => link.merge_method || "merge", (v) => save(link.mode || "ask", v));
+      out.push(el("h2", { textContent: "What Pi may do" }), el("div", { className: "rows" },
+        row("Pi may", REPO_MODES[link.mode || "ask"][1], mode),
+        row("Merges", "How a pull request is merged, once you approve it.", method)));
+    }
+    // What happens there, in one line: the Repository panel of the window has it all.
+    const waits = data.approvals.length, prs = (data.prs || []).length, trees = (data.worktrees || []).length;
+    const open = button("Open", () => { closePrefs(); const t = workspace.find("repository") || workspace.add("repository", "center"); workspace.show(t); }, "");
+    out.push(el("h2", { textContent: "Activity" }), el("div", { className: "rows" }, row(
+      waits ? `${waits} request${waits === 1 ? "" : "s"} wait${waits === 1 ? "s" : ""} for you` : "Nothing waits for you",
+      [`${prs} pull request${prs === 1 ? "" : "s"} open`, `${trees} worktree${trees === 1 ? "" : "s"} of Pis`].join(" · ") + ". In the Repository panel of the window.", open)), error);
+    box.replaceChildren(...out);
+  });
+  git.load();
 }
 
 /** A project's texts for Pi (the Project tab's, here now): AGENTS.md, APPEND_SYSTEM.md and

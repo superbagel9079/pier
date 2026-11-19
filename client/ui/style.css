@@ -2387,7 +2387,6 @@ body:has(#window-buttons:not([hidden])) .prefs-pages { padding-top: 48px; }
 .project-pick > .i:last-child { margin-left: auto; width: 14px; height: 14px; color: var(--dim); flex: none; }
 /* A package's page: Back to packages only, not the project's Back above it. */
 #prefs .prefs-page[data-page="extensions"]:has(.pkg-page:not([hidden])) #ext-back { display: none; }
-.settings-repository .repository-project { display: none; } /* its name is the page's title */
 
 /* A project's mark in its row: the size of the buttons beside it. */
 .set > .mark-edit .pbadge { width: 32px; height: 32px; font-size: 15px; }
