@@ -11,7 +11,12 @@ function makeRepository(tab) {
   tab.pane.append($("#tpl-repository").content.cloneNode(true));
   const $$ = (sel) => $(sel, tab.pane);
   const project = () => target?.path || null;
-  const gitManager = makeGitManager($$(".git-manager"), project);
+  // No repository connected: no Team to switch to (it works through the repository).
+  const gitManager = makeGitManager($$(".git-manager"), project, (data) => {
+    const linked = Boolean(data?.link);
+    $$(".repository-pages").hidden = !linked;
+    if (!linked && page === "team") showPage("git");
+  });
   const teamManager = makeTeamManager($$(".team-manager"), project);
   let page = prefs.repositoryPage === "team" ? "team" : "git";
 
