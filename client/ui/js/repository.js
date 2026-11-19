@@ -1,6 +1,12 @@
 // The Repository panel: the project's repository (Git) and the colleagues met there (Team),
 // for the Pi in use.
 
+/** The right side's Repository view (Details' panel), opened. */
+function showRepository() {
+  if (!workspace.find("project")) workspace.add("project");
+  workspace.find("project")?.showRepository?.();
+}
+
 function makeRepository(tab) {
   tab.pane.append($("#tpl-repository").content.cloneNode(true));
   const $$ = (sel) => $(sel, tab.pane);

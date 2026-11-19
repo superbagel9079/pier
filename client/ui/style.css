@@ -1279,7 +1279,7 @@ button.row-main:hover { background: none; }
 .approval-whole.command .cl .w { display: inline-block; max-width: 100%; overflow-wrap: anywhere; text-indent: 0; }
 /* Details and Files with no conversation in the middle */
 .no-conversation-note { display: none; }
-.pane-project.no-conversation > :is(.view-activity, .view-files, .view-restore, .view-given, .error) { display: none !important; }
+.pane-project.no-conversation > :is(.view-activity, .view-files, .view-restore, .view-given, .view-repository, .error) { display: none !important; }
 .pane-project.no-conversation .no-conversation-note { display: flex; flex-direction: column; align-items: center; gap: var(--s1); margin: 64px var(--s4) 0; text-align: center; color: var(--dim); }
 .no-conversation-note .i { width: 20px; height: 20px; margin-bottom: var(--s2); }
 .no-conversation-note p:first-of-type { color: var(--fg); font-weight: 600; }
@@ -2391,3 +2391,6 @@ body:has(#window-buttons:not([hidden])) .prefs-pages { padding-top: 48px; }
 /* A project's mark in its row: the size of the buttons beside it. */
 .set > .mark-edit .pbadge { width: 32px; height: 32px; font-size: 15px; }
 .set > .mark-edit .pbadge .i { width: 18px; height: 18px; }
+
+/* Repository in the right side: its own bar under the panel's (Git | Team on the right). */
+.view-repository .pane-repository > .toolbar { justify-content: flex-end; padding-top: 0; }

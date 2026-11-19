@@ -14,9 +14,10 @@ const palette = (() => {
   function collect() {
     const out = [];
     for (const tab of workspace.tabs()) out.push(["tab", tab.title, { left: "left side", right: "right side" }[tab.dock] || "", () => workspace.show(tab), tab]);
-    for (const kind of ["conversations", "project", "repository", ...(labsOn() ? ["labs"] : [])]) {
+    for (const kind of ["conversations", "project", ...(labsOn() ? ["labs"] : [])]) {
       if (!workspace.find(kind)) out.push(["panel", `Open ${KINDS[kind].title}`, "", () => workspace.add(kind)]);
     }
+    out.push(["panel", "Repository", "right side", () => showRepository()]);
     const projects = new Map();
     for (const p of [...(lastProjects?.running || []), ...(lastProjects?.recent || [])]) projects.set(p.path, { label: p.label, running: p.running });
     const conversations = vm.latest("conversations")?.data?.projects || [];

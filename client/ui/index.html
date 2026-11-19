@@ -570,7 +570,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
         <button class="link undo-prompt" title="The project as it was before the latest prompt (what is there now is saved first)"><svg class="i" aria-hidden="true"><use href="#i-undo-2"/></svg><span>Undo last prompt</span></button>
         <span class="agent dim"></span>
         <span class="switch" role="group">
-          <button class="mode active" data-mode="activity" title="Details: what waits for you, what Pi changed, the context" aria-label="Details"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg></button><button class="mode" data-mode="files" title="Files: the project's files" aria-label="Files"><svg class="i" aria-hidden="true"><use href="#i-folder-tree"/></svg></button><button class="mode" data-mode="given" title="Given to Pi: images, files, folders, shares" aria-label="Given to Pi"><svg class="i" aria-hidden="true"><use href="#i-gift"/></svg></button><button class="mode" data-mode="restore" title="Restore: the project as it was before a prompt" aria-label="Restore"><svg class="i" aria-hidden="true"><use href="#i-history"/></svg></button>
+          <button class="mode active" data-mode="activity" title="Details: what waits for you, what Pi changed, the context" aria-label="Details"><svg class="i" aria-hidden="true"><use href="#i-info"/></svg></button><button class="mode" data-mode="files" title="Files: the project's files" aria-label="Files"><svg class="i" aria-hidden="true"><use href="#i-folder-tree"/></svg></button><button class="mode" data-mode="repository" title="Repository: what Pi asks, its pull requests, its worktrees, the team" aria-label="Repository"><svg class="i" aria-hidden="true"><use href="#i-git-branch"/></svg></button><button class="mode" data-mode="given" title="Given to Pi: images, files, folders, shares" aria-label="Given to Pi"><svg class="i" aria-hidden="true"><use href="#i-gift"/></svg></button><button class="mode" data-mode="restore" title="Restore: the project as it was before a prompt" aria-label="Restore"><svg class="i" aria-hidden="true"><use href="#i-history"/></svg></button>
         </span>
       </div>
       <p class="error" hidden></p>
@@ -578,6 +578,7 @@ sudo incus project set user-$(id -u) restricted.networks.access=incusbr-$(id -u)
       <div class="no-conversation-note"><svg class="i" aria-hidden="true"><use href="#i-message-square"/></svg><p>Open a conversation</p><p>What Pi waits for, changes and reads, and the project's files, show here.</p></div>
       <div class="view-activity"></div>
       <div class="view-given" hidden></div>
+      <div class="view-repository" hidden></div>
       <div class="view-files" hidden>
         <div class="toolbar files-bar">
           <select class="files-sort" aria-label="Sort the files" title="Sort the files"><option value="name">Name</option><option value="type">Type</option><option value="size">Size</option><option value="date">Date modified</option></select>

@@ -30,7 +30,7 @@ The installation is careful: the new file is written next to the old one, Pier c
 
 ## The workspace
 
-**The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions and Advanced; Skills and Packages are in Settings > Extensions) and **Repository** (Git and Team, which were pages of Setup). Settings fill the window and open on **General**; the picker is in Overview. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
+**The panels, since picker 4.39:** **Conversations**, **Activity** (with its views Activity, Files, **Given to Pi**, which was the Context tab, and Restore, and **↶ Undo last prompt** at its top), **Project** (which was Setup: Instructions and Advanced; Skills and Packages are in Settings > Extensions) and **Repository** (Git and Team, which were pages of Setup), a view of the right side beside Details and Files: it follows the conversation in use. Settings fill the window and open on **General**; the picker is in Overview. Labs are in the **+** and the palette once turned on. A tab's name never shows fewer than six letters: those that do not fit are listed by **»**. What follows still uses the older names in places.
 
 Three zones, **left, centre and right**. By default, to keep it simple, **the terminals in the centre and every panel on one side** (on the right; Settings > Appearance > **Panels** puts them on the left):
 
@@ -230,7 +230,7 @@ For Pi, **a project is a folder**: each session started in it begins with the sa
 - **Instructions:** `AGENTS.md` and, folded, what Pi reads at startup;
 - **Advanced:** MCP servers, the default model (**change** opens Settings > Models), and Pi's system prompt.
 
-Pi, its packages, skills, extensions and prompt templates are in **Settings > Extensions** (yours apply to every project; a project's own, in its `.pi` folder, are listed with them for the project chosen at the top of the page). The repository and the team are in the **Repository** panel (Part XIII).
+Pi, its packages, skills, extensions and prompt templates are in **Settings > Extensions** (yours apply to every project; a project's own, in its `.pi` folder, are listed with them for the project chosen at the top of the page). The repository and the team are in the right side's **Repository** view (Part XIII).
 
 What each page holds:
 
@@ -301,7 +301,7 @@ The pages of Pi's group write to the picker's `config.toml` on the VM, for the P
 
 **The VM**
 - **Overview:** its state in pills (online, who and where, the picker's version), the address (changed from the login screen), **the picker**: automatic updates (on by default), its log (Copy path, Open logs), a button to install it again; and in a danger zone, **Disconnect**.
-- **Projects:** each project of the VM, with a search; ⋯ changes its mark or copies its path. A project's page has tabs: General (its mark, its path), Instructions, Extensions and Repository (which open where they live).
+- **Projects:** each project of the VM, with a search. A project's page has tabs: General (its mark, its path), Instructions (folded), Extensions (its own and yours, here) and Repository (the repository it is connected to, what Pi may do with it and how it merges; its activity in one line, **Open** shows the right side's Repository view).
 - **Labs:** turning labs on, the **lab hosts** (add one, use Pi's VM, test, make default; how to make one ready), the limits (labs at a time, lifetime, CPUs, memory, disk, default image), the network of a new lab by default (Incus's NAT, your VLAN with its one-time setup, or none), the **networks** labs can be plugged into (what each is for, and how to add one), and the machines with Pier's key.
 - **Diagnostics:** the **Logs** tab (shown or not), detailed logs, where the logs are, **Copy a report**, **Save a report…**, and opening the logs folder.
 

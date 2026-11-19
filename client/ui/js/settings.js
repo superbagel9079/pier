@@ -689,7 +689,7 @@ function projectRepository(project, box) {
     }
     // What happens there, in one line: the Repository panel of the window has it all.
     const waits = data.approvals.length, prs = (data.prs || []).length, trees = (data.worktrees || []).length;
-    const open = button("Open", () => { closePrefs(); const t = workspace.find("repository") || workspace.add("repository", "center"); workspace.show(t); }, "");
+    const open = button("Open", () => { closePrefs(); showRepository(); }, "");
     out.push(el("h2", { textContent: "Activity" }), el("div", { className: "rows" }, row(
       waits ? `${waits} request${waits === 1 ? "" : "s"} wait${waits === 1 ? "s" : ""} for you` : "Nothing waits for you",
       [`${prs} pull request${prs === 1 ? "" : "s"} open`, `${trees} worktree${trees === 1 ? "" : "s"} of Pis`].join(" · ") + ". In the Repository panel of the window.", open)), error);

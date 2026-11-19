@@ -636,6 +636,13 @@ function makeProject(tab) {
   tab.given = given;
   tab.showGiven = () => { workspace.show(tab); setMode("given"); };
 
+  // Repository is a view too: the project of the conversation in use, as Details and Files.
+  const repoView = $(".view-repository", tab.pane);
+  const repo = { kind: "repository", pane: repoView, get shown() { return tab.shown !== false && mode === "repository"; } };
+  makeRepository(repo);
+  $(".repository-project", repoView).style.display = "none"; // the panel's own bar names the project
+  tab.showRepository = () => { workspace.show(tab); setMode("repository"); };
+
   // Undo last prompt: back to the point saved as the latest prompt arrived.
   const undo = $(".undo-prompt", tab.pane);
   undo.addEventListener("click", async () => {
@@ -651,11 +658,13 @@ function makeProject(tab) {
   tab.setMode = (next) => setMode(next); // from the palette
   function setMode(next) {
     mode = next;
-    for (const b of tab.pane.querySelectorAll(".mode")) b.classList.toggle("active", b.dataset.mode === mode);
+    for (const b of modes()) b.classList.toggle("active", b.dataset.mode === mode);
     activityView.hidden = mode !== "activity";
     filesView.hidden = mode !== "files";
     restoreView.hidden = mode !== "restore";
     givenView.hidden = mode !== "given";
+    repoView.hidden = mode !== "repository";
+    if (mode === "repository") repo.onShow?.();
     given.onVisible?.(mode === "given" && tab.shown !== false);
     if (mode === "given") given.onShow?.();
     if (mode === "files" && !tree.childElementCount) loadTree();
@@ -681,7 +690,9 @@ function makeProject(tab) {
     if (mode === "restore") loadPoints();
   }
 
-  for (const b of tab.pane.querySelectorAll(".mode")) b.addEventListener("click", () => setMode(b.dataset.mode));
+  // Its own switch's buttons (Repository's Git and Team are .mode too).
+  const modes = () => tab.pane.querySelectorAll(".pane-project > .toolbar .switch .mode");
+  for (const b of modes()) b.addEventListener("click", () => setMode(b.dataset.mode));
   $(".refresh", tab.pane).addEventListener("click", loadTree);
   $(".new-file", tab.pane).addEventListener("click", () => base && newEntry("file"));
   $(".new-folder", tab.pane).addEventListener("click", () => base && newEntry("dir"));
@@ -694,7 +705,7 @@ function makeProject(tab) {
     loadTree();
   });
   sortBy.addEventListener("change", () => { prefs.filesSort = sortBy.value; savePrefs(); loadTree(); });
-  tab.onTargetChange = () => { retarget(); given.onTargetChange?.(); };
+  tab.onTargetChange = () => { retarget(); given.onTargetChange?.(); repo.onTargetChange?.(); };
   tab.onVisible = (shown) => { follow(); given.onVisible?.(shown !== false && mode === "given"); };
   tab.onShow = () => {
     if (stale && vm.latest("activity")) onActivity(vm.latest("activity"));
@@ -703,7 +714,7 @@ function makeProject(tab) {
   // A request answered elsewhere (or a new one): the Waiting card follows.
   const onApprovals = () => { if (activity && mode === "activity" && visible()) renderActivity(); };
   const unlisten = [vm.on("activity", onActivity), vm.on("checkpoints", onPoints), vm.on("approvals", onApprovals)];
-  tab.onClose = () => { unlisten.forEach((stop) => stop()); given.onClose?.(); vm.follow({ activity: null, checkpoints: null }); };
+  tab.onClose = () => { unlisten.forEach((stop) => stop()); given.onClose?.(); repo.onClose?.(); vm.follow({ activity: null, checkpoints: null }); };
   retarget();
 }
 

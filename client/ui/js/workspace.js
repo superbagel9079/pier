@@ -596,7 +596,7 @@ const workspace = (() => {
     const ICONS = { repository: "git-branch", labs: "flask-conical", conversations: "message-square", project: "activity" };
     // The panels of the middle, and the sides' two when closed. Labs once they are on
     // (Settings > Labs); Given to Pi is in Activity.
-    for (const kind of ["repository", ...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
+    for (const kind of [...(labsOn() || find("labs") ? ["labs"] : []), "conversations", "project"]) {
       const open = find(kind);
       if (!open) items.push([KINDS[kind].title, () => add(kind, name), false, { icon: ICONS[kind] }]);
       else if (open.dock === "center") items.push([`${KINDS[kind].title} · show`, () => show(open), false, { icon: ICONS[kind] }]);
