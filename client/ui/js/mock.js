@@ -79,6 +79,7 @@ function mockBackend() {
     { number: 10, title: "Add an export to CSV", author: "leo", taken: false, url: "https://github.com/leo/work/issues/10" },
   ];
   let trusted = false;
+  let mockThinking = ""; // Pi's default thinking level (Settings > Models)
   let pickerVersion = "4.36"; // the demo's VM has an old picker: Pier updates it
   const logLines = [];
   const logListeners = [];
@@ -87,7 +88,7 @@ function mockBackend() {
     logLines.push(line);
     for (const listener of logListeners) listener(line);
   };
-  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.73" });
+  mockLog("info", "app.start", { version: "0.7.6", os: "browser", picker: "4.74" });
   const now = Date.now() / 1000;
   const point = (minutes, reason, label, prompts = []) => ({ id: String(Math.round((now - minutes * 60) * 1e9)), at: now - minutes * 60, reason, label, prompts, session: "s.jsonl", skipped: 0, tree: "t" });
   // Two Pis in ~/work, each in its own conversation.
@@ -193,16 +194,16 @@ function mockBackend() {
       if (pw !== "demo") throw "Password refused (demo: \"demo\")";
       if (!trusted) return { status: "unknown_host", which: "target", host: `${saved.host}:${saved.port}`, fingerprint: "SHA256:q3nT0bWcmXq6Zf2m8h0w5Yb4mJ9q1sQ7xK2pL5vR8eA" };
       mockLog("info", "ssh.connected", { ms: 212 });
-      if (pickerVersion !== "4.73") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.73", command: saved.remote_command, installable: true };
-      return { status: "connected", bundled: "4.73" };
+      if (pickerVersion !== "4.74") return { status: "picker_outdated", remote: pickerVersion, remote_api: 21, bundled: "4.74", command: saved.remote_command, installable: true };
+      return { status: "connected", bundled: "4.74" };
     },
     async installPicker() {
       await new Promise((r) => setTimeout(r, 400));
-      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.73", path: "/home/leo/bin/pi-pick", ms: 380 });
-      pickerVersion = "4.73";
-      return { status: "connected", bundled: "4.73", version: { version: "4.73", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
+      mockLog("info", "picker.installed", { req: "d3mo-1", version: "4.74", path: "/home/leo/bin/pi-pick", ms: 380 });
+      pickerVersion = "4.74";
+      return { status: "connected", bundled: "4.74", version: { version: "4.74", checks: [{ name: "sshfs", ok: false, detail: "sharing a folder live", fix: "sudo apt install sshfs" }] } };
     },
-    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.73" ? 22 : 21 }, bundled: "4.73", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
+    pickerInfo: async () => ({ remote: { version: pickerVersion, api: pickerVersion === "4.74" ? 22 : 21 }, bundled: "4.74", api: 22, command: saved?.remote_command || "~/bin/pi-pick", installable: true }),
     log: async (level, event, fields) => { mockLog(level, `ui.${event}`, fields); },
     logTail: async (lines) => logLines.slice(-lines),
     logInfo: async () => ({ path: "C:\\Users\\leo\\AppData\\Local\\app.devbox.client\\logs\\pier.log", debug: prefs.debugLogs }),
@@ -322,7 +323,7 @@ pi install npm:${args[1]}
         };
       }
       if (args[0] === "version") {
-        return { version: "4.73", checks: [
+        return { version: "4.74", checks: [
           { name: "tmux", ok: true, detail: "keeps Pi running when Pier disconnects" },
           { name: "bubblewrap", ok: true, detail: "Pi's sandbox" },
           { name: "git", ok: true, detail: "restore points, the git jail, the forges" },
@@ -364,7 +365,7 @@ pi install npm:${args[1]}
         mockWritten[key] = { text, mtime: String(Date.now()) };
         return { saved: rel, mtime: mockWritten[key].mtime };
       }
-      if (args[0] === "pi-default-read") return { default: "anthropic/claude-sonnet-5-5" };
+      if (args[0] === "pi-default-read") return { default: "anthropic/claude-sonnet-5-5", thinking: mockThinking };
       if (args[0] === "providers") return { providers: mockProviders, path: "/home/leo/.pi/agent/models.json" };
       if (args[0] === "provider-save") {
         const body = JSON.parse(args[2]);
@@ -690,6 +691,7 @@ pi install npm:${args[1]}
       if (value === null) delete mockConfig[key]; else mockConfig[key] = value;
       return { key, value: value ?? mockConfigDefaults[key], default: value === null };
     },
+    async piThinking(level) { mockThinking = level; return { thinking: level }; },
     async piDefault(model) {
       if (!model.includes("/")) throw "a model as provider/id";
       mockPiDefault = model;

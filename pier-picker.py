@@ -49,7 +49,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.73"
+VERSION = "4.74"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
@@ -6244,7 +6244,34 @@ def api_pi_default(home, value):
     return {"default": pi_default_model(home)}
 
 
-# --- providers (Settings > Agents): Pi's models.json ---------------------------------
+THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def pi_default_thinking(home):
+    """Pi's default thinking level (its settings.json: defaultThinkingLevel), "" when unset."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    level = settings.get("defaultThinkingLevel") if isinstance(settings, dict) else None
+    return level if level in THINKING_LEVELS else ""
+
+
+def api_pi_thinking(home, value):
+    """Pi's default thinking level, for the models that think; "" puts Pi's own back."""
+    value = (value or "").strip()
+    if value and value not in THINKING_LEVELS:
+        raise ApiError(f"a thinking level: {', '.join(THINKING_LEVELS)}, or nothing")
+
+    def change(settings):
+        if value:
+            settings["defaultThinkingLevel"] = value
+        else:
+            settings.pop("defaultThinkingLevel", None)
+
+    write_settings("user", None, change)
+    log("info", "pi.default-thinking", level=value or "-")
+    return {"thinking": pi_default_thinking(home)}
+
+
+# --- providers (Settings > Providers): Pi's models.json -------------------------------
 
 PROVIDER_APIS = ("openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai")
 PROVIDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
@@ -10372,12 +10399,13 @@ API_COMMANDS = {
     "config-set": lambda home, config, a: config_set(home, a[0], config_value(read_stdin_text())),
     "models": lambda home, config, a: api_models(home),
     # Pi's default model alone, at once (not `pi --list-models`): Settings shows the true one.
-    "pi-default-read": lambda home, config, a: {"default": pi_default_model(home)},
+    "pi-default-read": lambda home, config, a: {"default": pi_default_model(home), "thinking": pi_default_thinking(home)},
     "providers": lambda home, config, a: api_providers(home),
     "provider-save": lambda home, config, a: api_provider_save(home, a[0], stdin_bytes(PROVIDER_MAX_BYTES)),
     "provider-delete": lambda home, config, a: api_provider_delete(home, a[0]),
     "fs-write": lambda home, config, a: api_fs_write(home, a[0], a[1], a[2], stdin_bytes(FILE_VIEW_MAX)),
     "pi-default": lambda home, config, a: api_pi_default(home, a[0]),
+    "pi-thinking": lambda home, config, a: api_pi_thinking(home, a[0] if a else ""),
     "paste-image": lambda home, config, a: api_paste_image(home, a[0], stdin_bytes(IMAGE_MAX_BYTES)),
     "paste-file": lambda home, config, a: api_paste_file(home, a[0], a[1], stdin_bytes(FILE_MAX_BYTES)),
     "type": lambda home, config, a: api_type(home, typed_text(a[0]), a[1], a[2]),

@@ -247,6 +247,12 @@ function applyMenuBlur() {
 }
 applyMenuBlur();
 
+/** Copy buttons on code blocks (Conversations): under the pointer, always, never. */
+function applyCopyButtons() {
+  document.documentElement.dataset.copy = prefs.copyButtons || "hover";
+}
+applyCopyButtons();
+
 /** Keep the rail (Appearance): its icons stay on the left when the conversations are hidden. */
 function applyRail() {
   document.documentElement.classList.toggle("rail-always", prefs.railAlways !== false);

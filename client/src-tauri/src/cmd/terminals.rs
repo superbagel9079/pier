@@ -218,6 +218,12 @@ pub(crate) async fn config_set(app: AppHandle, state: State<'_, AppState>, key: 
     api(&app, &state, &["config-set", &key], value.as_bytes()).await
 }
 
+/// Sets Pi's default thinking level ("" puts Pi's own back), in Pi's own settings.json.
+#[tauri::command]
+pub(crate) async fn pi_thinking(app: AppHandle, state: State<'_, AppState>, level: String) -> Result<Value, String> {
+    api(&app, &state, &["pi-thinking", &level], &[]).await
+}
+
 /// Sets Pi's default model ("provider/id"), in Pi's own settings.json.
 #[tauri::command]
 pub(crate) async fn pi_default(app: AppHandle, state: State<'_, AppState>, model: String) -> Result<Value, String> {

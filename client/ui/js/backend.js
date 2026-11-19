@@ -32,6 +32,7 @@ function realBackend() {
     categoryRename: (project, old, name) => invoke("category_rename", { project, old, new: name }),
     configSet: (key, value) => invoke("config_set", { key, value: JSON.stringify(value ?? null) }),
     piDefault: (model) => invoke("pi_default", { model }),
+    piThinking: (level) => invoke("pi_thinking", { level }),
     watchStart: (want) => invoke("watch_start", { want }),
     watchSet: (want) => invoke("watch_set", { want }),
     onVmUpdate: (handler) => listen("vm-update", (event) => handler(event.payload)),

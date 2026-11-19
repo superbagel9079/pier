@@ -7,6 +7,7 @@
 let pickerConfig = null;   // {keys: {key: {value, default, set}}, path, warning, network_builtin, writable}
 let piModels = null;       // {models: ["provider/id"], providers, default, problem}
 let piModelsAsked = null;  // the call under way: `pi --list-models` takes a moment
+let piThinking = "";       // Pi's default thinking level ("": Pi's own)
 
 async function loadPickerConfig() {
   pickerConfig = await backend.api(["config"]);
@@ -29,12 +30,18 @@ function settingsPageShown(page) {
     drawModels();
     // Pi's default as it is now (a model picked in Pi's own screen changes it).
     backend.api(["pi-default-read"]).then((r) => {
-      if (piModels && r?.default !== undefined && r.default !== piModels.default) { piModels.default = r.default; drawModels(false); }
+      const thinking = r?.thinking ?? "";
+      if ((piModels && r?.default !== undefined && r.default !== piModels.default) || thinking !== piThinking) {
+        if (piModels && r?.default !== undefined) piModels.default = r.default;
+        piThinking = thinking;
+        drawModels(false);
+      }
     }).catch(() => {});
   }
   else if (page === "providers") drawProviders();
   else if (page === "agents") drawAgents();
   else if (page === "conversations") drawImageModel();
+  else if (page === "sandbox") drawSandbox();
   else if (page === "network") drawNetwork();
   else if (page === "git") drawForges();
   else if (page === "extensions") drawExtensions();
@@ -54,7 +61,7 @@ async function setConfig(key, value, page, note) {
     note?.(String(error));
     return false;
   }
-  ({ agents: drawAgents, git: drawForges, network: drawNetwork, "conv-image": drawImageModel })[page]?.(false);
+  ({ agents: drawAgents, git: drawForges, sandbox: drawSandbox, network: drawNetwork, "conv-image": drawImageModel })[page]?.(false);
   return true;
 }
 
@@ -160,34 +167,37 @@ function imageModelRow() {
     el("div", { className: "what" }, el("span", { id: "setting-image-label", textContent: "Image model" }), el("span", { textContent: hint }), error), picker);
 }
 
-/** The workers' other models, as the proposals' 2B: one line each (its name, where it
- *  comes from, ⋯ to remove it), then Add a model, which opens the palette. */
-function workerModelsRow() {
+/** Under a worker's model, the others a Pi may choose for a given worker: a chip each
+ *  (× takes it out), then a link that opens the palette. */
+function workerAlso(row) {
   const key = "worker_models";
   const items = [...(configValue(key) || [])];
-  let row;
   const save = (next) => setConfig(key, next, "agents", row.say);
-  row = settingRow(key, "Other models for workers", el("span"), "Those a Pi may choose for a given worker, besides the one above.", "agents");
-  const list = el("div", { className: "sub-rows" });
+  const line = el("div", { className: "also" });
+  if (items.length) line.append(el("span", { className: "dim", textContent: "Also" }));
   for (const item of items) {
-    const parts = item.split("/");
-    const name = parts.pop();
-    const more = el("button", { className: "icon-btn", title: `${name}: remove` }, svgIcon("ellipsis"));
-    more.setAttribute("aria-label", more.title);
-    more.setAttribute("aria-haspopup", "menu");
-    more.addEventListener("click", () => showMenu(more, [["Remove", () => save(items.filter((i) => i !== item)), false, { icon: "trash", danger: true }]]));
-    list.append(el("div", { className: "sub-row" }, el("span", { className: "name", textContent: name, title: item }), el("span", { className: "from", textContent: parts.join(" · ") }), more));
+    const chip = el("button", { type: "button", className: "chip", title: `${item}: take it out` }, el("span", { textContent: item.split("/").pop() }), svgIcon("x"));
+    chip.addEventListener("click", () => save(items.filter((i) => i !== item)));
+    line.append(chip);
   }
-  const add = el("button", { className: "link add-model", type: "button" }, svgIcon("plus"), el("span", { textContent: "Add a model" }));
+  const add = el("button", { type: "button", className: "link" }, svgIcon("plus"), el("span", { textContent: items.length ? "Another" : "Others a Pi may choose" }));
   add.setAttribute("aria-haspopup", "listbox");
   add.addEventListener("click", async () => {
     if (!piModels) await loadPiModels();
     pickPalette(add, { items: modelItems().filter((it) => !items.includes(it.value)), placeholder: MODEL_SEARCH, custom: typedModel,
       onPick: (v) => { if (v && !items.includes(v)) save([...items, v]); } });
   });
-  list.append(el("div", { className: "sub-row" }, add));
-  row.querySelector(".setting-key").before(list);
+  line.append(add);
+  row.querySelector(".setting-key").before(line);
   return row;
+}
+
+/** A page that is off (Labs', Terminals'): what it does, and one button to turn it on. */
+function offPage(icon, title, points, button, run) {
+  const go = el("button", { type: "button", className: "secondary", textContent: button });
+  go.addEventListener("click", run);
+  return el("div", { className: "labs-welcome" }, svgIcon(icon), el("h2", { textContent: title }),
+    el("ul", {}, ...points.map((t) => el("li", { textContent: t }))), el("div", { className: "actions" }, go));
 }
 
 function pageIntro(page) {
@@ -231,6 +241,7 @@ const PAGE_ACTIONS = {
     drawForges();
   }), false, { icon: FORGE_ICONS[kind] || "git-branch" }]))),
   projects: () => pageAction("plus", "Add project", () => { closePrefs(); openFolderPicker(); }),
+  extensions: () => pageAction("plus", "Add", (b) => extParts?.manager.addMenu(b)),
 };
 
 // --- Agents ------------------------------------------------------------------------
@@ -249,8 +260,23 @@ function drawModels(again) {
     });
     def.input.id = "setting-pi-default";
     def.setAttribute("aria-labelledby", "setting-pi-default-label");
+    // Pi's default thinking level, for the models that think (its settings.json too).
+    const LEVELS = [["", "Pi's own"], ["off", "Off"], ["minimal", "Minimal"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"]];
+    const thinkError = el("p", { className: "error", hidden: true });
+    const think = el("button", { type: "button", className: "pick", "aria-haspopup": "menu", "aria-labelledby": "setting-thinking-label" },
+      el("span", { textContent: (LEVELS.find(([v]) => v === piThinking) || LEVELS[0])[1] }));
+    think.addEventListener("click", () => showMenu(think, LEVELS.map(([v, label]) => [label, async () => {
+      try {
+        piThinking = (await backend.piThinking(v)).thinking ?? v;
+        noticeSetter(thinkError)("");
+        flashStatus("Pi's default thinking saved");
+        drawModels(false);
+      } catch (error) { noticeSetter(thinkError)(String(error)); }
+    }, false, { mark: v === piThinking ? svgIcon("check") : el("span") }])));
     const out = [el("div", { className: "rows" }, el("div", { className: "set" },
-      el("div", { className: "what" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), el("span", { textContent: "Every new conversation starts on it." }), defError), def)),
+      el("div", { className: "what" }, el("span", { id: "setting-pi-default-label", textContent: "Default model" }), el("span", { textContent: "Every new conversation starts on it." }), defError), def),
+      el("div", { className: "set" },
+        el("div", { className: "what" }, el("span", { id: "setting-thinking-label", textContent: "Default thinking" }), el("span", { textContent: "For models that think." }), thinkError), think)),
       el("h2", { textContent: "Shown in the pickers" })];
     if (!piModels) {
       out.push(el("p", { className: "hint", textContent: "Asking Pi…" }));
@@ -266,15 +292,16 @@ function drawModels(again) {
 function modelList() {
   const groups = new Map();
   for (const m of piModels.models) {
+    // bifrost/openrouter/anthropic/claude-x: in bifrost, named claude-x, "openrouter · anthropic" beside.
     const parts = m.split("/");
     const name = parts.pop();
-    const from = parts.join(" · ") || "other";
+    const from = parts.shift() || "other";
     if (!groups.has(from)) groups.set(from, []);
-    groups.get(from).push([m, name]);
+    groups.get(from).push([m, name, parts.join(" · ")]);
   }
   const sees = piModels.images || [];
   const blocks = [...groups].map(([from, list]) => {
-    const rows = list.map(([m, name]) => {
+    const rows = list.map(([m, name, via]) => {
       const sw = el("input", { type: "checkbox", checked: shownModel(m) });
       sw.setAttribute("aria-label", `Show ${name} in the pickers`);
       sw.addEventListener("change", () => {
@@ -283,7 +310,7 @@ function modelList() {
         savePrefs();
       });
       const row = el("div", { className: "set tight" }, el("div", { className: "what" }, el("span", { textContent: name, title: m })),
-        sees.includes(m) ? el("span", { className: "origin", textContent: "sees images" }) : null, sw);
+        el("span", { className: "origin", textContent: [via, sees.includes(m) ? "sees images" : ""].filter(Boolean).join(" · ") }), sw);
       row.dataset.model = m.toLowerCase();
       return row;
     });
@@ -319,6 +346,18 @@ async function drawImageModel(again) {
 const PROVIDER_WORDS = { anthropic: "Claude, with an API key.", openai: "GPT, with an API key.", deepseek: "DeepSeek's own API.", openrouter: "Every model through one key.",
   google: "Gemini, with an API key.", groq: "Open models, fast.", mistral: "Mistral's own API.", together: "Open models, hosted.", ollama: "Models running on the VM.", lmstudio: "LM Studio's server." };
 const PROVIDER_FIRST = ["anthropic", "openai", "deepseek", "openrouter"];
+const PROVIDER_LOGOS = { anthropic: "anthropic", claude: "anthropic", openai: "openai", gemini: "google", google: "google", googleapis: "google", mistral: "mistral",
+  ollama: "ollama", deepseek: "deepseek", openrouter: "openrouter", groq: "groq", lmstudio: "lmstudio", together: "together" };
+/** A provider's mark: its logo when it is a known one (by its name, or its address's host;
+ *  a gateway's path is not looked at), else its first letter. */
+function providerMark(name, url = "") {
+  let host = "";
+  try { host = new URL(url).host.toLowerCase(); } catch { /* no address */ }
+  const words = `${name.toLowerCase()} ${host}`;
+  const key = Object.keys(PROVIDER_LOGOS).find((k) => words.includes(k))
+    || (/:11434$/.test(host) ? "ollama" : /:1234$/.test(host) ? "lmstudio" : null);
+  return el("span", { className: "avatar", "aria-hidden": "true" }, key ? svgIcon(`logo-${PROVIDER_LOGOS[key]}`) : document.createTextNode(name[0]?.toUpperCase() || "?"));
+}
 let providersMore = false;
 function drawProviders(again) {
   drawSettingsPage("providers", again, () => {
@@ -333,7 +372,7 @@ function drawProviders(again) {
         const go = el("button", { type: "button", className: "secondary quiet" }, svgIcon("plus"), el("span", { textContent: "Connect" }));
         go.setAttribute("aria-label", `Connect ${label}`);
         go.addEventListener("click", () => providerDialog(null, i));
-        return el("div", { className: "set" }, el("span", { className: "avatar", "aria-hidden": "true", textContent: label[0] }),
+        return el("div", { className: "set" }, providerMark(name, url),
           el("div", { className: "what" }, el("span", { textContent: label }), el("span", { textContent: PROVIDER_WORDS[name] || url })), go);
       })));
       if (popular.length > 4) {
@@ -356,8 +395,7 @@ function drawAgents(again) {
       input.addEventListener("change", () => setConfig("workers_max", Math.round(Number(input.value)), "agents", row.say));
       return row;
     })(),
-    modelRow("worker_model", "Their model", "When a Pi names none. A cheaper model does.", "Pi's default"),
-    workerModelsRow(),
+    workerAlso(modelRow("worker_model", "Their model", "When a Pi names none. A cheaper model does.", "Pi's default")),
     modelRow("orchestrator_model", "Orchestrator's model", "The one that plans, splits and merges.", "Pi's default"),
     el("h2", { textContent: "Helpers (consult)" }),
     toggleRow("helpers", "Helpers", "Read-only Pis a Pi asks at once: scout, reviewer, critic, checker.", "agents"),
@@ -418,7 +456,7 @@ function providersBlock() {
     const tokens = (n) => (n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : `${Math.round(n / 1000)}K`);
     const context = !p.models.length ? "" : sized.length ? `${[...new Set(sized.map(tokens))].join(", ")} context` : "context unknown: Pi takes 128K";
     const facts = [p.baseUrl, `${p.models.length} model${p.models.length === 1 ? "" : "s"}`, context, p.key ? "" : "no key"];
-    box.append(el("div", { className: "set" }, el("span", { className: "avatar", "aria-hidden": "true", textContent: p.name[0]?.toUpperCase() || "?" }),
+    box.append(el("div", { className: "set" }, providerMark(p.name, p.baseUrl),
       el("div", { className: "what" }, el("span", { textContent: p.name }), el("span", { textContent: facts.filter(Boolean).join(" · "), title: `${p.api}${p.keyEnv ? ` · key from ${p.keyEnv}` : ""}` })), more));
   }
   if (!piProviders.providers.length) box.append(el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: "None of your own yet" }), el("span", { textContent: "Connect a popular one below, or add your own." }))));
@@ -663,14 +701,35 @@ function promptCards(project) {
 
 // --- Network & sandbox -------------------------------------------------------------
 
+function drawSandbox(again) {
+  drawSettingsPage("sandbox", again, () => (configValue("sandbox")
+    ? [toggleRow("sandbox", "Sandbox", "Pi sees its project and ~/.pi only.", "sandbox",
+      { confirmOff: "Run Pi without its sandbox? It then sees and may change everything your account can on the VM." })]
+    : [offPage("shield", "Pi in a sandbox", [
+      "Pi sees its project and its own settings (~/.pi), little else of the VM (bubblewrap).",
+      "Where it may connect from there is set in Network.",
+      "Off, as now: Pi sees and may change everything your account can on the VM.",
+    ], "Turn on the sandbox", () => setConfig("sandbox", true, "sandbox"))]));
+}
+
 function drawNetwork(again) {
   drawSettingsPage("network", again, () => {
     const out = [];
-    out.push(
-      toggleRow("sandbox", "Sandbox", "Pi sees its project and ~/.pi only.", "network",
-        { confirmOff: "Run Pi without its sandbox? It then sees and may change everything your account can on the VM." }),
-      toggleRow("network_limit", "Limit the network", "Only the places below.", "network",
-        { confirmOff: "Let Pi connect anywhere? It could then send what it reads to any address." }));
+    if (!configValue("sandbox")) {
+      const go = el("button", { type: "button", className: "secondary quiet", textContent: "Open Sandbox" });
+      go.addEventListener("click", () => showPrefsPage("sandbox"));
+      return [el("div", { className: "rows" }, el("div", { className: "set" },
+        el("div", { className: "what" }, el("span", { textContent: "The sandbox is off" }), el("span", { textContent: "The network is limited from inside the sandbox: turn it on first." })), go))];
+    }
+    if (!configValue("network_limit")) {
+      return [offPage("globe", "Limit where Pi connects", [
+        "Pi reaches only the places you allow: model providers, npm, GitHub, PyPI, and yours (a gateway, a mirror).",
+        "The rest is refused and written to the picker's log (net.blocked).",
+        "Off, as now: Pi may connect anywhere, and could send what it reads to any address.",
+      ], "Limit the network", () => setConfig("network_limit", true, "network"))];
+    }
+    out.push(toggleRow("network_limit", "Limit the network", "Only the places below.", "network",
+      { confirmOff: "Let Pi connect anywhere? It could then send what it reads to any address." }));
     // Every place in one list (the mock-up's option C): yours, then the picker's own, each
     // with a switch (off: still listed, Pi no longer reaches it: network_off); yours also
     // have ×. The field on top finds a place, and adds what it holds.
@@ -721,10 +780,7 @@ function drawNetwork(again) {
       for (const row of box.children) row.hidden = Boolean(needle) && !row.dataset.host.includes(needle);
     });
     const allowed = [...own, ...builtin].filter((h) => !isOff(h)).length;
-    const limited = configValue("network_limit");
-    box.classList.toggle("inactive", !limited);
     out.push(el("h2", {}, el("span", { textContent: "Allowed places" }), el("span", { className: "aside", textContent: `${own.length + builtin.length} places, ${allowed} allowed` })));
-    if (!limited) out.push(el("p", { className: "notice", textContent: "Limit the network is off: Pi may connect anywhere, and this list does not apply." }));
     out.push(el("div", { className: "toolbar host-bar" }, field, add), error, box);
     if (!piModels) loadPiModels().then(() => { if (!$("#prefs").hidden && prefsPage === "network") drawNetwork(false); });
     return out;
@@ -734,7 +790,7 @@ function drawNetwork(again) {
 // --- Git & forges ------------------------------------------------------------------
 
 // Each forge's mark, monochrome as Pier's other icons (Gitea and Forgejo have none in Lucide).
-const FORGE_ICONS = { github: "github", gitlab: "gitlab" };
+const FORGE_ICONS = { github: "logo-github", gitlab: "logo-gitlab", gitea: "logo-gitea" };
 
 /** The accounts on the forges: everyone's, each project's repository picks one
  *  (Repository > Git). Tokens stay on the VM. */
@@ -763,7 +819,7 @@ async function drawForges() {
     let host = f.url;
     try { host = new URL(f.url).host; } catch { /* as written */ }
     rows.append(el("div", { className: "set" },
-      el("span", { className: "avatar", "aria-hidden": "true" }, svgIcon(FORGE_ICONS[f.kind] || "git-branch")),
+      el("span", { className: "avatar", "aria-hidden": "true" }, svgIcon(/forgejo|codeberg/i.test(f.url) ? "logo-forgejo" : FORGE_ICONS[f.kind] || "git-branch")),
       el("div", { className: "what" }, el("span", { textContent: `${host} · ${f.login}` }), el("span", { textContent: "Token kept on the VM, never in Pi's sandbox." })),
       more));
   }
@@ -804,6 +860,7 @@ async function drawExtensions() {
   const select = $("#ext-project");
   // From a project's page: back to it, its name on top, no list of projects.
   $(".ext-bar").classList.toggle("from-project", extFromProject);
+  $(".ext-bar").classList.toggle("only-yours", !extFromProject);
   const back = $("#ext-back");
   back.hidden = !extFromProject;
   $("#ext-title").hidden = !extFromProject;
@@ -852,12 +909,13 @@ async function drawExtensions() {
     const packs = el("div", { className: "loads-packages" }, el("h3", { className: "loads-group", textContent: "Packages" }), $("#ext-packages"));
     const manager = makeResourceManager($("#ext-manager"), current,
       () => { renderPackageList($("#ext-packages"), manager.data(), extProject, () => manager.load()); tools.installed(manager.data()?.packages, manager.data()?.skills); counts(); }, packs,
-      { scope: whereTo, browse: () => showTab("browse") });
+      { scope: whereTo, browse: () => showTab("browse"), only: () => (extFromProject ? null : "user"), bar: false });
     const tools = makePackageTools($("#ext-package-tools"), current, () => manager.load(), whereTo);
     extParts = { manager, tools, showTab };
     select.addEventListener("change", () => { extProject = select.value; extParts.manager.load(); });
   }
   extParts.showTab(extTab);
+
   if (!extProject) {
     $("#ext-packages").replaceChildren(el("li", { className: "dim small note", textContent: "Open a project first: Pi's packages and skills are read from the VM through one." }));
     return;

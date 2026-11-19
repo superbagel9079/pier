@@ -2267,9 +2267,18 @@ textarea { resize: none; }
 .layout-tiles button { display: flex; flex-direction: column; gap: 4px; width: 112px; padding: 6px; background: none; border: 1px solid var(--line); border-radius: var(--r); color: var(--dim); font-size: 12px; text-align: left; }
 .layout-tiles button:hover { background: var(--hover); color: var(--fg); }
 .layout-tiles button[aria-checked="true"] { border-color: var(--accent); color: var(--fg); }
-.lay { display: block; height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
-.lay.both { background: linear-gradient(90deg, var(--raise) 0 22%, var(--bg) 22% 72%, var(--raise) 72%); }
-.lay.details { background: linear-gradient(90deg, var(--bg) 0 72%, var(--raise) 72%); }
+.lay { display: flex; gap: 2px; height: 48px; padding: 3px; border: 1px solid var(--line); border-radius: var(--r); background: color-mix(in srgb, var(--fg) 8%, var(--bg)); }
+.lay b { display: block; min-width: 0; }
+/* A side: a panel with lines of text. */
+.lay .p { flex: 0 0 24%; background-color: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  background-image: repeating-linear-gradient(180deg, transparent 0 4px, color-mix(in srgb, var(--fg) 45%, transparent) 4px 6px);
+  background-size: 64% 70%; background-position: 4px 3px; background-repeat: no-repeat; }
+.lay .p.r { flex-basis: 30%; }
+/* The middle: the conversation, its field at the bottom. */
+.lay .m { flex: 1; background-color: var(--bg);
+  background-image: linear-gradient(color-mix(in srgb, var(--fg) 30%, transparent), color-mix(in srgb, var(--fg) 30%, transparent));
+  background-size: 60% 5px; background-position: 50% calc(100% - 4px); background-repeat: no-repeat; }
+.layout-tiles button[aria-checked="true"] .lay { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
 /* Overview: the state in pills. */
 .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: var(--s4); }
 .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; background: var(--raise); color: var(--dim); font-size: 12px; border-radius: var(--r); }
@@ -2305,3 +2314,20 @@ textarea { resize: none; }
 .project-tabs { margin-bottom: var(--s3); }
 .seg.project-tabs button[aria-selected="true"] { background: var(--raise); color: var(--fg); }
 #prefs .prefs-page button.page-act, #prefs-act .page-act { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Copy buttons on code blocks (Conversations): under the pointer, always, never. */
+[data-copy="always"] .chat .code-copy { opacity: 1; }
+[data-copy="never"] .chat .code-copy { display: none; }
+/* A provider's or a forge's logo where its letter was. */
+.avatar .i { width: 16px; height: 16px; }
+/* Agents: the other models a worker may take, under Their model. */
+.setting-row .also { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; }
+.setting-row .also .chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; background: var(--raise); border: 0; color: var(--fg); border-radius: var(--r); }
+.setting-row .also .chip .i { width: 12px; height: 12px; color: var(--dim); }
+.setting-row .also .link { display: inline-flex; align-items: center; gap: 4px; }
+.setting-row .also .link .i { width: 12px; height: 12px; }
+/* Extensions: a package, what it brings under its name, its version and ⋯ on the right. */
+#ext-packages li .pkg-what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#ext-packages li .pkg-ver { flex: none; }
+#ext-packages li > .icon-btn { flex: none; width: 28px; height: 28px; }
+.ext-bar.only-yours #ext-project, .ext-bar.only-yours > .pick { display: none; }

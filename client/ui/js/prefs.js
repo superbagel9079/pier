@@ -25,6 +25,8 @@ function openPrefs() {
   $("#prefs-gpu").checked = prefs.gpuTerminal;
   showCopy();
   showFold();
+  showCopyButtons();
+  $("#prefs-notify-wait").checked = prefs.notifyWait !== false;
   showLayoutChoice();
   $("#prefs-connection").textContent = settings ? describe(settings) : "";
   $("#prefs-address").textContent = settings?.host || "";
@@ -582,11 +584,21 @@ function showCopy() {
 for (const [id, key] of [["prefs-copykeys", "copyKeys"], ["prefs-copymode", "copyMode"]]) {
   for (const b of $(`#${id}`).children) b.addEventListener("click", () => { prefs[key] = b.dataset.v; savePrefs(); showCopy(); });
 }
-/** When a Pi finishes: its steps folded behind one line, or left open (chat.js). */
-function showFold() {
-  for (const b of $("#prefs-fold").children) b.setAttribute("aria-checked", String(b.dataset.v === (prefs.foldRuns === false ? "open" : "fold")));
+/** A list to choose from (as the board's "Value ⌄"): its value on the button, the others
+ *  in a menu, the one in use checked. Returns what shows the value again. */
+function choiceButton(button, options, get, set) {
+  const show = () => { $("span", button).textContent = (options.find(([v]) => v === get()) || options[0])[1]; };
+  button.addEventListener("click", () => showMenu(button, options.map(([v, label]) => [label, () => { set(v); show(); }, false,
+    { mark: v === get() ? svgIcon("check") : el("span") }])));
+  show();
+  return show;
 }
-for (const b of $("#prefs-fold").children) b.addEventListener("click", () => { prefs.foldRuns = b.dataset.v === "fold"; savePrefs(); showFold(); });
+/** When a Pi finishes: its steps folded behind one line, or left open (chat.js). */
+const showFold = choiceButton($("#prefs-fold"), [["fold", "Fold them"], ["open", "Keep them open"]],
+  () => (prefs.foldRuns === false ? "open" : "fold"), (v) => { prefs.foldRuns = v === "fold"; savePrefs(); });
+const showCopyButtons = choiceButton($("#prefs-copybtn"), [["hover", "Under the pointer"], ["always", "Always"], ["never", "Never"]],
+  () => prefs.copyButtons || "hover", (v) => { prefs.copyButtons = v; savePrefs(); applyCopyButtons(); });
+$("#prefs-notify-wait").addEventListener("change", (e) => { prefs.notifyWait = e.target.checked; savePrefs(); });
 // Text: − and + beside the numbers.
 stepper($("#prefs-font"));
 stepper($("#prefs-padding"));

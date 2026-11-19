@@ -636,6 +636,7 @@ function makeChat(tab) {
     if (e.method === "set_editor_text") { input.value = e.text || ""; input.dispatchEvent(new Event("input")); return; }
     if (!["select", "confirm", "input", "editor"].includes(e.method)) return;
     if (currentTab !== tab || !document.hasFocus()) workspace.attention(tab, true); // Pi asks: its pane wants you
+    if (prefs.notifyWait !== false && !document.hasFocus()) backend.notify("Pi waits for you", `${tab.title}: ${e.title || e.message || "a question"}`).catch(() => {});
     const card = el("div", { className: "card chat-ask" }, el("h2", { textContent: e.title || "Pi asks" }), e.message ? el("p", { textContent: e.message }) : null);
     const reply = (fields) => { backend.termWrite(id, `${JSON.stringify({ type: "extension_ui_response", id: e.id, ...fields })}\n`); card.remove(); };
     const actions = el("div", { className: "btns" });

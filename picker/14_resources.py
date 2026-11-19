@@ -938,7 +938,34 @@ def api_pi_default(home, value):
     return {"default": pi_default_model(home)}
 
 
-# --- providers (Settings > Agents): Pi's models.json ---------------------------------
+THINKING_LEVELS = ("off", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def pi_default_thinking(home):
+    """Pi's default thinking level (its settings.json: defaultThinkingLevel), "" when unset."""
+    settings = read_json_file(os.path.join(agent_dir(), "settings.json"))
+    level = settings.get("defaultThinkingLevel") if isinstance(settings, dict) else None
+    return level if level in THINKING_LEVELS else ""
+
+
+def api_pi_thinking(home, value):
+    """Pi's default thinking level, for the models that think; "" puts Pi's own back."""
+    value = (value or "").strip()
+    if value and value not in THINKING_LEVELS:
+        raise ApiError(f"a thinking level: {', '.join(THINKING_LEVELS)}, or nothing")
+
+    def change(settings):
+        if value:
+            settings["defaultThinkingLevel"] = value
+        else:
+            settings.pop("defaultThinkingLevel", None)
+
+    write_settings("user", None, change)
+    log("info", "pi.default-thinking", level=value or "-")
+    return {"thinking": pi_default_thinking(home)}
+
+
+# --- providers (Settings > Providers): Pi's models.json -------------------------------
 
 PROVIDER_APIS = ("openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai")
 PROVIDER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")

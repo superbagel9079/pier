@@ -1100,6 +1100,7 @@ pub fn run() {
             category_rename,
             config_set,
             pi_default,
+            pi_thinking,
             shares_cleanup,
             watch_start,
             watch_set,
@@ -1250,6 +1251,7 @@ mod tests {
             "category-rename",
             "config-set",
             "pi-default",
+            "pi-thinking",
         ] {
             assert!(!PASSTHROUGH.contains(&command), "{command} must go through its own command");
         }

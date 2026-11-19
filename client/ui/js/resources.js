@@ -40,7 +40,7 @@ function dialogError() {
 }
 
 /** The Skills page. onChange: after each load or change (the summary counts follow). */
-function makeResourceManager(box, currentProject, onChange, top = null, { scope = () => "user", browse = null } = {}) {
+function makeResourceManager(box, currentProject, onChange, top = null, { scope = () => "user", browse = null, only = () => null, bar = true } = {}) {
   const error = el("p", { className: "error", hidden: true });
   const notice = el("p", { className: "notice", hidden: true });
   const filter = el("input", { type: "search", placeholder: "Filter skills", spellcheck: false });
@@ -51,8 +51,9 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
   refresh.setAttribute("aria-label", refresh.title);
   const list = el("div", { className: "resource-lists" });
   const off = el("p", { className: "hint", textContent: "Off: Pi leaves it out at its next start. Nothing is deleted." });
+  // Without its bar (Settings > Extensions, as the board): Add is the page's own, on top.
   box.replaceChildren(
-    el("div", { className: "toolbar resource-bar" }, filter, add, refresh),
+    el("div", { className: "toolbar resource-bar", hidden: !bar }, filter, add, refresh),
     error, notice, ...(top ? [top] : []), list, off);
 
   let data = null;
@@ -62,11 +63,12 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
   // Added in place (the proposals' 2B): a new skill is a row to fill first in Skills, a
   // skill of this computer is imported at once, a package is found in Browse. Where it goes:
   // the project whose settings these are (scope).
-  add.addEventListener("click", () => showMenu(add, [
+  const addMenu = (anchor) => showMenu(anchor, [
     ["New skill", () => newSkill(), false, { icon: "plus" }],
     ["Import a skill from this computer…", () => importSkill(), false, { icon: "upload" }],
     ...(browse ? [null, ["Find a package", () => browse(), false, { icon: "search" }]] : []),
-  ]));
+  ]);
+  add.addEventListener("click", () => addMenu(add));
   refresh.addEventListener("click", () => load());
   let filterTimer = null;
   filter.addEventListener("input", () => { clearTimeout(filterTimer); filterTimer = setTimeout(render, 120); });
@@ -90,7 +92,9 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
   function render() {
     list.replaceChildren();
     const needle = filter.value.trim().toLowerCase();
-    const shown = (item) => !needle || [item.name, item.description, item.source].some((t) => t && t.toLowerCase().includes(needle));
+    // Yours only, from Settings' menu (a project's own are on its page).
+    const shown = (item) => (!only() || !item.scope || item.scope === only())
+      && (!needle || [item.name, item.description, item.source].some((t) => t && t.toLowerCase().includes(needle)));
     // "all" (Installed): skills, extensions and prompts, one group under the other.
     const kinds = kind === "all" ? Object.keys(KIND_LABELS) : [kind];
     let any = false;
@@ -98,7 +102,7 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
       const items = (data?.[k] || []).filter(shown);
       // Pier's own extensions: given to each Pi it starts (--extension), never in Pi's
       // settings; shown, not toggled here (each has its setting in the picker's config).
-      const pier = k === "extensions" ? (data?.pier || []).filter(shown) : [];
+      const pier = k === "extensions" && kind !== "all" ? (data?.pier || []).filter(shown) : [];
       const rows = el("div", { className: "rows" },
         ...(k === "skills" && adding ? [adding] : []),
         ...items.filter((i) => i.scope === "user").map((i) => row(k, i)),
@@ -108,6 +112,12 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
       any = true;
       if (kind === "all") list.append(el("h3", { className: "loads-group" }, el("span", { textContent: KIND_LABELS[k] }), el("span", { className: "n", textContent: String(rows.childElementCount) })));
       list.append(rows);
+    }
+    const given = kind === "all" ? (data?.pier || []).filter(shown) : [];
+    if (given.length) {
+      any = true;
+      list.append(el("h3", { className: "loads-group" }, el("span", { textContent: "Given by Pier" }), el("span", { className: "n", textContent: String(given.length) })),
+        el("div", { className: "rows" }, ...given.map(pierRow)));
     }
     // MCP servers (Installed): shown, set with pi mcp add on the VM (Pi connects them itself).
     const servers = kind === "all" ? (data?.mcp || []).filter(shown) : [];
@@ -141,7 +151,7 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
     const check = el("input", { type: "checkbox", checked: item.enabled, disabled: true }); // its state, not a control
     check.setAttribute("aria-label", item.name);
     return el("div", { className: item.enabled ? "set" : "set off" },
-      el("div", { className: "what" }, el("span", { textContent: item.name }), el("span", { textContent: said(item.description, "Pier's, given to each Pi it starts") })),
+      el("div", { className: "what" }, el("span", { textContent: item.name }), el("span", { textContent: item.description || "" })),
       (() => {
         // A disabled switch gets no pointer events: its hint and its click are its frame's.
         const b = el("button", { type: "button", className: "switch-hint", title: `To ${item.enabled ? "leave it out" : "have it"}: ${how}` }, check);
@@ -284,7 +294,7 @@ function makeResourceManager(box, currentProject, onChange, top = null, { scope 
     render();
   }
 
-  return { load, loadFor, show, data: () => data };
+  return { load, loadFor, show, render, addMenu, data: () => data };
 }
 
 /** Whether version a is newer than b ("1.10.0" > "1.9.2"); false when one is missing. */
@@ -305,38 +315,51 @@ function newerVersion(a, b) {
 function renderPackageList(list, r, project, reload) {
   list.replaceChildren();
   if (!r) return;
-  const update = (label, args, title) => linkButton("update", title, () => {
-    workspace.add("update", "center", { params: { label, args } });
-  });
+  const update = (label, args) => () => workspace.add("update", "center", { params: { label, args } });
   const tiles = [];
-  const line = (name, detail, title, ...actions) => el("li", { title: title || "" },
-    (() => { const t = packageTile(name.startsWith("Pi ") ? "pi" : name); tiles.push([name, t]); return t; })(),
-    el("span", { className: "name ellipsis", textContent: name }),
-    el("span", { className: "dim small ellipsis", textContent: detail || "" }),
-    actions.length ? el("span", { className: "row-actions" }, ...actions) : null);
+  // As the board: its picture, its name and what it brings, its version, ⋯ (update, remove).
+  const line = (name, sub, version, title, actions) => {
+    const tile = packageTile(name.startsWith("Pi ") ? "pi" : name);
+    tiles.push([name, tile]);
+    let more = null;
+    if (actions.length) {
+      more = el("button", { type: "button", className: "icon-btn", title: `${name}: more` }, svgIcon("ellipsis"));
+      more.setAttribute("aria-label", more.title);
+      more.setAttribute("aria-haspopup", "menu");
+      more.addEventListener("click", () => showMenu(more, actions));
+    }
+    return el("li", { title: title || "" }, tile,
+      el("span", { className: "pkg-what" }, el("span", { className: "name ellipsis", textContent: name }), el("span", { className: "dim small ellipsis", textContent: sub || "" })),
+      el("span", { className: "dim small pkg-ver", textContent: version || "" }), more);
+  };
   if (r.pi?.version) {
     const behind = newerVersion(r.pi.latest, r.pi.version);
-    list.append(line(`Pi ${r.pi.version}`, behind ? `${r.pi.latest} available` : r.pi.latest ? "up to date" : "",
+    list.append(line("Pi", behind ? `${r.pi.latest} available` : r.pi.latest ? "up to date" : "Pi itself", `v${r.pi.version}`,
       "Pi itself. Running Pis keep their version until they restart.",
-      ...(behind ? [update("Pi", [], "pi update, in a terminal")] : [])));
+      behind ? [["Update (pi update)", update("Pi", []), false, { icon: "refresh-cw" }]] : []));
   }
+  // What a package brings: its skills, extensions and prompts Pi lists with its source.
+  const brings = (source) => [["skills", "skill"], ["extensions", "extension"], ["prompts", "prompt"]]
+    .map(([k, one]) => [(r[k] || []).filter((i) => i.source === source).length, one])
+    .filter(([n]) => n).map(([n, one]) => `${n} ${one}${n === 1 ? "" : "s"}`).join(", ");
   let outdated = 0;
   for (const p of r.packages || []) {
     const name = p.source.replace(/^npm:/, "");
     const behind = p.installed !== false && newerVersion(p.latest, p.version);
     outdated += behind ? 1 : 0;
-    const detail = p.installed === false ? "not installed" : behind ? `v${p.version} → ${p.latest}` : p.version ? `v${p.version}` : "";
-    const remove = linkButton("remove", `pi remove ${p.source}, in a terminal (in Pi's sandbox)`, async () => {
-      if (!(await ask(`Remove the package ${name}? Pi stops loading its skills and extensions at its next start.`))) return;
-      openPackageTerminal("remove", p.scope === "project" ? project : "user", p.source, name, reload);
-    });
-    list.append(line(name, [p.scope === "project" ? "this project" : "", detail].filter(Boolean).join(" · "),
-      [p.source, p.description].filter(Boolean).join(": "),
-      ...(behind ? [update(name, [p.source], `pi update ${p.source}, in a terminal`)] : []), remove));
+    const sub = [p.installed === false ? "not installed" : brings(p.source), p.scope === "project" ? "this project" : ""].filter(Boolean).join(" · ");
+    const version = behind ? `v${p.version} → ${p.latest}` : p.version ? `v${p.version}` : "";
+    list.append(line(name, sub, version, [p.source, p.description].filter(Boolean).join(": "), [
+      ...(behind ? [[`Update to ${p.latest}`, update(name, [p.source]), false, { icon: "refresh-cw" }]] : []),
+      [`Remove ${name}`, async () => {
+        if (!(await ask(`Remove the package ${name}? Pi stops loading its skills and extensions at its next start.`))) return;
+        openPackageTerminal("remove", p.scope === "project" ? project : "user", p.source, name, reload);
+      }, false, { icon: "trash", danger: true }],
+    ]));
   }
-  if (outdated > 1) list.append(el("li", { className: "note small" }, update("all packages", ["--extensions"], "pi update --extensions, in a terminal")));
+  if (outdated > 1) list.append(el("li", { className: "note small" }, linkButton("update all packages", "pi update --extensions, in a terminal", update("all packages", ["--extensions"]))));
   if (!(r.packages || []).length) list.append(el("li", { className: "dim small note", textContent: "No package yet: find one in Browse." }));
-  showPackageMedia(tiles.filter(([name]) => !name.startsWith("Pi ")).map(([, t]) => t));
+  showPackageMedia(tiles.filter(([name]) => name !== "Pi").map(([, t]) => t));
 }
 
 // --- the packages' pictures -------------------------------------------------------------
