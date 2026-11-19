@@ -526,7 +526,8 @@ function providerDialog(p, from = null) {
 // --- Projects (the proposals' 2B): the VM's projects, one at a time -----------------
 
 let projectsOpen = null; // the project whose page is shown, else the list
-let projectsSub = null;  // "instructions": that page of the project
+let projectsSub = null;  // "instructions" or "repository": that page of the project
+let projectsRepo = null; // the Repository panel shown in a project's page
 /** Settings > Projects at a project (and its Instructions page): from Conversations' menu. */
 function openProjectSettings(project, sub = null) {
   projectsOpen = project;
@@ -538,6 +539,8 @@ function openProjectSettings(project, sub = null) {
  *  instructions, what Pi loads, its mark, its repository, its path. */
 function drawProjects() {
   const section = $('#prefs .prefs-page[data-page="projects"]');
+  projectsRepo?.onClose?.(); // the Repository shown before: its listeners go
+  projectsRepo = null;
   if (!online) { section.replaceChildren(); return; }
   const data = vm.latest("conversations")?.data;
   if (!data) {
@@ -558,18 +561,8 @@ function drawProjects() {
       const b = el("button", { type: "button", className: "project-pick" }, projectBadge(x.project, looks[x.project]),
         el("span", { className: "what" }, el("span", { textContent: x.label }), el("span", { textContent: `${x.sessions.length} conversation${x.sessions.length === 1 ? "" : "s"}` })));
       b.addEventListener("click", () => { projectsOpen = x.project; drawProjects(); });
-      const more = el("button", { className: "icon-btn", type: "button", title: `${x.label}: more` }, svgIcon("ellipsis"));
-      more.setAttribute("aria-label", more.title);
-      more.setAttribute("aria-haspopup", "menu");
-      more.addEventListener("click", () => showMenu(more, [
-        ["Change its mark", () => projectLookDialog(x.project, x.label, looks[x.project] || {}, (look) => {
-          try { saved.looks = { ...looks, [x.project]: look }; localStorage.setItem(STORE, JSON.stringify(saved)); } catch { /* not kept */ }
-          workspace.find("conversations")?.reloadLooks?.();
-          drawProjects();
-        }), false, { icon: "palette" }],
-        ["Copy its path", () => backend.copyText(x.project).then(() => flashStatus("path copied")).catch((e) => flashStatus(String(e))), false, { icon: "copy" }],
-      ]));
-      const line = el("div", { className: "project-line" }, b, more, svgIcon("chevron-right"));
+      b.append(svgIcon("chevron-right"));
+      const line = el("div", { className: "project-line" }, b);
       line.dataset.name = `${x.label} ${x.project}`.toLowerCase();
       return line;
     });
@@ -595,6 +588,7 @@ function drawProjects() {
     section.replaceChildren(el("div", { className: "toolbar host-bar" }, searchBox(field)), el("div", { className: "rows project-list" }, ...rows));
     return;
   }
+  $("#prefs-act").replaceChildren(); // Add project: on the list, not in a project
   const back = el("button", { type: "button", className: "link back-to" }, svgIcon("arrow-left"), el("span", { textContent: "Back to projects" }));
   back.addEventListener("click", () => { projectsSub = null; projectsOpen = null; drawProjects(); });
   // Its mark: a click changes it (a pencil over it under the pointer, as Edit's).
@@ -602,12 +596,11 @@ function drawProjects() {
     projectBadge(p.project, looks[p.project]), el("span", { className: "mark-pen" }, svgIcon("pencil")));
   mark.addEventListener("click", () => openMark());
   const title = el("div", { className: "project-title" }, mark, el("div", { className: "what" }, el("h2", { textContent: p.label }), el("span", { className: "dim small code", textContent: p.project })));
-  const toTab = (kind, then) => () => { closePrefs(); const t = workspace.find(kind) || workspace.add(kind, "center"); workspace.show(t); then?.(t); };
-  // Its pages, as tabs: General and Instructions here, Extensions and Repository where they live.
+  // Its pages, as tabs: General, Instructions and Repository here, Extensions on its own page.
   const tabs = el("span", { className: "seg project-tabs", role: "tablist" });
   for (const [key, label, go] of [["general", "General"], ["instructions", "Instructions"],
     ["extensions", "Extensions", () => { extProject = p.project; extFromProject = true; showPrefsPage("extensions"); }],
-    ["repository", "Repository", toTab("repository", (t) => t.openProject?.(p.project))]]) {
+    ["repository", "Repository"]]) {
     const b = el("button", { type: "button", role: "tab", textContent: label });
     b.setAttribute("aria-selected", String((projectsSub || "general") === key));
     b.addEventListener("click", go || (() => { projectsSub = key === "general" ? null : key; drawProjects(); }));
@@ -620,6 +613,14 @@ function drawProjects() {
   }, (look) => $(".pbadge", title)?.replaceWith(projectBadge(p.project, look)));
   if (projectsSub === "instructions") {
     section.replaceChildren(back, title, tabs, promptCards(p.project));
+    return;
+  }
+  if (projectsSub === "repository") {
+    // The Repository panel, for this project, read while this page is shown.
+    const box = el("div", { className: "settings-repository" });
+    section.replaceChildren(back, title, tabs, box);
+    projectsRepo = { pane: box, project: p.project, get shown() { return !$("#prefs").hidden && prefsPage === "projects" && projectsSub === "repository"; } };
+    makeRepository(projectsRepo);
     return;
   }
   const row = (name, words, control) => el("div", { className: "set" }, el("div", { className: "what" }, el("span", { textContent: name }), el("span", { textContent: words })), control);
@@ -636,7 +637,7 @@ function drawProjects() {
 /** A project's texts for Pi (the Project tab's, here now): AGENTS.md, APPEND_SYSTEM.md and
  *  SYSTEM.md, a row each (what it does, its file, empty or its tokens); one open at a time
  *  (the proposals' B), its text and Revert, Save. */
-let promptOpen = "instructions";
+let promptOpen = null;
 function promptCards(project) {
   const box = el("div"); // drawn once the VM answers: no frame around a waiting line
   const WORDS = {

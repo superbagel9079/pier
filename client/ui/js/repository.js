@@ -4,7 +4,7 @@
 function makeRepository(tab) {
   tab.pane.append($("#tpl-repository").content.cloneNode(true));
   const $$ = (sel) => $(sel, tab.pane);
-  const project = () => target?.path || null;
+  const project = () => tab.project || target?.path || null; // Settings > Projects gives its own
   const gitManager = makeGitManager($$(".git-manager"), project);
   const teamManager = makeTeamManager($$(".team-manager"), project);
   let page = prefs.repositoryPage === "team" ? "team" : "git";
