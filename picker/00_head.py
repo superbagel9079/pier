@@ -49,7 +49,7 @@ try:
 except ImportError:  # python < 3.11: the config file is ignored, with a message
     tomllib = None
 
-VERSION = "4.74"
+VERSION = "4.75"
 SCRIPT = os.path.realpath(__file__)
 
 DEFAULTS = {
