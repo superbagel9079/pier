@@ -1628,7 +1628,7 @@ html.mica #workspace:has(> .dock.side.over:not(.collapsed):not([hidden])) #dock-
 .qs-advanced .i { width: 14px; height: 14px; color: var(--dim); transition: transform .12s ease-out; }
 .qs-advanced[aria-expanded="true"] .i { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .qs-advanced .i { transition: none; } }
-.qs-sub { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 30%, transparent); }
+.qs-sub { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3); }
 .qs-sub[hidden], .qs-sub .lc-row[hidden] { display: none; }
 .qs-sub .lc-row > .lc-field:first-child { flex: 0 0 88px; }
 .qs-sub .lc-row > .lc-field + .lc-field { flex: 1; }
