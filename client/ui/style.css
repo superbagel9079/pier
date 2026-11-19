@@ -2394,3 +2394,26 @@ body:has(#window-buttons:not([hidden])) .prefs-pages { padding-top: 48px; }
 
 /* Repository in the right side: its own bar under the panel's (Git | Team on the right). */
 .view-repository .pane-repository > .toolbar { justify-content: flex-end; padding-top: 0; }
+
+/* Repository as an inbox: the repository on top, then groups of short lines on the field's tint. */
+.repo-head { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) 0 var(--s3); }
+.repo-head .what, .repo-row .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.repo-head .what > :first-child { font-weight: 600; }
+.repo-head .what > :last-child, .repo-row .what > :last-child { font-size: 12px; line-height: 16px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-head > .icon-btn, .repo-row > .icon-btn { flex: none; width: 28px; height: 28px; }
+.repo-label { display: flex; align-items: center; gap: 6px; margin: var(--s3) 0 6px; font-size: 12px; font-weight: 400; color: var(--dim); }
+.repo-label .n { font-size: 11px; padding: 0 6px; border-radius: max(0px, calc(var(--r) - 2px)); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.repo-label.hot .n { color: var(--yellow, #d29922); background: color-mix(in srgb, var(--yellow, #d29922) 16%, transparent); }
+.repo-list { background: color-mix(in srgb, var(--fg) 4%, transparent); border-radius: var(--r); overflow: clip; }
+.repo-list > * + * { border-top: 1px solid var(--line); }
+.repo-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3); }
+.repo-row .what > :first-child { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.repo-row > .icon-btn { visibility: hidden; }
+.repo-row:hover > .icon-btn, .repo-row > .icon-btn:focus-visible, .repo-row > .icon-btn[aria-expanded="true"] { visibility: visible; }
+.repo-none { margin: 0; padding: var(--s2) var(--s3); }
+.repo-chip { flex: none; font-size: 11px; line-height: 18px; padding: 0 7px; border-radius: 999px; color: var(--dim); background: color-mix(in srgb, var(--fg) 8%, transparent); white-space: nowrap; }
+.repo-chip.success { color: var(--green, #3fb950); background: color-mix(in srgb, var(--green, #3fb950) 14%, transparent); }
+.repo-chip.pending { color: var(--yellow, #d29922); background: color-mix(in srgb, var(--yellow, #d29922) 14%, transparent); }
+.repo-chip.failure { color: var(--red, #f85149); background: color-mix(in srgb, var(--red, #f85149) 14%, transparent); }
+.repo-list .wait-row { padding: 0; }
+.repo-list .wait-line { padding: var(--s1) var(--s2) var(--s1) var(--s3); }
