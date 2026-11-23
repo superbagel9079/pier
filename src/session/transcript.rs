@@ -3,7 +3,22 @@
 use super::state::State;
 use crate::pi::process::Incoming;
 use crate::pi::protocol::{ClearedQueue, Command, Event, Queued, Role, StreamEvent, UiRequest};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::time::{Duration, Instant};
+
+/// Status key set by Pier's approval extension once it is active in Pi.
+pub const SUPERVISION_KEY: &str = "pier-supervision";
+/// Expire before Pi does, so an approval sent at the last second is never ignored by Pi while Pier shows it as granted.
+const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
+
+/// A tool call waiting for the user's decision.
+#[derive(Debug, Clone)]
+pub struct Approval {
+    pub id: String,
+    pub title: String,
+    pub message: String,
+    pub deadline: Option<Instant>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
@@ -36,6 +51,8 @@ pub struct Transcript {
     pub status: std::collections::BTreeMap<String, String>,
     /// Records the transcript needs sent back to Pi (dialog replies); the UI flushes them.
     pub outbox: Vec<Command>,
+    /// Confirm dialogs waiting for the user, oldest first.
+    pub approvals: VecDeque<Approval>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -50,6 +67,32 @@ impl Transcript {
         self.entries.len() - 1
     }
 
+    /// True only once Pier's approval extension has reported in; until then tools may run unasked.
+    pub fn supervised(&self) -> bool {
+        self.status.contains_key(SUPERVISION_KEY)
+    }
+
+    /// Answers the oldest pending approval.
+    pub fn answer(&mut self, approved: bool) {
+        self.resolve(approved, if approved { "autorisé" } else { "refusé" });
+    }
+
+    /// Refuses the oldest approval once its deadline has passed (Pi refuses it on its side too).
+    pub fn expire(&mut self, now: Instant) {
+        if self.approvals.front().and_then(|a| a.deadline).is_some_and(|d| now >= d) {
+            self.resolve(false, "refusé (délai expiré)");
+        }
+    }
+
+    fn resolve(&mut self, approved: bool, verdict: &str) {
+        let Some(a) = self.approvals.pop_front() else { return };
+        self.outbox.push(Command::confirm(&a.id, approved));
+        self.push(Kind::Notice, format!("{} {verdict}", a.title.trim_end_matches(" ?")));
+        if self.approvals.is_empty() && self.state == State::Blocked {
+            self.state = State::Running;
+        }
+    }
+
     pub fn apply(&mut self, msg: Incoming) {
         match msg {
             Incoming::Event(ev) => self.apply_event(&ev),
@@ -62,6 +105,7 @@ impl Transcript {
             Incoming::Exited => {
                 self.state = State::Crashed;
                 self.queued.clear();
+                self.approvals.clear();
                 self.push(Kind::Error, "Le process Pi s'est arrêté.");
             }
         }
@@ -72,6 +116,10 @@ impl Transcript {
             self.run_failed = false;
         }
         self.state = self.state.on_event(ev, self.run_failed);
+        if matches!(ev, Event::AgentSettled { .. }) {
+            // Pi no longer waits on these (abort or its own timeout); answering them later would be meaningless.
+            self.approvals.clear();
+        }
         match ev {
             Event::AgentSettled { aborted: true } => {
                 self.push(Kind::Notice, "Run interrompu.");
@@ -108,13 +156,17 @@ impl Transcript {
             }
             Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.
-                // shortcut: refused automatically (fail-closed) until approvals land in v1 (A.6).
-                UiRequest::Select { id, title }
-                | UiRequest::Confirm { id, title }
-                | UiRequest::Input { id, title }
-                | UiRequest::Editor { id, title } => {
-                    self.push(Kind::Notice, format!("Dialogue « {title} » refusé (approbations pas encore gérées)."));
-                    self.outbox.push(Command::ExtensionUiResponse { id: id.clone(), cancelled: true });
+                UiRequest::Confirm { id, title, message, timeout } => {
+                    let deadline = timeout.map(|ms| Instant::now() + Duration::from_millis(ms).saturating_sub(EXPIRY_MARGIN));
+                    self.approvals.push_back(Approval { id: id.clone(), title: title.clone(), message: message.clone(), deadline });
+                    if self.state == State::Running {
+                        self.state = State::Blocked;
+                    }
+                }
+                // shortcut: other dialogs are refused (fail-closed); add them when an extension Pier relies on needs them.
+                UiRequest::Select { id, title } | UiRequest::Input { id, title } | UiRequest::Editor { id, title } => {
+                    self.push(Kind::Notice, format!("Dialogue « {title} » refusé (type non géré par Pier)."));
+                    self.outbox.push(Command::cancel_dialog(id));
                 }
                 UiRequest::SetStatus { status_key, status_text } => {
                     match status_text {
@@ -232,21 +284,55 @@ mod tests {
     }
 
     #[test]
-    fn extension_dialogs_are_refused_and_status_is_kept() {
+    fn unhandled_dialogs_are_refused_and_status_is_kept() {
         let mut t = Transcript::default();
         feed(
             &mut t,
             &[
-                r#"{"type":"extension_ui_request","id":"u1","method":"confirm","title":"Allow bash?"}"#,
+                r#"{"type":"extension_ui_request","id":"u1","method":"select","title":"Pick"}"#,
                 r#"{"type":"extension_ui_request","id":"u2","method":"setStatus","statusKey":"cost","statusText":"$0"}"#,
                 r#"{"type":"extension_ui_request","id":"u3","method":"setWidget","widgetKey":"w"}"#,
             ],
         );
-        assert_eq!(t.outbox, [Command::ExtensionUiResponse { id: "u1".into(), cancelled: true }]);
+        assert_eq!(t.outbox, [Command::cancel_dialog("u1")]);
         assert_eq!(t.status.get("cost").map(String::as_str), Some("$0"));
         assert_eq!(t.entries.len(), 1);
         feed(&mut t, &[r#"{"type":"extension_ui_request","id":"u4","method":"setStatus","statusKey":"cost"}"#]);
         assert!(t.status.is_empty());
+    }
+
+    #[test]
+    fn approvals_block_until_answered_or_expired() {
+        let mut t = Transcript::default();
+        assert!(!t.supervised());
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"extension_ui_request","id":"s","method":"setStatus","statusKey":"pier-supervision","statusText":"Supervisé"}"#,
+                r#"{"type":"agent_start"}"#,
+                r#"{"type":"extension_ui_request","id":"a1","method":"confirm","title":"Autoriser bash ?","message":"ls","timeout":60000}"#,
+                r#"{"type":"extension_ui_request","id":"a2","method":"confirm","title":"Autoriser write ?","message":"x.txt","timeout":60000}"#,
+            ],
+        );
+        assert!(t.supervised());
+        assert_eq!(t.state, State::Blocked);
+        assert!(t.outbox.is_empty(), "nothing is answered for the user");
+
+        t.answer(true);
+        assert_eq!(t.outbox, [Command::confirm("a1", true)]);
+        assert_eq!(t.state, State::Blocked, "a2 still waits");
+
+        t.expire(Instant::now());
+        assert_eq!(t.approvals.len(), 1, "not expired yet");
+        t.expire(Instant::now() + Duration::from_secs(59));
+        assert_eq!(t.outbox, [Command::confirm("a1", true), Command::confirm("a2", false)]);
+        assert_eq!(t.state, State::Running);
+        assert_eq!(t.entries.last().unwrap().text, "Autoriser write refusé (délai expiré)");
+
+        feed(&mut t, &[r#"{"type":"extension_ui_request","id":"a3","method":"confirm","title":"Autoriser bash ?"}"#]);
+        feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
+        assert!(t.approvals.is_empty(), "an aborted run drops its pending approvals");
+        assert_eq!(t.state, State::Stopped);
     }
 
     #[test]

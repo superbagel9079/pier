@@ -1,5 +1,6 @@
 //! The egui window: one tab, its Pi process and transcript.
 
+mod approvals;
 mod composer;
 mod status_bar;
 mod transcript_view;
@@ -9,6 +10,7 @@ use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
 use pier::session::state::State;
 use pier::session::transcript::{Entry, Kind, Transcript};
+use std::time::{Duration, Instant};
 
 pub struct PierApp {
     proc: Option<Process>,
@@ -63,8 +65,9 @@ impl eframe::App for PierApp {
                 self.t.apply(msg);
             }
         }
-        for reply in std::mem::take(&mut self.t.outbox) {
-            self.send(reply);
+        self.t.expire(Instant::now());
+        if !self.t.approvals.is_empty() {
+            ui.ctx().request_repaint_after(Duration::from_secs(1)); // countdown and expiry without input
         }
         if !self.t.restored.is_empty() {
             let back = std::mem::take(&mut self.t.restored).join("\n");
@@ -73,6 +76,12 @@ impl eframe::App for PierApp {
 
         status_bar::show(self, ui);
         composer::show(self, ui);
+        approvals::show(self, ui);
         transcript_view::show(self, ui);
+
+        // After the panels, so a click's answer leaves in the same frame.
+        for reply in std::mem::take(&mut self.t.outbox) {
+            self.send(reply);
+        }
     }
 }

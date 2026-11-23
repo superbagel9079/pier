@@ -6,7 +6,8 @@ use eframe::egui;
 pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
     egui::Panel::bottom("input").show(ui, |ui| {
         ui.horizontal(|ui| {
-            let alive = app.t.state != State::Crashed;
+            // Fail closed: no prompt reaches Pi before Pier's approval extension has reported in.
+            let alive = app.t.state != State::Crashed && app.t.supervised();
             let label = if app.t.state.is_running() { "Steer" } else { "Envoyer" };
             let send = ui.add_enabled(alive, egui::Button::new(label)).clicked();
             let edit = ui.add_sized(

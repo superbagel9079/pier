@@ -2,14 +2,15 @@
 
 use crate::pi::protocol::Event;
 
-/// shortcut: no `Blocked` (dialogs are auto-refused until A.6) and no `Spawned` (Pi sends no ready event);
-/// add them with approvals and tabs.
+/// shortcut: no `Spawned` (Pi sends no ready event); add it with tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum State {
     /// Waiting for a first prompt.
     #[default]
     Ready,
     Running,
+    /// A run waits on a tool approval. Set by the transcript, not by Pi events.
+    Blocked,
     /// Last run finished normally.
     Completed,
     /// Last run was aborted (Stop).
@@ -21,8 +22,9 @@ pub enum State {
 }
 
 impl State {
+    /// A run is in progress (Stop and steer apply), blocked or not.
     pub fn is_running(self) -> bool {
-        self == State::Running
+        matches!(self, State::Running | State::Blocked)
     }
 
     /// `run_failed`: the last assistant message of the current run ended in error.

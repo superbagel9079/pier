@@ -14,11 +14,24 @@ pub enum Command {
     },
     ClearQueue,
     Abort,
-    /// Reply to a dialog; must echo the request id.
+    /// Reply to a dialog; must echo the request id. Set `confirmed` for a confirm, `cancelled` to refuse any dialog.
     ExtensionUiResponse {
         id: String,
-        cancelled: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        confirmed: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cancelled: Option<bool>,
     },
+}
+
+impl Command {
+    pub fn confirm(id: &str, confirmed: bool) -> Self {
+        Command::ExtensionUiResponse { id: id.to_owned(), confirmed: Some(confirmed), cancelled: None }
+    }
+
+    pub fn cancel_dialog(id: &str) -> Self {
+        Command::ExtensionUiResponse { id: id.to_owned(), confirmed: None, cancelled: Some(true) }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -230,6 +243,11 @@ pub enum UiRequest {
     Confirm {
         id: String,
         title: String,
+        #[serde(default)]
+        message: String,
+        /// Milliseconds before Pi resolves the dialog to "not confirmed" on its own.
+        #[serde(default)]
+        timeout: Option<u64>,
     },
     Input {
         id: String,
@@ -268,8 +286,10 @@ mod tests {
         let plain = Command::Prompt { message: "go".into(), streaming_behavior: None };
         assert_eq!(serde_json::to_value(plain).unwrap(), json!({"type": "prompt", "message": "go"}));
         assert_eq!(serde_json::to_value(Command::ClearQueue).unwrap(), json!({"type": "clear_queue"}));
-        let reply = Command::ExtensionUiResponse { id: "u1".into(), cancelled: true };
-        assert_eq!(serde_json::to_value(reply).unwrap(), json!({"type": "extension_ui_response", "id": "u1", "cancelled": true}));
+        let refuse = Command::cancel_dialog("u1");
+        assert_eq!(serde_json::to_value(refuse).unwrap(), json!({"type": "extension_ui_response", "id": "u1", "cancelled": true}));
+        let allow = Command::confirm("u2", true);
+        assert_eq!(serde_json::to_value(allow).unwrap(), json!({"type": "extension_ui_response", "id": "u2", "confirmed": true}));
     }
 
     #[test]
@@ -278,7 +298,12 @@ mod tests {
         assert_eq!(ev(r#"{"type":"agent_settled"}"#), Event::AgentSettled { aborted: false });
         assert_eq!(
             ev(r#"{"type":"extension_ui_request","id":"u1","method":"confirm","title":"Allow?","timeout":5000}"#),
-            Event::ExtensionUiRequest(UiRequest::Confirm { id: "u1".into(), title: "Allow?".into() })
+            Event::ExtensionUiRequest(UiRequest::Confirm {
+                id: "u1".into(),
+                title: "Allow?".into(),
+                message: String::new(),
+                timeout: Some(5000)
+            })
         );
         assert_eq!(ev(r#"{"type":"extension_ui_request","id":"u3","method":"setWidget"}"#), Event::ExtensionUiRequest(UiRequest::Other));
         let Event::MessageStart { message } = ev(

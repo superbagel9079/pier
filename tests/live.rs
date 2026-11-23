@@ -51,3 +51,49 @@ fn live_prompt_steer_and_stop() {
 fn prompt(message: &str) -> Command {
     Command::Prompt { message: message.into(), streaming_behavior: None }
 }
+
+/// Pier's extension is active, an allowed bash call runs, a refused one does not.
+#[test]
+#[ignore]
+fn live_tool_approval_allow_and_deny() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--model", &model].map(String::from);
+    let mut p = Process::spawn(&args, || {}).unwrap();
+    let mut t = Transcript::default();
+    pump(&mut p, &mut t, &|t| t.supervised(), 30);
+    assert!(t.supervised(), "approval extension never reported in; stderr: {:#?}", t.stderr);
+
+    // Each command leaves a file, so the test sees what really ran, not only the reported status.
+    for (marker, approve, expected) in [("pier-allow-probe.tmp", true, "bash → ok"), ("pier-deny-probe.tmp", false, "bash → erreur")] {
+        let probe = std::path::Path::new(marker);
+        let _ = std::fs::remove_file(probe);
+        let before = t.entries.len();
+        p.send(&prompt(&format!("Use the bash tool to run exactly: touch {marker}. Do nothing else, do not retry."))).unwrap();
+        pump(&mut p, &mut t, &|t| !t.approvals.is_empty(), 60);
+        let a = t.approvals.front().expect("bash must wait for an approval").clone();
+        assert_eq!(a.title, "Autoriser bash ?");
+        assert!(a.message.contains(marker), "approval shows the command: {:?}", a.message);
+        assert_eq!(t.state, State::Blocked);
+        t.answer(approve);
+        pump(&mut p, &mut t, &|t| t.state == State::Completed && t.approvals.is_empty(), 60);
+        let tools: Vec<_> = t.entries[before..].iter().filter(|e| e.text.starts_with("bash →")).map(|e| e.text.as_str()).collect();
+        assert_eq!(tools.first().copied(), Some(expected), "entries: {:#?}", &t.entries[before..]);
+        assert_eq!(probe.exists(), approve, "{marker}: the command must run if and only if approved");
+        let _ = std::fs::remove_file(probe);
+    }
+}
+
+fn pump(p: &mut Process, t: &mut Transcript, until: &dyn Fn(&Transcript) -> bool, secs: u64) {
+    let end = Instant::now() + Duration::from_secs(secs);
+    loop {
+        for r in std::mem::take(&mut t.outbox) {
+            p.send(&r).unwrap();
+        }
+        if until(t) || Instant::now() >= end {
+            return;
+        }
+        if let Ok(m) = p.rx.recv_timeout(Duration::from_millis(200)) {
+            t.apply(m);
+        }
+    }
+}

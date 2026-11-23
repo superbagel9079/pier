@@ -34,10 +34,25 @@ fn pi_command() -> process::Command {
     cmd
 }
 
+const APPROVALS_EXTENSION: &str = include_str!("../../extension/pier-approvals.ts");
+
+/// Writes Pier's approval extension where Pi can load it, so it always matches this binary.
+fn approvals_extension() -> std::io::Result<PathBuf> {
+    let dir = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("pier");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join("pier-approvals.ts");
+    // Rewrite only on change: another tab's Pi may be loading the file right now.
+    if std::fs::read(&path).ok().as_deref() != Some(APPROVALS_EXTENSION.as_bytes()) {
+        std::fs::write(&path, APPROVALS_EXTENSION)?;
+    }
+    Ok(path)
+}
+
 impl Process {
+    /// Always loads Pier's approval extension: no launch without supervision.
     pub fn spawn(extra_args: &[String], wake: impl Fn() + Send + Clone + 'static) -> std::io::Result<Self> {
         let mut cmd = pi_command();
-        cmd.args(["--mode", "rpc"]).args(extra_args);
+        cmd.args(["--mode", "rpc", "-e"]).arg(approvals_extension()?).args(extra_args);
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
         {

@@ -9,12 +9,17 @@ pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
             let state = match app.t.state {
                 State::Ready => "Prêt",
                 State::Running => "En cours",
+                State::Blocked => "Approbation requise",
                 State::Completed => "Terminé",
                 State::Stopped => "Interrompu",
                 State::Failed => "Échec",
                 State::Crashed => "Pi arrêté",
             };
             ui.strong(state);
+            if !app.t.supervised() && app.t.state != State::Crashed {
+                ui.colored_label(ui.visuals().error_fg_color, "· Non supervisé (envoi bloqué)")
+                    .on_hover_text("L'extension d'approbation de Pier ne s'est pas encore signalée dans Pi.");
+            }
             if !app.t.queued.is_empty() {
                 ui.label(format!("· {} en attente de lecture par Pi", app.t.queued.len())).on_hover_text(app.t.queued.join("\n"));
             }
