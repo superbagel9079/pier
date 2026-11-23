@@ -156,6 +156,18 @@ impl Tab {
     }
 }
 
+impl Drop for Tab {
+    /// Closing the tab or the whole window: the last journal lines reach the disk before the tab's Pi stops.
+    fn drop(&mut self) {
+        self.t.journal.push(Record::TabClosed);
+        if let Some(j) = &mut self.journal {
+            for r in &self.t.journal {
+                let _ = j.write(r); // nowhere left to show a failure
+            }
+        }
+    }
+}
+
 pub struct PierApp {
     pi_args: Vec<String>,
     tabs: Vec<Tab>,
@@ -262,9 +274,7 @@ impl PierApp {
     /// Closing stops the tab's Pi. Pi keeps the conversation in its own session dir (unless `--no-session`).
     // shortcut: no confirmation when closing a running tab, add one if runs get lost by mistake.
     fn close(&mut self, i: usize) {
-        let mut tab = self.tabs.remove(i);
-        tab.t.journal.push(Record::TabClosed);
-        tab.flush(); // the tab is gone after this, its last lines must be on disk
+        let tab = self.tabs.remove(i);
         // Process::drop waits up to 3 s for Pi to exit; keep that off the UI thread.
         std::thread::spawn(move || drop(tab));
         if i < self.active || self.active >= self.tabs.len() {
