@@ -10,6 +10,7 @@ use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
 use pier::pi::sessions::{self, SavedSession};
 use pier::presets::{self, Preset};
+use pier::session::journal::{self, Journal, Record};
 use pier::session::state::State;
 use pier::session::transcript::{Entry, Kind, Transcript};
 use std::path::{Path, PathBuf};
@@ -45,6 +46,8 @@ pub struct Tab {
     input: String,
     /// Preset name, shown until the first prompt gives a title.
     label: Option<String>,
+    /// `None` once it failed; the failure is shown in the transcript.
+    journal: Option<Journal>,
 }
 
 impl Tab {
@@ -65,6 +68,11 @@ impl Tab {
             }
         }
         let resumed = matches!(launch, Launch::Resume(_));
+        t.journal.push(Record::TabOpened {
+            preset: label.clone(),
+            resumed: resumed.then(|| t.session_file.clone()).flatten(),
+            cwd: cwd.map(Path::to_path_buf).or_else(|| std::env::current_dir().ok()).unwrap_or_default(),
+        });
         let ctx = ctx.clone();
         let proc = Process::spawn_in(&args, cwd, move || ctx.request_repaint())
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
@@ -72,7 +80,10 @@ impl Tab {
         if proc.is_none() {
             t.state = State::Crashed;
         }
-        let mut tab = Self { proc, t, input: String::new(), label: label.take() };
+        let journal = Journal::create(&journal::dir())
+            .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Journal indisponible : {e}") }))
+            .ok();
+        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal };
         tab.send(Command::GetState);
         if resumed {
             tab.send(Command::GetMessages);
@@ -107,6 +118,13 @@ impl Tab {
         for reply in std::mem::take(&mut self.t.outbox) {
             self.send(reply);
         }
+        let records = std::mem::take(&mut self.t.journal);
+        if let Some(j) = &mut self.journal
+            && let Err(e) = records.iter().try_for_each(|r| j.write(r))
+        {
+            self.t.entries.push(Entry { kind: Kind::Error, text: format!("Journal interrompu ({}) : {e}", j.path.display()) });
+            self.journal = None;
+        }
     }
 
     fn send(&mut self, cmd: Command) {
@@ -132,6 +150,7 @@ impl Tab {
 
     /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
     fn stop(&mut self) {
+        self.t.journal.push(Record::StopRequested);
         self.send(Command::ClearQueue);
         self.send(Command::Abort);
     }
@@ -243,7 +262,9 @@ impl PierApp {
     /// Closing stops the tab's Pi. Pi keeps the conversation in its own session dir (unless `--no-session`).
     // shortcut: no confirmation when closing a running tab, add one if runs get lost by mistake.
     fn close(&mut self, i: usize) {
-        let tab = self.tabs.remove(i);
+        let mut tab = self.tabs.remove(i);
+        tab.t.journal.push(Record::TabClosed);
+        tab.flush(); // the tab is gone after this, its last lines must be on disk
         // Process::drop waits up to 3 s for Pi to exit; keep that off the UI thread.
         std::thread::spawn(move || drop(tab));
         if i < self.active || self.active >= self.tabs.len() {
@@ -319,7 +340,7 @@ mod tests {
     use super::*;
 
     fn app(n: usize, active: usize) -> PierApp {
-        let tabs = (0..n).map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None }).collect();
+        let tabs = (0..n).map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None, journal: None }).collect();
         PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]) }
     }
 

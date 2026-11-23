@@ -1,5 +1,6 @@
 //! The transcript rebuilt from Pi's events (testable without a window).
 
+use super::journal::Record;
 use super::state::State;
 use crate::pi::process::Incoming;
 use crate::pi::protocol::{AssistantPart, ClearedQueue, Command, Event, HistoryMessage, Queued, Role, StateData, StreamEvent, UiRequest};
@@ -56,6 +57,8 @@ pub struct Transcript {
     pub approvals: VecDeque<Approval>,
     /// Pi's session file, from `get_state` (or the one being resumed): two Pi writing one file would corrupt it.
     pub session_file: Option<PathBuf>,
+    /// Lines for the tab's journal file (G.34); the UI writes them out.
+    pub journal: Vec<Record>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -77,22 +80,33 @@ impl Transcript {
 
     /// Answers the oldest pending approval.
     pub fn answer(&mut self, approved: bool) {
-        self.resolve(approved, if approved { "autorisé" } else { "refusé" });
+        if approved {
+            self.resolve(true, "autorisé", "allowed");
+        } else {
+            self.resolve(false, "refusé", "refused");
+        }
     }
 
     /// Refuses the oldest approval once its deadline has passed (Pi refuses it on its side too).
     pub fn expire(&mut self, now: Instant) {
         if self.approvals.front().and_then(|a| a.deadline).is_some_and(|d| now >= d) {
-            self.resolve(false, "refusé (délai expiré)");
+            self.resolve(false, "refusé (délai expiré)", "expired");
         }
     }
 
-    fn resolve(&mut self, approved: bool, verdict: &str) {
+    fn resolve(&mut self, approved: bool, verdict: &str, decision: &'static str) {
         let Some(a) = self.approvals.pop_front() else { return };
         self.outbox.push(Command::confirm(&a.id, approved));
+        self.journal.push(Record::ApprovalDecided { id: a.id.clone(), decision });
         self.push(Kind::Notice, format!("{} {verdict}", a.title.trim_end_matches(" ?")));
         if self.approvals.is_empty() && self.state == State::Blocked {
             self.state = State::Running;
+        }
+    }
+
+    fn drop_approvals(&mut self) {
+        for a in std::mem::take(&mut self.approvals) {
+            self.journal.push(Record::ApprovalDecided { id: a.id, decision: "dropped" });
         }
     }
 
@@ -108,7 +122,8 @@ impl Transcript {
             Incoming::Exited => {
                 self.state = State::Crashed;
                 self.queued.clear();
-                self.approvals.clear();
+                self.drop_approvals();
+                self.journal.push(Record::PiExited);
                 self.push(Kind::Error, "Le process Pi s'est arrêté.");
             }
         }
@@ -117,11 +132,18 @@ impl Transcript {
     pub fn apply_event(&mut self, ev: &Event) {
         if *ev == Event::AgentStart {
             self.run_failed = false;
+            self.journal.push(Record::RunStarted);
         }
         self.state = self.state.on_event(ev, self.run_failed);
         if matches!(ev, Event::AgentSettled { .. }) {
             // Pi no longer waits on these (abort or its own timeout); answering them later would be meaningless.
-            self.approvals.clear();
+            self.drop_approvals();
+            let outcome = match self.state {
+                State::Stopped => "stopped",
+                State::Failed => "failed",
+                _ => "completed",
+            };
+            self.journal.push(Record::RunEnded { outcome });
         }
         match ev {
             Event::AgentSettled { aborted: true } => {
@@ -160,6 +182,7 @@ impl Transcript {
             Event::Response { command, data, .. } if command == "get_state" => {
                 let s: StateData = serde_json::from_value(data.clone()).unwrap_or_default();
                 if let Some(f) = s.session_file {
+                    self.journal.push(Record::SessionFile { path: f.clone().into() });
                     self.session_file = Some(f.into());
                 }
             }
@@ -168,6 +191,12 @@ impl Transcript {
                 // Dialogs block Pi until answered.
                 UiRequest::Confirm { id, title, message, timeout } => {
                     let deadline = timeout.map(|ms| Instant::now() + Duration::from_millis(ms).saturating_sub(EXPIRY_MARGIN));
+                    self.journal.push(Record::ApprovalRequested {
+                        id: id.clone(),
+                        title: title.clone(),
+                        detail: message.clone(),
+                        timeout_ms: *timeout,
+                    });
                     self.approvals.push_back(Approval { id: id.clone(), title: title.clone(), message: message.clone(), deadline });
                     if self.state == State::Running {
                         self.state = State::Blocked;
@@ -413,6 +442,45 @@ mod tests {
             ]
         );
         assert_eq!(t.state, State::Ready, "loading history starts no run");
+    }
+
+    #[test]
+    fn journal_records_runs_and_every_approval_decision() {
+        let mut t = Transcript::default();
+        let confirm = |id: &str| {
+            format!(
+                r#"{{"type":"extension_ui_request","id":"{id}","method":"confirm","title":"Autoriser bash ?","message":"rm x","timeout":60000}}"#
+            )
+        };
+        feed(&mut t, &[r#"{"type":"agent_start"}"#, &confirm("a1"), &confirm("a2"), &confirm("a3")]);
+        t.answer(true);
+        t.answer(false);
+        feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
+        let decided = |id: &str, decision| Record::ApprovalDecided { id: id.into(), decision };
+        let requested = |id: &str| Record::ApprovalRequested {
+            id: id.into(),
+            title: "Autoriser bash ?".into(),
+            detail: "rm x".into(),
+            timeout_ms: Some(60000),
+        };
+        assert_eq!(
+            t.journal,
+            [
+                Record::RunStarted,
+                requested("a1"),
+                requested("a2"),
+                requested("a3"),
+                decided("a1", "allowed"),
+                decided("a2", "refused"),
+                decided("a3", "dropped"),
+                Record::RunEnded { outcome: "stopped" },
+            ]
+        );
+        t.journal.clear();
+        feed(&mut t, &[r#"{"type":"agent_start"}"#, &confirm("b1")]);
+        t.expire(Instant::now() + Duration::from_secs(60));
+        t.apply(Incoming::Exited);
+        assert_eq!(t.journal, [Record::RunStarted, requested("b1"), decided("b1", "expired"), Record::PiExited]);
     }
 
     #[test]

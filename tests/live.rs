@@ -3,6 +3,7 @@
 
 use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
+use pier::session::journal::Record;
 use pier::session::state::State;
 use pier::session::transcript::{Kind, Transcript};
 use std::time::{Duration, Instant};
@@ -81,6 +82,15 @@ fn live_tool_approval_allow_and_deny() {
         assert_eq!(probe.exists(), approve, "{marker}: the command must run if and only if approved");
         let _ = std::fs::remove_file(probe);
     }
+    let decisions: Vec<_> = t
+        .journal
+        .iter()
+        .filter_map(|r| match r {
+            Record::ApprovalDecided { decision, .. } => Some(*decision),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(decisions, ["allowed", "refused"], "journal keeps every decision");
 }
 
 fn pump(p: &mut Process, t: &mut Transcript, until: &dyn Fn(&Transcript) -> bool, secs: u64) {
