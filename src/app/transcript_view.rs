@@ -1,13 +1,13 @@
 //! Central panel: the streamed transcript.
 
-use super::PierApp;
+use super::Tab;
 use eframe::egui;
 use pier::session::transcript::Kind;
 
-pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
+pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::CentralPanel::default().show(ui, |ui| {
         egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink(false).show(ui, |ui| {
-            for (i, e) in app.t.entries.iter().enumerate() {
+            for (i, e) in tab.t.entries.iter().enumerate() {
                 // Every "Réflexion" header has the same title; the index keeps their ids distinct.
                 ui.push_id(i, |ui| match e.kind {
                     Kind::User => {

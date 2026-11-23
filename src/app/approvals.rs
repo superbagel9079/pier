@@ -1,12 +1,12 @@
 //! Approval panel above the editor: the oldest pending tool call, Autoriser / Refuser, countdown.
 
-use super::PierApp;
+use super::Tab;
 use eframe::egui;
 use std::time::Instant;
 
-pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
-    let Some(a) = app.t.approvals.front().cloned() else { return };
-    let waiting = app.t.approvals.len() - 1;
+pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
+    let Some(a) = tab.t.approvals.front().cloned() else { return };
+    let waiting = tab.t.approvals.len() - 1;
     egui::Panel::bottom("approval").show(ui, |ui| {
         ui.add_space(4.0);
         ui.strong(&a.title);
@@ -23,9 +23,9 @@ pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
                 ui.weak(format!("· {waiting} autre(s) en attente"));
             }
             if allow {
-                app.t.answer(true);
+                tab.t.answer(true);
             } else if deny {
-                app.t.answer(false);
+                tab.t.answer(false);
             }
         });
         ui.add_space(4.0);

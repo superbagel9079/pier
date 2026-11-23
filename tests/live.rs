@@ -97,3 +97,40 @@ fn pump(p: &mut Process, t: &mut Transcript, until: &dyn Fn(&Transcript) -> bool
         }
     }
 }
+
+/// Two Pi processes run side by side, each reply stays in its own transcript, and closing one leaves the other usable.
+#[test]
+#[ignore]
+fn live_two_parallel_sessions() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
+    let mut sessions: Vec<(Process, Transcript)> = (0..2).map(|_| (Process::spawn(&args, || {}).unwrap(), Transcript::default())).collect();
+    let pump_all = |sessions: &mut Vec<(Process, Transcript)>, until: &dyn Fn(&Transcript) -> bool, secs: u64| {
+        let end = Instant::now() + Duration::from_secs(secs);
+        while Instant::now() < end && !sessions.iter().all(|(_, t)| until(t)) {
+            for (p, t) in sessions.iter_mut() {
+                while let Ok(m) = p.rx.recv_timeout(Duration::from_millis(20)) {
+                    t.apply(m);
+                }
+            }
+        }
+    };
+    pump_all(&mut sessions, &|t| t.supervised(), 30);
+
+    for ((p, _), word) in sessions.iter_mut().zip(["alpha", "bravo"]) {
+        p.send(&prompt(&format!("Reply with exactly the word: {word}"))).unwrap();
+    }
+    pump_all(&mut sessions, &|t| t.state == State::Completed, 60);
+    let replies: Vec<String> = sessions
+        .iter()
+        .map(|(_, t)| t.entries.iter().filter(|e| e.kind == Kind::Assistant).map(|e| e.text.to_lowercase()).collect())
+        .collect();
+    assert!(replies[0].contains("alpha") && !replies[0].contains("bravo"), "{replies:?}");
+    assert!(replies[1].contains("bravo") && !replies[1].contains("alpha"), "{replies:?}");
+
+    drop(sessions.remove(0));
+    let (p, t) = &mut sessions[0];
+    p.send(&prompt("Reply with exactly the word: charlie")).unwrap();
+    pump(p, t, &|t| t.entries.iter().any(|e| e.text.to_lowercase().contains("charlie")) && t.state == State::Completed, 60);
+    assert!(t.entries.iter().any(|e| e.kind == Kind::Assistant && e.text.to_lowercase().contains("charlie")), "{:#?}", t.entries);
+}
