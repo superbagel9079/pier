@@ -75,6 +75,7 @@ impl eframe::App for PierApp {
         }
 
         status_bar::show(self, ui);
+        status_bar::footer(self, ui);
         composer::show(self, ui);
         approvals::show(self, ui);
         transcript_view::show(self, ui);
