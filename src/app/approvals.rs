@@ -1,7 +1,7 @@
 //! Approval panel above the editor: the oldest pending tool call, Autoriser / Refuser, countdown.
 
-use super::Tab;
 use eframe::egui;
+use pier::workspace::Tab;
 use std::time::Instant;
 
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {

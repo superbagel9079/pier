@@ -1,10 +1,11 @@
 //! Top bar (session state, supervision, queued steers, Stop) and footer (extension statuses, last stderr line).
 
-use super::{State, Tab};
 use eframe::egui::containers::menu::{MenuButton, MenuConfig};
 use eframe::egui::{self, Color32, PopupCloseBehavior, RichText};
 use pier::pi::protocol::Command;
+use pier::session::state::State;
 use pier::session::transcript::SUPERVISION_KEY;
+use pier::workspace::Tab;
 
 const OK_GREEN: Color32 = Color32::from_rgb(110, 180, 110);
 /// Enough to scan; the search box narrows the rest.
@@ -71,12 +72,16 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     let current = tab.t.model.as_ref().map(|m| m.name.clone().unwrap_or_else(|| m.id.clone())).unwrap_or_else(|| "?".into());
     // Default menus close on any click inside, which made the search box unusable.
     let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
+    // The search text is pure UI state: kept in egui's memory, not in the tab.
+    let filter_id = ui.make_persistent_id("model_filter");
     let (response, inner) = MenuButton::new(format!("Modèle : {current}")).config(config).ui(ui, |ui| {
-        let search = ui.add(egui::TextEdit::singleline(&mut tab.model_filter).hint_text("Chercher un modèle"));
-        if tab.model_filter.is_empty() && !search.has_focus() {
+        let mut text: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
+        let search = ui.add(egui::TextEdit::singleline(&mut text).hint_text("Chercher un modèle"));
+        if text.is_empty() && !search.has_focus() {
             search.request_focus(); // type right away after opening
         }
-        let filter = tab.model_filter.to_lowercase();
+        let filter = text.to_lowercase();
+        ui.data_mut(|d| d.insert_temp(filter_id, text));
         let mut pick = None;
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
             if tab.t.models.is_empty() {

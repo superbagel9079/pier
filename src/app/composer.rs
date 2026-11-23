@@ -1,7 +1,8 @@
 //! Bottom editor: send a prompt, or steer while a run is going.
 
-use super::{State, Tab};
 use eframe::egui;
+use pier::session::state::State;
+use pier::workspace::Tab;
 
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::Panel::bottom("input").show(ui, |ui| {

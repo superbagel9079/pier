@@ -1,4 +1,5 @@
-//! The egui window: tabs, each with its own Pi process and transcript.
+//! The egui window: draws the workspace (tabs, start screen, menus) and asks the user. No session logic here:
+//! that lives in `pier::workspace`, so the interface can be reworked without touching what Pier does.
 
 mod approvals;
 mod composer;
@@ -6,18 +7,14 @@ mod status_bar;
 mod transcript_view;
 
 use eframe::egui::{self, RichText};
-use pier::pi::process::Process;
-use pier::pi::protocol::{Command, StreamingBehavior};
-use pier::pi::sessions::{self, SavedSession};
+use pier::pi::sessions::SavedSession;
 use pier::presets::{self, Preset};
 use pier::recent;
-use pier::session::journal::{self, Journal, Record};
-use pier::session::state::{Attention, State};
-use pier::session::transcript::{Entry, Kind, Transcript};
+use pier::session::state::Attention;
+use pier::workspace::{Launch, Workspace};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const TITLE_CHARS: usize = 24;
 const RESUME_LIST_MAX: usize = 20;
 
 /// Opens a file with the system's default app for its type.
@@ -38,165 +35,10 @@ fn pick_folder() -> Option<PathBuf> {
     rfd::FileDialog::new().set_title("Choisir le dossier du projet").pick_folder()
 }
 
-/// What a new tab starts from.
-enum Launch<'a> {
-    New,
-    /// A saved Pi session file to reopen, with its history.
-    Resume(&'a Path),
-    Preset(&'a Preset),
-}
-
-/// One session: a `pi --mode rpc` process, its transcript and its editor.
-pub struct Tab {
-    proc: Option<Process>,
-    t: Transcript,
-    input: String,
-    /// Preset name, shown until the first prompt gives a title.
-    label: Option<String>,
-    /// `None` once it failed; the failure is shown in the transcript.
-    journal: Option<Journal>,
-    /// Where Pi works: outside-folder warnings and its saved sessions depend on it.
-    folder: PathBuf,
-    /// State at the previous frame, to notice the changes that need the user.
-    seen: State,
-    /// Search text of the model menu.
-    model_filter: String,
-}
-
-impl Tab {
-    /// `folder`: where Pi works, unless a preset names its own.
-    fn new(pi_args: &[String], folder: &Path, launch: Launch, ctx: &egui::Context) -> Self {
-        let mut t = Transcript::default();
-        let mut args = pi_args.to_vec();
-        let (mut cwd, mut label) = (folder, None);
-        match launch {
-            Launch::New => {}
-            Launch::Resume(path) => {
-                args.extend(["--session".into(), path.to_string_lossy().into_owned()]);
-                t.session_file = Some(path.to_path_buf()); // listed as open before get_state answers
-            }
-            Launch::Preset(p) => {
-                args.extend(p.args());
-                cwd = p.cwd.as_deref().unwrap_or(folder);
-                label = Some(p.name.clone());
-            }
-        }
-        let resumed = matches!(launch, Launch::Resume(_));
-        let folder = cwd.to_path_buf();
-        t.journal.push(Record::TabOpened {
-            preset: label.clone(),
-            resumed: resumed.then(|| t.session_file.clone()).flatten(),
-            cwd: folder.clone(),
-        });
-        let ctx = ctx.clone();
-        let proc = Process::spawn_in(&args, Some(cwd), move || ctx.request_repaint())
-            .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
-            .ok();
-        if proc.is_none() {
-            t.state = State::Crashed;
-        }
-        let journal = Journal::create(&journal::dir())
-            .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Journal indisponible : {e}") }))
-            .ok();
-        let seen = t.state;
-        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen, model_filter: String::new() };
-        tab.send(Command::GetState);
-        tab.send(Command::GetAvailableThinkingLevels);
-        if resumed {
-            tab.send(Command::GetMessages);
-        }
-        tab
-    }
-
-    /// The first prompt, so tabs can be told apart.
-    fn title(&self) -> String {
-        let Some(first) = self.t.entries.iter().find(|e| e.kind == Kind::User) else {
-            return self.label.clone().unwrap_or_else(|| "Nouvelle session".into());
-        };
-        let line = first.text.lines().next().unwrap_or_default();
-        if line.chars().count() > TITLE_CHARS { format!("{}…", line.chars().take(TITLE_CHARS).collect::<String>()) } else { line.into() }
-    }
-
-    /// Runs every frame for every tab, visible or not: background sessions keep streaming, answering and expiring.
-    fn update(&mut self, now: Instant) {
-        if let Some(p) = &self.proc {
-            while let Ok(msg) = p.rx.try_recv() {
-                self.t.apply(msg);
-            }
-        }
-        self.t.expire(now);
-        if !self.t.restored.is_empty() {
-            let back = std::mem::take(&mut self.t.restored).join("\n");
-            self.input = if self.input.is_empty() { back } else { format!("{back}\n{}", self.input) };
-        }
-    }
-
-    fn flush(&mut self) {
-        for reply in std::mem::take(&mut self.t.outbox) {
-            self.send(reply);
-        }
-        let records = std::mem::take(&mut self.t.journal);
-        if let Some(j) = &mut self.journal
-            && let Err(e) = records.iter().try_for_each(|r| j.write(r))
-        {
-            self.t.entries.push(Entry { kind: Kind::Error, text: format!("Journal interrompu ({}) : {e}", j.path.display()) });
-            self.journal = None;
-        }
-    }
-
-    fn send(&mut self, cmd: Command) {
-        let err = match self.proc.as_mut() {
-            Some(p) => p.send(&cmd).err().map(|e| e.to_string()),
-            None => Some("pas de process Pi".into()),
-        };
-        if let Some(e) = err {
-            self.t.entries.push(Entry { kind: Kind::Error, text: format!("Envoi impossible : {e}") });
-        }
-    }
-
-    fn submit(&mut self) {
-        let text = self.input.trim().to_owned();
-        if text.is_empty() {
-            return;
-        }
-        // While a run is going, Pi requires a streamingBehavior; steer lands after the current turn.
-        let streaming_behavior = self.t.state.is_running().then_some(StreamingBehavior::Steer);
-        self.send(Command::Prompt { message: text, streaming_behavior });
-        self.input.clear();
-    }
-
-    /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
-    fn stop(&mut self) {
-        self.t.journal.push(Record::StopRequested);
-        self.send(Command::ClearQueue);
-        self.send(Command::Abort);
-    }
-}
-
-impl Drop for Tab {
-    /// Closing the tab or the whole window: the last journal lines reach the disk before the tab's Pi stops.
-    fn drop(&mut self) {
-        self.t.journal.push(Record::TabClosed);
-        if let Some(j) = &mut self.journal {
-            for r in &self.t.journal {
-                let _ = j.write(r); // nowhere left to show a failure
-            }
-        }
-    }
-}
-
-pub struct PierApp {
-    pi_args: Vec<String>,
-    tabs: Vec<Tab>,
-    active: usize,
-    /// Saved sessions, read from disk when the Reprendre menu opens (not every frame).
-    saved: Vec<SavedSession>,
-    /// presets.json, read when the Presets menu opens; an error is shown, not hidden.
-    presets: Result<Vec<Preset>, String>,
-    /// Project folders opened before, newest first, for the start screen.
-    recent: Vec<PathBuf>,
-    /// Window title last sent, so it is only re-sent when it changes.
-    title: String,
+/// Repaints the window when a tab's Pi sends something.
+fn waker(ctx: &egui::Context) -> impl Fn() + Send + Clone + 'static {
+    let ctx = ctx.clone();
+    move || ctx.request_repaint()
 }
 
 /// "il y a 5 min" style age, coarse on purpose.
@@ -209,59 +51,39 @@ fn ago(secs: u64) -> String {
     }
 }
 
+pub struct PierApp {
+    ws: Workspace,
+    /// Saved sessions of the active folder, read when the Reprendre menu opens (not every frame).
+    saved: Vec<(SavedSession, bool)>,
+    /// presets.json, read when the Presets menu opens; an error is shown, not hidden.
+    presets: Result<Vec<Preset>, String>,
+    /// Window title last sent, so it is only re-sent when it changes.
+    title: String,
+}
+
 impl PierApp {
-    /// Starts with no tab: the user picks the project folder first.
     pub fn new(pi_args: Vec<String>) -> Self {
-        Self {
-            pi_args,
-            tabs: vec![],
-            active: 0,
-            saved: vec![],
-            presets: Ok(vec![]),
-            recent: recent::load(&recent::path()),
-            title: String::new(),
-        }
-    }
-
-    fn active_folder(&self) -> Option<PathBuf> {
-        self.tabs.get(self.active).map(|t| t.folder.clone())
-    }
-
-    fn open(&mut self, folder: &Path, launch: Launch, ctx: &egui::Context) {
-        let tab = Tab::new(&self.pi_args, folder, launch, ctx);
-        if let Ok(list) = recent::remember(&recent::path(), &tab.folder) {
-            self.recent = list; // a write failure only costs the shortcut next time
-        }
-        self.tabs.push(tab);
-        self.active = self.tabs.len() - 1;
+        Self { ws: Workspace::new(pi_args, recent::path()), saved: vec![], presets: Ok(vec![]), title: String::new() }
     }
 
     /// A new tab in the active tab's folder, or in a folder the user picks when there is none.
     fn open_here(&mut self, launch: Launch, ctx: &egui::Context) {
-        if let Some(folder) = self.active_folder().or_else(pick_folder) {
-            self.open(&folder, launch, ctx);
+        if let Some(folder) = self.ws.active_folder().or_else(pick_folder) {
+            self.ws.open(&folder, launch, waker(ctx));
         }
     }
 
     /// Flashes the taskbar when a tab the user is not looking at needs them, and counts pending approvals in the title.
     fn call_attention(&mut self, ctx: &egui::Context) {
         let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
-        let mut flash = None;
-        for (i, tab) in self.tabs.iter_mut().enumerate() {
-            if let Some(why) = tab.t.state.attention(tab.seen)
-                && (!focused || i != self.active)
-            {
-                flash = match (flash, why) {
-                    (Some(egui::UserAttentionType::Critical), _) | (_, Attention::Approval) => Some(egui::UserAttentionType::Critical),
-                    _ => Some(egui::UserAttentionType::Informational),
-                };
-            }
-            tab.seen = tab.t.state;
-        }
-        if let Some(kind) = flash {
+        if let Some(why) = self.ws.attention(focused) {
+            let kind = match why {
+                Attention::Approval => egui::UserAttentionType::Critical,
+                Attention::RunEnded => egui::UserAttentionType::Informational,
+            };
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(kind));
         }
-        let waiting = self.tabs.iter().filter(|t| !t.t.approvals.is_empty()).count();
+        let waiting = self.ws.waiting_approvals();
         let title = if waiting == 0 { "Pier".to_owned() } else { format!("Pier · {waiting} en attente d'approbation") };
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
@@ -280,10 +102,10 @@ impl PierApp {
             if ui.button("Ouvrir un dossier…").clicked() {
                 pick = pick_folder();
             }
-            if !self.recent.is_empty() {
+            if !self.ws.recent.is_empty() {
                 ui.add_space(16.0);
                 ui.strong("Récents");
-                for folder in &self.recent {
+                for folder in &self.ws.recent {
                     let name = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| folder.display().to_string());
                     if ui.button(name).on_hover_text(folder.display().to_string()).clicked() {
                         pick = Some(folder.clone());
@@ -292,25 +114,18 @@ impl PierApp {
             }
         });
         if let Some(folder) = pick {
-            self.open(&folder, Launch::New, ui.ctx());
+            self.ws.open(&folder, Launch::New, waker(ui.ctx()));
         }
     }
 
-    /// Session files open in a tab, canonical so that Pi's spelling of a path matches the listing's.
-    fn open_files(&self) -> Vec<PathBuf> {
-        self.tabs.iter().filter_map(|t| t.t.session_file.as_ref()).filter_map(|p| std::fs::canonicalize(p).ok()).collect()
-    }
-
-    /// Menu of Pi sessions saved for this folder; one already open in a tab cannot be opened twice.
+    /// Menu of Pi sessions saved for the active folder; one already open in a tab is greyed out.
     fn resume_menu(&mut self, ui: &mut egui::Ui) {
         let mut pick = None;
         let r = ui.menu_button("Reprendre", |ui| {
             if self.saved.is_empty() {
                 ui.weak("Aucune session enregistrée pour ce dossier.");
             }
-            let open = self.open_files();
-            for s in &self.saved {
-                let is_open = std::fs::canonicalize(&s.path).is_ok_and(|p| open.contains(&p));
+            for (s, is_open) in &self.saved {
                 let when = s.modified.elapsed().map(|d| ago(d.as_secs())).unwrap_or_default();
                 let label = format!("{}  ·  {when}", s.title);
                 let b = ui.add_enabled(!is_open, egui::Button::new(label));
@@ -321,7 +136,7 @@ impl PierApp {
             }
         });
         if r.response.clicked() {
-            self.saved = self.active_folder().map(|f| sessions::list(&f, RESUME_LIST_MAX)).unwrap_or_default();
+            self.saved = self.ws.saved_sessions(RESUME_LIST_MAX);
         }
         if let Some(path) = pick {
             self.open_here(Launch::Resume(&path), ui.ctx());
@@ -364,20 +179,9 @@ impl PierApp {
         {
             let preset = list[i].clone();
             match preset.cwd.clone() {
-                Some(dir) => self.open(&dir, Launch::Preset(&preset), ui.ctx()),
+                Some(dir) => self.ws.open(&dir, Launch::Preset(&preset), waker(ui.ctx())),
                 None => self.open_here(Launch::Preset(&preset), ui.ctx()),
             }
-        }
-    }
-
-    /// Closing stops the tab's Pi. Pi keeps the conversation in its own session dir (unless `--no-session`).
-    // shortcut: no confirmation when closing a running tab, add one if runs get lost by mistake.
-    fn close(&mut self, i: usize) {
-        let tab = self.tabs.remove(i);
-        // Process::drop waits up to 3 s for Pi to exit; keep that off the UI thread.
-        std::thread::spawn(move || drop(tab));
-        if i < self.active || self.active >= self.tabs.len() {
-            self.active = self.active.saturating_sub(1);
         }
     }
 
@@ -385,10 +189,10 @@ impl PierApp {
         egui::Panel::top("tabs").show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
                 let (mut select, mut close) = (None, None);
-                for (i, tab) in self.tabs.iter().enumerate() {
+                for (i, tab) in self.ws.tabs.iter().enumerate() {
                     let (state, color) = status_bar::state_style(tab.t.state, ui.visuals());
                     ui.label(RichText::new("●").color(color)).on_hover_text(state);
-                    if ui.selectable_label(i == self.active, tab.title()).clicked() {
+                    if ui.selectable_label(i == self.ws.active, tab.title()).clicked() {
                         select = Some(i);
                     }
                     if ui.small_button("×").on_hover_text("Fermer l'onglet (arrête son Pi)").clicked() {
@@ -402,15 +206,15 @@ impl PierApp {
                 if ui.button("Ouvrir un dossier…").clicked()
                     && let Some(folder) = pick_folder()
                 {
-                    self.open(&folder, Launch::New, ui.ctx());
+                    self.ws.open(&folder, Launch::New, waker(ui.ctx()));
                 }
                 self.presets_menu(ui);
                 self.resume_menu(ui);
                 if let Some(i) = select {
-                    self.active = i;
+                    self.ws.active = i;
                 }
                 if let Some(i) = close {
-                    self.close(i);
+                    self.ws.close(i);
                 }
             });
         });
@@ -419,17 +223,14 @@ impl PierApp {
 
 impl eframe::App for PierApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let now = Instant::now();
-        for tab in &mut self.tabs {
-            tab.update(now);
-        }
-        if self.tabs.iter().any(|t| !t.t.approvals.is_empty()) {
+        self.ws.update(Instant::now());
+        if self.ws.any_approval_pending() {
             ui.ctx().request_repaint_after(Duration::from_secs(1)); // countdown and expiry without input
         }
         self.call_attention(ui.ctx());
 
         self.tab_strip(ui);
-        if let Some(tab) = self.tabs.get_mut(self.active) {
+        if let Some(tab) = self.ws.active_tab() {
             status_bar::show(tab, ui);
             status_bar::footer(tab, ui);
             composer::show(tab, ui);
@@ -440,48 +241,6 @@ impl eframe::App for PierApp {
         }
 
         // After the panels, so a click's answer leaves in the same frame.
-        for tab in &mut self.tabs {
-            tab.flush();
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn app(n: usize, active: usize) -> PierApp {
-        let tabs = (0..n)
-            .map(|i| Tab {
-                proc: None,
-                t: Transcript::default(),
-                input: i.to_string(),
-                label: None,
-                journal: None,
-                folder: PathBuf::new(),
-                seen: State::Ready,
-                model_filter: String::new(),
-            })
-            .collect();
-        PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]), recent: vec![], title: String::new() }
-    }
-
-    fn active_input(a: &PierApp) -> Option<&str> {
-        a.tabs.get(a.active).map(|t| t.input.as_str())
-    }
-
-    #[test]
-    fn closing_keeps_a_sensible_active_tab() {
-        let mut a = app(3, 2);
-        a.close(0); // before the active one: same tab stays active
-        assert_eq!(active_input(&a), Some("2"));
-        a.close(1); // the active one, last: previous becomes active
-        assert_eq!(active_input(&a), Some("1"));
-        let mut b = app(3, 1);
-        b.close(1); // the active one, not last: next becomes active
-        assert_eq!(active_input(&b), Some("2"));
-        let mut c = app(1, 0);
-        c.close(0);
-        assert_eq!(active_input(&c), None);
+        self.ws.flush();
     }
 }

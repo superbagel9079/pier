@@ -1,8 +1,8 @@
 //! Central panel: the streamed transcript.
 
-use super::Tab;
 use eframe::egui;
 use pier::session::transcript::Kind;
+use pier::workspace::Tab;
 
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::CentralPanel::default().show(ui, |ui| {
