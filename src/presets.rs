@@ -61,6 +61,11 @@ impl Preset {
             return Err(format!("« {} » : thinking « {t} » inconnu (valeurs : {})", self.name, THINKING_LEVELS.join(", ")));
         }
         if let Some(d) = &self.cwd
+            && !d.is_absolute()
+        {
+            return Err(format!("« {} » : cwd doit être un chemin complet (par ex. C:\\Users\\…), pas {}", self.name, d.display()));
+        }
+        if let Some(d) = &self.cwd
             && !d.is_dir()
         {
             return Err(format!("« {} » : le dossier {} n'existe pas", self.name, d.display()));
@@ -122,6 +127,7 @@ mod tests {
         assert!(load_str(r#"[{"name":"a","thinking":"huge"}]"#).unwrap_err().contains("huge"));
         assert!(load_str(r#"[{"name":"a","cwd":"Z:/nope/nope"}]"#).unwrap_err().contains("n'existe pas"));
         assert!(load_str(r#"[{"name":" "}]"#).is_err());
+        assert!(load_str(r#"[{"name":"a","cwd":"relatif"}]"#).unwrap_err().contains("chemin complet"), "relative cwd");
         assert!(load_str("not json").is_err());
     }
 }

@@ -66,13 +66,13 @@ impl Tab {
             cwd: folder.clone(),
         });
         let proc = Process::spawn_in(&args, Some(cwd), wake)
-            .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
+            .map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Lancement de Pi impossible : {e}"))))
             .ok();
         if proc.is_none() {
             t.state = State::Crashed;
         }
         let journal = Journal::create(&journal::dir())
-            .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Journal indisponible : {e}") }))
+            .map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Journal indisponible : {e}"))))
             .ok();
         let seen = t.state;
         let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen };
@@ -116,7 +116,7 @@ impl Tab {
         if let Some(j) = &mut self.journal
             && let Err(e) = records.iter().try_for_each(|r| j.write(r))
         {
-            self.t.entries.push(Entry { kind: Kind::Error, text: format!("Journal interrompu ({}) : {e}", j.path.display()) });
+            self.t.entries.push(Entry::new(Kind::Error, format!("Journal interrompu ({}) : {e}", j.path.display())));
             self.journal = None;
         }
     }
@@ -127,7 +127,7 @@ impl Tab {
             None => Some("pas de process Pi".into()),
         };
         if let Some(e) = err {
-            self.t.entries.push(Entry { kind: Kind::Error, text: format!("Envoi impossible : {e}") });
+            self.t.entries.push(Entry::new(Kind::Error, format!("Envoi impossible : {e}")));
         }
     }
 
@@ -139,7 +139,7 @@ impl Tab {
             return;
         }
         if !self.t.supervised() {
-            self.t.entries.push(Entry { kind: Kind::Error, text: "Envoi refusé : Pi n'est pas supervisé.".into() });
+            self.t.entries.push(Entry::new(Kind::Error, "Envoi refusé : Pi n'est pas supervisé."));
             return;
         }
         // While a run is going, Pi requires a streamingBehavior; steer lands after the current turn.

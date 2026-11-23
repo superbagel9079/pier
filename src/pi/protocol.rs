@@ -74,6 +74,8 @@ pub enum Event {
         message: Message,
     },
     ToolExecutionEnd {
+        #[serde(default)]
+        tool_call_id: Option<String>,
         tool_name: String,
         #[serde(default)]
         is_error: bool,
@@ -236,6 +238,8 @@ pub enum HistoryMessage {
         error_message: Option<String>,
     },
     ToolResult {
+        #[serde(default)]
+        tool_call_id: Option<String>,
         tool_name: String,
         #[serde(default)]
         is_error: bool,
@@ -255,6 +259,8 @@ pub enum AssistantPart {
         thinking: String,
     },
     ToolCall {
+        #[serde(default)]
+        id: Option<String>,
         name: String,
         #[serde(default)]
         arguments: Value,
@@ -278,6 +284,9 @@ pub enum StreamEvent {
     ToolcallStart {
         #[serde(default)]
         content_index: u64,
+        /// Tool call id, matching `toolCallId` of its execution events.
+        #[serde(default)]
+        id: Option<String>,
         #[serde(default)]
         tool_name: Option<String>,
     },

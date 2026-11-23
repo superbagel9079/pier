@@ -55,6 +55,31 @@ pub enum Kind {
 pub struct Entry {
     pub kind: Kind,
     pub text: String,
+    /// For tool entries: the call id, linking a call to its result (for tool cards later).
+    pub tool_id: Option<String>,
+    /// For a tool call: `Some(true)` once it ran fine, `Some(false)` if it failed or was refused.
+    pub ok: Option<bool>,
+}
+
+impl Entry {
+    pub fn new(kind: Kind, text: impl Into<String>) -> Self {
+        Self { kind, text: text.into(), tool_id: None, ok: None }
+    }
+}
+
+/// Tool call text kept for display; the full arguments (a whole written file) stay in Pi's session file.
+const TOOL_TEXT_MAX: usize = 2000;
+
+fn cap(mut text: String) -> String {
+    if text.len() > TOOL_TEXT_MAX {
+        let mut end = TOOL_TEXT_MAX;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+        text.push_str(" …");
+    }
+    text
 }
 
 #[derive(Default)]
@@ -95,7 +120,7 @@ fn texts(steering: &[Queued], follow_up: &[Queued]) -> Vec<String> {
 
 impl Transcript {
     fn push(&mut self, kind: Kind, text: impl Into<String>) -> usize {
-        self.entries.push(Entry { kind, text: text.into() });
+        self.entries.push(Entry::new(kind, text));
         self.entries.len() - 1
     }
 
@@ -191,6 +216,8 @@ impl Transcript {
                 _ => "completed",
             };
             self.journal.push(Record::RunEnded { outcome });
+            // Something may have switched the session file meanwhile; the "already open" guard needs the current one.
+            self.outbox.push(Command::GetState);
         }
         match ev {
             Event::AgentSettled { aborted: true } => {
@@ -210,9 +237,8 @@ impl Transcript {
                 let err = message.error_message.as_deref().unwrap_or("erreur provider");
                 self.push(Kind::Error, err);
             }
-            Event::ToolExecutionEnd { tool_name, is_error } => {
-                let status = if *is_error { "erreur" } else { "ok" };
-                self.push(Kind::Tool, format!("{tool_name} → {status}"));
+            Event::ToolExecutionEnd { tool_call_id, tool_name, is_error } => {
+                self.tool_result(tool_call_id.as_deref(), tool_name, *is_error)
             }
             Event::QueueUpdate { steering, follow_up } => self.queued = texts(steering, follow_up),
             Event::AutoRetryStart { attempt } => {
@@ -224,7 +250,8 @@ impl Transcript {
             }
             Event::Response { command, data, .. } if command == "clear_queue" => {
                 let q: ClearedQueue = serde_json::from_value(data.clone()).unwrap_or_default();
-                self.restored = texts(&q.steering, &q.follow_up);
+                // Appended: a second Stop's empty answer must not erase what the first one gave back.
+                self.restored.extend(texts(&q.steering, &q.follow_up));
             }
             Event::Response { command, data, .. } if command == "get_state" => {
                 let s: StateData = serde_json::from_value(data.clone()).unwrap_or_default();
@@ -300,7 +327,11 @@ impl Transcript {
                         match part {
                             AssistantPart::Text { text } => self.push(Kind::Assistant, text),
                             AssistantPart::Thinking { thinking } => self.push(Kind::Thinking, thinking),
-                            AssistantPart::ToolCall { name, arguments } => self.push(Kind::Tool, format!("{name} {arguments}")),
+                            AssistantPart::ToolCall { id, name, arguments } => {
+                                let i = self.push(Kind::Tool, cap(format!("{name} {arguments}")));
+                                self.entries[i].tool_id = id;
+                                i
+                            }
                             AssistantPart::Other => continue,
                         };
                     }
@@ -308,9 +339,8 @@ impl Transcript {
                         self.push(Kind::Error, error_message.unwrap_or_else(|| "erreur provider".into()));
                     }
                 }
-                Ok(HistoryMessage::ToolResult { tool_name, is_error }) => {
-                    let status = if is_error { "erreur" } else { "ok" };
-                    self.push(Kind::Tool, format!("{tool_name} → {status}"));
+                Ok(HistoryMessage::ToolResult { tool_call_id, tool_name, is_error }) => {
+                    self.tool_result(tool_call_id.as_deref(), &tool_name, is_error);
                 }
                 Ok(HistoryMessage::Other) => {}
                 Err(e) => {
@@ -323,6 +353,19 @@ impl Transcript {
         }
     }
 
+    /// A tool finished: marks its call entry and adds a result line, both tagged with the call id.
+    fn tool_result(&mut self, id: Option<&str>, tool_name: &str, is_error: bool) {
+        if let Some(id) = id
+            && let Some(call) = self.entries.iter_mut().rev().find(|e| e.tool_id.as_deref() == Some(id) && e.ok.is_none())
+        {
+            call.ok = Some(!is_error);
+        }
+        let status = if is_error { "erreur" } else { "ok" };
+        let i = self.push(Kind::Tool, format!("{tool_name} → {status}"));
+        self.entries[i].tool_id = id.map(str::to_owned);
+        self.entries[i].ok = Some(!is_error);
+    }
+
     fn apply_stream(&mut self, e: &StreamEvent) {
         match e {
             StreamEvent::TextStart { content_index } => {
@@ -333,14 +376,20 @@ impl Transcript {
                 let i = self.push(Kind::Thinking, "");
                 self.blocks.insert(*content_index, i);
             }
-            StreamEvent::ToolcallStart { content_index, tool_name } => {
+            StreamEvent::ToolcallStart { content_index, id, tool_name } => {
                 let i = self.push(Kind::Tool, format!("{} ", tool_name.as_deref().unwrap_or("?")));
+                self.entries[i].tool_id = id.clone();
                 self.blocks.insert(*content_index, i);
             }
-            StreamEvent::TextDelta { content_index, delta }
-            | StreamEvent::ThinkingDelta { content_index, delta }
-            | StreamEvent::ToolcallDelta { content_index, delta } => {
+            StreamEvent::TextDelta { content_index, delta } | StreamEvent::ThinkingDelta { content_index, delta } => {
                 if let Some(&i) = self.blocks.get(content_index) {
+                    self.entries[i].text.push_str(delta);
+                }
+            }
+            StreamEvent::ToolcallDelta { content_index, delta } => {
+                if let Some(&i) = self.blocks.get(content_index)
+                    && self.entries[i].text.len() <= TOOL_TEXT_MAX
+                {
                     self.entries[i].text.push_str(delta);
                 }
             }
@@ -351,7 +400,7 @@ impl Transcript {
             }
             StreamEvent::ToolcallEnd { content_index, tool_call } => {
                 if let Some(&i) = self.blocks.get(content_index) {
-                    self.entries[i].text = format!("{} {}", tool_call.name, tool_call.arguments);
+                    self.entries[i].text = cap(format!("{} {}", tool_call.name, tool_call.arguments));
                 }
             }
             StreamEvent::Other => {}
@@ -604,7 +653,41 @@ mod tests {
         assert_eq!(t.outbox, [Command::confirm("a", true)]);
 
         feed(&mut t, &[r#"{"type":"agent_settled"}"#]);
-        assert_eq!(t.outbox.last(), Some(&Command::cancel_dialog("b")), "a dropped dialog is answered, not left waiting");
+        assert_eq!(
+            t.outbox[1..],
+            [Command::cancel_dialog("b"), Command::GetState],
+            "a dropped dialog is answered, and the session file is re-read after the run"
+        );
+    }
+
+    #[test]
+    fn tool_calls_link_to_results_and_stay_small() {
+        let mut t = Transcript::default();
+        let big = "x".repeat(10_000);
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"message_update","assistantMessageEvent":{"type":"toolcall_start","contentIndex":0,"id":"c1","toolName":"write"}}"#,
+                &format!(
+                    r#"{{"type":"message_update","assistantMessageEvent":{{"type":"toolcall_end","contentIndex":0,"toolCall":{{"id":"c1","name":"write","arguments":{{"content":"{big}"}}}}}}}}"#
+                ),
+                r#"{"type":"tool_execution_end","toolCallId":"c1","toolName":"write","isError":true}"#,
+            ],
+        );
+        assert_eq!(t.entries[0].tool_id.as_deref(), Some("c1"));
+        assert_eq!(t.entries[0].ok, Some(false), "the call knows its result");
+        assert!(t.entries[0].text.len() < 2100, "a written file is not kept whole in memory");
+        assert_eq!((t.entries[1].text.as_str(), t.entries[1].tool_id.as_deref()), ("write → erreur", Some("c1")));
+
+        // Two Stops: the second, empty answer must not erase the steer the first one gave back.
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["garde-moi"],"followUp":[]}}"#,
+                r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":[],"followUp":[]}}"#,
+            ],
+        );
+        assert_eq!(t.restored, ["garde-moi"]);
     }
 
     #[test]

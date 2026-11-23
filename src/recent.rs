@@ -30,7 +30,8 @@ pub fn remember(file: &Path, folder: &Path) -> std::io::Result<Vec<PathBuf>> {
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    std::fs::write(file, serde_json::to_vec_pretty(&list)?)?;
+    // Atomic: another Pier window may read or write the list at the same moment.
+    crate::files::write_atomic(file, &serde_json::to_vec_pretty(&list)?)?;
     Ok(list)
 }
 

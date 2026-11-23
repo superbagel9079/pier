@@ -23,6 +23,9 @@ pub fn home() -> PathBuf {
 // shortcut: default session dir only, ignores `--session-dir` and settings; read Pi's setting if someone moves it.
 pub fn dir_for(cwd: &Path) -> PathBuf {
     let s = cwd.to_string_lossy();
+    // Pi names the folder after its plain cwd: no verbatim `\\?\` prefix, no trailing separator.
+    // (Case does not matter: Windows folder names are case-insensitive.)
+    let s = s.strip_prefix(r"\\?\").unwrap_or(&s).trim_end_matches(['/', '\\']);
     let name: String = s.trim_start_matches(['/', '\\']).chars().map(|c| if matches!(c, '/' | '\\' | ':') { '-' } else { c }).collect();
     home().join(".pi/agent/sessions").join(format!("--{name}--"))
 }
@@ -80,6 +83,8 @@ mod tests {
         let d = dir_for(Path::new(r"C:\Users\leo\Downloads\brainstorming\pier"));
         assert_eq!(d.file_name().unwrap(), "--C--Users-leo-Downloads-brainstorming-pier--");
         assert_eq!(dir_for(Path::new("/home/a/b")).file_name().unwrap(), "--home-a-b--");
+        assert_eq!(d, dir_for(Path::new(r"C:\Users\leo\Downloads\brainstorming\pier\")), "trailing separator");
+        assert_eq!(d, dir_for(Path::new(r"\\?\C:\Users\leo\Downloads\brainstorming\pier")), "verbatim prefix");
     }
 
     #[test]
