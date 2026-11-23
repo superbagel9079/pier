@@ -10,6 +10,7 @@ use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
 use pier::pi::sessions::{self, SavedSession};
 use pier::presets::{self, Preset};
+use pier::recent;
 use pier::session::journal::{self, Journal, Record};
 use pier::session::state::State;
 use pier::session::transcript::{Entry, Kind, Transcript};
@@ -29,6 +30,12 @@ fn open_in_editor(path: &Path) -> std::io::Result<()> {
         "xdg-open"
     };
     std::process::Command::new(opener).arg(path).spawn().map(drop)
+}
+
+/// Native folder dialog.
+// shortcut: blocks the window while open (tabs catch up right after; approval deadlines still apply), move to a thread if that bothers.
+fn pick_folder() -> Option<PathBuf> {
+    rfd::FileDialog::new().set_title("Choisir le dossier du projet").pick_folder()
 }
 
 /// What a new tab starts from.
@@ -53,10 +60,11 @@ pub struct Tab {
 }
 
 impl Tab {
-    fn new(pi_args: &[String], launch: Launch, ctx: &egui::Context) -> Self {
+    /// `folder`: where Pi works, unless a preset names its own.
+    fn new(pi_args: &[String], folder: &Path, launch: Launch, ctx: &egui::Context) -> Self {
         let mut t = Transcript::default();
         let mut args = pi_args.to_vec();
-        let (mut cwd, mut label) = (None, None);
+        let (mut cwd, mut label) = (folder, None);
         match launch {
             Launch::New => {}
             Launch::Resume(path) => {
@@ -65,19 +73,19 @@ impl Tab {
             }
             Launch::Preset(p) => {
                 args.extend(p.args());
-                cwd = p.cwd.as_deref();
+                cwd = p.cwd.as_deref().unwrap_or(folder);
                 label = Some(p.name.clone());
             }
         }
         let resumed = matches!(launch, Launch::Resume(_));
-        let folder = cwd.map(Path::to_path_buf).or_else(|| std::env::current_dir().ok()).unwrap_or_default();
+        let folder = cwd.to_path_buf();
         t.journal.push(Record::TabOpened {
             preset: label.clone(),
             resumed: resumed.then(|| t.session_file.clone()).flatten(),
             cwd: folder.clone(),
         });
         let ctx = ctx.clone();
-        let proc = Process::spawn_in(&args, cwd, move || ctx.request_repaint())
+        let proc = Process::spawn_in(&args, Some(cwd), move || ctx.request_repaint())
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
             .ok();
         if proc.is_none() {
@@ -179,6 +187,8 @@ pub struct PierApp {
     saved: Vec<SavedSession>,
     /// presets.json, read when the Presets menu opens; an error is shown, not hidden.
     presets: Result<Vec<Preset>, String>,
+    /// Project folders opened before, newest first, for the start screen.
+    recent: Vec<PathBuf>,
 }
 
 /// "il y a 5 min" style age, coarse on purpose.
@@ -192,14 +202,56 @@ fn ago(secs: u64) -> String {
 }
 
 impl PierApp {
-    pub fn new(pi_args: Vec<String>, ctx: &egui::Context) -> Self {
-        let tabs = vec![Tab::new(&pi_args, Launch::New, ctx)];
-        Self { pi_args, tabs, active: 0, saved: vec![], presets: Ok(vec![]) }
+    /// Starts with no tab: the user picks the project folder first.
+    pub fn new(pi_args: Vec<String>) -> Self {
+        Self { pi_args, tabs: vec![], active: 0, saved: vec![], presets: Ok(vec![]), recent: recent::load(&recent::path()) }
     }
 
-    fn open(&mut self, launch: Launch, ctx: &egui::Context) {
-        self.tabs.push(Tab::new(&self.pi_args, launch, ctx));
+    fn active_folder(&self) -> Option<PathBuf> {
+        self.tabs.get(self.active).map(|t| t.folder.clone())
+    }
+
+    fn open(&mut self, folder: &Path, launch: Launch, ctx: &egui::Context) {
+        let tab = Tab::new(&self.pi_args, folder, launch, ctx);
+        if let Ok(list) = recent::remember(&recent::path(), &tab.folder) {
+            self.recent = list; // a write failure only costs the shortcut next time
+        }
+        self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
+    }
+
+    /// A new tab in the active tab's folder, or in a folder the user picks when there is none.
+    fn open_here(&mut self, launch: Launch, ctx: &egui::Context) {
+        if let Some(folder) = self.active_folder().or_else(pick_folder) {
+            self.open(&folder, launch, ctx);
+        }
+    }
+
+    /// Start screen: open a folder, or one of the recent ones.
+    fn start_screen(&mut self, ui: &mut egui::Ui) {
+        let mut pick = None;
+        egui::CentralPanel::default().show(ui, |ui| {
+            ui.add_space(24.0);
+            ui.heading("Choisissez le dossier du projet");
+            ui.weak("Pi travaillera dans ce dossier. Chaque onglet garde le sien.");
+            ui.add_space(12.0);
+            if ui.button("Ouvrir un dossier…").clicked() {
+                pick = pick_folder();
+            }
+            if !self.recent.is_empty() {
+                ui.add_space(16.0);
+                ui.strong("Récents");
+                for folder in &self.recent {
+                    let name = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| folder.display().to_string());
+                    if ui.button(name).on_hover_text(folder.display().to_string()).clicked() {
+                        pick = Some(folder.clone());
+                    }
+                }
+            }
+        });
+        if let Some(folder) = pick {
+            self.open(&folder, Launch::New, ui.ctx());
+        }
     }
 
     /// Session files open in a tab, canonical so that Pi's spelling of a path matches the listing's.
@@ -227,11 +279,10 @@ impl PierApp {
             }
         });
         if r.response.clicked() {
-            let cwd = std::env::current_dir().unwrap_or_default();
-            self.saved = sessions::list(&cwd, RESUME_LIST_MAX);
+            self.saved = self.active_folder().map(|f| sessions::list(&f, RESUME_LIST_MAX)).unwrap_or_default();
         }
         if let Some(path) = pick {
-            self.open(Launch::Resume(&path), ui.ctx());
+            self.open_here(Launch::Resume(&path), ui.ctx());
         }
     }
 
@@ -270,7 +321,10 @@ impl PierApp {
             && let Ok(list) = &self.presets
         {
             let preset = list[i].clone();
-            self.open(Launch::Preset(&preset), ui.ctx());
+            match preset.cwd.clone() {
+                Some(dir) => self.open(&dir, Launch::Preset(&preset), ui.ctx()),
+                None => self.open_here(Launch::Preset(&preset), ui.ctx()),
+            }
         }
     }
 
@@ -300,8 +354,13 @@ impl PierApp {
                     }
                     ui.separator();
                 }
-                if ui.button("+").on_hover_text("Nouvel onglet").clicked() {
-                    self.open(Launch::New, ui.ctx());
+                if ui.button("+").on_hover_text("Nouvel onglet dans le même dossier").clicked() {
+                    self.open_here(Launch::New, ui.ctx());
+                }
+                if ui.button("Ouvrir un dossier…").clicked()
+                    && let Some(folder) = pick_folder()
+                {
+                    self.open(&folder, Launch::New, ui.ctx());
                 }
                 self.presets_menu(ui);
                 self.resume_menu(ui);
@@ -334,11 +393,7 @@ impl eframe::App for PierApp {
             approvals::show(tab, ui);
             transcript_view::show(tab, ui);
         } else {
-            egui::CentralPanel::default().show(ui, |ui| {
-                if ui.button("Nouvel onglet").clicked() {
-                    self.open(Launch::New, ui.ctx());
-                }
-            });
+            self.start_screen(ui);
         }
 
         // After the panels, so a click's answer leaves in the same frame.
@@ -356,7 +411,7 @@ mod tests {
         let tabs = (0..n)
             .map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None, journal: None, folder: PathBuf::new() })
             .collect();
-        PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]) }
+        PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]), recent: vec![] }
     }
 
     fn active_input(a: &PierApp) -> Option<&str> {

@@ -7,5 +7,5 @@ mod app;
 
 fn main() -> eframe::Result {
     let pi_args: Vec<String> = std::env::args().skip(1).collect();
-    eframe::run_native("Pier", eframe::NativeOptions::default(), Box::new(move |cc| Ok(Box::new(app::PierApp::new(pi_args, &cc.egui_ctx)))))
+    eframe::run_native("Pier", eframe::NativeOptions::default(), Box::new(move |_cc| Ok(Box::new(app::PierApp::new(pi_args)))))
 }
