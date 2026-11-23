@@ -1,7 +1,8 @@
 //! Top bar (session state, supervision, queued steers, Stop) and footer (extension statuses, last stderr line).
 
 use super::{State, Tab};
-use eframe::egui::{self, Color32, RichText};
+use eframe::egui::containers::menu::{MenuButton, MenuConfig};
+use eframe::egui::{self, Color32, PopupCloseBehavior, RichText};
 use pier::pi::protocol::Command;
 use pier::session::transcript::SUPERVISION_KEY;
 
@@ -68,8 +69,13 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
 /// Current model; the menu lists Pi's models (asked when it opens) with a search box, since providers can have hundreds.
 fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     let current = tab.t.model.as_ref().map(|m| m.name.clone().unwrap_or_else(|| m.id.clone())).unwrap_or_else(|| "?".into());
-    let r = ui.menu_button(format!("Modèle : {current}"), |ui| {
-        ui.add(egui::TextEdit::singleline(&mut tab.model_filter).hint_text("Chercher un modèle"));
+    // Default menus close on any click inside, which made the search box unusable.
+    let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
+    let (response, inner) = MenuButton::new(format!("Modèle : {current}")).config(config).ui(ui, |ui| {
+        let search = ui.add(egui::TextEdit::singleline(&mut tab.model_filter).hint_text("Chercher un modèle"));
+        if tab.model_filter.is_empty() && !search.has_focus() {
+            search.request_focus(); // type right away after opening
+        }
         let filter = tab.model_filter.to_lowercase();
         let mut pick = None;
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
@@ -86,10 +92,10 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
         });
         pick
     });
-    if r.response.clicked() {
+    if response.clicked() {
         tab.send(Command::GetAvailableModels);
     }
-    if let Some(Some(m)) = r.inner {
+    if let Some(Some(m)) = inner.map(|r| r.inner) {
         tab.send(Command::SetModel { provider: m.provider, model_id: m.id });
     }
 }
