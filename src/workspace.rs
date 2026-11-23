@@ -9,7 +9,9 @@ use crate::recent;
 use crate::session::journal::{self, Journal, Record};
 use crate::session::state::{Attention, State};
 use crate::session::transcript::{Entry, Kind, Transcript};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const TITLE_CHARS: usize = 24;
@@ -42,16 +44,16 @@ impl Tab {
     /// `folder`: where Pi works, unless a preset names its own. `wake`: called when Pi sends something.
     fn new(pi_args: &[String], folder: &Path, launch: Launch, wake: impl Fn() + Send + Clone + 'static) -> Self {
         let mut t = Transcript::default();
-        let mut args = pi_args.to_vec();
+        let mut args: Vec<OsString> = pi_args.iter().map(OsString::from).collect();
         let (mut cwd, mut label) = (folder, None);
         match launch {
             Launch::New => {}
             Launch::Resume(path) => {
-                args.extend(["--session".into(), path.to_string_lossy().into_owned()]);
+                args.extend(["--session".into(), path.as_os_str().to_owned()]); // as is: non-UTF-8 paths survive
                 t.session_file = Some(path.to_path_buf()); // listed as open before get_state answers
             }
             Launch::Preset(p) => {
-                args.extend(p.args());
+                args.extend(p.args().into_iter().map(OsString::from));
                 cwd = p.cwd.as_deref().unwrap_or(folder);
                 label = Some(p.name.clone());
             }
@@ -182,13 +184,15 @@ pub struct Workspace {
     /// Project folders opened before, newest first.
     pub recent: Vec<PathBuf>,
     recent_file: PathBuf,
+    /// Session files of closed tabs whose Pi is still shutting down: still "open" for Reprendre.
+    closing: Arc<Mutex<Vec<PathBuf>>>,
 }
 
 impl Workspace {
     /// Starts with no tab: the user picks the project folder first.
     pub fn new(pi_args: Vec<String>, recent_file: PathBuf) -> Self {
         let recent = recent::load(&recent_file);
-        Self { pi_args, tabs: vec![], active: 0, recent, recent_file }
+        Self { pi_args, tabs: vec![], active: 0, recent, recent_file, closing: Arc::default() }
     }
 
     pub fn active_tab(&mut self) -> Option<&mut Tab> {
@@ -217,8 +221,21 @@ impl Workspace {
     // shortcut: no confirmation when closing a running tab, add one if runs get lost by mistake.
     pub fn close(&mut self, i: usize) {
         let tab = self.tabs.remove(i);
+        let file = tab.t.session_file.as_ref().and_then(|p| std::fs::canonicalize(p).ok());
+        if let Some(f) = &file {
+            lock(&self.closing).push(f.clone());
+        }
+        let closing = Arc::clone(&self.closing);
         // Process::drop waits up to 3 s for Pi to exit; keep that off the caller's (UI) thread.
-        std::thread::spawn(move || drop(tab));
+        std::thread::spawn(move || {
+            drop(tab);
+            if let Some(f) = file {
+                let mut list = lock(&closing);
+                if let Some(i) = list.iter().position(|p| *p == f) {
+                    list.remove(i);
+                }
+            }
+        });
         if i < self.active || self.active >= self.tabs.len() {
             self.active = self.active.saturating_sub(1);
         }
@@ -263,7 +280,10 @@ impl Workspace {
 
     /// Session files open in a tab, canonical so that Pi's spelling of a path matches the listing's.
     fn open_files(&self) -> Vec<PathBuf> {
-        self.tabs.iter().filter_map(|t| t.t.session_file.as_ref()).filter_map(|p| std::fs::canonicalize(p).ok()).collect()
+        let mut open: Vec<PathBuf> =
+            self.tabs.iter().filter_map(|t| t.t.session_file.as_ref()).filter_map(|p| std::fs::canonicalize(p).ok()).collect();
+        open.extend(lock(&self.closing).iter().cloned());
+        open
     }
 
     /// Pi sessions saved for the active folder, newest first, each with whether a tab already has it open
@@ -278,6 +298,21 @@ impl Workspace {
                 (s, is_open)
             })
             .collect()
+    }
+}
+
+/// A poisoned lock only means a closing thread panicked; the list itself is still usable.
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+impl Drop for Workspace {
+    /// Quitting Pier: every tab's Pi shuts down at the same time, so the wait is 3 s at most, not 3 s per tab.
+    fn drop(&mut self) {
+        let stopping: Vec<_> = self.tabs.drain(..).map(|t| std::thread::spawn(move || drop(t))).collect();
+        for h in stopping {
+            let _ = h.join();
+        }
     }
 }
 
@@ -329,6 +364,20 @@ mod tests {
         w.tabs[1].t.state = State::Running;
         w.tabs[1].seen = State::Running;
         assert_eq!(w.attention(false), Some(Attention::Approval), "window unfocused: even the active tab counts");
+    }
+
+    #[test]
+    fn a_closing_tab_still_holds_its_session_file() {
+        let file = std::env::temp_dir().join(format!("pier-ws-closing-{}.jsonl", std::process::id()));
+        std::fs::write(&file, "").unwrap();
+        let mut w = ws(&["a"], 0);
+        w.tabs[0].t.session_file = Some(file.clone());
+        let canonical = std::fs::canonicalize(&file).unwrap();
+        assert!(w.open_files().contains(&canonical));
+        lock(&w.closing).push(canonical.clone()); // what close() does while the Pi is still shutting down
+        w.tabs.clear();
+        assert!(w.open_files().contains(&canonical), "Reprendre must not reopen it yet");
+        std::fs::remove_file(&file).unwrap();
     }
 
     #[test]

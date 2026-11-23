@@ -264,3 +264,48 @@ fn live_model_and_thinking_switch() {
     assert!(!t.entries.iter().any(|e| e.kind == Kind::Error), "{:?}", t.entries);
     eprintln!("switched to {} at thinking {target}", other.key());
 }
+
+/// Closing a tab leaves no process behind: the launcher, the real Pi it starts, and their children all go.
+#[test]
+#[ignore]
+fn live_close_leaves_no_orphan() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
+    let mut p = Process::spawn(&args, || {}).unwrap();
+    let mut t = Transcript::default();
+    pump(&mut p, &mut t, &|t| t.supervised(), 30);
+    let tree = descendants(p.id());
+    assert!(tree.len() >= 2, "launcher and the real Pi: {tree:?}");
+    drop(p);
+    std::thread::sleep(Duration::from_millis(500));
+    let alive: Vec<u32> = tree.into_iter().filter(|pid| is_alive(*pid)).collect();
+    assert!(alive.is_empty(), "still running after close: {alive:?}");
+}
+
+/// `root` and every process below it.
+fn descendants(root: u32) -> Vec<u32> {
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"])
+        .output()
+        .unwrap();
+    let pairs: Vec<(u32, u32)> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace().map(|n| n.parse::<u32>().ok());
+            Some((it.next()??, it.next()??))
+        })
+        .collect();
+    let mut tree = vec![root];
+    let mut i = 0;
+    while i < tree.len() {
+        let parent = tree[i];
+        tree.extend(pairs.iter().filter(|(_, pp)| *pp == parent).map(|(pid, _)| *pid));
+        i += 1;
+    }
+    tree
+}
+
+fn is_alive(pid: u32) -> bool {
+    let out = std::process::Command::new("tasklist").args(["/fi", &format!("PID eq {pid}"), "/nh"]).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
+}

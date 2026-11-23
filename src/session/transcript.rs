@@ -134,7 +134,7 @@ impl Transcript {
 
     pub fn apply(&mut self, msg: Incoming) {
         match msg {
-            Incoming::Event(ev) => self.apply_event(&ev),
+            Incoming::Event(ev, at) => self.apply_event_at(&ev, at),
             Incoming::Stderr(line) => {
                 self.stderr.push(line);
                 if self.stderr.len() > 200 {
@@ -152,6 +152,11 @@ impl Transcript {
     }
 
     pub fn apply_event(&mut self, ev: &Event) {
+        self.apply_event_at(ev, Instant::now());
+    }
+
+    /// `at`: when Pi's line was read; dialog deadlines count from there, like Pi's own timer.
+    pub fn apply_event_at(&mut self, ev: &Event, at: Instant) {
         if *ev == Event::AgentStart {
             self.run_failed = false;
             self.journal.push(Record::RunStarted);
@@ -228,7 +233,7 @@ impl Transcript {
             Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.
                 UiRequest::Confirm { id, title, message, timeout } => {
-                    let deadline = timeout.map(|ms| Instant::now() + Duration::from_millis(ms).saturating_sub(EXPIRY_MARGIN));
+                    let deadline = timeout.map(|ms| at + Duration::from_millis(ms).saturating_sub(EXPIRY_MARGIN));
                     self.journal.push(Record::ApprovalRequested {
                         id: id.clone(),
                         title: title.clone(),
