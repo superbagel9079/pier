@@ -84,6 +84,7 @@ impl Tab {
         let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen };
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
+        tab.send(Command::GetSessionStats);
         if resumed {
             tab.send(Command::GetMessages);
         }

@@ -343,3 +343,22 @@ fn live_session_name_reaches_reprendre() {
     let _ = std::fs::remove_file(&file); // test session, not the user's
     assert_eq!(title.as_deref(), Some(name.as_str()), "Reprendre shows the name");
 }
+
+/// After an answer, Pi's session stats give a context gauge (percent of a known window) and a cost.
+#[test]
+#[ignore]
+fn live_context_gauge_and_cost() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
+    let (mut p, mut t) = (Process::spawn(&args, || {}).unwrap(), Transcript::default());
+    pump(&mut p, &mut t, &|t| t.supervised(), 30);
+    p.send(&prompt("Reply only: ok")).unwrap();
+    // The finished answer makes the transcript ask for stats; pump sends that request.
+    pump(&mut p, &mut t, &|t| t.stats.as_ref().and_then(|s| s.context_usage.as_ref()).is_some_and(|c| c.percent.is_some()), 60);
+    let s = t.stats.clone().expect("stats after an answer");
+    let c = s.context_usage.clone().expect("context usage for a known model");
+    eprintln!("context {:?} / {} ({:?} %), cost ${}", c.tokens, c.context_window, c.percent, s.cost);
+    assert!(c.context_window > 0 && c.tokens.unwrap_or(0) > 0, "{c:?}");
+    assert!(c.percent.unwrap() > 0.0 && c.percent.unwrap() < 100.0, "{c:?}");
+    assert!(s.cost >= 0.0);
+}

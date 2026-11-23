@@ -4,7 +4,7 @@ use super::journal::Record;
 use super::state::State;
 use crate::pi::process::Incoming;
 use crate::pi::protocol::{
-    AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, Queued, Role, StateData, StreamEvent, UiRequest,
+    AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, Queued, Role, SessionStats, StateData, StreamEvent, UiRequest,
 };
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -112,6 +112,8 @@ pub struct Transcript {
     pub thinking_levels: Vec<String>,
     /// The session's display name, from `get_state` and `session_info_changed`.
     pub session_name: Option<String>,
+    /// Cost and context usage, refreshed after each assistant message and each model change.
+    pub stats: Option<SessionStats>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -219,7 +221,7 @@ impl Transcript {
             };
             self.journal.push(Record::RunEnded { outcome });
             // Something may have switched the session file meanwhile; the "already open" guard needs the current one.
-            self.outbox.push(Command::GetState);
+            self.outbox.extend([Command::GetState, Command::GetSessionStats]);
         }
         match ev {
             Event::AgentSettled { aborted: true } => {
@@ -234,6 +236,10 @@ impl Transcript {
                 Role::Other => {}
             },
             Event::MessageUpdate { assistant_message_event } => self.apply_stream(assistant_message_event),
+            // Each finished answer moves the context gauge, even in the middle of a long run.
+            Event::MessageEnd { message } if message.role == Role::Assistant && !message.is_error() => {
+                self.outbox.push(Command::GetSessionStats);
+            }
             Event::MessageEnd { message } if message.is_error() => {
                 self.run_failed = true;
                 let err = message.error_message.as_deref().unwrap_or("erreur provider");
@@ -276,9 +282,13 @@ impl Transcript {
             }
             Event::Response { command, .. } if command == "set_model" || command == "set_thinking_level" => {
                 // Pi may clamp the thinking level to the new model: read both back instead of guessing.
-                self.outbox.extend([Command::GetState, Command::GetAvailableThinkingLevels]);
+                // A new model also has a new context window.
+                self.outbox.extend([Command::GetState, Command::GetAvailableThinkingLevels, Command::GetSessionStats]);
             }
             Event::Response { command, .. } if command == "set_session_name" => self.outbox.push(Command::GetState),
+            Event::Response { command, data, .. } if command == "get_session_stats" => {
+                self.stats = serde_json::from_value(data.clone()).ok();
+            }
             Event::ThinkingLevelChanged { level } => self.thinking = Some(level.clone()),
             Event::SessionInfoChanged { name } => self.session_name = name.clone(),
             Event::Response { command, data, .. } if command == "get_messages" => self.load_history(&data["messages"]),
@@ -635,7 +645,7 @@ mod tests {
         assert_eq!(t.thinking_levels, ["off", "low", "high"]);
 
         feed(&mut t, &[r#"{"type":"response","command":"set_model","success":true,"data":{"id":"z","provider":"q"}}"#]);
-        assert_eq!(t.outbox, [Command::GetState, Command::GetAvailableThinkingLevels], "read back, don't guess");
+        assert_eq!(t.outbox, [Command::GetState, Command::GetAvailableThinkingLevels, Command::GetSessionStats], "read back, don't guess");
         feed(&mut t, &[r#"{"type":"thinking_level_changed","level":"high"}"#]);
         assert_eq!(t.thinking.as_deref(), Some("high"));
         feed(&mut t, &[r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"a.jsonl"}}"#]);
@@ -660,7 +670,7 @@ mod tests {
         feed(&mut t, &[r#"{"type":"agent_settled"}"#]);
         assert_eq!(
             t.outbox[1..],
-            [Command::cancel_dialog("b"), Command::GetState],
+            [Command::cancel_dialog("b"), Command::GetState, Command::GetSessionStats],
             "a dropped dialog is answered, and the session file is re-read after the run"
         );
     }
@@ -693,6 +703,30 @@ mod tests {
             ],
         );
         assert_eq!(t.restored, ["garde-moi"]);
+    }
+
+    #[test]
+    fn session_stats_are_read_and_refreshed_per_answer() {
+        let mut t = Transcript::default();
+        feed(&mut t, &[r#"{"type":"message_end","message":{"role":"assistant","content":[],"stopReason":"stop"}}"#]);
+        assert_eq!(t.outbox, [Command::GetSessionStats], "each finished answer asks for fresh numbers");
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"get_session_stats","success":true,"data":{"cost":0.45,"tokens":{"total":105000},"contextUsage":{"tokens":60000,"contextWindow":200000,"percent":30}}}"#,
+            ],
+        );
+        let s = t.stats.clone().unwrap();
+        assert_eq!(s.cost, 0.45);
+        let c = s.context_usage.unwrap();
+        assert_eq!((c.tokens, c.context_window, c.percent), (Some(60000), 200000, Some(30.0)));
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"get_session_stats","success":true,"data":{"cost":0.5,"contextUsage":{"tokens":null,"contextWindow":200000,"percent":null}}}"#,
+            ],
+        );
+        assert_eq!(t.stats.unwrap().context_usage.unwrap().percent, None, "after a compaction: unknown, not 0");
     }
 
     #[test]

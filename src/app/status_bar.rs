@@ -7,6 +7,9 @@ use pier::session::transcript::SUPERVISION_KEY;
 use pier::workspace::{NAME_MAX, Tab};
 
 const OK_GREEN: Color32 = Color32::from_rgb(110, 180, 110);
+/// Context-window use (percent) from which the gauge turns orange, then red.
+const CONTEXT_WARN: f64 = 80.0;
+const CONTEXT_ALERT: f64 = 95.0;
 /// Enough to scan; the search box narrows the rest.
 const MODEL_LIST_MAX: usize = 200;
 
@@ -51,6 +54,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             name_menu(tab, ui);
             model_menu(tab, ui);
             thinking_menu(tab, ui);
+            usage(tab, ui);
 
             if !tab.t.queued.is_empty() {
                 ui.separator();
@@ -65,6 +69,29 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         });
         ui.add_space(4.0);
     });
+}
+
+/// Context-window use and session cost, from Pi's session stats.
+fn usage(tab: &Tab, ui: &mut egui::Ui) {
+    let Some(stats) = &tab.t.stats else { return };
+    ui.separator();
+    if let Some(c) = &stats.context_usage {
+        let v = ui.visuals();
+        let (text, color) = match c.percent {
+            Some(p) if p >= CONTEXT_ALERT => (format!("Contexte : {p:.0} %"), v.error_fg_color),
+            Some(p) if p >= CONTEXT_WARN => (format!("Contexte : {p:.0} %"), v.warn_fg_color),
+            Some(p) if p > 0.0 && p < 1.0 => ("Contexte : < 1 %".to_owned(), v.text_color()), // not "0 %": it is not empty
+            Some(p) => (format!("Contexte : {p:.0} %"), v.text_color()),
+            None => ("Contexte : ?".to_owned(), v.weak_text_color()), // right after a compaction
+        };
+        let tokens = c.tokens.map_or_else(|| "?".to_owned(), |t| t.to_string());
+        ui.label(RichText::new(text).color(color)).on_hover_text(format!(
+            "{tokens} jetons sur {} dans la fenêtre du modèle.\nPi compacte la session quand elle approche de la limite.",
+            c.context_window
+        ));
+    }
+    let cost = if stats.cost >= 0.01 { format!("${:.2}", stats.cost) } else { format!("${:.4}", stats.cost) };
+    ui.label(cost).on_hover_text("Coût de la session, d'après les tarifs du modèle connus de Pi.");
 }
 
 /// Session name: Pi stores it in the session file, so Reprendre and Pi's own /resume show it.

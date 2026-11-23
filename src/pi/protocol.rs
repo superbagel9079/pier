@@ -27,6 +27,8 @@ pub enum Command {
     SetThinkingLevel {
         level: String,
     },
+    /// Cost and context-window usage of the session.
+    GetSessionStats,
     /// Display name of the session, shown by Reprendre and by Pi's own /resume.
     SetSessionName {
         name: String,
@@ -211,6 +213,30 @@ pub struct StateData {
     pub thinking_level: Option<String>,
     #[serde(default)]
     pub session_name: Option<String>,
+}
+
+/// `data` of a `get_session_stats` response (only what Pier shows).
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionStats {
+    /// US dollars for the whole session.
+    #[serde(default)]
+    pub cost: f64,
+    /// Absent when no model or context window is known.
+    #[serde(default)]
+    pub context_usage: Option<ContextUsage>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUsage {
+    /// `None` right after a compaction, until the next answer gives real numbers.
+    #[serde(default)]
+    pub tokens: Option<u64>,
+    #[serde(default)]
+    pub context_window: u64,
+    #[serde(default)]
+    pub percent: Option<f64>,
 }
 
 /// The parts of Pi's Model object that Pier shows or sends back.
