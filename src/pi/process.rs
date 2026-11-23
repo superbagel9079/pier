@@ -1,14 +1,16 @@
 //! A `pi --mode rpc` process spoken to in JSONL over stdio: launch, framing, orderly shutdown.
 
-use serde_json::{Value, json};
+use super::protocol::{Command, Event};
+use serde::de::DeserializeOwned;
+use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{self, Child, ChildStdin, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
 
 pub enum Incoming {
-    Event(Value),
+    Event(Event),
     Stderr(String),
     Exited,
 }
@@ -23,11 +25,11 @@ pub struct Process {
 /// `pi` on Windows is a .ps1/.cmd shim; we run node + the launcher directly so no
 /// cmd.exe sits between us and Pi.
 // shortcut: paths are the default managed-install ones, add a setting when another install layout shows up.
-fn pi_command() -> Command {
+fn pi_command() -> process::Command {
     let home = PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).unwrap_or_default());
     let launcher = home.join(".pi/agent/bin/pi-launcher.js");
     let bundled_node = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("pi-node/current/node.exe");
-    let mut cmd = Command::new(if bundled_node.is_file() { bundled_node } else { PathBuf::from("node") });
+    let mut cmd = process::Command::new(if bundled_node.is_file() { bundled_node } else { PathBuf::from("node") });
     cmd.arg(launcher);
     cmd
 }
@@ -59,7 +61,10 @@ impl Process {
                         let msg = match parse_line(&buf) {
                             None => continue,
                             Some(Ok(v)) => Incoming::Event(v),
-                            Some(Err(e)) => Incoming::Stderr(format!("stdout non-JSON ({e})")),
+                            // Not silent: a shape Pier misreads shows up in the status bar.
+                            Some(Err(e)) => {
+                                Incoming::Stderr(format!("événement illisible ({e}) : {}", String::from_utf8_lossy(&buf).trim_end()))
+                            }
                         };
                         if out_tx.send(msg).is_err() {
                             break;
@@ -85,7 +90,8 @@ impl Process {
         Ok(Self { stdin: child.stdin.take(), child, rx, next_id: 0 })
     }
 
-    pub fn send(&mut self, mut cmd: Value) -> std::io::Result<()> {
+    pub fn send(&mut self, cmd: &Command) -> std::io::Result<()> {
+        let mut cmd = serde_json::to_value(cmd)?;
         // Replies (extension_ui_response) must echo the request id; only commands get a fresh one.
         if cmd.get("id").is_none() {
             self.next_id += 1;
@@ -117,7 +123,7 @@ impl Drop for Process {
 }
 
 /// Split on LF only (never U+2028/U+2029), strip an optional CR, skip blank lines.
-pub fn parse_line(raw: &[u8]) -> Option<serde_json::Result<Value>> {
+pub fn parse_line<T: DeserializeOwned>(raw: &[u8]) -> Option<serde_json::Result<T>> {
     let line = raw.strip_suffix(b"\n").unwrap_or(raw);
     let line = line.strip_suffix(b"\r").unwrap_or(line);
     if line.iter().all(u8::is_ascii_whitespace) {
@@ -132,8 +138,8 @@ mod tests {
 
     #[test]
     fn framing_keeps_unicode_separators_and_strips_crlf() {
-        let v = parse_line("{\"t\":\"a\u{2028}b\"}\r\n".as_bytes()).unwrap().unwrap();
+        let v: serde_json::Value = parse_line("{\"t\":\"a\u{2028}b\"}\r\n".as_bytes()).unwrap().unwrap();
         assert_eq!(v["t"], "a\u{2028}b");
-        assert!(parse_line(b"  \r\n").is_none());
+        assert!(parse_line::<serde_json::Value>(b"  \r\n").is_none());
     }
 }

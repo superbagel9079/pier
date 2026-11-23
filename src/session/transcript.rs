@@ -1,7 +1,8 @@
 //! The transcript rebuilt from Pi's events (testable without a window).
 
+use super::state::State;
 use crate::pi::process::Incoming;
-use serde_json::{Value, json};
+use crate::pi::protocol::{ClearedQueue, Command, Event, Queued, Role, StreamEvent, UiRequest};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,8 +24,9 @@ pub struct Entry {
 #[derive(Default)]
 pub struct Transcript {
     pub entries: Vec<Entry>,
-    pub running: bool,
-    pub exited: bool,
+    pub state: State,
+    /// The last assistant message of the current run ended in error.
+    run_failed: bool,
     /// Messages Pi has accepted but not yet read (steer / follow-up), from `queue_update`.
     pub queued: Vec<String>,
     /// Queued texts handed back by `clear_queue`, for the UI to put back in the editor.
@@ -33,21 +35,13 @@ pub struct Transcript {
     /// Extension status lines (`setStatus`), keyed by statusKey.
     pub status: std::collections::BTreeMap<String, String>,
     /// Records the transcript needs sent back to Pi (dialog replies); the UI flushes them.
-    pub outbox: Vec<Value>,
+    pub outbox: Vec<Command>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
 
-fn text_of(content: &Value) -> String {
-    match content {
-        Value::String(s) => s.clone(),
-        Value::Array(parts) => parts.iter().filter_map(|p| p["text"].as_str()).collect::<Vec<_>>().join(""),
-        _ => String::new(),
-    }
-}
-
-fn strings(v: &Value) -> Vec<String> {
-    v.as_array().into_iter().flatten().map(|s| s.as_str().map(str::to_owned).unwrap_or_else(|| text_of(&s["content"]))).collect()
+fn texts(steering: &[Queued], follow_up: &[Queued]) -> Vec<String> {
+    steering.iter().chain(follow_up).map(Queued::text).collect()
 }
 
 impl Transcript {
@@ -58,7 +52,7 @@ impl Transcript {
 
     pub fn apply(&mut self, msg: Incoming) {
         match msg {
-            Incoming::Event(v) => self.apply_event(&v),
+            Incoming::Event(ev) => self.apply_event(&ev),
             Incoming::Stderr(line) => {
                 self.stderr.push(line);
                 if self.stderr.len() > 200 {
@@ -66,123 +60,109 @@ impl Transcript {
                 }
             }
             Incoming::Exited => {
-                self.running = false;
-                self.exited = true;
+                self.state = State::Crashed;
                 self.queued.clear();
                 self.push(Kind::Error, "Le process Pi s'est arrêté.");
             }
         }
     }
 
-    pub fn apply_event(&mut self, v: &Value) {
-        match v["type"].as_str().unwrap_or_default() {
-            "agent_start" => self.running = true,
-            "agent_settled" => {
-                self.running = false;
-                if v["aborted"].as_bool() == Some(true) {
-                    self.push(Kind::Notice, "Run interrompu.");
+    pub fn apply_event(&mut self, ev: &Event) {
+        if *ev == Event::AgentStart {
+            self.run_failed = false;
+        }
+        self.state = self.state.on_event(ev, self.run_failed);
+        match ev {
+            Event::AgentSettled { aborted: true } => {
+                self.push(Kind::Notice, "Run interrompu.");
+            }
+            Event::MessageStart { message } => match message.role {
+                // User messages appear when Pi actually reads them, so a queued steer shows up at the right place.
+                Role::User => {
+                    self.push(Kind::User, message.content.text());
                 }
+                Role::Assistant => self.blocks.clear(),
+                Role::Other => {}
+            },
+            Event::MessageUpdate { assistant_message_event } => self.apply_stream(assistant_message_event),
+            Event::MessageEnd { message } if message.is_error() => {
+                self.run_failed = true;
+                let err = message.error_message.as_deref().unwrap_or("erreur provider");
+                self.push(Kind::Error, err);
             }
-            "message_start" => {
-                let m = &v["message"];
-                match m["role"].as_str() {
-                    // User messages appear when Pi actually reads them, so a queued steer shows up at the right place.
-                    Some("user") => {
-                        self.push(Kind::User, text_of(&m["content"]));
-                    }
-                    Some("assistant") => self.blocks.clear(),
-                    _ => {}
-                }
+            Event::ToolExecutionEnd { tool_name, is_error } => {
+                let status = if *is_error { "erreur" } else { "ok" };
+                self.push(Kind::Tool, format!("{tool_name} → {status}"));
             }
-            "message_update" => self.apply_stream(&v["assistantMessageEvent"]),
-            "message_end" => {
-                let m = &v["message"];
-                if m["role"] == "assistant" && m["stopReason"] == "error" {
-                    let err = m["errorMessage"].as_str().unwrap_or("erreur provider");
-                    self.push(Kind::Error, err);
-                }
+            Event::QueueUpdate { steering, follow_up } => self.queued = texts(steering, follow_up),
+            Event::AutoRetryStart { attempt } => {
+                self.push(Kind::Notice, format!("Nouvel essai {attempt}…"));
             }
-            "tool_execution_end" => {
-                let name = v["toolName"].as_str().unwrap_or("?");
-                let status = if v["isError"].as_bool() == Some(true) { "erreur" } else { "ok" };
-                self.push(Kind::Tool, format!("{name} → {status}"));
+            Event::Response { command, success: false, error, .. } => {
+                let err = error.as_deref().unwrap_or("échec");
+                self.push(Kind::Error, format!("{command} : {err}"));
             }
-            "queue_update" => {
-                self.queued = strings(&v["steering"]);
-                self.queued.extend(strings(&v["followUp"]));
+            Event::Response { command, data, .. } if command == "clear_queue" => {
+                let q: ClearedQueue = serde_json::from_value(data.clone()).unwrap_or_default();
+                self.restored = texts(&q.steering, &q.follow_up);
             }
-            "auto_retry_start" => {
-                let n = v["attempt"].as_u64().unwrap_or(0);
-                self.push(Kind::Notice, format!("Nouvel essai {n}…"));
-            }
-            "response" => {
-                if v["success"].as_bool() == Some(false) {
-                    let cmd = v["command"].as_str().unwrap_or("?");
-                    let err = v["error"].as_str().unwrap_or("échec");
-                    self.push(Kind::Error, format!("{cmd} : {err}"));
-                } else if v["command"] == "clear_queue" {
-                    self.restored = strings(&v["data"]["steering"]);
-                    self.restored.extend(strings(&v["data"]["followUp"]));
-                }
-            }
-            "extension_ui_request" => match v["method"].as_str().unwrap_or_default() {
+            Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.
                 // shortcut: refused automatically (fail-closed) until approvals land in v1 (A.6).
-                "select" | "confirm" | "input" | "editor" => {
-                    let title = v["title"].as_str().unwrap_or("?");
+                UiRequest::Select { id, title }
+                | UiRequest::Confirm { id, title }
+                | UiRequest::Input { id, title }
+                | UiRequest::Editor { id, title } => {
                     self.push(Kind::Notice, format!("Dialogue « {title} » refusé (approbations pas encore gérées)."));
-                    self.outbox.push(json!({"type": "extension_ui_response", "id": v["id"], "cancelled": true}));
+                    self.outbox.push(Command::ExtensionUiResponse { id: id.clone(), cancelled: true });
                 }
-                "setStatus" => {
-                    let key = v["statusKey"].as_str().unwrap_or_default().to_owned();
-                    match v["statusText"].as_str() {
-                        Some(text) => self.status.insert(key, text.to_owned()),
-                        None => self.status.remove(&key),
+                UiRequest::SetStatus { status_key, status_text } => {
+                    match status_text {
+                        Some(text) => self.status.insert(status_key.clone(), text.clone()),
+                        None => self.status.remove(status_key),
                     };
                 }
-                "notify" => {
-                    let text = v["message"].as_str().unwrap_or_default();
-                    self.push(Kind::Notice, text);
+                UiRequest::Notify { message } => {
+                    self.push(Kind::Notice, message.clone());
                 }
-                _ => {} // setWidget, setTitle, set_editor_text: not shown in the spike
+                UiRequest::Other => {}
             },
             _ => {}
         }
     }
 
-    fn apply_stream(&mut self, e: &Value) {
-        let idx = e["contentIndex"].as_u64().unwrap_or(0);
-        match e["type"].as_str().unwrap_or_default() {
-            "text_start" => {
+    fn apply_stream(&mut self, e: &StreamEvent) {
+        match e {
+            StreamEvent::TextStart { content_index } => {
                 let i = self.push(Kind::Assistant, "");
-                self.blocks.insert(idx, i);
+                self.blocks.insert(*content_index, i);
             }
-            "thinking_start" => {
+            StreamEvent::ThinkingStart { content_index } => {
                 let i = self.push(Kind::Thinking, "");
-                self.blocks.insert(idx, i);
+                self.blocks.insert(*content_index, i);
             }
-            "toolcall_start" => {
-                let name = e["toolName"].as_str().unwrap_or("?");
-                let i = self.push(Kind::Tool, format!("{name} "));
-                self.blocks.insert(idx, i);
+            StreamEvent::ToolcallStart { content_index, tool_name } => {
+                let i = self.push(Kind::Tool, format!("{} ", tool_name.as_deref().unwrap_or("?")));
+                self.blocks.insert(*content_index, i);
             }
-            "text_delta" | "thinking_delta" | "toolcall_delta" => {
-                if let Some(&i) = self.blocks.get(&idx) {
-                    self.entries[i].text.push_str(e["delta"].as_str().unwrap_or_default());
+            StreamEvent::TextDelta { content_index, delta }
+            | StreamEvent::ThinkingDelta { content_index, delta }
+            | StreamEvent::ToolcallDelta { content_index, delta } => {
+                if let Some(&i) = self.blocks.get(content_index) {
+                    self.entries[i].text.push_str(delta);
                 }
             }
-            "text_end" | "thinking_end" => {
-                if let (Some(&i), Some(c)) = (self.blocks.get(&idx), e["content"].as_str()) {
-                    self.entries[i].text = c.to_owned();
+            StreamEvent::TextEnd { content_index, content } | StreamEvent::ThinkingEnd { content_index, content } => {
+                if let (Some(&i), Some(c)) = (self.blocks.get(content_index), content) {
+                    self.entries[i].text = c.clone();
                 }
             }
-            "toolcall_end" => {
-                if let Some(&i) = self.blocks.get(&idx) {
-                    let tc = &e["toolCall"];
-                    self.entries[i].text = format!("{} {}", tc["name"].as_str().unwrap_or("?"), tc["arguments"]);
+            StreamEvent::ToolcallEnd { content_index, tool_call } => {
+                if let Some(&i) = self.blocks.get(content_index) {
+                    self.entries[i].text = format!("{} {}", tool_call.name, tool_call.arguments);
                 }
             }
-            _ => {}
+            StreamEvent::Other => {}
         }
     }
 }
@@ -214,7 +194,7 @@ mod tests {
                 r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"jour"}}"#,
             ],
         );
-        assert!(t.running);
+        assert_eq!(t.state, State::Running);
         let kinds: Vec<_> = t.entries.iter().map(|e| (e.kind, e.text.as_str())).collect();
         assert_eq!(kinds, [(Kind::User, "salut"), (Kind::Thinking, "hmm"), (Kind::Assistant, "Bonjour")]);
 
@@ -225,7 +205,7 @@ mod tests {
                 r#"{"type":"agent_settled","aborted":true}"#,
             ],
         );
-        assert!(!t.running);
+        assert_eq!(t.state, State::Stopped);
         assert_eq!(t.entries[2].text, "Bonjour !");
         assert_eq!(t.entries.last().unwrap().kind, Kind::Notice);
     }
@@ -236,16 +216,19 @@ mod tests {
         feed(
             &mut t,
             &[
+                r#"{"type":"agent_start"}"#,
                 r#"{"type":"queue_update","steering":["stop"],"followUp":[]}"#,
                 r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["stop"],"followUp":["ensuite"]}}"#,
                 r#"{"type":"response","command":"prompt","success":false,"error":"busy"}"#,
                 r#"{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"403"}}"#,
+                r#"{"type":"agent_settled"}"#,
             ],
         );
         assert_eq!(t.queued, ["stop"]);
         assert_eq!(t.restored, ["stop", "ensuite"]);
         let errs: Vec<_> = t.entries.iter().filter(|e| e.kind == Kind::Error).map(|e| e.text.as_str()).collect();
         assert_eq!(errs, ["prompt : busy", "403"]);
+        assert_eq!(t.state, State::Failed, "a run ending on a provider error is not 'completed'");
     }
 
     #[test]
@@ -259,10 +242,18 @@ mod tests {
                 r#"{"type":"extension_ui_request","id":"u3","method":"setWidget","widgetKey":"w"}"#,
             ],
         );
-        assert_eq!(t.outbox, [json!({"type": "extension_ui_response", "id": "u1", "cancelled": true})]);
+        assert_eq!(t.outbox, [Command::ExtensionUiResponse { id: "u1".into(), cancelled: true }]);
         assert_eq!(t.status.get("cost").map(String::as_str), Some("$0"));
         assert_eq!(t.entries.len(), 1);
         feed(&mut t, &[r#"{"type":"extension_ui_request","id":"u4","method":"setStatus","statusKey":"cost"}"#]);
         assert!(t.status.is_empty());
+    }
+
+    #[test]
+    fn exit_is_terminal() {
+        let mut t = Transcript::default();
+        t.apply(Incoming::Exited);
+        feed(&mut t, &[r#"{"type":"agent_start"}"#]);
+        assert_eq!(t.state, State::Crashed);
     }
 }

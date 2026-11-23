@@ -1,15 +1,18 @@
 //! Top bar: session state, queued steers, extension statuses, last stderr line, Stop.
 
-use super::PierApp;
+use super::{PierApp, State};
 use eframe::egui;
 
 pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
     egui::Panel::top("status").show(ui, |ui| {
         ui.horizontal(|ui| {
-            let state = match (app.t.exited, app.t.running) {
-                (true, _) => "Arrêté",
-                (false, true) => "En cours",
-                (false, false) => "Prêt",
+            let state = match app.t.state {
+                State::Ready => "Prêt",
+                State::Running => "En cours",
+                State::Completed => "Terminé",
+                State::Stopped => "Interrompu",
+                State::Failed => "Échec",
+                State::Crashed => "Pi arrêté",
             };
             ui.strong(state);
             if !app.t.queued.is_empty() {
@@ -22,7 +25,7 @@ pub fn show(app: &mut PierApp, ui: &mut egui::Ui) {
                 ui.weak(format!("· {last}")).on_hover_text(app.t.stderr.join("\n"));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(app.t.running, egui::Button::new("Stop")).clicked() {
+                if ui.add_enabled(app.t.state.is_running(), egui::Button::new("Stop")).clicked() {
                     app.stop();
                 }
             });

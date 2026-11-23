@@ -6,8 +6,9 @@ mod transcript_view;
 
 use eframe::egui;
 use pier::pi::process::Process;
+use pier::pi::protocol::{Command, StreamingBehavior};
+use pier::session::state::State;
 use pier::session::transcript::{Entry, Kind, Transcript};
-use serde_json::json;
 
 pub struct PierApp {
     proc: Option<Process>,
@@ -22,14 +23,14 @@ impl PierApp {
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
             .ok();
         if proc.is_none() {
-            t.exited = true;
+            t.state = State::Crashed;
         }
         Self { proc, t, input: String::new() }
     }
 
-    fn send(&mut self, cmd: serde_json::Value) {
+    fn send(&mut self, cmd: Command) {
         let err = match self.proc.as_mut() {
-            Some(p) => p.send(cmd).err().map(|e| e.to_string()),
+            Some(p) => p.send(&cmd).err().map(|e| e.to_string()),
             None => Some("pas de process Pi".into()),
         };
         if let Some(e) = err {
@@ -43,19 +44,15 @@ impl PierApp {
             return;
         }
         // While a run is going, Pi requires a streamingBehavior; steer lands after the current turn.
-        let cmd = if self.t.running {
-            json!({"type": "prompt", "message": text, "streamingBehavior": "steer"})
-        } else {
-            json!({"type": "prompt", "message": text})
-        };
-        self.send(cmd);
+        let streaming_behavior = self.t.state.is_running().then_some(StreamingBehavior::Steer);
+        self.send(Command::Prompt { message: text, streaming_behavior });
         self.input.clear();
     }
 
     /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
     fn stop(&mut self) {
-        self.send(json!({"type": "clear_queue"}));
-        self.send(json!({"type": "abort"}));
+        self.send(Command::ClearQueue);
+        self.send(Command::Abort);
     }
 }
 
