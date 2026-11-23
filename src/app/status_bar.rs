@@ -36,6 +36,13 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
                     .on_hover_text("L'extension d'approbation de Pier ne s'est pas encore signalée dans Pi.");
             }
 
+            ui.separator();
+            let name = tab.folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| tab.folder.display().to_string());
+            ui.label(format!("Dossier : {name}")).on_hover_text(format!(
+                "Pi travaille dans {}.\nLes avertissements « hors du dossier » et la liste Reprendre en dépendent.",
+                tab.folder.display()
+            ));
+
             if !tab.t.queued.is_empty() {
                 ui.separator();
                 ui.label(format!("{} message(s) en attente de lecture par Pi", tab.t.queued.len())).on_hover_text(tab.t.queued.join("\n"));

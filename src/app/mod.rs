@@ -48,6 +48,8 @@ pub struct Tab {
     label: Option<String>,
     /// `None` once it failed; the failure is shown in the transcript.
     journal: Option<Journal>,
+    /// Where Pi works: outside-folder warnings and its saved sessions depend on it.
+    folder: PathBuf,
 }
 
 impl Tab {
@@ -68,10 +70,11 @@ impl Tab {
             }
         }
         let resumed = matches!(launch, Launch::Resume(_));
+        let folder = cwd.map(Path::to_path_buf).or_else(|| std::env::current_dir().ok()).unwrap_or_default();
         t.journal.push(Record::TabOpened {
             preset: label.clone(),
             resumed: resumed.then(|| t.session_file.clone()).flatten(),
-            cwd: cwd.map(Path::to_path_buf).or_else(|| std::env::current_dir().ok()).unwrap_or_default(),
+            cwd: folder.clone(),
         });
         let ctx = ctx.clone();
         let proc = Process::spawn_in(&args, cwd, move || ctx.request_repaint())
@@ -83,7 +86,7 @@ impl Tab {
         let journal = Journal::create(&journal::dir())
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Journal indisponible : {e}") }))
             .ok();
-        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal };
+        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder };
         tab.send(Command::GetState);
         if resumed {
             tab.send(Command::GetMessages);
@@ -350,7 +353,9 @@ mod tests {
     use super::*;
 
     fn app(n: usize, active: usize) -> PierApp {
-        let tabs = (0..n).map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None, journal: None }).collect();
+        let tabs = (0..n)
+            .map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None, journal: None, folder: PathBuf::new() })
+            .collect();
         PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]) }
     }
 
