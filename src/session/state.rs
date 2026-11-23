@@ -38,11 +38,45 @@ impl State {
             (s, _) => s,
         }
     }
+
+    /// Why going from `prev` to `self` needs the user, if it does.
+    pub fn attention(self, prev: State) -> Option<Attention> {
+        match (prev, self) {
+            (p, State::Blocked) if p != State::Blocked => Some(Attention::Approval),
+            (p, State::Completed | State::Failed | State::Stopped | State::Crashed) if p.is_running() => Some(Attention::RunEnded),
+            (p, State::Crashed) if p != State::Crashed => Some(Attention::RunEnded),
+            _ => None,
+        }
+    }
+}
+
+/// A reason to call the user back to a session.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Attention {
+    /// A tool call waits for Autoriser / Refuser, and expires otherwise.
+    Approval,
+    /// A run finished, failed, was stopped, or Pi died.
+    RunEnded,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn attention_only_on_the_change_that_needs_the_user() {
+        use State::*;
+        assert_eq!(Blocked.attention(Running), Some(Attention::Approval));
+        assert_eq!(Blocked.attention(Blocked), None, "once per approval, not every frame");
+        assert_eq!(Running.attention(Blocked), None, "answered");
+        assert_eq!(Completed.attention(Running), Some(Attention::RunEnded));
+        assert_eq!(Failed.attention(Blocked), Some(Attention::RunEnded));
+        assert_eq!(Stopped.attention(Running), Some(Attention::RunEnded));
+        assert_eq!(Crashed.attention(Ready), Some(Attention::RunEnded), "Pi dying is news even when idle");
+        assert_eq!(Completed.attention(Completed), None);
+        assert_eq!(Running.attention(Ready), None);
+        assert_eq!(Crashed.attention(Crashed), None);
+    }
 
     #[test]
     fn transitions() {

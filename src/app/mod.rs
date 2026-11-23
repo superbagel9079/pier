@@ -12,7 +12,7 @@ use pier::pi::sessions::{self, SavedSession};
 use pier::presets::{self, Preset};
 use pier::recent;
 use pier::session::journal::{self, Journal, Record};
-use pier::session::state::State;
+use pier::session::state::{Attention, State};
 use pier::session::transcript::{Entry, Kind, Transcript};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -57,6 +57,8 @@ pub struct Tab {
     journal: Option<Journal>,
     /// Where Pi works: outside-folder warnings and its saved sessions depend on it.
     folder: PathBuf,
+    /// State at the previous frame, to notice the changes that need the user.
+    seen: State,
 }
 
 impl Tab {
@@ -94,7 +96,8 @@ impl Tab {
         let journal = Journal::create(&journal::dir())
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Journal indisponible : {e}") }))
             .ok();
-        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder };
+        let seen = t.state;
+        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen };
         tab.send(Command::GetState);
         if resumed {
             tab.send(Command::GetMessages);
@@ -189,6 +192,8 @@ pub struct PierApp {
     presets: Result<Vec<Preset>, String>,
     /// Project folders opened before, newest first, for the start screen.
     recent: Vec<PathBuf>,
+    /// Window title last sent, so it is only re-sent when it changes.
+    title: String,
 }
 
 /// "il y a 5 min" style age, coarse on purpose.
@@ -204,7 +209,15 @@ fn ago(secs: u64) -> String {
 impl PierApp {
     /// Starts with no tab: the user picks the project folder first.
     pub fn new(pi_args: Vec<String>) -> Self {
-        Self { pi_args, tabs: vec![], active: 0, saved: vec![], presets: Ok(vec![]), recent: recent::load(&recent::path()) }
+        Self {
+            pi_args,
+            tabs: vec![],
+            active: 0,
+            saved: vec![],
+            presets: Ok(vec![]),
+            recent: recent::load(&recent::path()),
+            title: String::new(),
+        }
     }
 
     fn active_folder(&self) -> Option<PathBuf> {
@@ -224,6 +237,32 @@ impl PierApp {
     fn open_here(&mut self, launch: Launch, ctx: &egui::Context) {
         if let Some(folder) = self.active_folder().or_else(pick_folder) {
             self.open(&folder, launch, ctx);
+        }
+    }
+
+    /// Flashes the taskbar when a tab the user is not looking at needs them, and counts pending approvals in the title.
+    fn call_attention(&mut self, ctx: &egui::Context) {
+        let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
+        let mut flash = None;
+        for (i, tab) in self.tabs.iter_mut().enumerate() {
+            if let Some(why) = tab.t.state.attention(tab.seen)
+                && (!focused || i != self.active)
+            {
+                flash = match (flash, why) {
+                    (Some(egui::UserAttentionType::Critical), _) | (_, Attention::Approval) => Some(egui::UserAttentionType::Critical),
+                    _ => Some(egui::UserAttentionType::Informational),
+                };
+            }
+            tab.seen = tab.t.state;
+        }
+        if let Some(kind) = flash {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(kind));
+        }
+        let waiting = self.tabs.iter().filter(|t| !t.t.approvals.is_empty()).count();
+        let title = if waiting == 0 { "Pier".to_owned() } else { format!("Pier · {waiting} en attente d'approbation") };
+        if title != self.title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title = title;
         }
     }
 
@@ -384,6 +423,7 @@ impl eframe::App for PierApp {
         if self.tabs.iter().any(|t| !t.t.approvals.is_empty()) {
             ui.ctx().request_repaint_after(Duration::from_secs(1)); // countdown and expiry without input
         }
+        self.call_attention(ui.ctx());
 
         self.tab_strip(ui);
         if let Some(tab) = self.tabs.get_mut(self.active) {
@@ -409,9 +449,17 @@ mod tests {
 
     fn app(n: usize, active: usize) -> PierApp {
         let tabs = (0..n)
-            .map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None, journal: None, folder: PathBuf::new() })
+            .map(|i| Tab {
+                proc: None,
+                t: Transcript::default(),
+                input: i.to_string(),
+                label: None,
+                journal: None,
+                folder: PathBuf::new(),
+                seen: State::Ready,
+            })
             .collect();
-        PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]), recent: vec![] }
+        PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]), recent: vec![], title: String::new() }
     }
 
     fn active_input(a: &PierApp) -> Option<&str> {
