@@ -3,7 +3,9 @@
 use super::journal::Record;
 use super::state::State;
 use crate::pi::process::Incoming;
-use crate::pi::protocol::{AssistantPart, ClearedQueue, Command, Event, HistoryMessage, Queued, Role, StateData, StreamEvent, UiRequest};
+use crate::pi::protocol::{
+    AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, Queued, Role, StateData, StreamEvent, UiRequest,
+};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -72,6 +74,13 @@ pub struct Transcript {
     pub session_file: Option<PathBuf>,
     /// Lines for the tab's journal file (G.34); the UI writes them out.
     pub journal: Vec<Record>,
+    /// Current model and thinking level, from `get_state`.
+    pub model: Option<ModelInfo>,
+    pub thinking: Option<String>,
+    /// Models Pi knows, from `get_available_models` (asked when the model menu opens).
+    pub models: Vec<ModelInfo>,
+    /// Thinking levels the current model accepts.
+    pub thinking_levels: Vec<String>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -194,11 +203,27 @@ impl Transcript {
             }
             Event::Response { command, data, .. } if command == "get_state" => {
                 let s: StateData = serde_json::from_value(data.clone()).unwrap_or_default();
-                if let Some(f) = s.session_file {
-                    self.journal.push(Record::SessionFile { path: f.clone().into() });
-                    self.session_file = Some(f.into());
+                if let Some(f) = s.session_file.map(PathBuf::from)
+                    && self.session_file.as_ref() != Some(&f)
+                {
+                    self.journal.push(Record::SessionFile { path: f.clone() });
+                    self.session_file = Some(f);
                 }
+                self.model = s.model.or(self.model.take());
+                self.thinking = s.thinking_level.or(self.thinking.take());
             }
+            Event::Response { command, data, .. } if command == "get_available_models" => {
+                self.models = serde_json::from_value(data["models"].clone()).unwrap_or_default();
+                self.models.sort_by_key(ModelInfo::key);
+            }
+            Event::Response { command, data, .. } if command == "get_available_thinking_levels" => {
+                self.thinking_levels = serde_json::from_value(data["levels"].clone()).unwrap_or_default();
+            }
+            Event::Response { command, .. } if command == "set_model" || command == "set_thinking_level" => {
+                // Pi may clamp the thinking level to the new model: read both back instead of guessing.
+                self.outbox.extend([Command::GetState, Command::GetAvailableThinkingLevels]);
+            }
+            Event::ThinkingLevelChanged { level } => self.thinking = Some(level.clone()),
             Event::Response { command, data, .. } if command == "get_messages" => self.load_history(&data["messages"]),
             Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.
@@ -511,6 +536,32 @@ mod tests {
         assert_eq!(t.approvals[0].message, r"..\x.txt");
         assert_eq!(t.approvals[1].outside, None);
         assert_eq!(t.approvals[1].message, "ls\nwc -l", "a multi-line command stays whole");
+    }
+
+    #[test]
+    fn model_and_thinking_follow_pi() {
+        let mut t = Transcript::default();
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"a.jsonl","model":{"id":"m1","provider":"p","name":"M1","cost":{}},"thinkingLevel":"low"}}"#,
+                r#"{"type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"z","provider":"q"},{"id":"m1","provider":"p"}]}}"#,
+                r#"{"type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off","low","high"]}}"#,
+            ],
+        );
+        assert_eq!(t.model.as_ref().map(ModelInfo::key).as_deref(), Some("p/m1"));
+        assert_eq!(t.thinking.as_deref(), Some("low"));
+        assert_eq!(t.models.iter().map(ModelInfo::key).collect::<Vec<_>>(), ["p/m1", "q/z"], "sorted");
+        assert_eq!(t.thinking_levels, ["off", "low", "high"]);
+
+        feed(&mut t, &[r#"{"type":"response","command":"set_model","success":true,"data":{"id":"z","provider":"q"}}"#]);
+        assert_eq!(t.outbox, [Command::GetState, Command::GetAvailableThinkingLevels], "read back, don't guess");
+        feed(&mut t, &[r#"{"type":"thinking_level_changed","level":"high"}"#]);
+        assert_eq!(t.thinking.as_deref(), Some("high"));
+        feed(&mut t, &[r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"a.jsonl"}}"#]);
+        assert_eq!(t.model.as_ref().map(|m| m.id.as_str()), Some("m1"), "a state without model keeps the last one");
+        let files = t.journal.iter().filter(|r| matches!(r, Record::SessionFile { .. })).count();
+        assert_eq!(files, 1, "the session file is journaled once, not on every get_state");
     }
 
     #[test]

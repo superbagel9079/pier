@@ -59,6 +59,8 @@ pub struct Tab {
     folder: PathBuf,
     /// State at the previous frame, to notice the changes that need the user.
     seen: State,
+    /// Search text of the model menu.
+    model_filter: String,
 }
 
 impl Tab {
@@ -97,8 +99,9 @@ impl Tab {
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Journal indisponible : {e}") }))
             .ok();
         let seen = t.state;
-        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen };
+        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen, model_filter: String::new() };
         tab.send(Command::GetState);
+        tab.send(Command::GetAvailableThinkingLevels);
         if resumed {
             tab.send(Command::GetMessages);
         }
@@ -457,6 +460,7 @@ mod tests {
                 journal: None,
                 folder: PathBuf::new(),
                 seen: State::Ready,
+                model_filter: String::new(),
             })
             .collect();
         PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]), recent: vec![], title: String::new() }

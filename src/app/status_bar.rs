@@ -2,9 +2,12 @@
 
 use super::{State, Tab};
 use eframe::egui::{self, Color32, RichText};
+use pier::pi::protocol::Command;
 use pier::session::transcript::SUPERVISION_KEY;
 
 const OK_GREEN: Color32 = Color32::from_rgb(110, 180, 110);
+/// Enough to scan; the search box narrows the rest.
+const MODEL_LIST_MAX: usize = 200;
 
 /// Label and color of a session state, shared by the top bar and the tab strip.
 pub fn state_style(state: State, v: &egui::Visuals) -> (&'static str, Color32) {
@@ -43,6 +46,10 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
                 tab.folder.display()
             ));
 
+            ui.separator();
+            model_menu(tab, ui);
+            thinking_menu(tab, ui);
+
             if !tab.t.queued.is_empty() {
                 ui.separator();
                 ui.label(format!("{} message(s) en attente de lecture par Pi", tab.t.queued.len())).on_hover_text(tab.t.queued.join("\n"));
@@ -56,6 +63,55 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         });
         ui.add_space(4.0);
     });
+}
+
+/// Current model; the menu lists Pi's models (asked when it opens) with a search box, since providers can have hundreds.
+fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
+    let current = tab.t.model.as_ref().map(|m| m.name.clone().unwrap_or_else(|| m.id.clone())).unwrap_or_else(|| "?".into());
+    let r = ui.menu_button(format!("Modèle : {current}"), |ui| {
+        ui.add(egui::TextEdit::singleline(&mut tab.model_filter).hint_text("Chercher un modèle"));
+        let filter = tab.model_filter.to_lowercase();
+        let mut pick = None;
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            if tab.t.models.is_empty() {
+                ui.weak("Chargement de la liste…");
+            }
+            let current = tab.t.model.as_ref().map(|m| m.key());
+            for m in tab.t.models.iter().filter(|m| m.key().to_lowercase().contains(&filter)).take(MODEL_LIST_MAX) {
+                if ui.selectable_label(current.as_deref() == Some(&m.key()), m.key()).clicked() {
+                    pick = Some(m.clone());
+                    ui.close();
+                }
+            }
+        });
+        pick
+    });
+    if r.response.clicked() {
+        tab.send(Command::GetAvailableModels);
+    }
+    if let Some(Some(m)) = r.inner {
+        tab.send(Command::SetModel { provider: m.provider, model_id: m.id });
+    }
+}
+
+/// Thinking level, limited to what the current model accepts; hidden for models without reasoning.
+fn thinking_menu(tab: &mut Tab, ui: &mut egui::Ui) {
+    if tab.t.thinking_levels.len() < 2 {
+        return;
+    }
+    let current = tab.t.thinking.clone().unwrap_or_else(|| "?".into());
+    let mut pick = None;
+    ui.menu_button(format!("Réflexion : {current}"), |ui| {
+        for level in &tab.t.thinking_levels {
+            if ui.selectable_label(*level == current, level).clicked() {
+                pick = Some(level.clone());
+                ui.close();
+            }
+        }
+    });
+    if let Some(level) = pick {
+        tab.send(Command::SetThinkingLevel { level });
+    }
 }
 
 /// Extension statuses belong to the user's Pi setup, not to Pier: shown small, out of the way.

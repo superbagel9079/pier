@@ -227,3 +227,40 @@ fn live_outside_folder_warning() {
         assert!(!std::path::Path::new(path).exists(), "{path} was refused, so it must not exist");
     }
 }
+
+/// The current model and thinking level are read from Pi, the model list loads, and a level change is read back.
+#[test]
+#[ignore]
+fn live_model_and_thinking_switch() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
+    let mut p = Process::spawn(&args, || {}).unwrap();
+    let mut t = Transcript::default();
+    for c in [Command::GetState, Command::GetAvailableModels, Command::GetAvailableThinkingLevels] {
+        p.send(&c).unwrap();
+    }
+    pump(&mut p, &mut t, &|t| t.model.is_some() && !t.models.is_empty() && !t.thinking_levels.is_empty(), 30);
+    let current = t.model.clone().expect("get_state gives the model");
+    assert_eq!(current.key(), model, "the --model we launched with");
+    assert!(t.models.iter().any(|m| m.key() == model), "{} models listed", t.models.len());
+    eprintln!("{} models, levels {:?}, thinking {:?}", t.models.len(), t.thinking_levels, t.thinking);
+
+    // Switch to another model of the same provider (its auth is set) that has thinking levels. No prompt: costs nothing.
+    let other = t
+        .models
+        .iter()
+        .find(|m| m.provider == current.provider && m.reasoning && m.key() != current.key())
+        .cloned()
+        .expect("a reasoning model on the same provider");
+    p.send(&Command::SetModel { provider: other.provider.clone(), model_id: other.id.clone() }).unwrap();
+    pump(&mut p, &mut t, &|t| t.model.as_ref().map(|m| m.key()) == Some(other.key()) && t.thinking_levels.len() > 1, 30);
+    assert_eq!(t.model.as_ref().map(|m| m.key()), Some(other.key()), "errors: {:?}", t.entries);
+    assert!(t.thinking_levels.len() > 1, "levels re-read after the switch: {:?}", t.thinking_levels);
+
+    let target = t.thinking_levels.iter().find(|l| Some(*l) != t.thinking.as_ref()).cloned().unwrap();
+    p.send(&Command::SetThinkingLevel { level: target.clone() }).unwrap();
+    pump(&mut p, &mut t, &|t| t.thinking.as_ref() == Some(&target), 30);
+    assert_eq!(t.thinking.as_ref(), Some(&target), "errors: {:?}", t.entries);
+    assert!(!t.entries.iter().any(|e| e.kind == Kind::Error), "{:?}", t.entries);
+    eprintln!("switched to {} at thinking {target}", other.key());
+}

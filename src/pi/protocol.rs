@@ -17,6 +17,16 @@ pub enum Command {
     GetState,
     /// The whole conversation, used to show a resumed session's history.
     GetMessages,
+    GetAvailableModels,
+    SetModel {
+        provider: String,
+        model_id: String,
+    },
+    /// Levels the current model accepts (`["off"]` without reasoning support).
+    GetAvailableThinkingLevels,
+    SetThinkingLevel {
+        level: String,
+    },
     /// Reply to a dialog; must echo the request id. Set `confirmed` for a confirm, `cancelled` to refuse any dialog.
     ExtensionUiResponse {
         id: String,
@@ -78,6 +88,9 @@ pub enum Event {
     AutoRetryStart {
         #[serde(default)]
         attempt: u64,
+    },
+    ThinkingLevelChanged {
+        level: String,
     },
     Response {
         command: String,
@@ -181,6 +194,29 @@ pub struct ClearedQueue {
 pub struct StateData {
     #[serde(default)]
     pub session_file: Option<String>,
+    #[serde(default)]
+    pub model: Option<ModelInfo>,
+    #[serde(default)]
+    pub thinking_level: Option<String>,
+}
+
+/// The parts of Pi's Model object that Pier shows or sends back.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+    pub provider: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Supports thinking levels beyond `off`.
+    #[serde(default)]
+    pub reasoning: bool,
+}
+
+impl ModelInfo {
+    /// `provider/id`, the form `--model` takes.
+    pub fn key(&self) -> String {
+        format!("{}/{}", self.provider, self.id)
+    }
 }
 
 /// One message of `get_messages`, i.e. a resumed session's history.
@@ -332,6 +368,15 @@ mod tests {
 
     fn ev(s: &str) -> Event {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn model_commands_serialize_to_pi_shapes() {
+        let set = Command::SetModel { provider: "openrouter".into(), model_id: "deepseek/x".into() };
+        assert_eq!(serde_json::to_value(set).unwrap(), json!({"type": "set_model", "provider": "openrouter", "modelId": "deepseek/x"}));
+        let level = Command::SetThinkingLevel { level: "high".into() };
+        assert_eq!(serde_json::to_value(level).unwrap(), json!({"type": "set_thinking_level", "level": "high"}));
+        assert_eq!(serde_json::to_value(Command::GetAvailableModels).unwrap(), json!({"type": "get_available_models"}));
     }
 
     #[test]
