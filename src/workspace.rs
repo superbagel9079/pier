@@ -15,6 +15,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const TITLE_CHARS: usize = 24;
+/// Longer names are cut: they are labels, not notes.
+pub const NAME_MAX: usize = 80;
+
+fn shorten(line: &str) -> String {
+    if line.chars().count() > TITLE_CHARS { format!("{}…", line.chars().take(TITLE_CHARS).collect::<String>()) } else { line.into() }
+}
 
 /// What a new tab starts from.
 pub enum Launch<'a> {
@@ -84,13 +90,15 @@ impl Tab {
         tab
     }
 
-    /// The first prompt, so tabs can be told apart.
+    /// The session name, else the first prompt, so tabs can be told apart.
     pub fn title(&self) -> String {
+        if let Some(name) = &self.t.session_name {
+            return shorten(name);
+        }
         let Some(first) = self.t.entries.iter().find(|e| e.kind == Kind::User) else {
             return self.label.clone().unwrap_or_else(|| "Nouvelle session".into());
         };
-        let line = first.text.lines().next().unwrap_or_default();
-        if line.chars().count() > TITLE_CHARS { format!("{}…", line.chars().take(TITLE_CHARS).collect::<String>()) } else { line.into() }
+        shorten(first.text.lines().next().unwrap_or_default())
     }
 
     /// Runs every frame for every tab, visible or not: background sessions keep streaming, answering and expiring.
@@ -164,6 +172,14 @@ impl Tab {
 
     pub fn set_thinking(&mut self, level: &str) {
         self.send(Command::SetThinkingLevel { level: level.to_owned() });
+    }
+
+    /// Names the session (blank names are ignored); Pi keeps it in the session file, so Reprendre shows it.
+    pub fn rename(&mut self, name: &str) {
+        let name: String = name.trim().chars().take(NAME_MAX).collect();
+        if !name.is_empty() {
+            self.send(Command::SetSessionName { name });
+        }
     }
 
     /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
@@ -387,6 +403,23 @@ mod tests {
         w.tabs[1].t.state = State::Running;
         w.tabs[1].seen = State::Running;
         assert_eq!(w.attention(false), Some(Attention::Approval), "window unfocused: even the active tab counts");
+    }
+
+    #[test]
+    fn the_session_name_titles_the_tab() {
+        use crate::pi::process::parse_line;
+        let mut tab = Tab::detached("a");
+        let feed = |tab: &mut Tab, line: &str| tab.t.apply_event(&parse_line(line.as_bytes()).unwrap().unwrap());
+        feed(&mut tab, r#"{"type":"message_start","message":{"role":"user","content":"lance les tests"}}"#);
+        assert_eq!(tab.title(), "lance les tests");
+        feed(&mut tab, r#"{"type":"response","command":"get_state","success":true,"data":{"sessionName":"Tests du parseur"}}"#);
+        assert_eq!(tab.title(), "Tests du parseur", "a name beats the first prompt");
+        feed(&mut tab, r#"{"type":"session_info_changed","name":"Un nom vraiment beaucoup trop long pour un onglet"}"#);
+        assert_eq!(tab.title(), "Un nom vraiment beaucoup…");
+        feed(&mut tab, r#"{"type":"session_info_changed"}"#);
+        assert_eq!(tab.title(), "lance les tests", "cleared name: back to the prompt");
+        feed(&mut tab, r#"{"type":"response","command":"set_session_name","success":true}"#);
+        assert_eq!(tab.t.outbox, [Command::GetState], "the name is read back from Pi");
     }
 
     #[test]

@@ -27,6 +27,10 @@ pub enum Command {
     SetThinkingLevel {
         level: String,
     },
+    /// Display name of the session, shown by Reprendre and by Pi's own /resume.
+    SetSessionName {
+        name: String,
+    },
     /// Reply to a dialog; must echo the request id. Set `confirmed` for a confirm, `cancelled` to refuse any dialog.
     ExtensionUiResponse {
         id: String,
@@ -93,6 +97,11 @@ pub enum Event {
     },
     ThinkingLevelChanged {
         level: String,
+    },
+    /// The session's display name changed; absent = cleared.
+    SessionInfoChanged {
+        #[serde(default)]
+        name: Option<String>,
     },
     Response {
         command: String,
@@ -200,6 +209,8 @@ pub struct StateData {
     pub model: Option<ModelInfo>,
     #[serde(default)]
     pub thinking_level: Option<String>,
+    #[serde(default)]
+    pub session_name: Option<String>,
 }
 
 /// The parts of Pi's Model object that Pier shows or sends back.

@@ -313,3 +313,33 @@ fn is_alive(pid: u32) -> bool {
     let out = std::process::Command::new("tasklist").args(["/fi", &format!("PID eq {pid}"), "/nh"]).output().unwrap();
     String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
 }
+
+/// A name given in Pier is confirmed by Pi, written to the session file, and shown by Reprendre.
+#[test]
+#[ignore]
+fn live_session_name_reaches_reprendre() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-tools", "--model", &model].map(String::from);
+    let (mut p, mut t) = (Process::spawn(&args, || {}).unwrap(), Transcript::default());
+    p.send(&Command::GetState).unwrap();
+    pump(&mut p, &mut t, &|t| t.supervised() && t.session_file.is_some(), 30);
+    p.send(&prompt("Reply only: ok")).unwrap();
+    pump(&mut p, &mut t, &|t| t.state == State::Completed, 60);
+
+    let name = format!("Test Pier {}", std::process::id());
+    p.send(&Command::SetSessionName { name: name.clone() }).unwrap();
+    pump(&mut p, &mut t, &|t| t.session_name.is_some(), 30);
+    for c in std::mem::take(&mut t.outbox) {
+        p.send(&c).unwrap();
+    }
+    pump(&mut p, &mut t, &|t| t.session_name.as_deref() == Some(name.as_str()), 30);
+    assert_eq!(t.session_name.as_deref(), Some(name.as_str()), "Pi confirms the name; {:?}", t.entries);
+    let file = t.session_file.clone().unwrap();
+    drop(p);
+
+    let cwd = std::env::current_dir().unwrap();
+    let listed = pier::pi::sessions::list(&cwd, 50);
+    let title = listed.iter().find(|s| s.path.file_name() == file.file_name()).map(|s| s.title.clone());
+    let _ = std::fs::remove_file(&file); // test session, not the user's
+    assert_eq!(title.as_deref(), Some(name.as_str()), "Reprendre shows the name");
+}

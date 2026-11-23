@@ -47,31 +47,42 @@ pub fn list(cwd: &Path, max: usize) -> Vec<SavedSession> {
 
 #[derive(Deserialize)]
 struct Line {
+    #[serde(rename = "type", default)]
+    kind: String,
     #[serde(default)]
     message: Option<super::protocol::Message>,
+    /// Set on `session_info` entries.
+    #[serde(default)]
+    name: Option<String>,
 }
 
-/// Reads only until the first user message; session files can be large.
+fn shorten(text: &str) -> String {
+    let first = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().trim();
+    if first.chars().count() > TITLE_CHARS { format!("{}…", first.chars().take(TITLE_CHARS).collect::<String>()) } else { first.into() }
+}
+
+/// The session's name (its last `session_info` entry) if it has one, else its first user message.
+/// Only lines that can hold either are parsed: session files can be large.
 fn title_of(path: &Path) -> String {
     let fallback = || path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let Ok(file) = std::fs::File::open(path) else { return fallback() };
+    let (mut name, mut first_prompt) = (None, None);
     for line in BufReader::new(file).lines().map_while(Result::ok) {
-        // Skip parsing the big system/assistant lines.
-        if !line.contains(r#""role":"user""#) {
+        let maybe_name = line.contains(r#""type":"session_info""#);
+        let maybe_prompt = first_prompt.is_none() && line.contains(r#""role":"user""#);
+        if !maybe_name && !maybe_prompt {
             continue;
         }
-        let Some(m) = serde_json::from_str::<Line>(&line).ok().and_then(|l| l.message) else { continue };
-        if m.role == super::protocol::Role::User {
-            let text = m.content.text();
-            let first = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().trim();
-            return if first.chars().count() > TITLE_CHARS {
-                format!("{}…", first.chars().take(TITLE_CHARS).collect::<String>())
-            } else {
-                first.into()
-            };
+        let Ok(l) = serde_json::from_str::<Line>(&line) else { continue };
+        if l.kind == "session_info" {
+            name = l.name.filter(|n| !n.trim().is_empty()); // a later entry without a name clears it
+        } else if let Some(m) = l.message
+            && m.role == super::protocol::Role::User
+        {
+            first_prompt = Some(shorten(&m.content.text()));
         }
     }
-    fallback()
+    name.map(|n| shorten(&n)).or(first_prompt).unwrap_or_else(fallback)
 }
 
 #[cfg(test)]
@@ -103,6 +114,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(title_of(&path), "fix the build");
+        let named = concat!(
+            r#"{"type":"message","message":{"role":"user","content":"ls"}}"#,
+            "\n",
+            r#"{"type":"session_info","id":"a","name":"Ancien nom"}"#,
+            "\n",
+            r#"{"type":"message","message":{"role":"user","content":"encore"}}"#,
+            "\n",
+            r#"{"type":"session_info","id":"b","name":"Refonte du parseur"}"#,
+            "\n",
+        );
+        std::fs::write(&path, named).unwrap();
+        assert_eq!(title_of(&path), "Refonte du parseur", "the last name wins over the first prompt");
         std::fs::write(&path, r#"{"type":"session","version":3}"#).unwrap();
         assert_eq!(title_of(&path), path.file_stem().unwrap().to_string_lossy());
         std::fs::remove_file(&path).unwrap();

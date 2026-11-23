@@ -110,6 +110,8 @@ pub struct Transcript {
     pub models: Vec<ModelInfo>,
     /// Thinking levels the current model accepts.
     pub thinking_levels: Vec<String>,
+    /// The session's display name, from `get_state` and `session_info_changed`.
+    pub session_name: Option<String>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -263,6 +265,7 @@ impl Transcript {
                 }
                 self.model = s.model.or(self.model.take());
                 self.thinking = s.thinking_level.or(self.thinking.take());
+                self.session_name = s.session_name; // absent means no name: not "keep the old one"
             }
             Event::Response { command, data, .. } if command == "get_available_models" => {
                 self.models = serde_json::from_value(data["models"].clone()).unwrap_or_default();
@@ -275,7 +278,9 @@ impl Transcript {
                 // Pi may clamp the thinking level to the new model: read both back instead of guessing.
                 self.outbox.extend([Command::GetState, Command::GetAvailableThinkingLevels]);
             }
+            Event::Response { command, .. } if command == "set_session_name" => self.outbox.push(Command::GetState),
             Event::ThinkingLevelChanged { level } => self.thinking = Some(level.clone()),
+            Event::SessionInfoChanged { name } => self.session_name = name.clone(),
             Event::Response { command, data, .. } if command == "get_messages" => self.load_history(&data["messages"]),
             Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.

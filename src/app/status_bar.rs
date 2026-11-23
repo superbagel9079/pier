@@ -4,7 +4,7 @@ use eframe::egui::containers::menu::{MenuButton, MenuConfig};
 use eframe::egui::{self, Color32, PopupCloseBehavior, RichText};
 use pier::session::state::State;
 use pier::session::transcript::SUPERVISION_KEY;
-use pier::workspace::Tab;
+use pier::workspace::{NAME_MAX, Tab};
 
 const OK_GREEN: Color32 = Color32::from_rgb(110, 180, 110);
 /// Enough to scan; the search box narrows the rest.
@@ -48,6 +48,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             ));
 
             ui.separator();
+            name_menu(tab, ui);
             model_menu(tab, ui);
             thinking_menu(tab, ui);
 
@@ -64,6 +65,34 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         });
         ui.add_space(4.0);
     });
+}
+
+/// Session name: Pi stores it in the session file, so Reprendre and Pi's own /resume show it.
+fn name_menu(tab: &mut Tab, ui: &mut egui::Ui) {
+    let current = tab.t.session_name.clone().unwrap_or_default();
+    let label = if current.is_empty() { "Nommer…".to_owned() } else { format!("Nom : {current}") };
+    let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
+    let draft_id = ui.make_persistent_id("name_draft");
+    let (response, inner) = MenuButton::new(label).config(config).ui(ui, |ui| {
+        let mut draft: String = ui.data(|d| d.get_temp(draft_id)).unwrap_or_else(|| current.clone());
+        let edit = ui.add(egui::TextEdit::singleline(&mut draft).char_limit(NAME_MAX).hint_text("Nom de la session"));
+        if draft == current && !edit.has_focus() {
+            edit.request_focus(); // type right away after opening
+        }
+        let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let save = ui.add_enabled(!draft.trim().is_empty(), egui::Button::new("Enregistrer")).clicked();
+        ui.data_mut(|d| d.insert_temp(draft_id, draft.clone()));
+        ((save || enter) && !draft.trim().is_empty()).then(|| {
+            ui.close();
+            draft
+        })
+    });
+    if response.clicked() {
+        ui.data_mut(|d| d.insert_temp(draft_id, current)); // each opening starts from the current name
+    }
+    if let Some(Some(name)) = inner.map(|r| r.inner) {
+        tab.rename(&name);
+    }
 }
 
 /// Current model; the menu lists Pi's models (asked when it opens) with a search box, since providers can have hundreds.
