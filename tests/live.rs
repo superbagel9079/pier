@@ -75,7 +75,7 @@ fn live_tool_approval_allow_and_deny() {
         assert_eq!(a.title, "Autoriser bash ?");
         assert!(a.message.contains(marker), "approval shows the command: {:?}", a.message);
         assert_eq!(t.state, State::Blocked);
-        t.answer(approve);
+        assert!(t.answer(&a.id, approve));
         pump(&mut p, &mut t, &|t| t.state == State::Completed && t.approvals.is_empty(), 60);
         let tools: Vec<_> = t.entries[before..].iter().filter(|e| e.text.starts_with("bash →")).map(|e| e.text.as_str()).collect();
         assert_eq!(tools.first().copied(), Some(expected), "entries: {:#?}", &t.entries[before..]);
@@ -206,7 +206,7 @@ fn live_preset_cwd_and_args() {
     assert!(reply.contains("HELLO"), "appended system prompt applied: {reply:?}");
 }
 
-/// A write outside the working folder carries the warning, one inside does not. Both are refused: nothing is written.
+/// A write outside the working folder carries the warning (refused), one inside does not (approved, and written).
 #[test]
 #[ignore]
 fn live_outside_folder_warning() {
@@ -222,9 +222,13 @@ fn live_outside_folder_warning() {
         let a = t.approvals.front().expect("write must wait for an approval").clone();
         assert_eq!(a.title, "Autoriser write ?");
         assert_eq!(a.outside.is_some(), outside, "{path}: warning {:?}", a.outside);
-        t.answer(false);
+        // The inside write is approved: it proves the input freeze after approval does not break Pi's write tool.
+        let approve = !outside;
+        assert!(t.answer(&a.id, approve));
         pump(&mut p, &mut t, &|t| t.state == State::Completed && t.approvals.is_empty(), 60);
-        assert!(!std::path::Path::new(path).exists(), "{path} was refused, so it must not exist");
+        let probe = std::path::Path::new(path);
+        assert_eq!(probe.exists(), approve, "{path}: written if and only if approved; entries {:#?}", t.entries);
+        let _ = std::fs::remove_file(probe);
     }
 }
 

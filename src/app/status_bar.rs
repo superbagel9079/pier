@@ -2,7 +2,6 @@
 
 use eframe::egui::containers::menu::{MenuButton, MenuConfig};
 use eframe::egui::{self, Color32, PopupCloseBehavior, RichText};
-use pier::pi::protocol::Command;
 use pier::session::state::State;
 use pier::session::transcript::SUPERVISION_KEY;
 use pier::workspace::Tab;
@@ -98,10 +97,10 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
         pick
     });
     if response.clicked() {
-        tab.send(Command::GetAvailableModels);
+        tab.refresh_models();
     }
     if let Some(Some(m)) = inner.map(|r| r.inner) {
-        tab.send(Command::SetModel { provider: m.provider, model_id: m.id });
+        tab.set_model(&m);
     }
 }
 
@@ -121,7 +120,7 @@ fn thinking_menu(tab: &mut Tab, ui: &mut egui::Ui) {
         }
     });
     if let Some(level) = pick {
-        tab.send(Command::SetThinkingLevel { level });
+        tab.set_thinking(&level);
     }
 }
 

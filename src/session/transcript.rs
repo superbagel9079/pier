@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 pub const SUPERVISION_KEY: &str = "pier-supervision";
 /// Expire before Pi does, so an approval sent at the last second is never ignored by Pi while Pier shows it as granted.
 const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
+/// A new approval at the front ignores clicks this long, so a double-click meant for the previous one cannot approve it.
+pub const ARM_DELAY: Duration = Duration::from_millis(400);
 
 /// A tool call waiting for the user's decision.
 #[derive(Debug, Clone)]
@@ -24,6 +26,8 @@ pub struct Approval {
     /// The target lies outside the working folder, as reported by Pier's extension.
     pub outside: Option<String>,
     pub deadline: Option<Instant>,
+    /// When it reached the front of the queue, i.e. when the user could first see it.
+    pub front_since: Instant,
 }
 
 /// First line the approval extension puts in the message when a target is outside the working folder.
@@ -100,13 +104,22 @@ impl Transcript {
         self.status.contains_key(SUPERVISION_KEY)
     }
 
-    /// Answers the oldest pending approval.
-    pub fn answer(&mut self, approved: bool) {
+    /// Answers approval `id`, only if it is the one shown (the front of the queue). Returns whether it was answered.
+    pub fn answer(&mut self, id: &str, approved: bool) -> bool {
+        if self.approvals.front().is_none_or(|a| a.id != id) {
+            return false;
+        }
         if approved {
             self.resolve(true, "autorisé", "allowed");
         } else {
             self.resolve(false, "refusé", "refused");
         }
+        true
+    }
+
+    /// Whether the shown approval has been on screen long enough to take a click.
+    pub fn can_answer(&self, now: Instant) -> bool {
+        self.approvals.front().is_some_and(|a| now >= a.front_since + ARM_DELAY)
     }
 
     /// Refuses the oldest approval once its deadline has passed (Pi refuses it on its side too).
@@ -121,13 +134,20 @@ impl Transcript {
         self.outbox.push(Command::confirm(&a.id, approved));
         self.journal.push(Record::ApprovalDecided { id: a.id.clone(), decision });
         self.push(Kind::Notice, format!("{} {verdict}", a.title.trim_end_matches(" ?")));
+        if let Some(next) = self.approvals.front_mut() {
+            next.front_since = Instant::now();
+        }
         if self.approvals.is_empty() && self.state == State::Blocked {
             self.state = State::Running;
         }
     }
 
-    fn drop_approvals(&mut self) {
+    /// `answer_pi`: tell Pi too, in case some dialog still waits (not when Pi is gone).
+    fn drop_approvals(&mut self, answer_pi: bool) {
         for a in std::mem::take(&mut self.approvals) {
+            if answer_pi {
+                self.outbox.push(Command::cancel_dialog(&a.id));
+            }
             self.journal.push(Record::ApprovalDecided { id: a.id, decision: "dropped" });
         }
     }
@@ -144,7 +164,7 @@ impl Transcript {
             Incoming::Exited => {
                 self.state = State::Crashed;
                 self.queued.clear();
-                self.drop_approvals();
+                self.drop_approvals(false);
                 self.journal.push(Record::PiExited);
                 self.push(Kind::Error, "Le process Pi s'est arrêté.");
             }
@@ -164,7 +184,7 @@ impl Transcript {
         self.state = self.state.on_event(ev, self.run_failed);
         if matches!(ev, Event::AgentSettled { .. }) {
             // Pi no longer waits on these (abort or its own timeout); answering them later would be meaningless.
-            self.drop_approvals();
+            self.drop_approvals(true);
             let outcome = match self.state {
                 State::Stopped => "stopped",
                 State::Failed => "failed",
@@ -241,7 +261,8 @@ impl Transcript {
                         timeout_ms: *timeout,
                     });
                     let (outside, message) = split_outside(message);
-                    self.approvals.push_back(Approval { id: id.clone(), title: title.clone(), message, outside, deadline });
+                    let front_since = Instant::now();
+                    self.approvals.push_back(Approval { id: id.clone(), title: title.clone(), message, outside, deadline, front_since });
                     if self.state == State::Running {
                         self.state = State::Blocked;
                     }
@@ -437,7 +458,7 @@ mod tests {
         assert_eq!(t.state, State::Blocked);
         assert!(t.outbox.is_empty(), "nothing is answered for the user");
 
-        t.answer(true);
+        assert!(t.answer("a1", true));
         assert_eq!(t.outbox, [Command::confirm("a1", true)]);
         assert_eq!(t.state, State::Blocked, "a2 still waits");
 
@@ -497,8 +518,8 @@ mod tests {
             )
         };
         feed(&mut t, &[r#"{"type":"agent_start"}"#, &confirm("a1"), &confirm("a2"), &confirm("a3")]);
-        t.answer(true);
-        t.answer(false);
+        assert!(t.answer("a1", true));
+        assert!(t.answer("a2", false));
         feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
         let decided = |id: &str, decision| Record::ApprovalDecided { id: id.into(), decision };
         let requested = |id: &str| Record::ApprovalRequested {
@@ -567,6 +588,23 @@ mod tests {
         assert_eq!(t.model.as_ref().map(|m| m.id.as_str()), Some("m1"), "a state without model keeps the last one");
         let files = t.journal.iter().filter(|r| matches!(r, Record::SessionFile { .. })).count();
         assert_eq!(files, 1, "the session file is journaled once, not on every get_state");
+    }
+
+    #[test]
+    fn a_click_only_answers_the_approval_shown() {
+        let mut t = Transcript::default();
+        let confirm = |id: &str| format!(r#"{{"type":"extension_ui_request","id":"{id}","method":"confirm","title":"Autoriser bash ?"}}"#);
+        feed(&mut t, &[&confirm("a"), &confirm("b")]);
+        assert!(!t.can_answer(Instant::now()), "just arrived: clicks are ignored");
+        assert!(t.can_answer(Instant::now() + ARM_DELAY));
+        assert!(!t.answer("b", true), "b is not the one on screen");
+        assert!(t.answer("a", true));
+        assert!(!t.answer("a", true), "a second click on a is not passed on to b");
+        assert!(!t.can_answer(Instant::now()), "b just reached the front: armed again");
+        assert_eq!(t.outbox, [Command::confirm("a", true)]);
+
+        feed(&mut t, &[r#"{"type":"agent_settled"}"#]);
+        assert_eq!(t.outbox.last(), Some(&Command::cancel_dialog("b")), "a dropped dialog is answered, not left waiting");
     }
 
     #[test]

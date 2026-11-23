@@ -2,7 +2,7 @@
 //! recent folders, and which state changes need the user. The egui layer only draws this and asks the user.
 
 use crate::pi::process::Process;
-use crate::pi::protocol::{Command, StreamingBehavior};
+use crate::pi::protocol::{Command, ModelInfo, StreamingBehavior};
 use crate::pi::sessions::{self, SavedSession};
 use crate::presets::Preset;
 use crate::recent;
@@ -121,7 +121,7 @@ impl Tab {
         }
     }
 
-    pub fn send(&mut self, cmd: Command) {
+    fn send(&mut self, cmd: Command) {
         let err = match self.proc.as_mut() {
             Some(p) => p.send(&cmd).err().map(|e| e.to_string()),
             None => Some("pas de process Pi".into()),
@@ -132,15 +132,38 @@ impl Tab {
     }
 
     /// Sends the editor text: a prompt, or a steer while a run is going.
+    /// Refused until Pier's approval extension has reported in: without it, tools would run unasked.
     pub fn submit(&mut self) {
         let text = self.input.trim().to_owned();
         if text.is_empty() {
+            return;
+        }
+        if !self.t.supervised() {
+            self.t.entries.push(Entry { kind: Kind::Error, text: "Envoi refusé : Pi n'est pas supervisé.".into() });
             return;
         }
         // While a run is going, Pi requires a streamingBehavior; steer lands after the current turn.
         let streaming_behavior = self.t.state.is_running().then_some(StreamingBehavior::Steer);
         self.send(Command::Prompt { message: text, streaming_behavior });
         self.input.clear();
+    }
+
+    /// Answers the approval the user saw (by id), if it is still the one shown.
+    pub fn approve(&mut self, id: &str, allowed: bool) {
+        self.t.answer(id, allowed);
+    }
+
+    /// Asks Pi for its model list (the model menu shows it).
+    pub fn refresh_models(&mut self) {
+        self.send(Command::GetAvailableModels);
+    }
+
+    pub fn set_model(&mut self, m: &ModelInfo) {
+        self.send(Command::SetModel { provider: m.provider.clone(), model_id: m.id.clone() });
+    }
+
+    pub fn set_thinking(&mut self, level: &str) {
+        self.send(Command::SetThinkingLevel { level: level.to_owned() });
     }
 
     /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
@@ -364,6 +387,15 @@ mod tests {
         w.tabs[1].t.state = State::Running;
         w.tabs[1].seen = State::Running;
         assert_eq!(w.attention(false), Some(Attention::Approval), "window unfocused: even the active tab counts");
+    }
+
+    #[test]
+    fn nothing_is_sent_before_supervision() {
+        let mut tab = Tab::detached("a");
+        tab.input = "rm -rf".into();
+        tab.submit();
+        assert_eq!(tab.input, "rm -rf", "kept for later, not sent");
+        assert_eq!(tab.t.entries.last().map(|e| e.text.as_str()), Some("Envoi refusé : Pi n'est pas supervisé."));
     }
 
     #[test]
