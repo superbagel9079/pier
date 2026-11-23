@@ -4,7 +4,7 @@ use super::protocol::{Command, Event};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{self, Child, ChildStdin, Stdio};
 use std::sync::mpsc::{Receiver, channel};
 use std::time::{Duration, Instant};
@@ -51,8 +51,16 @@ fn approvals_extension() -> std::io::Result<PathBuf> {
 impl Process {
     /// Always loads Pier's approval extension: no launch without supervision.
     pub fn spawn(extra_args: &[String], wake: impl Fn() + Send + Clone + 'static) -> std::io::Result<Self> {
+        Self::spawn_in(extra_args, None, wake)
+    }
+
+    /// `cwd`: the folder Pi works in; Pier's own when `None`.
+    pub fn spawn_in(extra_args: &[String], cwd: Option<&Path>, wake: impl Fn() + Send + Clone + 'static) -> std::io::Result<Self> {
         let mut cmd = pi_command();
         cmd.args(["--mode", "rpc", "-e"]).arg(approvals_extension()?).args(extra_args);
+        if let Some(dir) = cwd {
+            cmd.current_dir(dir);
+        }
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         #[cfg(windows)]
         {

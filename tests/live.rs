@@ -164,3 +164,34 @@ fn live_resume_session() {
     let _ = std::fs::remove_file(&file); // test session, not the user's
     assert!(last.is_some_and(|l| l.contains("zebra-42")), "{:#?}", t.entries);
 }
+
+/// A preset's options reach Pi and Pi works in the preset's folder (its session file lands under that folder's name).
+#[test]
+#[ignore]
+fn live_preset_cwd_and_args() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let dir = std::env::temp_dir().join(format!("pier-preset-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let preset = pier::presets::Preset {
+        name: "test".into(),
+        cwd: Some(dir.clone()),
+        model: Some(model),
+        thinking: Some("off".into()),
+        tools: Some("read".into()),
+        append_system_prompt: Some("Always answer in uppercase.".into()),
+    };
+    let mut p = Process::spawn_in(&preset.args(), preset.cwd.as_deref(), || {}).unwrap();
+    let mut t = Transcript::default();
+    p.send(&Command::GetState).unwrap();
+    p.send(&prompt("Say hello.")).unwrap();
+    pump(&mut p, &mut t, &|t| t.state == State::Completed && t.session_file.is_some(), 60);
+    let file = t.session_file.clone().expect("session file");
+    drop(p);
+    let reply: String = t.entries.iter().filter(|e| e.kind == Kind::Assistant).map(|e| e.text.clone()).collect();
+    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_dir(file.parent().unwrap());
+    let _ = std::fs::remove_dir(&dir);
+    let expected = pier::pi::sessions::dir_for(&std::fs::canonicalize(&dir).unwrap_or(dir.clone()));
+    assert_eq!(file.parent().unwrap().file_name(), expected.file_name(), "Pi ran in the preset folder");
+    assert!(reply.contains("HELLO"), "appended system prompt applied: {reply:?}");
+}

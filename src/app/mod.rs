@@ -9,6 +9,7 @@ use eframe::egui::{self, RichText};
 use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
 use pier::pi::sessions::{self, SavedSession};
+use pier::presets::{self, Preset};
 use pier::session::state::State;
 use pier::session::transcript::{Entry, Kind, Transcript};
 use std::path::{Path, PathBuf};
@@ -17,32 +18,63 @@ use std::time::{Duration, Instant};
 const TITLE_CHARS: usize = 24;
 const RESUME_LIST_MAX: usize = 20;
 
+/// Opens a file with the system's default app for its type.
+fn open_in_editor(path: &Path) -> std::io::Result<()> {
+    let opener = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(opener).arg(path).spawn().map(drop)
+}
+
+/// What a new tab starts from.
+enum Launch<'a> {
+    New,
+    /// A saved Pi session file to reopen, with its history.
+    Resume(&'a Path),
+    Preset(&'a Preset),
+}
+
 /// One session: a `pi --mode rpc` process, its transcript and its editor.
 pub struct Tab {
     proc: Option<Process>,
     t: Transcript,
     input: String,
+    /// Preset name, shown until the first prompt gives a title.
+    label: Option<String>,
 }
 
 impl Tab {
-    /// `resume`: a saved Pi session file to reopen, with its history.
-    fn new(pi_args: &[String], resume: Option<&Path>, ctx: &egui::Context) -> Self {
+    fn new(pi_args: &[String], launch: Launch, ctx: &egui::Context) -> Self {
         let mut t = Transcript::default();
         let mut args = pi_args.to_vec();
-        if let Some(path) = resume {
-            args.extend(["--session".into(), path.to_string_lossy().into_owned()]);
-            t.session_file = Some(path.to_path_buf()); // listed as open before get_state answers
+        let (mut cwd, mut label) = (None, None);
+        match launch {
+            Launch::New => {}
+            Launch::Resume(path) => {
+                args.extend(["--session".into(), path.to_string_lossy().into_owned()]);
+                t.session_file = Some(path.to_path_buf()); // listed as open before get_state answers
+            }
+            Launch::Preset(p) => {
+                args.extend(p.args());
+                cwd = p.cwd.as_deref();
+                label = Some(p.name.clone());
+            }
         }
+        let resumed = matches!(launch, Launch::Resume(_));
         let ctx = ctx.clone();
-        let proc = Process::spawn(&args, move || ctx.request_repaint())
+        let proc = Process::spawn_in(&args, cwd, move || ctx.request_repaint())
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
             .ok();
         if proc.is_none() {
             t.state = State::Crashed;
         }
-        let mut tab = Self { proc, t, input: String::new() };
+        let mut tab = Self { proc, t, input: String::new(), label: label.take() };
         tab.send(Command::GetState);
-        if resume.is_some() {
+        if resumed {
             tab.send(Command::GetMessages);
         }
         tab
@@ -50,7 +82,9 @@ impl Tab {
 
     /// The first prompt, so tabs can be told apart.
     fn title(&self) -> String {
-        let Some(first) = self.t.entries.iter().find(|e| e.kind == Kind::User) else { return "Nouvelle session".into() };
+        let Some(first) = self.t.entries.iter().find(|e| e.kind == Kind::User) else {
+            return self.label.clone().unwrap_or_else(|| "Nouvelle session".into());
+        };
         let line = first.text.lines().next().unwrap_or_default();
         if line.chars().count() > TITLE_CHARS { format!("{}…", line.chars().take(TITLE_CHARS).collect::<String>()) } else { line.into() }
     }
@@ -109,6 +143,8 @@ pub struct PierApp {
     active: usize,
     /// Saved sessions, read from disk when the Reprendre menu opens (not every frame).
     saved: Vec<SavedSession>,
+    /// presets.json, read when the Presets menu opens; an error is shown, not hidden.
+    presets: Result<Vec<Preset>, String>,
 }
 
 /// "il y a 5 min" style age, coarse on purpose.
@@ -123,12 +159,12 @@ fn ago(secs: u64) -> String {
 
 impl PierApp {
     pub fn new(pi_args: Vec<String>, ctx: &egui::Context) -> Self {
-        let tabs = vec![Tab::new(&pi_args, None, ctx)];
-        Self { pi_args, tabs, active: 0, saved: vec![] }
+        let tabs = vec![Tab::new(&pi_args, Launch::New, ctx)];
+        Self { pi_args, tabs, active: 0, saved: vec![], presets: Ok(vec![]) }
     }
 
-    fn open(&mut self, resume: Option<&Path>, ctx: &egui::Context) {
-        self.tabs.push(Tab::new(&self.pi_args, resume, ctx));
+    fn open(&mut self, launch: Launch, ctx: &egui::Context) {
+        self.tabs.push(Tab::new(&self.pi_args, launch, ctx));
         self.active = self.tabs.len() - 1;
     }
 
@@ -161,7 +197,46 @@ impl PierApp {
             self.saved = sessions::list(&cwd, RESUME_LIST_MAX);
         }
         if let Some(path) = pick {
-            self.open(Some(&path), ui.ctx());
+            self.open(Launch::Resume(&path), ui.ctx());
+        }
+    }
+
+    /// One click = a new tab launched with the preset (B.10).
+    fn presets_menu(&mut self, ui: &mut egui::Ui) {
+        let mut pick = None;
+        let r = ui.menu_button("Presets", |ui| {
+            match &self.presets {
+                Err(e) => {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                Ok(list) if list.is_empty() => {
+                    ui.weak("Aucun preset. « Modifier les presets… » crée un fichier d'exemple.");
+                }
+                Ok(list) => {
+                    for (i, p) in list.iter().enumerate() {
+                        if ui.button(&p.name).on_hover_text(p.args().join(" ")).clicked() {
+                            pick = Some(i);
+                            ui.close();
+                        }
+                    }
+                }
+            }
+            ui.separator();
+            if ui.button("Modifier les presets…").clicked() {
+                if let Err(e) = presets::ensure_file().and_then(|p| open_in_editor(&p)) {
+                    self.presets = Err(format!("ouverture de presets.json impossible : {e}"));
+                }
+                ui.close();
+            }
+        });
+        if r.response.clicked() {
+            self.presets = presets::load(&presets::path());
+        }
+        if let Some(i) = pick
+            && let Ok(list) = &self.presets
+        {
+            let preset = list[i].clone();
+            self.open(Launch::Preset(&preset), ui.ctx());
         }
     }
 
@@ -192,8 +267,9 @@ impl PierApp {
                     ui.separator();
                 }
                 if ui.button("+").on_hover_text("Nouvel onglet").clicked() {
-                    self.open(None, ui.ctx());
+                    self.open(Launch::New, ui.ctx());
                 }
+                self.presets_menu(ui);
                 self.resume_menu(ui);
                 if let Some(i) = select {
                     self.active = i;
@@ -226,7 +302,7 @@ impl eframe::App for PierApp {
         } else {
             egui::CentralPanel::default().show(ui, |ui| {
                 if ui.button("Nouvel onglet").clicked() {
-                    self.open(None, ui.ctx());
+                    self.open(Launch::New, ui.ctx());
                 }
             });
         }
@@ -243,8 +319,8 @@ mod tests {
     use super::*;
 
     fn app(n: usize, active: usize) -> PierApp {
-        let tabs = (0..n).map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string() }).collect();
-        PierApp { pi_args: vec![], tabs, active, saved: vec![] }
+        let tabs = (0..n).map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string(), label: None }).collect();
+        PierApp { pi_args: vec![], tabs, active, saved: vec![], presets: Ok(vec![]) }
     }
 
     fn active_input(a: &PierApp) -> Option<&str> {
