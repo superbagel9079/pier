@@ -29,6 +29,8 @@ pub enum Command {
     },
     /// Cost and context-window usage of the session.
     GetSessionStats,
+    /// Extension commands, prompt templates and skills; one runs by sending `/name` as a prompt.
+    GetCommands,
     /// Display name of the session, shown by Reprendre and by Pi's own /resume.
     SetSessionName {
         name: String,
@@ -213,6 +215,17 @@ pub struct StateData {
     pub thinking_level: Option<String>,
     #[serde(default)]
     pub session_name: Option<String>,
+}
+
+/// One entry of `get_commands`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct PiCommand {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// `extension`, `prompt` (template) or `skill`.
+    #[serde(default)]
+    pub source: String,
 }
 
 /// `data` of a `get_session_stats` response (only what Pier shows).

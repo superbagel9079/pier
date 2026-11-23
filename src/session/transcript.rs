@@ -4,7 +4,8 @@ use super::journal::Record;
 use super::state::State;
 use crate::pi::process::Incoming;
 use crate::pi::protocol::{
-    AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, Queued, Role, SessionStats, StateData, StreamEvent, UiRequest,
+    AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, PiCommand, Queued, Role, SessionStats, StateData, StreamEvent,
+    UiRequest,
 };
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -14,6 +15,8 @@ use std::time::{Duration, Instant};
 pub const SUPERVISION_KEY: &str = "pier-supervision";
 /// Expire before Pi does, so an approval sent at the last second is never ignored by Pi while Pier shows it as granted.
 const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
+/// Suggestions shown at once by the `/` palette; typing narrows the rest.
+pub const PALETTE_MAX: usize = 8;
 /// A new approval at the front ignores clicks this long, so a double-click meant for the previous one cannot approve it.
 pub const ARM_DELAY: Duration = Duration::from_millis(400);
 
@@ -114,6 +117,8 @@ pub struct Transcript {
     pub session_name: Option<String>,
     /// Cost and context usage, refreshed after each assistant message and each model change.
     pub stats: Option<SessionStats>,
+    /// Pi's `/` commands (extensions, prompt templates, skills), from `get_commands`.
+    pub commands: Vec<PiCommand>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -126,6 +131,21 @@ impl Transcript {
     fn push(&mut self, kind: Kind, text: impl Into<String>) -> usize {
         self.entries.push(Entry::new(kind, text));
         self.entries.len() - 1
+    }
+
+    /// Commands matching what is typed while the editor holds only `/` and a partial name: names starting with it
+    /// first, then names containing it. Empty once a space follows the name (the user is writing arguments).
+    /// All matches: the palette shows the first `PALETTE_MAX` and says how many there are.
+    pub fn matching_commands(&self, input: &str) -> Vec<&PiCommand> {
+        let Some(query) = input.strip_prefix('/') else { return vec![] };
+        if query.contains(char::is_whitespace) {
+            return vec![];
+        }
+        let q = query.to_lowercase();
+        let (mut starts, mut contains): (Vec<_>, Vec<_>) =
+            self.commands.iter().filter(|c| c.name.to_lowercase().contains(&q)).partition(|c| c.name.to_lowercase().starts_with(&q));
+        starts.append(&mut contains);
+        starts
     }
 
     /// True only once Pier's approval extension has reported in; until then tools may run unasked.
@@ -286,6 +306,10 @@ impl Transcript {
                 self.outbox.extend([Command::GetState, Command::GetAvailableThinkingLevels, Command::GetSessionStats]);
             }
             Event::Response { command, .. } if command == "set_session_name" => self.outbox.push(Command::GetState),
+            Event::Response { command, data, .. } if command == "get_commands" => {
+                self.commands = serde_json::from_value(data["commands"].clone()).unwrap_or_default();
+                self.commands.sort_by(|a, b| a.name.cmp(&b.name));
+            }
             Event::Response { command, data, .. } if command == "get_session_stats" => {
                 self.stats = serde_json::from_value(data.clone()).ok();
             }
@@ -727,6 +751,26 @@ mod tests {
             ],
         );
         assert_eq!(t.stats.unwrap().context_usage.unwrap().percent, None, "after a compaction: unknown, not 0");
+    }
+
+    #[test]
+    fn slash_palette_matches_prefix_first() {
+        let mut t = Transcript::default();
+        feed(
+            &mut t,
+            &[r#"{"type":"response","command":"get_commands","success":true,"data":{"commands":[
+                {"name":"skill:review","description":"Review code","source":"skill"},
+                {"name":"fix-tests","description":"Fix failing tests","source":"prompt"},
+                {"name":"prune","source":"extension"}
+            ]}}"#],
+        );
+        let names = |input: &str| t.matching_commands(input).iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names("/"), ["fix-tests", "prune", "skill:review"], "all, sorted");
+        assert_eq!(names("/pr"), ["prune"]);
+        assert_eq!(names("/RE"), ["skill:review"], "case-insensitive, matches inside the name too");
+        assert_eq!(names("/t"), ["fix-tests"], "contains, not only prefix");
+        assert!(names("/fix-tests now").is_empty(), "arguments being typed: palette gone");
+        assert!(names("fix").is_empty(), "only after a leading /");
     }
 
     #[test]

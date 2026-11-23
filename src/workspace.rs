@@ -85,6 +85,7 @@ impl Tab {
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
         tab.send(Command::GetSessionStats);
+        tab.send(Command::GetCommands);
         if resumed {
             tab.send(Command::GetMessages);
         }

@@ -362,3 +362,20 @@ fn live_context_gauge_and_cost() {
     assert!(c.percent.unwrap() > 0.0 && c.percent.unwrap() < 100.0, "{c:?}");
     assert!(s.cost >= 0.0);
 }
+
+/// Pi lists its `/` commands and the palette filter finds them.
+#[test]
+#[ignore]
+fn live_slash_commands_listed() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
+    let (mut p, mut t) = (Process::spawn(&args, || {}).unwrap(), Transcript::default());
+    p.send(&Command::GetCommands).unwrap();
+    pump(&mut p, &mut t, &|t| !t.commands.is_empty(), 20);
+    eprintln!("{} commands: {:?}", t.commands.len(), t.commands.iter().map(|c| (&c.name, &c.source)).collect::<Vec<_>>());
+    assert!(!t.commands.is_empty(), "this Pi install has extension commands, templates or skills");
+    let first = &t.commands[0].name;
+    let typed = format!("/{}", &first[..first.len().min(3)]);
+    assert!(t.matching_commands(&typed).iter().any(|c| &c.name == first), "{typed} finds {first}");
+    assert!(!t.entries.iter().any(|e| e.kind == Kind::Error), "{:?}", t.entries);
+}
