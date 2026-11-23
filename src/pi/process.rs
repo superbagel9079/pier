@@ -26,7 +26,7 @@ pub struct Process {
 /// cmd.exe sits between us and Pi.
 // shortcut: paths are the default managed-install ones, add a setting when another install layout shows up.
 fn pi_command() -> process::Command {
-    let home = PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).unwrap_or_default());
+    let home = super::sessions::home();
     let launcher = home.join(".pi/agent/bin/pi-launcher.js");
     let bundled_node = PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("pi-node/current/node.exe");
     let mut cmd = process::Command::new(if bundled_node.is_file() { bundled_node } else { PathBuf::from("node") });

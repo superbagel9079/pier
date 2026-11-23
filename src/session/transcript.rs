@@ -2,8 +2,9 @@
 
 use super::state::State;
 use crate::pi::process::Incoming;
-use crate::pi::protocol::{ClearedQueue, Command, Event, Queued, Role, StreamEvent, UiRequest};
+use crate::pi::protocol::{AssistantPart, ClearedQueue, Command, Event, HistoryMessage, Queued, Role, StateData, StreamEvent, UiRequest};
 use std::collections::{HashMap, VecDeque};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// Status key set by Pier's approval extension once it is active in Pi.
@@ -53,6 +54,8 @@ pub struct Transcript {
     pub outbox: Vec<Command>,
     /// Confirm dialogs waiting for the user, oldest first.
     pub approvals: VecDeque<Approval>,
+    /// Pi's session file, from `get_state` (or the one being resumed): two Pi writing one file would corrupt it.
+    pub session_file: Option<PathBuf>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
 }
@@ -154,6 +157,13 @@ impl Transcript {
                 let q: ClearedQueue = serde_json::from_value(data.clone()).unwrap_or_default();
                 self.restored = texts(&q.steering, &q.follow_up);
             }
+            Event::Response { command, data, .. } if command == "get_state" => {
+                let s: StateData = serde_json::from_value(data.clone()).unwrap_or_default();
+                if let Some(f) = s.session_file {
+                    self.session_file = Some(f.into());
+                }
+            }
+            Event::Response { command, data, .. } if command == "get_messages" => self.load_history(&data["messages"]),
             Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.
                 UiRequest::Confirm { id, title, message, timeout } => {
@@ -180,6 +190,42 @@ impl Transcript {
                 UiRequest::Other => {}
             },
             _ => {}
+        }
+    }
+
+    /// Shows a resumed session's past messages, in the same entry kinds as a live run.
+    fn load_history(&mut self, messages: &serde_json::Value) {
+        let list = messages.as_array().map(Vec::as_slice).unwrap_or_default();
+        for raw in list {
+            match serde_json::from_value::<HistoryMessage>(raw.clone()) {
+                Ok(HistoryMessage::User { content }) => {
+                    self.push(Kind::User, content.text());
+                }
+                Ok(HistoryMessage::Assistant { content, stop_reason, error_message }) => {
+                    for part in content {
+                        match part {
+                            AssistantPart::Text { text } => self.push(Kind::Assistant, text),
+                            AssistantPart::Thinking { thinking } => self.push(Kind::Thinking, thinking),
+                            AssistantPart::ToolCall { name, arguments } => self.push(Kind::Tool, format!("{name} {arguments}")),
+                            AssistantPart::Other => continue,
+                        };
+                    }
+                    if stop_reason.as_deref() == Some("error") {
+                        self.push(Kind::Error, error_message.unwrap_or_else(|| "erreur provider".into()));
+                    }
+                }
+                Ok(HistoryMessage::ToolResult { tool_name, is_error }) => {
+                    let status = if is_error { "erreur" } else { "ok" };
+                    self.push(Kind::Tool, format!("{tool_name} → {status}"));
+                }
+                Ok(HistoryMessage::Other) => {}
+                Err(e) => {
+                    self.push(Kind::Notice, format!("Message d'historique illisible ({e})."));
+                }
+            }
+        }
+        if !list.is_empty() {
+            self.push(Kind::Notice, "— session reprise —");
         }
     }
 
@@ -333,6 +379,40 @@ mod tests {
         feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
         assert!(t.approvals.is_empty(), "an aborted run drops its pending approvals");
         assert_eq!(t.state, State::Stopped);
+    }
+
+    #[test]
+    fn resumed_history_and_session_file() {
+        let mut t = Transcript::default();
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:/s/a.jsonl","isStreaming":false}}"#,
+                r#"{"type":"response","command":"get_messages","success":true,"data":{"messages":[
+                    {"role":"system","content":""},
+                    {"role":"user","content":"ls stp","timestamp":1},
+                    {"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"stopReason":"toolUse"},
+                    {"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[],"isError":false},
+                    {"role":"assistant","content":[{"type":"text","text":"voilà"}],"stopReason":"error","errorMessage":"403"},
+                    {"role":"bashExecution","command":"x"}
+                ]}}"#,
+            ],
+        );
+        assert_eq!(t.session_file, Some(PathBuf::from("C:/s/a.jsonl")));
+        let got: Vec<_> = t.entries.iter().map(|e| (e.kind, e.text.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                (Kind::User, "ls stp"),
+                (Kind::Thinking, "hmm"),
+                (Kind::Tool, r#"bash {"command":"ls"}"#),
+                (Kind::Tool, "bash → ok"),
+                (Kind::Assistant, "voilà"),
+                (Kind::Error, "403"),
+                (Kind::Notice, "— session reprise —"),
+            ]
+        );
+        assert_eq!(t.state, State::Ready, "loading history starts no run");
     }
 
     #[test]

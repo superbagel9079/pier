@@ -134,3 +134,33 @@ fn live_two_parallel_sessions() {
     pump(p, t, &|t| t.entries.iter().any(|e| e.text.to_lowercase().contains("charlie")) && t.state == State::Completed, 60);
     assert!(t.entries.iter().any(|e| e.kind == Kind::Assistant && e.text.to_lowercase().contains("charlie")), "{:#?}", t.entries);
 }
+
+/// A saved session reopened with `--session` shows its history and Pi still knows what was said.
+#[test]
+#[ignore]
+fn live_resume_session() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-tools", "--model", &model].map(String::from);
+
+    let (mut p, mut t) = (Process::spawn(&args, || {}).unwrap(), Transcript::default());
+    p.send(&Command::GetState).unwrap();
+    pump(&mut p, &mut t, &|t| t.supervised() && t.session_file.is_some(), 30);
+    p.send(&prompt("Remember the code word zebra-42. Reply only: ok")).unwrap();
+    pump(&mut p, &mut t, &|t| t.state == State::Completed, 60);
+    let file = t.session_file.clone().expect("get_state gives the session file");
+    drop(p); // Pi exits and its session file stays
+    assert!(file.exists(), "session file written: {file:?}");
+
+    let resume = [&args[..], &["--session".into(), file.to_string_lossy().into_owned()]].concat();
+    let (mut p, mut t) = (Process::spawn(&resume, || {}).unwrap(), Transcript::default());
+    p.send(&Command::GetMessages).unwrap();
+    pump(&mut p, &mut t, &|t| t.supervised() && t.entries.iter().any(|e| e.text == "— session reprise —"), 30);
+    assert!(t.entries.iter().any(|e| e.kind == Kind::User && e.text.contains("zebra-42")), "history: {:#?}", t.entries);
+
+    p.send(&prompt("What was the code word? Reply with it only.")).unwrap();
+    pump(&mut p, &mut t, &|t| t.state == State::Completed, 60);
+    let last = t.entries.iter().rev().find(|e| e.kind == Kind::Assistant).map(|e| e.text.to_lowercase());
+    drop(p);
+    let _ = std::fs::remove_file(&file); // test session, not the user's
+    assert!(last.is_some_and(|l| l.contains("zebra-42")), "{:#?}", t.entries);
+}

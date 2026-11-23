@@ -14,6 +14,9 @@ pub enum Command {
     },
     ClearQueue,
     Abort,
+    GetState,
+    /// The whole conversation, used to show a resumed session's history.
+    GetMessages,
     /// Reply to a dialog; must echo the request id. Set `confirmed` for a confirm, `cancelled` to refuse any dialog.
     ExtensionUiResponse {
         id: String,
@@ -170,6 +173,58 @@ pub struct ClearedQueue {
     pub steering: Vec<Queued>,
     #[serde(default)]
     pub follow_up: Vec<Queued>,
+}
+
+/// `data` of a `get_state` response (only what Pier uses).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateData {
+    #[serde(default)]
+    pub session_file: Option<String>,
+}
+
+/// One message of `get_messages`, i.e. a resumed session's history.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "role", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum HistoryMessage {
+    User {
+        #[serde(default)]
+        content: Content,
+    },
+    Assistant {
+        #[serde(default)]
+        content: Vec<AssistantPart>,
+        #[serde(default)]
+        stop_reason: Option<String>,
+        #[serde(default)]
+        error_message: Option<String>,
+    },
+    ToolResult {
+        tool_name: String,
+        #[serde(default)]
+        is_error: bool,
+    },
+    /// system, bashExecution, custom, summaries: not shown.
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AssistantPart {
+    Text {
+        text: String,
+    },
+    Thinking {
+        thinking: String,
+    },
+    ToolCall {
+        name: String,
+        #[serde(default)]
+        arguments: Value,
+    },
+    #[serde(other)]
+    Other,
 }
 
 /// One content-block delta of the assistant message being streamed.

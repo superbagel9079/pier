@@ -8,11 +8,14 @@ mod transcript_view;
 use eframe::egui::{self, RichText};
 use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
+use pier::pi::sessions::{self, SavedSession};
 use pier::session::state::State;
 use pier::session::transcript::{Entry, Kind, Transcript};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 const TITLE_CHARS: usize = 24;
+const RESUME_LIST_MAX: usize = 20;
 
 /// One session: a `pi --mode rpc` process, its transcript and its editor.
 pub struct Tab {
@@ -22,16 +25,27 @@ pub struct Tab {
 }
 
 impl Tab {
-    fn new(pi_args: &[String], ctx: &egui::Context) -> Self {
+    /// `resume`: a saved Pi session file to reopen, with its history.
+    fn new(pi_args: &[String], resume: Option<&Path>, ctx: &egui::Context) -> Self {
         let mut t = Transcript::default();
+        let mut args = pi_args.to_vec();
+        if let Some(path) = resume {
+            args.extend(["--session".into(), path.to_string_lossy().into_owned()]);
+            t.session_file = Some(path.to_path_buf()); // listed as open before get_state answers
+        }
         let ctx = ctx.clone();
-        let proc = Process::spawn(pi_args, move || ctx.request_repaint())
+        let proc = Process::spawn(&args, move || ctx.request_repaint())
             .map_err(|e| t.entries.push(Entry { kind: Kind::Error, text: format!("Lancement de Pi impossible : {e}") }))
             .ok();
         if proc.is_none() {
             t.state = State::Crashed;
         }
-        Self { proc, t, input: String::new() }
+        let mut tab = Self { proc, t, input: String::new() };
+        tab.send(Command::GetState);
+        if resume.is_some() {
+            tab.send(Command::GetMessages);
+        }
+        tab
     }
 
     /// The first prompt, so tabs can be told apart.
@@ -93,17 +107,62 @@ pub struct PierApp {
     pi_args: Vec<String>,
     tabs: Vec<Tab>,
     active: usize,
+    /// Saved sessions, read from disk when the Reprendre menu opens (not every frame).
+    saved: Vec<SavedSession>,
+}
+
+/// "il y a 5 min" style age, coarse on purpose.
+fn ago(secs: u64) -> String {
+    match secs {
+        0..60 => "à l'instant".into(),
+        60..3600 => format!("il y a {} min", secs / 60),
+        3600..86_400 => format!("il y a {} h", secs / 3600),
+        _ => format!("il y a {} j", secs / 86_400),
+    }
 }
 
 impl PierApp {
     pub fn new(pi_args: Vec<String>, ctx: &egui::Context) -> Self {
-        let tabs = vec![Tab::new(&pi_args, ctx)];
-        Self { pi_args, tabs, active: 0 }
+        let tabs = vec![Tab::new(&pi_args, None, ctx)];
+        Self { pi_args, tabs, active: 0, saved: vec![] }
     }
 
-    fn open(&mut self, ctx: &egui::Context) {
-        self.tabs.push(Tab::new(&self.pi_args, ctx));
+    fn open(&mut self, resume: Option<&Path>, ctx: &egui::Context) {
+        self.tabs.push(Tab::new(&self.pi_args, resume, ctx));
         self.active = self.tabs.len() - 1;
+    }
+
+    /// Session files open in a tab, canonical so that Pi's spelling of a path matches the listing's.
+    fn open_files(&self) -> Vec<PathBuf> {
+        self.tabs.iter().filter_map(|t| t.t.session_file.as_ref()).filter_map(|p| std::fs::canonicalize(p).ok()).collect()
+    }
+
+    /// Menu of Pi sessions saved for this folder; one already open in a tab cannot be opened twice.
+    fn resume_menu(&mut self, ui: &mut egui::Ui) {
+        let mut pick = None;
+        let r = ui.menu_button("Reprendre", |ui| {
+            if self.saved.is_empty() {
+                ui.weak("Aucune session enregistrée pour ce dossier.");
+            }
+            let open = self.open_files();
+            for s in &self.saved {
+                let is_open = std::fs::canonicalize(&s.path).is_ok_and(|p| open.contains(&p));
+                let when = s.modified.elapsed().map(|d| ago(d.as_secs())).unwrap_or_default();
+                let label = format!("{}  ·  {when}", s.title);
+                let b = ui.add_enabled(!is_open, egui::Button::new(label));
+                if b.on_disabled_hover_text("Déjà ouverte dans un onglet").clicked() {
+                    pick = Some(s.path.clone());
+                    ui.close();
+                }
+            }
+        });
+        if r.response.clicked() {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            self.saved = sessions::list(&cwd, RESUME_LIST_MAX);
+        }
+        if let Some(path) = pick {
+            self.open(Some(&path), ui.ctx());
+        }
     }
 
     /// Closing stops the tab's Pi. Pi keeps the conversation in its own session dir (unless `--no-session`).
@@ -133,8 +192,9 @@ impl PierApp {
                     ui.separator();
                 }
                 if ui.button("+").on_hover_text("Nouvel onglet").clicked() {
-                    self.open(ui.ctx());
+                    self.open(None, ui.ctx());
                 }
+                self.resume_menu(ui);
                 if let Some(i) = select {
                     self.active = i;
                 }
@@ -166,7 +226,7 @@ impl eframe::App for PierApp {
         } else {
             egui::CentralPanel::default().show(ui, |ui| {
                 if ui.button("Nouvel onglet").clicked() {
-                    self.open(ui.ctx());
+                    self.open(None, ui.ctx());
                 }
             });
         }
@@ -184,7 +244,7 @@ mod tests {
 
     fn app(n: usize, active: usize) -> PierApp {
         let tabs = (0..n).map(|i| Tab { proc: None, t: Transcript::default(), input: i.to_string() }).collect();
-        PierApp { pi_args: vec![], tabs, active }
+        PierApp { pi_args: vec![], tabs, active, saved: vec![] }
     }
 
     fn active_input(a: &PierApp) -> Option<&str> {
