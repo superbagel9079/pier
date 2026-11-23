@@ -205,3 +205,25 @@ fn live_preset_cwd_and_args() {
     assert_eq!(file.parent().unwrap().file_name(), expected.file_name(), "Pi ran in the preset folder");
     assert!(reply.contains("HELLO"), "appended system prompt applied: {reply:?}");
 }
+
+/// A write outside the working folder carries the warning, one inside does not. Both are refused: nothing is written.
+#[test]
+#[ignore]
+fn live_outside_folder_warning() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--model", &model].map(String::from);
+    let mut p = Process::spawn(&args, || {}).unwrap();
+    let mut t = Transcript::default();
+    pump(&mut p, &mut t, &|t| t.supervised(), 30);
+
+    for (path, outside) in [("../pier-outside-probe.txt", true), ("pier-inside-probe.txt", false)] {
+        p.send(&prompt(&format!("Use the write tool to create the file {path} containing x. Do nothing else, do not retry."))).unwrap();
+        pump(&mut p, &mut t, &|t| !t.approvals.is_empty(), 60);
+        let a = t.approvals.front().expect("write must wait for an approval").clone();
+        assert_eq!(a.title, "Autoriser write ?");
+        assert_eq!(a.outside.is_some(), outside, "{path}: warning {:?}", a.outside);
+        t.answer(false);
+        pump(&mut p, &mut t, &|t| t.state == State::Completed && t.approvals.is_empty(), 60);
+        assert!(!std::path::Path::new(path).exists(), "{path} was refused, so it must not exist");
+    }
+}

@@ -10,6 +10,9 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::Panel::bottom("approval").show(ui, |ui| {
         ui.add_space(4.0);
         ui.strong(&a.title);
+        if let Some(warning) = &a.outside {
+            ui.colored_label(ui.visuals().error_fg_color, warning);
+        }
         if !a.message.is_empty() {
             egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| ui.monospace(&a.message));
         }

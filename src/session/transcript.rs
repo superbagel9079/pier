@@ -19,7 +19,20 @@ pub struct Approval {
     pub id: String,
     pub title: String,
     pub message: String,
+    /// The target lies outside the working folder, as reported by Pier's extension.
+    pub outside: Option<String>,
     pub deadline: Option<Instant>,
+}
+
+/// First line the approval extension puts in the message when a target is outside the working folder.
+const OUTSIDE_PREFIX: &str = "⚠ Hors du dossier de travail";
+
+/// Splits the extension's outside-folder warning line off the dialog message.
+fn split_outside(message: &str) -> (Option<String>, String) {
+    match message.split_once('\n') {
+        Some((first, rest)) if first.starts_with(OUTSIDE_PREFIX) => (Some(first.to_owned()), rest.to_owned()),
+        _ => (None, message.to_owned()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -197,7 +210,8 @@ impl Transcript {
                         detail: message.clone(),
                         timeout_ms: *timeout,
                     });
-                    self.approvals.push_back(Approval { id: id.clone(), title: title.clone(), message: message.clone(), deadline });
+                    let (outside, message) = split_outside(message);
+                    self.approvals.push_back(Approval { id: id.clone(), title: title.clone(), message, outside, deadline });
                     if self.state == State::Running {
                         self.state = State::Blocked;
                     }
@@ -481,6 +495,22 @@ mod tests {
         t.expire(Instant::now() + Duration::from_secs(60));
         t.apply(Incoming::Exited);
         assert_eq!(t.journal, [Record::RunStarted, requested("b1"), decided("b1", "expired"), Record::PiExited]);
+    }
+
+    #[test]
+    fn outside_warning_is_split_from_the_command() {
+        let mut t = Transcript::default();
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"extension_ui_request","id":"o","method":"confirm","title":"Autoriser write ?","message":"⚠ Hors du dossier de travail : ..\\x.txt\n..\\x.txt"}"#,
+                r#"{"type":"extension_ui_request","id":"i","method":"confirm","title":"Autoriser bash ?","message":"ls\nwc -l"}"#,
+            ],
+        );
+        assert_eq!(t.approvals[0].outside.as_deref(), Some(r"⚠ Hors du dossier de travail : ..\x.txt"));
+        assert_eq!(t.approvals[0].message, r"..\x.txt");
+        assert_eq!(t.approvals[1].outside, None);
+        assert_eq!(t.approvals[1].message, "ls\nwc -l", "a multi-line command stays whole");
     }
 
     #[test]
