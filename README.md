@@ -4,9 +4,12 @@ Pier is a desktop cockpit for the [Pi](https://www.npmjs.com/package/@earendil-w
 several Pi sessions in tabs, each driven live (stream, steer, Stop), and **supervised by default**: every tool that
 writes or runs waits for your approval.
 
-Written in Rust with egui (wgpu renderer), Pier stays light: about 220 MB of RAM at idle (measured with
-`tools/measure-ram.ps1`). The lighter OpenGL renderer (about 90 MB) froze the whole PC on window resize with an
-Intel Arc GPU, so it is not used.
+Written in Rust with egui, Pier stays light: about 220 MB of RAM at idle with its default renderer, wgpu
+(measured with `tools/measure-ram.ps1`).
+
+Renderers: wgpu first (DirectX 12, Vulkan, or OpenGL 3.3). If it cannot start, on old graphics, Pier falls back to
+egui's own OpenGL renderer (OpenGL 2.0 and up). That one uses about 90 MB; set `PIER_RENDERER=glow` to always use
+it. It is not the default because it froze a whole PC on window resize with an Intel Arc GPU.
 
 ## What Pier does
 
