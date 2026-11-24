@@ -24,7 +24,7 @@ const STARTER: &str = r#"[
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Preset {
     pub name: String,
-    /// Folder Pi works in; Pier's own folder when absent.
+    /// Folder Pi works in; when absent, the active tab's folder (or one the user picks).
     #[serde(default)]
     pub cwd: Option<PathBuf>,
     #[serde(default)]

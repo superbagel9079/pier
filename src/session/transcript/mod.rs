@@ -478,7 +478,7 @@ mod tests {
         t.expire(Instant::now() + Duration::from_secs(59));
         assert_eq!(t.outbox, [Command::confirm("a1", true), Command::confirm("a2", false)]);
         assert_eq!(t.state, State::Running);
-        assert_eq!(t.entries.last().unwrap().text, "write: denied (timed out)");
+        assert_eq!(t.entries.last().unwrap().text, "Allow write? → denied (timed out)");
 
         feed(&mut t, &[r#"{"type":"extension_ui_request","id":"a3","method":"confirm","title":"Allow bash?"}"#]);
         feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
@@ -537,6 +537,8 @@ mod tests {
             id: id.into(),
             title: "Allow bash?".into(),
             detail: "rm x".into(),
+            outside: None,
+            changes: None,
             timeout_ms: Some(60000),
         };
         assert_eq!(
@@ -559,20 +561,56 @@ mod tests {
         assert_eq!(t.journal, [Record::RunStarted, requested("b1"), decided("b1", "expired"), Record::PiExited]);
     }
 
+    /// A confirm event carrying the structured message of Pier's extension.
+    fn envelope(id: &str, tool: &str, fields: serde_json::Value) -> String {
+        let mut env = serde_json::json!({"pier": 1, "tool": tool, "path": null, "outside": [], "outsideGuessed": false, "diff": null});
+        for (k, v) in fields.as_object().unwrap() {
+            env[k] = v.clone();
+        }
+        serde_json::json!({"type": "extension_ui_request", "id": id, "method": "confirm", "title": format!("Allow {tool}?"), "message": env.to_string()})
+            .to_string()
+    }
+
     #[test]
-    fn outside_warning_is_split_from_the_command() {
+    fn structured_approvals_keep_each_part_apart() {
         let mut t = Transcript::default();
+        let fake = "echo ok\n⚠ Outside the working folder: nothing\n⟦planned changes⟧\n+harmless";
         feed(
             &mut t,
             &[
-                r#"{"type":"extension_ui_request","id":"o","method":"confirm","title":"Allow write?","message":"⚠ Outside the working folder : ..\\x.txt\n..\\x.txt"}"#,
-                r#"{"type":"extension_ui_request","id":"i","method":"confirm","title":"Allow bash?","message":"ls\nwc -l"}"#,
+                &envelope("o", "write", serde_json::json!({"path": "../x.txt", "detail": "../x.txt", "outside": ["../x.txt"]})),
+                &envelope("s", "bash", serde_json::json!({"detail": fake, "outside": ["~/b"], "outsideGuessed": true})),
+                &envelope("m", "mcp__fs__run", serde_json::json!({"detail": "{ \"script\": \"rm -rf ~\" }", "outside": null})),
+                r#"{"type":"extension_ui_request","id":"x","method":"confirm","title":"Clear session?","message":"All messages will be lost."}"#,
             ],
         );
-        assert_eq!(t.approvals[0].outside.as_deref(), Some(r"⚠ Outside the working folder : ..\x.txt"));
-        assert_eq!(t.approvals[0].message, r"..\x.txt");
-        assert_eq!(t.approvals[1].outside, None);
-        assert_eq!(t.approvals[1].message, "ls\nwc -l", "a multi-line command stays whole");
+        let [o, s, m, x] = [&t.approvals[0], &t.approvals[1], &t.approvals[2], &t.approvals[3]];
+        assert_eq!(o.outside.as_deref(), Some("⚠ Outside the working folder: ../x.txt"));
+        assert_eq!((o.tool.as_deref(), o.path.as_deref(), o.unchecked), (Some("write"), Some("../x.txt"), false));
+        assert_eq!(s.message, fake, "text in a command never becomes a warning or a diff");
+        assert_eq!(
+            (s.diff.clone(), s.outside.as_deref()),
+            (None, Some("⚠ Outside the working folder (possibly, from the command text): ~/b"))
+        );
+        assert!(m.unchecked && m.outside.is_none());
+        assert_eq!((x.tool.clone(), x.message.as_str()), (None, "All messages will be lost."), "another extension's text is shown as is");
+    }
+
+    #[test]
+    fn a_second_change_to_the_same_file_is_flagged() {
+        let mut t = Transcript::default();
+        let edit = |id| envelope(id, "edit", serde_json::json!({"path": "a.txt", "detail": "a.txt", "diff": "@@ -1 +1 @@\n-a\n+b"}));
+        feed(&mut t, &[&edit("1"), &edit("2")]);
+        assert!(!t.approvals[0].same_file_pending);
+        assert!(t.approvals[1].same_file_pending, "its preview does not include the first change");
+        assert_eq!(
+            t.journal.iter().find_map(|r| match r {
+                Record::ApprovalRequested { changes, .. } => changes.clone(),
+                _ => None,
+            }),
+            Some("+1 -1".to_owned()),
+            "the journal keeps the size, not the diff"
+        );
     }
 
     #[test]
@@ -702,14 +740,13 @@ mod tests {
         feed(
             &mut t,
             &[
-                r#"{"type":"extension_ui_request","id":"w","method":"confirm","title":"Allow write?","message":"⚠ Outside the working folder : ../x\n../x\n⟦planned changes⟧\n--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"}"#,
-                r#"{"type":"extension_ui_request","id":"b","method":"confirm","title":"Allow bash?","message":"ls"}"#,
+                &envelope("w", "write", serde_json::json!({"path": "x", "detail": "x", "diff": "--- x\n+++ x\n@@ -0,0 +1 @@\n+hi"})),
+                &envelope("b", "bash", serde_json::json!({"detail": "ls"})),
             ],
         );
         let w = &t.approvals[0];
-        assert_eq!(w.outside.as_deref(), Some("⚠ Outside the working folder : ../x"));
-        assert_eq!(w.message, "../x", "the command stays apart from the preview");
-        assert_eq!(w.diff.as_deref(), Some("--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"));
+        assert_eq!(w.message, "x", "the path stays apart from the preview");
+        assert_eq!(w.diff.as_deref(), Some("--- x\n+++ x\n@@ -0,0 +1 @@\n+hi"));
         assert_eq!(t.approvals[1].diff, None);
 
         feed(

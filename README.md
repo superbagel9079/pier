@@ -49,7 +49,7 @@ All in `%APPDATA%\pier\`:
 | `presets.json` | Presets (created with an example by Presets › Edit presets…). An unknown key, an invalid thinking level or a missing folder is reported in the menu. |
 | `recent.json` | Recent project folders (10 at most). |
 | `journal\*.jsonl` | One journal per tab. Launch arguments are never written there. |
-| `pier-approvals.ts` | The approval extension, embedded in the executable and rewritten when it changes. |
+| `pier-approvals-<fingerprint>.ts` | The approval extension, embedded in the executable; the name follows its content, so two Pier versions never share one. |
 
 Conversations stay Pi's own, in Pi's session folders.
 

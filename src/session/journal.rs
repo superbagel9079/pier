@@ -29,7 +29,13 @@ pub enum Record {
     ApprovalRequested {
         id: String,
         title: String,
+        /// What the user read: the command, a path, or the tool's arguments. Never the diff itself.
         detail: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        outside: Option<String>,
+        /// Size of a write/edit preview, `+added -removed`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        changes: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         timeout_ms: Option<u64>,
     },

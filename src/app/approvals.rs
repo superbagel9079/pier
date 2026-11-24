@@ -15,13 +15,19 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         if let Some(warning) = &a.outside {
             ui.colored_label(ui.visuals().error_fg_color, warning);
         }
+        if a.unchecked {
+            ui.weak("ℹ Folder not checked for this tool");
+        }
         if !a.message.is_empty() {
             // Keyed by the approval: each one opens at its first line, not where the previous one was scrolled.
             egui::ScrollArea::vertical().id_salt(("approval_message", &a.id)).max_height(150.0).show(ui, |ui| ui.monospace(&a.message));
         }
         if let Some(diff) = &a.diff {
             ui.add_space(2.0);
-            ui.weak(format!("Planned changes ({})", diff_view::summary(diff)));
+            ui.weak(format!("Planned changes ({}), against the file as it was when asked", diff_view::summary(diff)));
+            if a.same_file_pending {
+                ui.colored_label(ui.visuals().warn_fg_color, "Another pending change targets this file; this preview does not include it.");
+            }
             diff_view::show(ui, ("approval_diff", &a.id), diff, 300.0);
         }
         ui.horizontal(|ui| {

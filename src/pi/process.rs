@@ -43,12 +43,19 @@ fn pi_command() -> process::Command {
 
 const APPROVALS_EXTENSION: &str = include_str!("../../extension/pier-approvals.ts");
 
-/// Writes Pier's approval extension where Pi can load it, so it always matches this binary.
+/// FNV-1a: a stable content fingerprint (not for security, only to name the file after its content).
+fn fingerprint(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
+}
+
+/// Writes Pier's approval extension where Pi can load it. The name carries a fingerprint of the content, so two
+/// Pier builds running side by side never overwrite each other's file (their markers may differ).
+// shortcut: old versions' files stay in the folder (a few KB each); prune them if the folder ever matters.
 fn approvals_extension() -> std::io::Result<PathBuf> {
     let dir = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("pier");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join("pier-approvals.ts");
-    // Rewrite only on change, and atomically: another tab's Pi may be loading the file right now.
+    let path = dir.join(format!("pier-approvals-{:016x}.ts", fingerprint(APPROVALS_EXTENSION.as_bytes())));
+    // Written atomically: another tab's Pi may be loading the file right now.
     if std::fs::read(&path).ok().as_deref() != Some(APPROVALS_EXTENSION.as_bytes()) {
         crate::files::write_atomic(&path, APPROVALS_EXTENSION.as_bytes())?;
     }
@@ -87,7 +94,7 @@ impl Process {
             Ok(j) => Some(j),
             Err(e) => {
                 let _ = child.kill();
-                return Err(std::io::Error::other(format!("Job Object : {e}")));
+                return Err(std::io::Error::other(format!("Job Object: {e}")));
             }
         };
         let (tx, rx) = channel();
@@ -295,6 +302,15 @@ pub fn parse_line<T: DeserializeOwned>(raw: &[u8]) -> Option<serde_json::Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extension_file_name_follows_its_content() {
+        assert_eq!(fingerprint(b"a"), fingerprint(b"a"));
+        assert_ne!(fingerprint(b"a"), fingerprint(b"b"));
+        let p = approvals_extension().unwrap();
+        assert_eq!(std::fs::read_to_string(&p).unwrap(), APPROVALS_EXTENSION);
+        assert!(p.file_name().unwrap().to_string_lossy().starts_with("pier-approvals-"));
+    }
 
     #[test]
     fn framing_keeps_unicode_separators_and_strips_crlf() {

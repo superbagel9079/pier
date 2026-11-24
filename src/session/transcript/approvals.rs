@@ -2,27 +2,56 @@
 
 use super::{Kind, Transcript};
 use crate::pi::protocol::Command;
+use crate::session::diff;
 use crate::session::journal::Record;
 use crate::session::state::State;
+use serde::Deserialize;
 use std::time::{Duration, Instant};
 
 /// Expire before Pi does, so an approval sent at the last second is never ignored by Pi while Pier shows it as granted.
 const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
 /// A new approval at the front ignores clicks this long, so a double-click meant for the previous one cannot approve it.
 pub const ARM_DELAY: Duration = Duration::from_millis(400);
-/// First line the approval extension puts in the message when a target is outside the working folder.
-const OUTSIDE_PREFIX: &str = "⚠ Outside the working folder";
-/// Line after which the extension puts a diff preview of a write or edit.
-const DIFF_MARK: &str = "\n⟦planned changes⟧\n";
+/// Version of the structured message Pier's extension puts in the dialog.
+const ENVELOPE_VERSION: u32 = 1;
+
+/// The structured dialog message of Pier's extension. Each part has its own field, so nothing in a command
+/// (a fake warning line, a fake diff marker) can pass for something else.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Envelope {
+    pier: u32,
+    tool: String,
+    #[serde(default)]
+    path: Option<String>,
+    detail: String,
+    /// `None`: this tool's targets cannot be checked. Empty: checked, all inside the working folder.
+    #[serde(default)]
+    outside: Option<Vec<String>>,
+    /// Shell targets are read from the command text: a hint, not a certainty.
+    #[serde(default)]
+    outside_guessed: bool,
+    #[serde(default)]
+    diff: Option<String>,
+}
 
 /// A tool call waiting for the user's decision.
 #[derive(Debug, Clone)]
 pub struct Approval {
     pub id: String,
     pub title: String,
+    /// The tool, when Pier's extension asks (`None` for another extension's confirm dialog).
+    pub tool: Option<String>,
+    /// What the user reads to decide: the command, the path next to a diff, or all the arguments.
     pub message: String,
-    /// The target lies outside the working folder, as reported by Pier's extension.
+    /// Warning when a target lies outside the working folder.
     pub outside: Option<String>,
+    /// Pier cannot tell where this tool acts (MCP and extension tools).
+    pub unchecked: bool,
+    /// The file a write or edit targets.
+    pub path: Option<String>,
+    /// Another pending approval targets the same file: this preview does not include its change.
+    pub same_file_pending: bool,
     pub deadline: Option<Instant>,
     /// When it reached the front of the queue, i.e. when the user could first see it.
     pub front_since: Instant,
@@ -30,32 +59,51 @@ pub struct Approval {
     pub diff: Option<String>,
 }
 
-/// Splits the extension's outside-folder warning line off the dialog message.
-fn split_outside(message: &str) -> (Option<String>, String) {
-    match message.split_once('\n') {
-        Some((first, rest)) if first.starts_with(OUTSIDE_PREFIX) => (Some(first.to_owned()), rest.to_owned()),
-        _ => (None, message.to_owned()),
-    }
+fn outside_warning(targets: &[String], guessed: bool) -> String {
+    let how = if guessed { " (possibly, from the command text)" } else { "" };
+    format!("⚠ Outside the working folder{how}: {}", targets.join(", "))
 }
 
 impl Transcript {
     /// A confirm dialog from Pi. `at`: when its line was read; the deadline counts from there, like Pi's own timer.
+    /// Pier's extension sends a structured message; any other extension's text is shown as it is.
     pub(super) fn request_approval(&mut self, id: &str, title: &str, message: &str, timeout: Option<u64>, at: Instant) {
         let deadline = timeout.map(|ms| at + Duration::from_millis(ms).saturating_sub(EXPIRY_MARGIN));
+        let env = serde_json::from_str::<Envelope>(message).ok().filter(|e| e.pier == ENVELOPE_VERSION);
+        let (tool, message, outside, unchecked, path, diff) = match env {
+            Some(e) => {
+                let outside = e.outside.as_ref().filter(|t| !t.is_empty()).map(|t| outside_warning(t, e.outside_guessed));
+                (Some(e.tool), e.detail, outside, e.outside.is_none(), e.path, e.diff)
+            }
+            None => (None, message.to_owned(), None, false, None, None),
+        };
+        // The journal keeps what was asked and how big the change is, not the diff (it can hold a file's old content).
         self.journal.push(Record::ApprovalRequested {
             id: id.to_owned(),
             title: title.to_owned(),
-            detail: message.to_owned(),
+            detail: message.clone(),
+            outside: outside.clone(),
+            changes: diff.as_deref().map(|d| {
+                let (added, removed) = diff::counts(d);
+                format!("+{added} -{removed}")
+            }),
             timeout_ms: timeout,
         });
-        let (message, diff) = match message.split_once(DIFF_MARK) {
-            Some((m, d)) => (m, Some(d.to_owned())),
-            None => (message, None),
-        };
-        let (outside, message) = split_outside(message);
+        let same_file_pending = path.is_some() && self.approvals.iter().any(|a| a.path == path);
         let front_since = Instant::now();
-        let approval = Approval { id: id.to_owned(), title: title.to_owned(), message, outside, deadline, front_since, diff };
-        self.approvals.push_back(approval);
+        self.approvals.push_back(Approval {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            tool,
+            message,
+            outside,
+            unchecked,
+            path,
+            same_file_pending,
+            deadline,
+            front_since,
+            diff,
+        });
         // Also outside a run (an extension command can ask): the tab waits on the user either way.
         if !matches!(self.state, State::Blocked | State::Crashed) {
             self.blocked_from = Some(self.state);
@@ -92,7 +140,11 @@ impl Transcript {
         let Some(a) = self.approvals.pop_front() else { return };
         self.outbox.push(Command::confirm(&a.id, approved));
         self.journal.push(Record::ApprovalDecided { id: a.id.clone(), decision });
-        self.push(Kind::Notice, format!("{}: {verdict}", a.title.trim_start_matches("Allow ").trim_end_matches('?')));
+        let notice = match &a.tool {
+            Some(tool) => format!("{tool}: {verdict}"),
+            None => format!("{} → {verdict}", a.title), // another extension's dialog: its own title
+        };
+        self.push(Kind::Notice, notice);
         if let Some(next) = self.approvals.front_mut() {
             next.front_since = Instant::now();
         }

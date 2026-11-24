@@ -12,16 +12,15 @@ const READ_ONLY = new Set(["read", "grep", "find", "ls"]);
 const SHELLS = new Set(["bash", "powershell"]);
 // Pi auto-resolves the dialog to "not confirmed" after this; Pier shows the countdown.
 const TIMEOUT_MS = 60_000;
-// First line of the dialog message when a target is outside the working folder; Pier looks for this prefix.
-const OUTSIDE = "⚠ Outside the working folder";
-// Shown when Pier cannot tell where a tool acts (MCP and extension tools).
-const UNCHECKED = "ℹ Folder not checked for this tool";
+// Version of the structured message Pier reads (the dialog message is this JSON, not decorated text).
+const ENVELOPE_VERSION = 1;
 // Shell paths that are not files the agent writes to.
 const HARMLESS = new Set(["/dev/null", "nul", "NUL", "$null"]);
-// Line after which the dialog message holds a unified diff preview; Pier splits on it.
-const DIFF_MARK = "⟦planned changes⟧";
 // Bigger files get no preview (they may be binary, and the dialog must stay responsive).
 const PREVIEW_MAX_BYTES = 2_000_000;
+// Pi's whole-file diff is synchronous and slows down sharply on large rewrites (3 s at 5000 lines, 63 s at 20000):
+// past this many lines on either side, write gets no preview and edit is previewed around its changes only.
+const DIFF_MAX_FILE_LINES = 2000;
 // A longer diff is cut, and says so: the rest is not shown, never silently dropped.
 const PREVIEW_MAX_LINES = 3000;
 // Same set as Pi's own path normalization.
@@ -31,11 +30,18 @@ function home(): string {
 	return process.env.USERPROFILE ?? process.env.HOME ?? homedir();
 }
 
-function detail(toolName: string, input: Record<string, unknown>): string {
-	// The whole text, never cut: a harmless start must not hide the end.
+/** What the user reads to decide. The whole text, never cut: a harmless start must not hide the end.
+ *  The path alone only for a write/edit whose real diff is shown next to it; any other tool shows all its arguments. */
+function detail(toolName: string, input: Record<string, unknown>, hasDiff: boolean): string {
 	if (SHELLS.has(toolName) && typeof input.command === "string") return input.command;
-	if (typeof input.path === "string") return input.path;
+	if ((toolName === "write" || toolName === "edit") && hasDiff && typeof input.path === "string") return input.path;
 	return JSON.stringify(input, null, 2);
+}
+
+/** UNC shares and device paths (`\\server\x`, `\\.\pipe\x`, `//server/x`). Never touched on disk: probing one
+ *  makes Windows connect to the share (and may send the user's credentials) before the user has decided. */
+function isNetworkPath(p: string): boolean {
+	return p.startsWith("\\\\") || p.startsWith("//");
 }
 
 /** Mirrors Pi's normalizePath (dist/utils/paths.js), plus home variables used in shells. */
@@ -69,6 +75,7 @@ function real(p: string): string {
 }
 
 function isOutside(cwd: string, target: string): boolean {
+	if (isNetworkPath(normalize(target))) return true; // outside by definition, and not probed
 	const base = real(resolve(cwd));
 	const rel = relative(base, real(resolve(base, normalize(target))));
 	// Different drive or UNC share gives an absolute `rel`; a parent gives a leading "..".
@@ -98,7 +105,10 @@ function outsideTargets(toolName: string, input: Record<string, unknown>, cwd: s
 	if (SHELLS.has(toolName) && typeof input.command === "string") {
 		return shellPaths(input.command).filter((p) => isOutside(cwd, p));
 	}
-	if (typeof input.path === "string") return isOutside(cwd, input.path) ? [input.path] : [];
+	// Only Pi's write/edit are known to act on `path`; another tool's `path` says nothing about what it does.
+	if ((toolName === "write" || toolName === "edit") && typeof input.path === "string") {
+		return isOutside(cwd, input.path) ? [input.path] : [];
+	}
 	return null;
 }
 
@@ -115,13 +125,19 @@ function loadPatcher(): Promise<Patcher | null> {
 
 const lf = (text: string) => text.replaceAll("\r\n", "\n");
 
-/** Current content of the target, `""` for a new file. Throws when the file is too big to preview. */
+/** Current content of the target, `""` for a new file. Throws when it must not or cannot be previewed. */
 function currentContent(cwd: string, path: string): string {
-	const abs = resolve(cwd, normalize(path));
+	const target = normalize(path);
+	if (isNetworkPath(target)) throw new Error("network path, not read before your decision");
+	const abs = resolve(cwd, target);
 	if (!existsSync(abs)) return "";
-	if (statSync(abs).size > PREVIEW_MAX_BYTES) throw new Error("file too big for a preview");
+	const stat = statSync(abs);
+	if (!stat.isFile()) throw new Error("not a regular file");
+	if (stat.size > PREVIEW_MAX_BYTES) throw new Error("file too big for a preview");
 	return lf(readFileSync(abs, "utf8"));
 }
+
+const lineCount = (text: string) => text.split("\n").length;
 
 /** Diff preview of a write or edit, or `null` for other tools. Never throws: a failed preview must not block the dialog. */
 async function preview(toolName: string, input: Record<string, any>, cwd: string): Promise<string | null> {
@@ -134,7 +150,11 @@ async function preview(toolName: string, input: Record<string, any>, cwd: string
 		if (toolName === "write") {
 			if (typeof input.content !== "string") return null;
 			const after = lf(input.content);
-			return after === before ? "(same content as the current file)" : cut(patch(input.path, before, after));
+			if (after === before) return "(same content as the current file)";
+			if (Math.max(lineCount(before), lineCount(after)) > DIFF_MAX_FILE_LINES) {
+				return `(preview skipped: large file, ${lineCount(before)} → ${lineCount(after)} lines)`;
+			}
+			return cut(patch(input.path, before, after));
 		}
 		// edit: Pi's current argument shape is `edits[]`; the legacy one is a single oldText/newText.
 		const edits: { oldText: string; newText: string }[] = Array.isArray(input.edits)
@@ -150,9 +170,17 @@ async function preview(toolName: string, input: Record<string, any>, cwd: string
 			after = after.slice(0, at) + lf(String(e.newText)) + after.slice(at + old.length);
 			return true;
 		});
-		if (exact) return cut(patch(input.path, before, after));
-		const parts = edits.map((e) => patch(input.path, lf(String(e.oldText)), lf(String(e.newText))));
-		return cut(["(approximate preview: text to replace not found as is, Pi will search for it)", ...parts].join("\n"));
+		const small = Math.max(lineCount(before), lineCount(after)) <= DIFF_MAX_FILE_LINES;
+		if (exact && small) return cut(patch(input.path, before, after));
+		const note = exact
+			? "(preview around the changes only: the file is large)"
+			: "(approximate preview: text to replace not found as is, Pi will search for it)";
+		const parts = edits.map((e) => {
+			const [o, n] = [lf(String(e.oldText)), lf(String(e.newText))];
+			if (Math.max(lineCount(o), lineCount(n)) > DIFF_MAX_FILE_LINES) return `(one change of ${lineCount(o)} → ${lineCount(n)} lines not previewed)`;
+			return patch(input.path, o, n);
+		});
+		return cut([note, ...parts].join("\n"));
 	} catch (e) {
 		return `(preview unavailable: ${e instanceof Error ? e.message : e})`;
 	}
@@ -193,16 +221,18 @@ export default function (pi: any) {
 		try {
 			if (READ_ONLY.has(event.toolName) && isBuiltin(pi, event.toolName)) return undefined;
 			const input = event.input ?? {};
-			let message = detail(event.toolName, input);
-			const outside = outsideTargets(event.toolName, input, ctx.cwd);
-			if (outside === null) {
-				message = `${UNCHECKED}\n${message}`;
-			} else if (outside.length > 0) {
-				const how = SHELLS.has(event.toolName) ? " (possibly, from the command text)" : "";
-				message = `${OUTSIDE}${how} : ${outside.join(", ")}\n${message}`;
-			}
 			const diff = await preview(event.toolName, input, ctx.cwd);
-			if (diff !== null) message = `${message}\n${DIFF_MARK}\n${diff}`;
+			// Structured, so no text in a command (a marker, a fake warning line) can pass for something else.
+			const message = JSON.stringify({
+				pier: ENVELOPE_VERSION,
+				tool: event.toolName,
+				path: typeof input.path === "string" ? input.path : null,
+				detail: detail(event.toolName, input, diff !== null && /^@@/m.test(diff)),
+				// null: this tool's targets cannot be checked (MCP and extension tools).
+				outside: outsideTargets(event.toolName, input, ctx.cwd),
+				outsideGuessed: SHELLS.has(event.toolName),
+				diff,
+			});
 			const ok = await ctx.ui.confirm(`Allow ${event.toolName}?`, message, { timeout: TIMEOUT_MS });
 			if (ok !== true) return { block: true, reason: "Denied in Pier (or timed out)" };
 			deepFreeze(input);
