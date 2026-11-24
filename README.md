@@ -12,6 +12,9 @@ tout outil qui écrit ou exécute attend votre accord.
 - **Dossier de projet** : Pier démarre sans dossier ; vous en ouvrez un, ou un dossier récent.
 - **Approbations** : chaque appel d'outil qui n'est pas en lecture seule s'affiche avec la commande entière, un
   avertissement si la cible sort du dossier de travail, et un refus automatique après 60 s.
+- **Diff** : un `write` ou un `edit` montre, avant votre accord, l'aperçu coloré des lignes ajoutées et supprimées ;
+  après un `edit`, le patch exact de Pi reste consultable dans le transcript. Les fichiers modifiés par `bash` n'ont
+  pas de diff.
 - **Reprendre** une session Pi enregistrée, avec son historique. **Nommer** une session.
 - **Presets** : modèle, niveau de réflexion, outils, dossier et consigne, lancés en un clic.
 - **Modèle et réflexion** modifiables dans l'onglet, **jauge de contexte** et coût de la session.

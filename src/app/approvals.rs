@@ -1,5 +1,6 @@
 //! Approval panel above the editor: the oldest pending tool call, Autoriser / Refuser, countdown.
 
+use super::diff_view;
 use eframe::egui;
 use pier::session::transcript::ARM_DELAY;
 use pier::workspace::Tab;
@@ -15,7 +16,12 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             ui.colored_label(ui.visuals().error_fg_color, warning);
         }
         if !a.message.is_empty() {
-            egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| ui.monospace(&a.message));
+            egui::ScrollArea::vertical().id_salt("approval_message").max_height(150.0).show(ui, |ui| ui.monospace(&a.message));
+        }
+        if let Some(diff) = &a.diff {
+            ui.add_space(2.0);
+            ui.weak(format!("Modifications prévues ({})", diff_view::summary(diff)));
+            diff_view::show(ui, ("approval_diff", &a.id), diff, 300.0);
         }
         ui.horizontal(|ui| {
             // Disabled for a moment after a new approval appears, so a click meant for the previous one cannot land here.

@@ -1,5 +1,6 @@
 //! Central panel: the streamed transcript.
 
+use super::diff_view;
 use eframe::egui;
 use pier::session::transcript::Kind;
 use pier::workspace::Tab;
@@ -33,6 +34,11 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
                     }
                     Kind::Tool => {
                         ui.monospace(&e.text);
+                        if let Some(diff) = &e.diff {
+                            ui.collapsing(format!("Voir le diff ({})", diff_view::summary(diff)), |ui| {
+                                diff_view::show(ui, ("entry_diff", i), diff, 400.0);
+                            });
+                        }
                     }
                     Kind::Notice => {
                         ui.weak(&e.text);

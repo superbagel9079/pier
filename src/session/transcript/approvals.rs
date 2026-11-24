@@ -12,6 +12,8 @@ const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
 pub const ARM_DELAY: Duration = Duration::from_millis(400);
 /// First line the approval extension puts in the message when a target is outside the working folder.
 const OUTSIDE_PREFIX: &str = "⚠ Hors du dossier de travail";
+/// Line after which the extension puts a diff preview of a write or edit.
+const DIFF_MARK: &str = "\n⟦aperçu des modifications⟧\n";
 
 /// A tool call waiting for the user's decision.
 #[derive(Debug, Clone)]
@@ -24,6 +26,8 @@ pub struct Approval {
     pub deadline: Option<Instant>,
     /// When it reached the front of the queue, i.e. when the user could first see it.
     pub front_since: Instant,
+    /// Unified diff preview of a write or edit, computed by the extension before anything changes.
+    pub diff: Option<String>,
 }
 
 /// Splits the extension's outside-folder warning line off the dialog message.
@@ -44,9 +48,14 @@ impl Transcript {
             detail: message.to_owned(),
             timeout_ms: timeout,
         });
+        let (message, diff) = match message.split_once(DIFF_MARK) {
+            Some((m, d)) => (m, Some(d.to_owned())),
+            None => (message, None),
+        };
         let (outside, message) = split_outside(message);
         let front_since = Instant::now();
-        self.approvals.push_back(Approval { id: id.to_owned(), title: title.to_owned(), message, outside, deadline, front_since });
+        let approval = Approval { id: id.to_owned(), title: title.to_owned(), message, outside, deadline, front_since, diff };
+        self.approvals.push_back(approval);
         if self.state == State::Running {
             self.state = State::Blocked;
         }

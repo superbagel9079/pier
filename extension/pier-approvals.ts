@@ -1,7 +1,7 @@
 // Pier's Pi extension: every tool call that is not a genuine built-in read-only tool waits for an approval in Pier.
 // Embedded in the Pier binary and loaded with `-e`; Pier only reports "Supervisé" while this extension is active.
 
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,12 @@ const OUTSIDE = "⚠ Hors du dossier de travail";
 const UNCHECKED = "ℹ Dossier non vérifié pour cet outil";
 // Shell paths that are not files the agent writes to.
 const HARMLESS = new Set(["/dev/null", "nul", "NUL", "$null"]);
+// Line after which the dialog message holds a unified diff preview; Pier splits on it.
+const DIFF_MARK = "⟦aperçu des modifications⟧";
+// Bigger files get no preview (they may be binary, and the dialog must stay responsive).
+const PREVIEW_MAX_BYTES = 2_000_000;
+// A longer diff is cut, and says so: the rest is not shown, never silently dropped.
+const PREVIEW_MAX_LINES = 3000;
 // Same set as Pi's own path normalization.
 const UNICODE_SPACES = /[  -​  　﻿]/g;
 
@@ -96,6 +102,69 @@ function outsideTargets(toolName: string, input: Record<string, unknown>, cwd: s
 	return null;
 }
 
+type Patcher = (path: string, oldContent: string, newContent: string) => string;
+let patcher: Promise<Patcher | null> | undefined;
+
+/** Pi's own diff (the same format as the patch Pi reports after an edit). Inside Pi this import maps to Pi's copy. */
+function loadPatcher(): Promise<Patcher | null> {
+	patcher ??= import("@earendil-works/pi-coding-agent")
+		.then((m: any) => (typeof m.generateUnifiedPatch === "function" ? m.generateUnifiedPatch : null))
+		.catch(() => null);
+	return patcher;
+}
+
+const lf = (text: string) => text.replaceAll("\r\n", "\n");
+
+/** Current content of the target, `""` for a new file. Throws when the file is too big to preview. */
+function currentContent(cwd: string, path: string): string {
+	const abs = resolve(cwd, normalize(path));
+	if (!existsSync(abs)) return "";
+	if (statSync(abs).size > PREVIEW_MAX_BYTES) throw new Error("fichier trop grand pour un aperçu");
+	return lf(readFileSync(abs, "utf8"));
+}
+
+/** Diff preview of a write or edit, or `null` for other tools. Never throws: a failed preview must not block the dialog. */
+async function preview(toolName: string, input: Record<string, any>, cwd: string): Promise<string | null> {
+	if (toolName !== "write" && toolName !== "edit") return null;
+	if (typeof input.path !== "string") return null;
+	try {
+		const patch = await loadPatcher();
+		if (!patch) return "(aperçu indisponible : diff de Pi introuvable)";
+		const before = currentContent(cwd, input.path);
+		if (toolName === "write") {
+			if (typeof input.content !== "string") return null;
+			const after = lf(input.content);
+			return after === before ? "(contenu identique au fichier actuel)" : cut(patch(input.path, before, after));
+		}
+		// edit: Pi's current argument shape is `edits[]`; the legacy one is a single oldText/newText.
+		const edits: { oldText: string; newText: string }[] = Array.isArray(input.edits)
+			? input.edits
+			: typeof input.oldText === "string"
+				? [{ oldText: input.oldText, newText: input.newText ?? "" }]
+				: [];
+		let after = before;
+		const exact = edits.every((e) => {
+			const old = lf(String(e.oldText));
+			const at = after.indexOf(old);
+			if (at < 0 || after.indexOf(old, at + 1) >= 0) return false; // missing or not unique: Pi will search fuzzily
+			after = after.slice(0, at) + lf(String(e.newText)) + after.slice(at + old.length);
+			return true;
+		});
+		if (exact) return cut(patch(input.path, before, after));
+		const parts = edits.map((e) => patch(input.path, lf(String(e.oldText)), lf(String(e.newText))));
+		return cut(["(aperçu approximatif : texte à remplacer non trouvé tel quel, Pi le cherchera)", ...parts].join("\n"));
+	} catch (e) {
+		return `(aperçu indisponible : ${e instanceof Error ? e.message : e})`;
+	}
+}
+
+function cut(diff: string): string {
+	const lines = diff.split("\n");
+	if (lines.length <= PREVIEW_MAX_LINES) return diff;
+	const hidden = lines.length - PREVIEW_MAX_LINES;
+	return [...lines.slice(0, PREVIEW_MAX_LINES), `… aperçu tronqué : ${hidden} lignes non affichées`].join("\n");
+}
+
 /** After approval, nothing may change what runs: later `tool_call` handlers see the input but cannot mutate it. */
 function deepFreeze<T>(value: T): T {
 	if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -132,6 +201,8 @@ export default function (pi: any) {
 				const how = SHELLS.has(event.toolName) ? " (possiblement, d'après la commande)" : "";
 				message = `${OUTSIDE}${how} : ${outside.join(", ")}\n${message}`;
 			}
+			const diff = await preview(event.toolName, input, ctx.cwd);
+			if (diff !== null) message = `${message}\n${DIFF_MARK}\n${diff}`;
 			const ok = await ctx.ui.confirm(`Autoriser ${event.toolName} ?`, message, { timeout: TIMEOUT_MS });
 			if (ok !== true) return { block: true, reason: "Refusé dans Pier (ou délai expiré)" };
 			deepFreeze(input);

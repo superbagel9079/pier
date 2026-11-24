@@ -3,6 +3,7 @@
 
 mod approvals;
 mod composer;
+mod diff_view;
 mod status_bar;
 mod transcript_view;
 

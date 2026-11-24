@@ -9,7 +9,7 @@ use super::state::State;
 use crate::pi::process::Incoming;
 use crate::pi::protocol::{
     AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, PiCommand, Queued, Role, SessionStats, StateData, StreamEvent,
-    UiRequest,
+    UiRequest, patch_of,
 };
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -38,11 +38,13 @@ pub struct Entry {
     pub tool_id: Option<String>,
     /// For a tool call: `Some(true)` once it ran fine, `Some(false)` if it failed or was refused.
     pub ok: Option<bool>,
+    /// For an `edit` that ran: the exact unified patch Pi reports.
+    pub diff: Option<String>,
 }
 
 impl Entry {
     pub fn new(kind: Kind, text: impl Into<String>) -> Self {
-        Self { kind, text: text.into(), tool_id: None, ok: None }
+        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None }
     }
 }
 
@@ -193,8 +195,9 @@ impl Transcript {
                 let err = message.error_message.as_deref().unwrap_or("erreur provider");
                 self.push(Kind::Error, err);
             }
-            Event::ToolExecutionEnd { tool_call_id, tool_name, is_error } => {
-                self.tool_result(tool_call_id.as_deref(), tool_name, *is_error)
+            Event::ToolExecutionEnd { tool_call_id, tool_name, is_error, result } => {
+                let patch = result.as_ref().and_then(|r| patch_of(&r.details));
+                self.tool_result(tool_call_id.as_deref(), tool_name, *is_error, patch);
             }
             Event::QueueUpdate { steering, follow_up } => self.queued = texts(steering, follow_up),
             Event::AutoRetryStart { attempt } => {
@@ -292,8 +295,8 @@ impl Transcript {
                         self.push(Kind::Error, error_message.unwrap_or_else(|| "erreur provider".into()));
                     }
                 }
-                Ok(HistoryMessage::ToolResult { tool_call_id, tool_name, is_error }) => {
-                    self.tool_result(tool_call_id.as_deref(), &tool_name, is_error);
+                Ok(HistoryMessage::ToolResult { tool_call_id, tool_name, is_error, details }) => {
+                    self.tool_result(tool_call_id.as_deref(), &tool_name, is_error, patch_of(&details));
                 }
                 Ok(HistoryMessage::Other) => {}
                 Err(e) => {
@@ -306,8 +309,9 @@ impl Transcript {
         }
     }
 
-    /// A tool finished: marks its call entry and adds a result line, both tagged with the call id.
-    fn tool_result(&mut self, id: Option<&str>, tool_name: &str, is_error: bool) {
+    /// A tool finished: marks its call entry and adds a result line, both tagged with the call id. An edit's exact
+    /// patch goes on the result line, where the transcript shows it.
+    fn tool_result(&mut self, id: Option<&str>, tool_name: &str, is_error: bool, patch: Option<String>) {
         if let Some(id) = id
             && let Some(call) = self.entries.iter_mut().rev().find(|e| e.tool_id.as_deref() == Some(id) && e.ok.is_none())
         {
@@ -317,6 +321,7 @@ impl Transcript {
         let i = self.push(Kind::Tool, format!("{tool_name} → {status}"));
         self.entries[i].tool_id = id.map(str::to_owned);
         self.entries[i].ok = Some(!is_error);
+        self.entries[i].diff = patch;
     }
 
     fn apply_stream(&mut self, e: &StreamEvent) {
@@ -686,6 +691,35 @@ mod tests {
         assert_eq!(names("/t"), ["fix-tests"], "contains, not only prefix");
         assert!(names("/fix-tests now").is_empty(), "arguments being typed: palette gone");
         assert!(names("fix").is_empty(), "only after a leading /");
+    }
+
+    #[test]
+    fn diffs_reach_the_approval_and_the_edit_result() {
+        let mut t = Transcript::default();
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"extension_ui_request","id":"w","method":"confirm","title":"Autoriser write ?","message":"⚠ Hors du dossier de travail : ../x\n../x\n⟦aperçu des modifications⟧\n--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"}"#,
+                r#"{"type":"extension_ui_request","id":"b","method":"confirm","title":"Autoriser bash ?","message":"ls"}"#,
+            ],
+        );
+        let w = &t.approvals[0];
+        assert_eq!(w.outside.as_deref(), Some("⚠ Hors du dossier de travail : ../x"));
+        assert_eq!(w.message, "../x", "the command stays apart from the preview");
+        assert_eq!(w.diff.as_deref(), Some("--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"));
+        assert_eq!(t.approvals[1].diff, None);
+
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"message_update","assistantMessageEvent":{"type":"toolcall_start","contentIndex":0,"id":"e1","toolName":"edit"}}"#,
+                r#"{"type":"tool_execution_end","toolCallId":"e1","toolName":"edit","isError":false,"result":{"content":[],"details":{"diff":"x","patch":"--- a\n+++ a\n@@ -1 +1 @@\n-b\n+B"}}}"#,
+                r#"{"type":"tool_execution_end","toolCallId":"b1","toolName":"bash","isError":false,"result":{"content":[],"details":{}}}"#,
+            ],
+        );
+        let result = t.entries.iter().find(|e| e.text == "edit → ok").unwrap();
+        assert_eq!(result.diff.as_deref(), Some("--- a\n+++ a\n@@ -1 +1 @@\n-b\n+B"));
+        assert_eq!(t.entries.iter().find(|e| e.text == "bash → ok").unwrap().diff, None);
     }
 
     #[test]

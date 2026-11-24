@@ -87,6 +87,8 @@ pub enum Event {
         tool_name: String,
         #[serde(default)]
         is_error: bool,
+        #[serde(default)]
+        result: Option<ToolOutcome>,
     },
     /// Full current queues, not a delta.
     QueueUpdate {
@@ -203,6 +205,18 @@ pub struct ClearedQueue {
     pub follow_up: Vec<Queued>,
 }
 
+/// `result` of `tool_execution_end` (only what Pier uses).
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+pub struct ToolOutcome {
+    #[serde(default)]
+    pub details: Value,
+}
+
+/// The unified patch Pi's `edit` tool reports in its result details (`details.patch`).
+pub fn patch_of(details: &Value) -> Option<String> {
+    details.get("patch").and_then(Value::as_str).filter(|p| !p.is_empty()).map(str::to_owned)
+}
+
 /// `data` of a `get_state` response (only what Pier uses).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -293,6 +307,8 @@ pub enum HistoryMessage {
         tool_name: String,
         #[serde(default)]
         is_error: bool,
+        #[serde(default)]
+        details: Value,
     },
     /// system, bashExecution, custom, summaries: not shown.
     #[serde(other)]

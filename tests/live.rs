@@ -381,3 +381,39 @@ fn live_slash_commands_listed() {
     assert!(t.matching_commands(&typed).iter().any(|c| &c.name == first), "{typed} finds {first}");
     assert!(!t.entries.iter().any(|e| e.kind == Kind::Error), "{:?}", t.entries);
 }
+
+/// Write then edit a file: each approval carries a diff preview, and the edit's exact patch from Pi lands in the
+/// transcript.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_diff_preview_and_edit_patch() {
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let args = ["--no-session", "--model", &model].map(String::from);
+    let (mut p, mut t) = (Process::spawn(&args, || {}).unwrap(), Transcript::default());
+    pump(&mut p, &mut t, &|t| t.supervised(), 30);
+    let file = format!("pier-diff-probe-{}.txt", std::process::id());
+    let _ = std::fs::remove_file(&file);
+
+    let steps = [
+        (format!("Use the write tool to create {file} with exactly two lines: alpha and beta. Do nothing else."), "+alpha"),
+        (format!("Use the edit tool on {file} to replace the line beta with gamma. Do nothing else."), "+gamma"),
+    ];
+    for (ask, expected) in steps {
+        let before = t.entries.len();
+        p.send(&prompt(&ask)).unwrap();
+        pump(&mut p, &mut t, &|t| !t.approvals.is_empty(), 60);
+        let a = t.approvals.front().expect("waits for an approval").clone();
+        let diff = a.diff.clone().unwrap_or_default();
+        assert!(diff.contains(expected), "{}: preview {diff:?}", a.title);
+        assert!(!diff.contains("approximatif"), "exact preview expected: {diff:?}");
+        assert!(t.answer(&a.id, true));
+        pump(&mut p, &mut t, &|t| t.state == State::Completed && t.approvals.is_empty(), 60);
+        if a.title == "Autoriser edit ?" {
+            let patched = t.entries[before..].iter().find(|e| e.text == "edit → ok").and_then(|e| e.diff.clone());
+            assert!(patched.as_deref().is_some_and(|d| d.contains("-beta") && d.contains("+gamma")), "{:#?}", &t.entries[before..]);
+        }
+    }
+    let content = std::fs::read_to_string(&file).unwrap_or_default();
+    let _ = std::fs::remove_file(&file);
+    assert!(content.contains("gamma") && !content.contains("beta"), "file: {content:?}");
+}

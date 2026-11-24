@@ -1,6 +1,30 @@
 // Self-check of pier-approvals.ts: `node --experimental-strip-types extension/check.mjs` (Node 22+).
 // Drives the extension's handlers with a fake Pi and checks what the approval dialog would say and decide.
 "use strict";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { register } from "node:module";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+// Inside Pi, `@earendil-works/pi-coding-agent` maps to Pi's own copy. Here, point it at the installed Pi (newest release).
+const releases = join(process.env.USERPROFILE ?? homedir(), ".pi/agent/install/releases");
+const pkg = (existsSync(releases) ? readdirSync(releases) : [])
+  .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+  .map((v) => join(releases, v, "node_modules/@earendil-works/pi-coding-agent/dist/index.js"))
+  .find(existsSync);
+if (!pkg) {
+  console.log("FAIL Pi install not found under", releases);
+  process.exit(1);
+}
+const piUrl = JSON.stringify(pathToFileURL(pkg).href);
+register(
+  "data:text/javascript," +
+    encodeURIComponent(
+      `export async function resolve(s, c, next) { return s === "@earendil-works/pi-coding-agent" ? { url: ${piUrl}, shortCircuit: true } : next(s, c); }`,
+    ),
+);
+
 const mod = await import(new URL("./pier-approvals.ts", import.meta.url));
 const handlers = {};
 let toolSource = "builtin";
@@ -98,6 +122,35 @@ check(!mutated, "approved input is frozen");
 // A thrown error blocks (fail closed).
 const boom = await handlers.tool_call({ toolName: "bash", input: { command: "x" } }, { cwd, ui: { confirm: async () => { throw new Error("ui gone"); } } });
 check(boom?.block === true, "an error in the dialog blocks the call");
+
+// Diff previews for write and edit, in a throwaway folder.
+const MARK = "⟦aperçu des modifications⟧";
+const work = mkdtempSync(join(tmpdir(), "pier-check-"));
+const inWork = async (toolName, input) => {
+  let message = "";
+  await handlers.tool_call({ toolName, input }, { cwd: work, ui: { confirm: async (_t, m) => ((message = m), false) } });
+  const [, diff = null] = message.split(`\n${MARK}\n`);
+  return diff;
+};
+let d = await inWork("write", { path: "new.txt", content: "hello\nworld\n" });
+check(d?.includes("+hello") && d.includes("+world"), "write, new file: every line added");
+writeFileSync(join(work, "old.txt"), "a\nb\nc\n");
+d = await inWork("write", { path: "old.txt", content: "a\nB\nc\n" });
+check(d?.includes("-b") && d.includes("+B") && !d.includes("-a"), "write, existing file: only the changed line");
+d = await inWork("write", { path: "old.txt", content: "a\nb\nc\n" });
+check(d?.startsWith("(contenu identique"), "write, same content: said so");
+writeFileSync(join(work, "crlf.txt"), "one\r\ntwo\r\nthree\r\n");
+d = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "two\n", newText: "TWO\n" }] });
+check(d?.includes("-two") && d.includes("+TWO") && !d.includes("approximatif"), "edit on a CRLF file: exact diff");
+d = await inWork("edit", { path: "crlf.txt", oldText: "two", newText: "2" });
+check(d?.includes("-two") && d.includes("+2") && !d.includes("approximatif"), "edit, legacy oldText/newText: exact diff");
+d = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "absent", newText: "x" }] });
+check(d?.startsWith("(aperçu approximatif") && d.includes("-absent") && d.includes("+x"), "edit, text not found: approximate, said so");
+d = await inWork("write", { path: "big.txt", content: Array.from({ length: 4000 }, (_, i) => `l${i}`).join("\n") });
+check(d?.includes("aperçu tronqué") && d.includes("lignes non affichées"), "a 4000-line diff is cut and says so");
+d = await inWork("bash", { command: "ls" });
+check(d === null, "bash: no diff preview");
+rmSync(work, { recursive: true, force: true });
 
 // Supervision status is set on start and removed on shutdown.
 const statuses = [];
