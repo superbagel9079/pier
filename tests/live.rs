@@ -1,5 +1,6 @@
-//! Tests against the real Pi over the network, ignored by default:
-//! `$env:PIER_TEST_MODEL='openrouter/...'; cargo test -- --ignored --nocapture`.
+//! Tests against the real Pi over the network, ignored by default (each costs a little):
+//! `$env:PIER_TEST_MODEL='openrouter/...'; cargo test --test live -- --ignored --test-threads=1`.
+//! Run one at a time: several Pi starting together compete for the same session folder and the network.
 
 use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
@@ -9,23 +10,12 @@ use pier::session::transcript::{Kind, Transcript};
 use std::time::{Duration, Instant};
 
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_prompt_steer_and_stop() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
     let mut p = Process::spawn(&args, || {}).unwrap();
     let mut t = Transcript::default();
-    let pump = |p: &mut Process, t: &mut Transcript, until: &dyn Fn(&Transcript) -> bool, secs: u64| {
-        let end = Instant::now() + Duration::from_secs(secs);
-        while Instant::now() < end && !until(t) {
-            if let Ok(m) = p.rx.recv_timeout(Duration::from_millis(200)) {
-                t.apply(m);
-            }
-            for r in std::mem::take(&mut t.outbox) {
-                p.send(&r).unwrap();
-            }
-        }
-    };
 
     p.send(&prompt("Reply with exactly the word: bonjour")).unwrap();
     pump(&mut p, &mut t, &|t| t.entries.iter().any(|e| e.kind == Kind::Assistant) && !t.state.is_running(), 60);
@@ -55,7 +45,7 @@ fn prompt(message: &str) -> Command {
 
 /// Pier's extension is active, an allowed bash call runs, a refused one does not.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_tool_approval_allow_and_deny() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--model", &model].map(String::from);
@@ -110,7 +100,7 @@ fn pump(p: &mut Process, t: &mut Transcript, until: &dyn Fn(&Transcript) -> bool
 
 /// Two Pi processes run side by side, each reply stays in its own transcript, and closing one leaves the other usable.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_two_parallel_sessions() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
@@ -147,7 +137,7 @@ fn live_two_parallel_sessions() {
 
 /// A saved session reopened with `--session` shows its history and Pi still knows what was said.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_resume_session() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-tools", "--model", &model].map(String::from);
@@ -172,12 +162,13 @@ fn live_resume_session() {
     let last = t.entries.iter().rev().find(|e| e.kind == Kind::Assistant).map(|e| e.text.to_lowercase());
     drop(p);
     let _ = std::fs::remove_file(&file); // test session, not the user's
-    assert!(last.is_some_and(|l| l.contains("zebra-42")), "{:#?}", t.entries);
+    // The model may write "Zebra 42" or "zebra_42": what matters is that it remembers, not the exact spelling.
+    assert!(last.as_ref().is_some_and(|l| l.contains("zebra") && l.contains("42")), "reply {last:?}; entries {:#?}", t.entries);
 }
 
 /// A preset's options reach Pi and Pi works in the preset's folder (its session file lands under that folder's name).
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_preset_cwd_and_args() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let dir = std::env::temp_dir().join(format!("pier-preset-{}", std::process::id()));
@@ -208,7 +199,7 @@ fn live_preset_cwd_and_args() {
 
 /// A write outside the working folder carries the warning (refused), one inside does not (approved, and written).
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_outside_folder_warning() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--model", &model].map(String::from);
@@ -234,7 +225,7 @@ fn live_outside_folder_warning() {
 
 /// The current model and thinking level are read from Pi, the model list loads, and a level change is read back.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_model_and_thinking_switch() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
@@ -269,21 +260,32 @@ fn live_model_and_thinking_switch() {
     eprintln!("switched to {} at thinking {target}", other.key());
 }
 
-/// Closing a tab leaves no process behind: the launcher, the real Pi it starts, and their children all go.
+/// Closing a tab while an approved command runs leaves no process behind: the launcher, the real Pi and the
+/// command it started (which would never stop by itself) all go, through the Job Object.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_close_leaves_no_orphan() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
-    let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
+    let args = ["--no-session", "--model", &model].map(String::from);
     let mut p = Process::spawn(&args, || {}).unwrap();
     let mut t = Transcript::default();
     pump(&mut p, &mut t, &|t| t.supervised(), 30);
+    p.send(&prompt("Use the bash tool to run exactly: sleep 30. Do nothing else.")).unwrap();
+    pump(&mut p, &mut t, &|t| !t.approvals.is_empty(), 60);
+    let id = t.approvals.front().expect("bash waits for an approval").id.clone();
+    assert!(t.answer(&id, true));
+    pump(&mut p, &mut t, &|_| false, 3); // let bash start sleep
     let tree = descendants(p.id());
-    assert!(tree.len() >= 2, "launcher and the real Pi: {tree:?}");
+    assert!(tree.len() >= 3, "launcher, Pi and the running command: {tree:?}");
+
     drop(p);
-    std::thread::sleep(Duration::from_millis(500));
-    let alive: Vec<u32> = tree.into_iter().filter(|pid| is_alive(*pid)).collect();
-    assert!(alive.is_empty(), "still running after close: {alive:?}");
+    let end = Instant::now() + Duration::from_secs(5);
+    let mut alive: Vec<u32> = tree.clone();
+    while !alive.is_empty() && Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(200));
+        alive.retain(|pid| is_alive(*pid));
+    }
+    assert!(alive.is_empty(), "still running 5 s after close: {alive:?} (tree was {tree:?})");
 }
 
 /// `root` and every process below it.
@@ -316,7 +318,7 @@ fn is_alive(pid: u32) -> bool {
 
 /// A name given in Pier is confirmed by Pi, written to the session file, and shown by Reprendre.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_session_name_reaches_reprendre() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-tools", "--model", &model].map(String::from);
@@ -346,7 +348,7 @@ fn live_session_name_reaches_reprendre() {
 
 /// After an answer, Pi's session stats give a context gauge (percent of a known window) and a cost.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_context_gauge_and_cost() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
@@ -365,7 +367,7 @@ fn live_context_gauge_and_cost() {
 
 /// Pi lists its `/` commands and the palette filter finds them.
 #[test]
-#[ignore]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_slash_commands_listed() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-session", "--no-tools", "--model", &model].map(String::from);
