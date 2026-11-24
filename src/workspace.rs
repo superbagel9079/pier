@@ -294,6 +294,11 @@ impl Workspace {
         }
     }
 
+    /// A run is going in some tab (blocked on an approval counts: the run is not over).
+    pub fn any_running(&self) -> bool {
+        self.tabs.iter().any(|t| t.t.state.is_running())
+    }
+
     pub fn any_approval_pending(&self) -> bool {
         self.tabs.iter().any(|t| !t.t.approvals.is_empty())
     }
@@ -422,6 +427,16 @@ mod tests {
         assert_eq!(tab.title(), "lance les tests", "cleared name: back to the prompt");
         feed(&mut tab, r#"{"type":"response","command":"set_session_name","success":true}"#);
         assert_eq!(tab.t.outbox, [Command::GetState], "the name is read back from Pi");
+    }
+
+    #[test]
+    fn any_running_counts_blocked_runs() {
+        let mut w = ws(&["a", "b"], 0);
+        assert!(!w.any_running());
+        w.tabs[1].t.state = State::Blocked;
+        assert!(w.any_running(), "waiting on an approval is still a run");
+        w.tabs[1].t.state = State::Completed;
+        assert!(!w.any_running());
     }
 
     #[test]

@@ -7,10 +7,12 @@ mod status_bar;
 mod transcript_view;
 
 use eframe::egui::{self, RichText};
+use pier::awake::KeepAwake;
 use pier::pi::sessions::SavedSession;
 use pier::presets::{self, Preset};
 use pier::recent;
 use pier::session::state::Attention;
+use pier::session::transcript::{Entry, Kind};
 use pier::workspace::{Launch, Workspace};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -59,11 +61,22 @@ pub struct PierApp {
     presets: Result<Vec<Preset>, String>,
     /// Window title last sent, so it is only re-sent when it changes.
     title: String,
+    /// Holds off system sleep while a run is going.
+    awake: KeepAwake,
+    /// Set once Windows refused the hold: reported once, not retried every frame.
+    awake_failed: bool,
 }
 
 impl PierApp {
     pub fn new(pi_args: Vec<String>) -> Self {
-        Self { ws: Workspace::new(pi_args, recent::path()), saved: vec![], presets: Ok(vec![]), title: String::new() }
+        Self {
+            ws: Workspace::new(pi_args, recent::path()),
+            saved: vec![],
+            presets: Ok(vec![]),
+            title: String::new(),
+            awake: KeepAwake::default(),
+            awake_failed: false,
+        }
     }
 
     /// A new tab in the active tab's folder, or in a folder the user picks when there is none.
@@ -210,6 +223,9 @@ impl PierApp {
                 }
                 self.presets_menu(ui);
                 self.resume_menu(ui);
+                if self.awake.is_on() {
+                    ui.weak("Veille bloquée").on_hover_text("Un run est en cours : Windows ne se met pas en veille avant la fin.");
+                }
                 if let Some(i) = select {
                     self.ws.active = i;
                 }
@@ -228,6 +244,14 @@ impl eframe::App for PierApp {
             ui.ctx().request_repaint_after(Duration::from_secs(1)); // countdown and expiry without input
         }
         self.call_attention(ui.ctx());
+        if !self.awake_failed
+            && let Err(e) = self.awake.set(self.ws.any_running())
+        {
+            self.awake_failed = true;
+            if let Some(tab) = self.ws.active_tab() {
+                tab.t.entries.push(Entry::new(Kind::Error, format!("Impossible d'empêcher la mise en veille : {e}")));
+            }
+        }
 
         self.tab_strip(ui);
         if let Some(tab) = self.ws.active_tab() {
