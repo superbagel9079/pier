@@ -1,5 +1,5 @@
 // Pier's Pi extension: every tool call that is not a genuine built-in read-only tool waits for an approval in Pier.
-// Embedded in the Pier binary and loaded with `-e`; Pier only reports "Supervisé" while this extension is active.
+// Embedded in the Pier binary and loaded with `-e`; Pier only reports "Supervised" while this extension is active.
 
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -13,13 +13,13 @@ const SHELLS = new Set(["bash", "powershell"]);
 // Pi auto-resolves the dialog to "not confirmed" after this; Pier shows the countdown.
 const TIMEOUT_MS = 60_000;
 // First line of the dialog message when a target is outside the working folder; Pier looks for this prefix.
-const OUTSIDE = "⚠ Hors du dossier de travail";
+const OUTSIDE = "⚠ Outside the working folder";
 // Shown when Pier cannot tell where a tool acts (MCP and extension tools).
-const UNCHECKED = "ℹ Dossier non vérifié pour cet outil";
+const UNCHECKED = "ℹ Folder not checked for this tool";
 // Shell paths that are not files the agent writes to.
 const HARMLESS = new Set(["/dev/null", "nul", "NUL", "$null"]);
 // Line after which the dialog message holds a unified diff preview; Pier splits on it.
-const DIFF_MARK = "⟦aperçu des modifications⟧";
+const DIFF_MARK = "⟦planned changes⟧";
 // Bigger files get no preview (they may be binary, and the dialog must stay responsive).
 const PREVIEW_MAX_BYTES = 2_000_000;
 // A longer diff is cut, and says so: the rest is not shown, never silently dropped.
@@ -119,7 +119,7 @@ const lf = (text: string) => text.replaceAll("\r\n", "\n");
 function currentContent(cwd: string, path: string): string {
 	const abs = resolve(cwd, normalize(path));
 	if (!existsSync(abs)) return "";
-	if (statSync(abs).size > PREVIEW_MAX_BYTES) throw new Error("fichier trop grand pour un aperçu");
+	if (statSync(abs).size > PREVIEW_MAX_BYTES) throw new Error("file too big for a preview");
 	return lf(readFileSync(abs, "utf8"));
 }
 
@@ -129,12 +129,12 @@ async function preview(toolName: string, input: Record<string, any>, cwd: string
 	if (typeof input.path !== "string") return null;
 	try {
 		const patch = await loadPatcher();
-		if (!patch) return "(aperçu indisponible : diff de Pi introuvable)";
+		if (!patch) return "(preview unavailable: Pi's diff not found)";
 		const before = currentContent(cwd, input.path);
 		if (toolName === "write") {
 			if (typeof input.content !== "string") return null;
 			const after = lf(input.content);
-			return after === before ? "(contenu identique au fichier actuel)" : cut(patch(input.path, before, after));
+			return after === before ? "(same content as the current file)" : cut(patch(input.path, before, after));
 		}
 		// edit: Pi's current argument shape is `edits[]`; the legacy one is a single oldText/newText.
 		const edits: { oldText: string; newText: string }[] = Array.isArray(input.edits)
@@ -152,9 +152,9 @@ async function preview(toolName: string, input: Record<string, any>, cwd: string
 		});
 		if (exact) return cut(patch(input.path, before, after));
 		const parts = edits.map((e) => patch(input.path, lf(String(e.oldText)), lf(String(e.newText))));
-		return cut(["(aperçu approximatif : texte à remplacer non trouvé tel quel, Pi le cherchera)", ...parts].join("\n"));
+		return cut(["(approximate preview: text to replace not found as is, Pi will search for it)", ...parts].join("\n"));
 	} catch (e) {
-		return `(aperçu indisponible : ${e instanceof Error ? e.message : e})`;
+		return `(preview unavailable: ${e instanceof Error ? e.message : e})`;
 	}
 }
 
@@ -162,7 +162,7 @@ function cut(diff: string): string {
 	const lines = diff.split("\n");
 	if (lines.length <= PREVIEW_MAX_LINES) return diff;
 	const hidden = lines.length - PREVIEW_MAX_LINES;
-	return [...lines.slice(0, PREVIEW_MAX_LINES), `… aperçu tronqué : ${hidden} lignes non affichées`].join("\n");
+	return [...lines.slice(0, PREVIEW_MAX_LINES), `… preview cut: ${hidden} lines not shown`].join("\n");
 }
 
 /** After approval, nothing may change what runs: later `tool_call` handlers see the input but cannot mutate it. */
@@ -182,7 +182,7 @@ function isBuiltin(pi: any, name: string): boolean {
 
 export default function (pi: any) {
 	pi.on("session_start", async (_event: any, ctx: any) => {
-		ctx.ui.setStatus("pier-supervision", "Supervisé");
+		ctx.ui.setStatus("pier-supervision", "Supervised");
 	});
 
 	pi.on("session_shutdown", async (_event: any, ctx: any) => {
@@ -198,18 +198,18 @@ export default function (pi: any) {
 			if (outside === null) {
 				message = `${UNCHECKED}\n${message}`;
 			} else if (outside.length > 0) {
-				const how = SHELLS.has(event.toolName) ? " (possiblement, d'après la commande)" : "";
+				const how = SHELLS.has(event.toolName) ? " (possibly, from the command text)" : "";
 				message = `${OUTSIDE}${how} : ${outside.join(", ")}\n${message}`;
 			}
 			const diff = await preview(event.toolName, input, ctx.cwd);
 			if (diff !== null) message = `${message}\n${DIFF_MARK}\n${diff}`;
-			const ok = await ctx.ui.confirm(`Autoriser ${event.toolName} ?`, message, { timeout: TIMEOUT_MS });
-			if (ok !== true) return { block: true, reason: "Refusé dans Pier (ou délai expiré)" };
+			const ok = await ctx.ui.confirm(`Allow ${event.toolName}?`, message, { timeout: TIMEOUT_MS });
+			if (ok !== true) return { block: true, reason: "Denied in Pier (or timed out)" };
 			deepFreeze(input);
 			return undefined;
 		} catch (e) {
 			// Fail closed: no decision means no execution.
-			return { block: true, reason: `Approbation impossible : ${e}` };
+			return { block: true, reason: `Approval failed: ${e}` };
 		}
 	});
 }

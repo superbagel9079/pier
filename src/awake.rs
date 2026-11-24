@@ -36,7 +36,7 @@ fn request(on: bool) -> std::io::Result<()> {
     let flags = if on { ES_CONTINUOUS | ES_SYSTEM_REQUIRED } else { ES_CONTINUOUS };
     // SAFETY: plain Win32 call with documented flags; returns 0 on failure.
     if unsafe { SetThreadExecutionState(flags) } == 0 {
-        return Err(std::io::Error::other("SetThreadExecutionState a échoué"));
+        return Err(std::io::Error::other("SetThreadExecutionState failed"));
     }
     Ok(())
 }

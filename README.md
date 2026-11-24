@@ -1,110 +1,108 @@
 # Pier
 
-Pier est un cockpit de bureau pour l'agent de code [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) :
-plusieurs sessions Pi en onglets, chacune pilotée en direct (stream, steer, Stop), et **supervisée par défaut** :
-tout outil qui écrit ou exécute attend votre accord.
+Pier is a desktop cockpit for the [Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) coding agent:
+several Pi sessions in tabs, each driven live (stream, steer, Stop), and **supervised by default**: every tool that
+writes or runs waits for your approval.
 
-Écrit en Rust avec egui, Pier reste léger : environ 90 Mo de RAM au repos (mesure : `tools/measure-ram.ps1`).
+Written in Rust with egui, Pier stays light: about 90 MB of RAM at idle (measured with `tools/measure-ram.ps1`).
 
-## Ce que fait Pier
+## What Pier does
 
-- **Onglets** : un process `pi --mode rpc` par onglet. Les onglets en arrière-plan continuent de tourner.
-- **Dossier de projet** : Pier démarre sans dossier ; vous en ouvrez un, ou un dossier récent.
-- **Approbations** : chaque appel d'outil qui n'est pas en lecture seule s'affiche avec la commande entière, un
-  avertissement si la cible sort du dossier de travail, et un refus automatique après 60 s.
-- **Diff** : un `write` ou un `edit` montre, avant votre accord, l'aperçu coloré des lignes ajoutées et supprimées ;
-  après un `edit`, le patch exact de Pi reste consultable dans le transcript. Les fichiers modifiés par `bash` n'ont
-  pas de diff.
-- **Reprendre** une session Pi enregistrée, avec son historique. **Nommer** une session.
-- **Presets** : modèle, niveau de réflexion, outils, dossier et consigne, lancés en un clic.
-- **Modèle et réflexion** modifiables dans l'onglet, **jauge de contexte** et coût de la session.
-- **Palette `/`** des commandes, modèles de prompt et skills de Pi.
-- **Journal** JSONL par onglet : ouverture, runs, chaque approbation demandée et décidée.
-- La barre des tâches clignote quand un onglet en arrière-plan attend une approbation ; Windows ne se met pas en
-  veille pendant un run.
+- **Tabs**: one `pi --mode rpc` process per tab. Background tabs keep running.
+- **Project folder**: Pier starts without a folder; you open one, or a recent one.
+- **Approvals**: every tool call that is not read-only shows the whole command, a warning when the target is outside
+  the working folder, and is denied automatically after 60 s.
+- **Diff**: a `write` or `edit` shows a colored preview of the added and removed lines before you approve it; after an
+  `edit`, Pi's exact patch stays available in the transcript. Files changed by `bash` get no diff.
+- **Resume** a saved Pi session, with its history. **Name** a session.
+- **Presets**: model, thinking level, tools, folder and instructions, launched in one click.
+- **Model and thinking level** switchable inside a tab, **context gauge** and session cost.
+- **`/` palette** of Pi's commands, prompt templates and skills.
+- **Journal**: one JSONL file per tab: tab opened, runs, every approval requested and decided.
+- The taskbar flashes when a background tab waits for an approval; Windows does not sleep while a run is going.
 
-## Prérequis
+## Requirements
 
-- Windows 10 ou 11 (Pier utilise des Job Objects et l'API d'alimentation de Windows).
-- Pi installé avec son installateur géré : `%USERPROFILE%\.pi\agent\bin\pi-launcher.js` et, si présent,
-  `%LOCALAPPDATA%\pi-node\current\node.exe` (sinon `node` du PATH). Testé avec Pi 1.5.2.
-- Rust stable récent (édition 2024).
+- Windows 10 or 11 (Pier uses Windows Job Objects and the power API).
+- Pi installed with its managed installer: `%USERPROFILE%\.pi\agent\bin\pi-launcher.js` and, if present,
+  `%LOCALAPPDATA%\pi-node\current\node.exe` (otherwise `node` from the PATH). Tested with Pi 1.5.2.
+- A recent stable Rust (edition 2024).
 
-## Lancer
+## Run
 
 ```powershell
 cargo run --release
 ```
 
-Les arguments après `--` sont passés à chaque Pi, par exemple un modèle :
+Arguments after `--` go to every Pi, for example a model:
 
 ```powershell
 cargo run --release -- --model openrouter/deepseek/deepseek-v4.1-flash
 ```
 
-## Fichiers de Pier
+## Pier's files
 
-Tous dans `%APPDATA%\pier\` :
+All in `%APPDATA%\pier\`:
 
-| Fichier | Rôle |
+| File | Purpose |
 |---|---|
-| `presets.json` | Presets (créé avec un exemple par « Presets › Modifier les presets… »). Une clé inconnue, un niveau de réflexion invalide ou un dossier absent est signalé dans le menu. |
-| `recent.json` | Dossiers de projet récents (10 au plus). |
-| `journal\*.jsonl` | Un journal par onglet. Les arguments de lancement n'y sont jamais écrits. |
-| `pier-approvals.ts` | L'extension d'approbation, embarquée dans l'exécutable et réécrite si elle change. |
+| `presets.json` | Presets (created with an example by Presets › Edit presets…). An unknown key, an invalid thinking level or a missing folder is reported in the menu. |
+| `recent.json` | Recent project folders (10 at most). |
+| `journal\*.jsonl` | One journal per tab. Launch arguments are never written there. |
+| `pier-approvals.ts` | The approval extension, embedded in the executable and rewritten when it changes. |
 
-Les conversations restent celles de Pi, dans ses propres dossiers de session.
+Conversations stay Pi's own, in Pi's session folders.
 
-## Sécurité
+## Safety
 
-- Pi charge toujours l'extension de Pier (`-e`), même avec `--no-extensions`. Tant qu'elle ne s'est pas signalée,
-  Pier refuse d'envoyer quoi que ce soit (« Non supervisé »).
-- L'extension refuse par défaut : erreur, délai dépassé ou fenêtre fermée valent refus. Après votre accord, l'entrée
-  de l'outil est gelée, pour qu'aucune autre extension ne la modifie.
-- `read`, `grep`, `find` et `ls` passent sans accord seulement s'ils sont les outils d'origine de Pi.
-- L'avertissement « hors du dossier de travail » est fiable pour `write` et `edit`, et **indicatif** pour `bash` et
-  `powershell` (lu dans le texte de la commande). Ce n'est pas un bac à sable.
-- Fermer un onglet ou quitter Pier arrête tout l'arbre de process de l'onglet (Job Object Windows).
+- Pi always loads Pier's extension (`-e`), even with `--no-extensions`. Until it reports in, Pier refuses to send
+  anything ("Not supervised").
+- The extension fails closed: an error, a timeout or a closed window means denied. After your approval the tool input
+  is frozen, so no other extension can change it.
+- `read`, `grep`, `find` and `ls` skip approval only when they are Pi's own built-in tools.
+- The "outside the working folder" warning is reliable for `write` and `edit`, and **a hint only** for `bash` and
+  `powershell` (read from the command text). It is not a sandbox.
+- Closing a tab or quitting Pier stops the tab's whole process tree (Windows Job Object).
 
 ## Tests
 
 ```powershell
-cargo test                                  # tests unitaires, sans réseau
-node --experimental-strip-types extension/check.mjs   # auto-test de l'extension (Node 22+)
+cargo test                                            # unit tests, no network
+node --experimental-strip-types extension/check.mjs   # extension self-check (Node 22+, uses the installed Pi)
 ```
 
-Les tests live parlent au vrai Pi et à un vrai modèle (chaque test coûte un peu) :
+Live tests talk to the real Pi and a real model (each test costs a little):
 
 ```powershell
 $env:PIER_TEST_MODEL = 'openrouter/deepseek/deepseek-v4.1-flash'
 cargo test --test live -- --ignored --test-threads=1
 ```
 
-Avant chaque commit : `cargo fmt`, `cargo clippy --all-targets`, `cargo test`, puis les tests live.
+Before each commit: `cargo fmt`, `cargo clippy --all-targets`, `cargo test`, then the live tests.
 
-## Organisation du code
+## Code layout
 
 ```
 src/
-  lib.rs              le cœur, sans egui
-  pi/                 parler à Pi : process (Job Object, threads), protocol (types serde), sessions (sur disque)
-  session/            le modèle : transcript (stream, historique, approbations), state, journal
-  workspace.rs        les onglets : lancer, envoyer, Stop, fermer, ce qui doit prévenir l'utilisateur
+  lib.rs              the core, no egui
+  pi/                 talking to Pi: process (Job Object, threads), protocol (serde types), sessions (on disk)
+  session/            the model: transcript (stream, history, approvals), state, journal, diff
+  workspace.rs        the tabs: launch, send, Stop, close, what needs the user's attention
   presets.rs, recent.rs, files.rs, awake.rs
-  main.rs, app/       l'interface egui : elle dessine et demande, sans logique de session
-extension/            l'extension Pi d'approbation et son auto-test
-tests/live.rs         tests contre le vrai Pi
-tools/                mesure de RAM
+  main.rs, app/       the egui interface: it draws and asks, with no session logic
+extension/            the Pi approval extension and its self-check
+tests/live.rs         tests against the real Pi
+tools/                RAM measurement
 ```
 
-Règle : toute logique va dans le cœur, avec un test ; `app/` ne fait que dessiner.
+Rule: all logic goes into the core, with a test; `app/` only draws.
 
-## Limites connues
+## Known limits
 
-- Le texte des réponses n'est pas encore rendu en Markdown (passe d'interface à venir).
-- Les dialogues d'extension autres que « confirmer » (choix, saisie, éditeur) sont refusés.
-- Reprendre ne lit que le dossier de sessions par défaut de Pi.
+- Answer text is not rendered as Markdown yet (interface pass to come).
+- Extension dialogs other than "confirm" (select, input, editor) are denied.
+- Resume only reads Pi's default session folder.
 
-## Licence
+## License
 
-MIT, voir `LICENSE`.
+MIT, see `LICENSE`.

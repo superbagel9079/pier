@@ -1,4 +1,4 @@
-//! Approval panel above the editor: the oldest pending tool call, Autoriser / Refuser, countdown.
+//! Approval panel above the editor: the oldest pending tool call, Allow / Deny, countdown.
 
 use super::diff_view;
 use eframe::egui;
@@ -20,7 +20,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         }
         if let Some(diff) = &a.diff {
             ui.add_space(2.0);
-            ui.weak(format!("Modifications prévues ({})", diff_view::summary(diff)));
+            ui.weak(format!("Planned changes ({})", diff_view::summary(diff)));
             diff_view::show(ui, ("approval_diff", &a.id), diff, 300.0);
         }
         ui.horizontal(|ui| {
@@ -29,13 +29,13 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             if !armed {
                 ui.ctx().request_repaint_after(ARM_DELAY);
             }
-            let allow = ui.add_enabled(armed, egui::Button::new("Autoriser")).clicked();
-            let deny = ui.add_enabled(armed, egui::Button::new("Refuser")).clicked();
+            let allow = ui.add_enabled(armed, egui::Button::new("Allow")).clicked();
+            let deny = ui.add_enabled(armed, egui::Button::new("Deny")).clicked();
             if let Some(d) = a.deadline {
-                ui.weak(format!("refus automatique dans {} s", d.saturating_duration_since(Instant::now()).as_secs()));
+                ui.weak(format!("auto-deny in {} s", d.saturating_duration_since(Instant::now()).as_secs()));
             }
             if waiting > 0 {
-                ui.weak(format!("· {waiting} autre(s) en attente"));
+                ui.weak(format!("· {waiting} more waiting"));
             }
             if allow || deny {
                 tab.approve(&a.id, allow);

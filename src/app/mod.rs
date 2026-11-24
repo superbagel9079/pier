@@ -35,7 +35,7 @@ fn open_in_editor(path: &Path) -> std::io::Result<()> {
 /// Native folder dialog.
 // shortcut: blocks the window while open (tabs catch up right after; approval deadlines still apply), move to a thread if that bothers.
 fn pick_folder() -> Option<PathBuf> {
-    rfd::FileDialog::new().set_title("Choisir le dossier du projet").pick_folder()
+    rfd::FileDialog::new().set_title("Choose the project folder").pick_folder()
 }
 
 /// Repaints the window when a tab's Pi sends something.
@@ -44,19 +44,19 @@ fn waker(ctx: &egui::Context) -> impl Fn() + Send + Clone + 'static {
     move || ctx.request_repaint()
 }
 
-/// "il y a 5 min" style age, coarse on purpose.
+/// "5 min ago" style age, coarse on purpose.
 fn ago(secs: u64) -> String {
     match secs {
-        0..60 => "à l'instant".into(),
-        60..3600 => format!("il y a {} min", secs / 60),
-        3600..86_400 => format!("il y a {} h", secs / 3600),
-        _ => format!("il y a {} j", secs / 86_400),
+        0..60 => "just now".into(),
+        60..3600 => format!("{} min ago", secs / 60),
+        3600..86_400 => format!("{} h ago", secs / 3600),
+        _ => format!("{} d ago", secs / 86_400),
     }
 }
 
 pub struct PierApp {
     ws: Workspace,
-    /// Saved sessions of the active folder, read when the Reprendre menu opens (not every frame).
+    /// Saved sessions of the active folder, read when the Resume menu opens (not every frame).
     saved: Vec<(SavedSession, bool)>,
     /// presets.json, read when the Presets menu opens; an error is shown, not hidden.
     presets: Result<Vec<Preset>, String>,
@@ -98,7 +98,7 @@ impl PierApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(kind));
         }
         let waiting = self.ws.waiting_approvals();
-        let title = if waiting == 0 { "Pier".to_owned() } else { format!("Pier · {waiting} en attente d'approbation") };
+        let title = if waiting == 0 { "Pier".to_owned() } else { format!("Pier · {waiting} waiting for approval") };
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -110,15 +110,15 @@ impl PierApp {
         let mut pick = None;
         egui::CentralPanel::default().show(ui, |ui| {
             ui.add_space(24.0);
-            ui.heading("Choisissez le dossier du projet");
-            ui.weak("Pi travaillera dans ce dossier. Chaque onglet garde le sien.");
+            ui.heading("Choose the project folder");
+            ui.weak("Pi will work in this folder. Each tab keeps its own.");
             ui.add_space(12.0);
-            if ui.button("Ouvrir un dossier…").clicked() {
+            if ui.button("Open folder…").clicked() {
                 pick = pick_folder();
             }
             if !self.ws.recent.is_empty() {
                 ui.add_space(16.0);
-                ui.strong("Récents");
+                ui.strong("Recent");
                 for folder in &self.ws.recent {
                     let name = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| folder.display().to_string());
                     if ui.button(name).on_hover_text(folder.display().to_string()).clicked() {
@@ -135,15 +135,15 @@ impl PierApp {
     /// Menu of Pi sessions saved for the active folder; one already open in a tab is greyed out.
     fn resume_menu(&mut self, ui: &mut egui::Ui) {
         let mut pick = None;
-        let r = ui.menu_button("Reprendre", |ui| {
+        let r = ui.menu_button("Resume", |ui| {
             if self.saved.is_empty() {
-                ui.weak("Aucune session enregistrée pour ce dossier.");
+                ui.weak("No saved session for this folder.");
             }
             for (s, is_open) in &self.saved {
                 let when = s.modified.elapsed().map(|d| ago(d.as_secs())).unwrap_or_default();
                 let label = format!("{}  ·  {when}", s.title);
                 let b = ui.add_enabled(!is_open, egui::Button::new(label));
-                if b.on_disabled_hover_text("Déjà ouverte dans un onglet").clicked() {
+                if b.on_disabled_hover_text("Already open in a tab").clicked() {
                     pick = Some(s.path.clone());
                     ui.close();
                 }
@@ -166,7 +166,7 @@ impl PierApp {
                     ui.colored_label(ui.visuals().error_fg_color, e);
                 }
                 Ok(list) if list.is_empty() => {
-                    ui.weak("Aucun preset. « Modifier les presets… » crée un fichier d'exemple.");
+                    ui.weak("No presets yet. Edit presets… creates an example file.");
                 }
                 Ok(list) => {
                     for (i, p) in list.iter().enumerate() {
@@ -178,9 +178,9 @@ impl PierApp {
                 }
             }
             ui.separator();
-            if ui.button("Modifier les presets…").clicked() {
+            if ui.button("Edit presets…").clicked() {
                 if let Err(e) = presets::ensure_file().and_then(|p| open_in_editor(&p)) {
-                    self.presets = Err(format!("ouverture de presets.json impossible : {e}"));
+                    self.presets = Err(format!("cannot open presets.json: {e}"));
                 }
                 ui.close();
             }
@@ -209,15 +209,15 @@ impl PierApp {
                     if ui.selectable_label(i == self.ws.active, tab.title()).clicked() {
                         select = Some(i);
                     }
-                    if ui.small_button("×").on_hover_text("Fermer l'onglet (arrête son Pi)").clicked() {
+                    if ui.small_button("×").on_hover_text("Close tab (stops its Pi)").clicked() {
                         close = Some(i);
                     }
                     ui.separator();
                 }
-                if ui.button("+").on_hover_text("Nouvel onglet dans le même dossier").clicked() {
+                if ui.button("+").on_hover_text("New tab in the same folder").clicked() {
                     self.open_here(Launch::New, ui.ctx());
                 }
-                if ui.button("Ouvrir un dossier…").clicked()
+                if ui.button("Open folder…").clicked()
                     && let Some(folder) = pick_folder()
                 {
                     self.ws.open(&folder, Launch::New, waker(ui.ctx()));
@@ -225,7 +225,7 @@ impl PierApp {
                 self.presets_menu(ui);
                 self.resume_menu(ui);
                 if self.awake.is_on() {
-                    ui.weak("Veille bloquée").on_hover_text("Un run est en cours : Windows ne se met pas en veille avant la fin.");
+                    ui.weak("Sleep blocked").on_hover_text("A run is in progress: Windows will not sleep until it ends.");
                 }
                 if let Some(i) = select {
                     self.ws.active = i;
@@ -250,7 +250,7 @@ impl eframe::App for PierApp {
         {
             self.awake_failed = true;
             if let Some(tab) = self.ws.active_tab() {
-                tab.t.entries.push(Entry::new(Kind::Error, format!("Impossible d'empêcher la mise en veille : {e}")));
+                tab.t.entries.push(Entry::new(Kind::Error, format!("Could not prevent sleep: {e}")));
             }
         }
 

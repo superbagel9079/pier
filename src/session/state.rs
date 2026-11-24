@@ -53,7 +53,7 @@ impl State {
 /// A reason to call the user back to a session.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Attention {
-    /// A tool call waits for Autoriser / Refuser, and expires otherwise.
+    /// A tool call waits for Allow / Deny, and expires otherwise.
     Approval,
     /// A run finished, failed, was stopped, or Pi died.
     RunEnded,

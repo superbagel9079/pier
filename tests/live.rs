@@ -33,8 +33,8 @@ fn live_prompt_steer_and_stop() {
     pump(&mut p, &mut t, &|t| !t.state.is_running() && !t.restored.is_empty(), 30);
     assert_eq!(t.state, State::Stopped);
     assert_eq!(t.restored, ["STEER-MARK"], "cleared steer must come back to the editor");
-    assert!(t.entries.iter().any(|e| e.text == "Run interrompu."));
-    let unreadable: Vec<_> = t.stderr.iter().filter(|l| l.starts_with("événement illisible")).collect();
+    assert!(t.entries.iter().any(|e| e.text == "Run stopped."));
+    let unreadable: Vec<_> = t.stderr.iter().filter(|l| l.starts_with("unreadable event")).collect();
     assert!(unreadable.is_empty(), "typed events must match real Pi output: {unreadable:#?}");
     eprintln!("{} entries, status {:?}", t.entries.len(), t.status);
 }
@@ -55,14 +55,14 @@ fn live_tool_approval_allow_and_deny() {
     assert!(t.supervised(), "approval extension never reported in; stderr: {:#?}", t.stderr);
 
     // Each command leaves a file, so the test sees what really ran, not only the reported status.
-    for (marker, approve, expected) in [("pier-allow-probe.tmp", true, "bash → ok"), ("pier-deny-probe.tmp", false, "bash → erreur")] {
+    for (marker, approve, expected) in [("pier-allow-probe.tmp", true, "bash → ok"), ("pier-deny-probe.tmp", false, "bash → error")] {
         let probe = std::path::Path::new(marker);
         let _ = std::fs::remove_file(probe);
         let before = t.entries.len();
         p.send(&prompt(&format!("Use the bash tool to run exactly: touch {marker}. Do nothing else, do not retry."))).unwrap();
         pump(&mut p, &mut t, &|t| !t.approvals.is_empty(), 60);
         let a = t.approvals.front().expect("bash must wait for an approval").clone();
-        assert_eq!(a.title, "Autoriser bash ?");
+        assert_eq!(a.title, "Allow bash?");
         assert!(a.message.contains(marker), "approval shows the command: {:?}", a.message);
         assert_eq!(t.state, State::Blocked);
         assert!(t.answer(&a.id, approve));
@@ -154,7 +154,7 @@ fn live_resume_session() {
     let resume = [&args[..], &["--session".into(), file.to_string_lossy().into_owned()]].concat();
     let (mut p, mut t) = (Process::spawn(&resume, || {}).unwrap(), Transcript::default());
     p.send(&Command::GetMessages).unwrap();
-    pump(&mut p, &mut t, &|t| t.supervised() && t.entries.iter().any(|e| e.text == "— session reprise —"), 30);
+    pump(&mut p, &mut t, &|t| t.supervised() && t.entries.iter().any(|e| e.text == "— session resumed —"), 30);
     assert!(t.entries.iter().any(|e| e.kind == Kind::User && e.text.contains("zebra-42")), "history: {:#?}", t.entries);
 
     p.send(&prompt("What was the code word? Reply with it only.")).unwrap();
@@ -211,7 +211,7 @@ fn live_outside_folder_warning() {
         p.send(&prompt(&format!("Use the write tool to create the file {path} containing x. Do nothing else, do not retry."))).unwrap();
         pump(&mut p, &mut t, &|t| !t.approvals.is_empty(), 60);
         let a = t.approvals.front().expect("write must wait for an approval").clone();
-        assert_eq!(a.title, "Autoriser write ?");
+        assert_eq!(a.title, "Allow write?");
         assert_eq!(a.outside.is_some(), outside, "{path}: warning {:?}", a.outside);
         // The inside write is approved: it proves the input freeze after approval does not break Pi's write tool.
         let approve = !outside;
@@ -316,10 +316,10 @@ fn is_alive(pid: u32) -> bool {
     String::from_utf8_lossy(&out.stdout).contains(&pid.to_string())
 }
 
-/// A name given in Pier is confirmed by Pi, written to the session file, and shown by Reprendre.
+/// A name given in Pier is confirmed by Pi, written to the session file, and shown by Resume.
 #[test]
 #[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
-fn live_session_name_reaches_reprendre() {
+fn live_session_name_reaches_resume() {
     let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
     let args = ["--no-tools", "--model", &model].map(String::from);
     let (mut p, mut t) = (Process::spawn(&args, || {}).unwrap(), Transcript::default());
@@ -343,7 +343,7 @@ fn live_session_name_reaches_reprendre() {
     let listed = pier::pi::sessions::list(&cwd, 50);
     let title = listed.iter().find(|s| s.path.file_name() == file.file_name()).map(|s| s.title.clone());
     let _ = std::fs::remove_file(&file); // test session, not the user's
-    assert_eq!(title.as_deref(), Some(name.as_str()), "Reprendre shows the name");
+    assert_eq!(title.as_deref(), Some(name.as_str()), "Resume shows the name");
 }
 
 /// After an answer, Pi's session stats give a context gauge (percent of a known window) and a cost.
@@ -405,10 +405,10 @@ fn live_diff_preview_and_edit_patch() {
         let a = t.approvals.front().expect("waits for an approval").clone();
         let diff = a.diff.clone().unwrap_or_default();
         assert!(diff.contains(expected), "{}: preview {diff:?}", a.title);
-        assert!(!diff.contains("approximatif"), "exact preview expected: {diff:?}");
+        assert!(!diff.contains("approximate"), "exact preview expected: {diff:?}");
         assert!(t.answer(&a.id, true));
         pump(&mut p, &mut t, &|t| t.state == State::Completed && t.approvals.is_empty(), 60);
-        if a.title == "Autoriser edit ?" {
+        if a.title == "Allow edit?" {
             let patched = t.entries[before..].iter().find(|e| e.text == "edit → ok").and_then(|e| e.diff.clone());
             assert!(patched.as_deref().is_some_and(|d| d.contains("-beta") && d.contains("+gamma")), "{:#?}", &t.entries[before..]);
         }

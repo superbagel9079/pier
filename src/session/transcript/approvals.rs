@@ -11,9 +11,9 @@ const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
 /// A new approval at the front ignores clicks this long, so a double-click meant for the previous one cannot approve it.
 pub const ARM_DELAY: Duration = Duration::from_millis(400);
 /// First line the approval extension puts in the message when a target is outside the working folder.
-const OUTSIDE_PREFIX: &str = "⚠ Hors du dossier de travail";
+const OUTSIDE_PREFIX: &str = "⚠ Outside the working folder";
 /// Line after which the extension puts a diff preview of a write or edit.
-const DIFF_MARK: &str = "\n⟦aperçu des modifications⟧\n";
+const DIFF_MARK: &str = "\n⟦planned changes⟧\n";
 
 /// A tool call waiting for the user's decision.
 #[derive(Debug, Clone)]
@@ -67,9 +67,9 @@ impl Transcript {
             return false;
         }
         if approved {
-            self.resolve(true, "autorisé", "allowed");
+            self.resolve(true, "allowed", "allowed");
         } else {
-            self.resolve(false, "refusé", "refused");
+            self.resolve(false, "denied", "refused");
         }
         true
     }
@@ -82,7 +82,7 @@ impl Transcript {
     /// Refuses the oldest approval once its deadline has passed (Pi refuses it on its side too).
     pub fn expire(&mut self, now: Instant) {
         if self.approvals.front().and_then(|a| a.deadline).is_some_and(|d| now >= d) {
-            self.resolve(false, "refusé (délai expiré)", "expired");
+            self.resolve(false, "denied (timed out)", "expired");
         }
     }
 
@@ -90,7 +90,7 @@ impl Transcript {
         let Some(a) = self.approvals.pop_front() else { return };
         self.outbox.push(Command::confirm(&a.id, approved));
         self.journal.push(Record::ApprovalDecided { id: a.id.clone(), decision });
-        self.push(Kind::Notice, format!("{} {verdict}", a.title.trim_end_matches(" ?")));
+        self.push(Kind::Notice, format!("{}: {verdict}", a.title.trim_start_matches("Allow ").trim_end_matches('?')));
         if let Some(next) = self.approvals.front_mut() {
             next.front_since = Instant::now();
         }

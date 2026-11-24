@@ -16,26 +16,26 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         let total = tab.t.entries.len();
         let first = total.saturating_sub(shown);
         egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink(false).show(ui, |ui| {
-            if first > 0 && ui.button(format!("Afficher les messages précédents ({first} masqués)")).clicked() {
+            if first > 0 && ui.button(format!("Show earlier messages ({first} hidden)")).clicked() {
                 shown += VISIBLE_STEP;
             }
             for (i, e) in tab.t.entries.iter().enumerate().skip(first) {
-                // Every "Réflexion" header has the same title; the index keeps their ids distinct.
+                // Every "Thinking" header has the same title; the index keeps their ids distinct.
                 ui.push_id(i, |ui| match e.kind {
                     Kind::User => {
                         ui.add_space(6.0);
-                        ui.strong(format!("Vous : {}", e.text));
+                        ui.strong(format!("You: {}", e.text));
                     }
                     Kind::Assistant => {
                         ui.label(&e.text);
                     }
                     Kind::Thinking => {
-                        ui.collapsing("Réflexion", |ui| ui.weak(&e.text));
+                        ui.collapsing("Thinking", |ui| ui.weak(&e.text));
                     }
                     Kind::Tool => {
                         ui.monospace(&e.text);
                         if let Some(diff) = &e.diff {
-                            ui.collapsing(format!("Voir le diff ({})", diff_view::summary(diff)), |ui| {
+                            ui.collapsing(format!("Show diff ({})", diff_view::summary(diff)), |ui| {
                                 diff_view::show(ui, ("entry_diff", i), diff, 400.0);
                             });
                         }

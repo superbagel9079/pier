@@ -108,7 +108,7 @@ impl Process {
                             Some(Ok(v)) => Incoming::Event(v, Instant::now()),
                             // Not silent: a shape Pier misreads shows up in the status bar.
                             Some(Err(e)) => {
-                                Incoming::Stderr(format!("événement illisible ({e}) : {}", String::from_utf8_lossy(&buf).trim_end()))
+                                Incoming::Stderr(format!("unreadable event ({e}): {}", String::from_utf8_lossy(&buf).trim_end()))
                             }
                         };
                         if out_tx.send(msg).is_err() {
@@ -139,7 +139,7 @@ impl Process {
         std::thread::spawn(move || {
             for line in line_rx {
                 if let Err(e) = stdin.write_all(&line).and_then(|()| stdin.flush()) {
-                    let _ = tx.send(Incoming::Stderr(format!("écriture vers Pi impossible : {e}")));
+                    let _ = tx.send(Incoming::Stderr(format!("cannot write to Pi: {e}")));
                     wake();
                     break;
                 }

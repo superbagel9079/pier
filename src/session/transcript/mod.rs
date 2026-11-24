@@ -145,7 +145,7 @@ impl Transcript {
                 self.queued.clear();
                 self.drop_approvals(false);
                 self.journal.push(Record::PiExited);
-                self.push(Kind::Error, "Le process Pi s'est arrêté.");
+                self.push(Kind::Error, "The Pi process exited.");
             }
         }
     }
@@ -175,7 +175,7 @@ impl Transcript {
         }
         match ev {
             Event::AgentSettled { aborted: true } => {
-                self.push(Kind::Notice, "Run interrompu.");
+                self.push(Kind::Notice, "Run stopped.");
             }
             Event::MessageStart { message } => match message.role {
                 // User messages appear when Pi actually reads them, so a queued steer shows up at the right place.
@@ -192,7 +192,7 @@ impl Transcript {
             }
             Event::MessageEnd { message } if message.is_error() => {
                 self.run_failed = true;
-                let err = message.error_message.as_deref().unwrap_or("erreur provider");
+                let err = message.error_message.as_deref().unwrap_or("provider error");
                 self.push(Kind::Error, err);
             }
             Event::ToolExecutionEnd { tool_call_id, tool_name, is_error, result } => {
@@ -201,11 +201,11 @@ impl Transcript {
             }
             Event::QueueUpdate { steering, follow_up } => self.queued = texts(steering, follow_up),
             Event::AutoRetryStart { attempt } => {
-                self.push(Kind::Notice, format!("Nouvel essai {attempt}…"));
+                self.push(Kind::Notice, format!("Retry {attempt}…"));
             }
             Event::Response { command, success: false, error, .. } => {
-                let err = error.as_deref().unwrap_or("échec");
-                self.push(Kind::Error, format!("{command} : {err}"));
+                let err = error.as_deref().unwrap_or("failed");
+                self.push(Kind::Error, format!("{command}: {err}"));
             }
             Event::Response { command, data, .. } if command == "clear_queue" => {
                 let q: ClearedQueue = serde_json::from_value(data.clone()).unwrap_or_default();
@@ -252,7 +252,7 @@ impl Transcript {
                 UiRequest::Confirm { id, title, message, timeout } => self.request_approval(id, title, message, *timeout, at),
                 // shortcut: other dialogs are refused (fail-closed); add them when an extension Pier relies on needs them.
                 UiRequest::Select { id, title } | UiRequest::Input { id, title } | UiRequest::Editor { id, title } => {
-                    self.push(Kind::Notice, format!("Dialogue « {title} » refusé (type non géré par Pier)."));
+                    self.push(Kind::Notice, format!("Dialog \"{title}\" denied (type not handled by Pier)."));
                     self.outbox.push(Command::cancel_dialog(id));
                 }
                 UiRequest::SetStatus { status_key, status_text } => {
@@ -292,7 +292,7 @@ impl Transcript {
                         };
                     }
                     if stop_reason.as_deref() == Some("error") {
-                        self.push(Kind::Error, error_message.unwrap_or_else(|| "erreur provider".into()));
+                        self.push(Kind::Error, error_message.unwrap_or_else(|| "provider error".into()));
                     }
                 }
                 Ok(HistoryMessage::ToolResult { tool_call_id, tool_name, is_error, details }) => {
@@ -300,12 +300,12 @@ impl Transcript {
                 }
                 Ok(HistoryMessage::Other) => {}
                 Err(e) => {
-                    self.push(Kind::Notice, format!("Message d'historique illisible ({e})."));
+                    self.push(Kind::Notice, format!("Unreadable history message ({e})."));
                 }
             }
         }
         if !list.is_empty() {
-            self.push(Kind::Notice, "— session reprise —");
+            self.push(Kind::Notice, "— session resumed —");
         }
     }
 
@@ -317,7 +317,7 @@ impl Transcript {
         {
             call.ok = Some(!is_error);
         }
-        let status = if is_error { "erreur" } else { "ok" };
+        let status = if is_error { "error" } else { "ok" };
         let i = self.push(Kind::Tool, format!("{tool_name} → {status}"));
         self.entries[i].tool_id = id.map(str::to_owned);
         self.entries[i].ok = Some(!is_error);
@@ -427,7 +427,7 @@ mod tests {
         assert_eq!(t.queued, ["stop"]);
         assert_eq!(t.restored, ["stop", "ensuite"]);
         let errs: Vec<_> = t.entries.iter().filter(|e| e.kind == Kind::Error).map(|e| e.text.as_str()).collect();
-        assert_eq!(errs, ["prompt : busy", "403"]);
+        assert_eq!(errs, ["prompt: busy", "403"]);
         assert_eq!(t.state, State::Failed, "a run ending on a provider error is not 'completed'");
     }
 
@@ -456,10 +456,10 @@ mod tests {
         feed(
             &mut t,
             &[
-                r#"{"type":"extension_ui_request","id":"s","method":"setStatus","statusKey":"pier-supervision","statusText":"Supervisé"}"#,
+                r#"{"type":"extension_ui_request","id":"s","method":"setStatus","statusKey":"pier-supervision","statusText":"Supervised"}"#,
                 r#"{"type":"agent_start"}"#,
-                r#"{"type":"extension_ui_request","id":"a1","method":"confirm","title":"Autoriser bash ?","message":"ls","timeout":60000}"#,
-                r#"{"type":"extension_ui_request","id":"a2","method":"confirm","title":"Autoriser write ?","message":"x.txt","timeout":60000}"#,
+                r#"{"type":"extension_ui_request","id":"a1","method":"confirm","title":"Allow bash?","message":"ls","timeout":60000}"#,
+                r#"{"type":"extension_ui_request","id":"a2","method":"confirm","title":"Allow write?","message":"x.txt","timeout":60000}"#,
             ],
         );
         assert!(t.supervised());
@@ -475,9 +475,9 @@ mod tests {
         t.expire(Instant::now() + Duration::from_secs(59));
         assert_eq!(t.outbox, [Command::confirm("a1", true), Command::confirm("a2", false)]);
         assert_eq!(t.state, State::Running);
-        assert_eq!(t.entries.last().unwrap().text, "Autoriser write refusé (délai expiré)");
+        assert_eq!(t.entries.last().unwrap().text, "write: denied (timed out)");
 
-        feed(&mut t, &[r#"{"type":"extension_ui_request","id":"a3","method":"confirm","title":"Autoriser bash ?"}"#]);
+        feed(&mut t, &[r#"{"type":"extension_ui_request","id":"a3","method":"confirm","title":"Allow bash?"}"#]);
         feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
         assert!(t.approvals.is_empty(), "an aborted run drops its pending approvals");
         assert_eq!(t.state, State::Stopped);
@@ -511,7 +511,7 @@ mod tests {
                 (Kind::Tool, "bash → ok"),
                 (Kind::Assistant, "voilà"),
                 (Kind::Error, "403"),
-                (Kind::Notice, "— session reprise —"),
+                (Kind::Notice, "— session resumed —"),
             ]
         );
         assert_eq!(t.state, State::Ready, "loading history starts no run");
@@ -522,7 +522,7 @@ mod tests {
         let mut t = Transcript::default();
         let confirm = |id: &str| {
             format!(
-                r#"{{"type":"extension_ui_request","id":"{id}","method":"confirm","title":"Autoriser bash ?","message":"rm x","timeout":60000}}"#
+                r#"{{"type":"extension_ui_request","id":"{id}","method":"confirm","title":"Allow bash?","message":"rm x","timeout":60000}}"#
             )
         };
         feed(&mut t, &[r#"{"type":"agent_start"}"#, &confirm("a1"), &confirm("a2"), &confirm("a3")]);
@@ -532,7 +532,7 @@ mod tests {
         let decided = |id: &str, decision| Record::ApprovalDecided { id: id.into(), decision };
         let requested = |id: &str| Record::ApprovalRequested {
             id: id.into(),
-            title: "Autoriser bash ?".into(),
+            title: "Allow bash?".into(),
             detail: "rm x".into(),
             timeout_ms: Some(60000),
         };
@@ -562,11 +562,11 @@ mod tests {
         feed(
             &mut t,
             &[
-                r#"{"type":"extension_ui_request","id":"o","method":"confirm","title":"Autoriser write ?","message":"⚠ Hors du dossier de travail : ..\\x.txt\n..\\x.txt"}"#,
-                r#"{"type":"extension_ui_request","id":"i","method":"confirm","title":"Autoriser bash ?","message":"ls\nwc -l"}"#,
+                r#"{"type":"extension_ui_request","id":"o","method":"confirm","title":"Allow write?","message":"⚠ Outside the working folder : ..\\x.txt\n..\\x.txt"}"#,
+                r#"{"type":"extension_ui_request","id":"i","method":"confirm","title":"Allow bash?","message":"ls\nwc -l"}"#,
             ],
         );
-        assert_eq!(t.approvals[0].outside.as_deref(), Some(r"⚠ Hors du dossier de travail : ..\x.txt"));
+        assert_eq!(t.approvals[0].outside.as_deref(), Some(r"⚠ Outside the working folder : ..\x.txt"));
         assert_eq!(t.approvals[0].message, r"..\x.txt");
         assert_eq!(t.approvals[1].outside, None);
         assert_eq!(t.approvals[1].message, "ls\nwc -l", "a multi-line command stays whole");
@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn a_click_only_answers_the_approval_shown() {
         let mut t = Transcript::default();
-        let confirm = |id: &str| format!(r#"{{"type":"extension_ui_request","id":"{id}","method":"confirm","title":"Autoriser bash ?"}}"#);
+        let confirm = |id: &str| format!(r#"{{"type":"extension_ui_request","id":"{id}","method":"confirm","title":"Allow bash?"}}"#);
         feed(&mut t, &[&confirm("a"), &confirm("b")]);
         assert!(!t.can_answer(Instant::now()), "just arrived: clicks are ignored");
         assert!(t.can_answer(Instant::now() + ARM_DELAY));
@@ -636,7 +636,7 @@ mod tests {
         assert_eq!(t.entries[0].tool_id.as_deref(), Some("c1"));
         assert_eq!(t.entries[0].ok, Some(false), "the call knows its result");
         assert!(t.entries[0].text.len() < 2100, "a written file is not kept whole in memory");
-        assert_eq!((t.entries[1].text.as_str(), t.entries[1].tool_id.as_deref()), ("write → erreur", Some("c1")));
+        assert_eq!((t.entries[1].text.as_str(), t.entries[1].tool_id.as_deref()), ("write → error", Some("c1")));
 
         // Two Stops: the second, empty answer must not erase the steer the first one gave back.
         feed(
@@ -699,12 +699,12 @@ mod tests {
         feed(
             &mut t,
             &[
-                r#"{"type":"extension_ui_request","id":"w","method":"confirm","title":"Autoriser write ?","message":"⚠ Hors du dossier de travail : ../x\n../x\n⟦aperçu des modifications⟧\n--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"}"#,
-                r#"{"type":"extension_ui_request","id":"b","method":"confirm","title":"Autoriser bash ?","message":"ls"}"#,
+                r#"{"type":"extension_ui_request","id":"w","method":"confirm","title":"Allow write?","message":"⚠ Outside the working folder : ../x\n../x\n⟦planned changes⟧\n--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"}"#,
+                r#"{"type":"extension_ui_request","id":"b","method":"confirm","title":"Allow bash?","message":"ls"}"#,
             ],
         );
         let w = &t.approvals[0];
-        assert_eq!(w.outside.as_deref(), Some("⚠ Hors du dossier de travail : ../x"));
+        assert_eq!(w.outside.as_deref(), Some("⚠ Outside the working folder : ../x"));
         assert_eq!(w.message, "../x", "the command stays apart from the preview");
         assert_eq!(w.diff.as_deref(), Some("--- ../x\n+++ ../x\n@@ -0,0 +1 @@\n+hi"));
         assert_eq!(t.approvals[1].diff, None);

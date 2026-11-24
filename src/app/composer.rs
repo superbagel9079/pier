@@ -24,13 +24,11 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             // Fail closed: no prompt reaches Pi before Pier's approval extension has reported in.
             let alive = tab.t.state != State::Crashed && tab.t.supervised();
-            let label = if tab.t.state.is_running() { "Steer" } else { "Envoyer" };
+            let label = if tab.t.state.is_running() { "Steer" } else { "Send" };
             let send = ui.add_enabled(alive, egui::Button::new(label)).clicked();
             let edit = ui.add_sized(
                 [ui.available_width(), 60.0],
-                egui::TextEdit::multiline(&mut tab.input)
-                    .id(editor_id)
-                    .hint_text("Message à Pi (Ctrl+Entrée pour envoyer, / pour les commandes)"),
+                egui::TextEdit::multiline(&mut tab.input).id(editor_id).hint_text("Message to Pi (Ctrl+Enter to send, / for commands)"),
             );
             let ctrl_enter = edit.has_focus() && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter));
             if (send || ctrl_enter) && alive {
@@ -43,9 +41,9 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     if !suggestions.is_empty() {
         egui::Panel::bottom("palette").show(ui, |ui| {
             let header = if total > suggestions.len() {
-                format!("Commandes de Pi : {} sur {total}, tapez pour filtrer (Tab prend la première)", suggestions.len())
+                format!("Pi commands: {} of {total}, type to filter (Tab takes the first)", suggestions.len())
             } else {
-                "Commandes de Pi (Tab prend la première)".to_owned()
+                "Pi commands (Tab takes the first)".to_owned()
             };
             ui.weak(header);
             for (name, description) in &suggestions {

@@ -52,8 +52,8 @@ mod tests {
         use LineKind::*;
         assert_eq!(kinds, [Header, Header, Header, Header, Hunk, Context, Removed, Added, Context, Note]);
         assert_eq!(counts(PATCH), (1, 1), "the --- and +++ headers are not counted");
-        assert_eq!(line_kind("(aperçu approximatif : …)"), Note);
-        assert_eq!(line_kind("… aperçu tronqué : 12 lignes non affichées"), Note);
+        assert_eq!(line_kind("(approximate preview: …)"), Note);
+        assert_eq!(line_kind("… preview cut: 12 lines not shown"), Note);
         assert_eq!(line_kind(""), Context);
     }
 }

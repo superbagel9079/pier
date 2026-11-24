@@ -33,8 +33,8 @@ mod.default({
   getAllTools: () => ["read", "grep", "find", "ls", "bash", "write"].map((name) => ({ name, sourceInfo: { source: toolSource } })),
 });
 const cwd = String.raw`C:\Users\leo\Downloads\brainstorming`;
-const OUT = "⚠ Hors du dossier de travail";
-const UNCHECKED = "ℹ Dossier non vérifié pour cet outil";
+const OUT = "⚠ Outside the working folder";
+const UNCHECKED = "ℹ Folder not checked for this tool";
 let bad = 0;
 const check = (ok, what) => {
   if (!ok) bad++;
@@ -98,7 +98,7 @@ let r = await call("read", { path: "x" });
 check(r.title === null && r.result === undefined, "built-in read: no dialog");
 toolSource = "extension";
 r = await call("read", { path: "x" });
-check(r.title === "Autoriser read ?" && r.result?.block === true, "read replaced by an extension: asks");
+check(r.title === "Allow read?" && r.result?.block === true, "read replaced by an extension: asks");
 toolSource = "builtin";
 
 // The whole command is shown, however long.
@@ -124,7 +124,7 @@ const boom = await handlers.tool_call({ toolName: "bash", input: { command: "x" 
 check(boom?.block === true, "an error in the dialog blocks the call");
 
 // Diff previews for write and edit, in a throwaway folder.
-const MARK = "⟦aperçu des modifications⟧";
+const MARK = "⟦planned changes⟧";
 const work = mkdtempSync(join(tmpdir(), "pier-check-"));
 const inWork = async (toolName, input) => {
   let message = "";
@@ -138,16 +138,16 @@ writeFileSync(join(work, "old.txt"), "a\nb\nc\n");
 d = await inWork("write", { path: "old.txt", content: "a\nB\nc\n" });
 check(d?.includes("-b") && d.includes("+B") && !d.includes("-a"), "write, existing file: only the changed line");
 d = await inWork("write", { path: "old.txt", content: "a\nb\nc\n" });
-check(d?.startsWith("(contenu identique"), "write, same content: said so");
+check(d?.startsWith("(same content"), "write, same content: said so");
 writeFileSync(join(work, "crlf.txt"), "one\r\ntwo\r\nthree\r\n");
 d = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "two\n", newText: "TWO\n" }] });
-check(d?.includes("-two") && d.includes("+TWO") && !d.includes("approximatif"), "edit on a CRLF file: exact diff");
+check(d?.includes("-two") && d.includes("+TWO") && !d.includes("approximate"), "edit on a CRLF file: exact diff");
 d = await inWork("edit", { path: "crlf.txt", oldText: "two", newText: "2" });
-check(d?.includes("-two") && d.includes("+2") && !d.includes("approximatif"), "edit, legacy oldText/newText: exact diff");
+check(d?.includes("-two") && d.includes("+2") && !d.includes("approximate"), "edit, legacy oldText/newText: exact diff");
 d = await inWork("edit", { path: "crlf.txt", edits: [{ oldText: "absent", newText: "x" }] });
-check(d?.startsWith("(aperçu approximatif") && d.includes("-absent") && d.includes("+x"), "edit, text not found: approximate, said so");
+check(d?.startsWith("(approximate preview") && d.includes("-absent") && d.includes("+x"), "edit, text not found: approximate, said so");
 d = await inWork("write", { path: "big.txt", content: Array.from({ length: 4000 }, (_, i) => `l${i}`).join("\n") });
-check(d?.includes("aperçu tronqué") && d.includes("lignes non affichées"), "a 4000-line diff is cut and says so");
+check(d?.includes("preview cut") && d.includes("lines not shown"), "a 4000-line diff is cut and says so");
 d = await inWork("bash", { command: "ls" });
 check(d === null, "bash: no diff preview");
 rmSync(work, { recursive: true, force: true });
@@ -157,7 +157,7 @@ const statuses = [];
 const sctx = { ui: { setStatus: (k, v) => statuses.push([k, v]) } };
 await handlers.session_start({}, sctx);
 await handlers.session_shutdown({}, sctx);
-check(JSON.stringify(statuses) === JSON.stringify([["pier-supervision", "Supervisé"], ["pier-supervision", null]]) || (statuses[1]?.[1] === undefined && statuses[0][1] === "Supervisé"), "Supervisé set on start, cleared on shutdown");
+check(JSON.stringify(statuses) === JSON.stringify([["pier-supervision", "Supervised"], ["pier-supervision", null]]) || (statuses[1]?.[1] === undefined && statuses[0][1] === "Supervised"), "Supervisé set on start, cleared on shutdown");
 
 console.log(bad === 0 ? "all checks passed" : `${bad} check(s) failed`);
 process.exit(bad);

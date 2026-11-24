@@ -72,14 +72,13 @@ impl Tab {
             cwd: folder.clone(),
         });
         let proc = Process::spawn_in(&args, Some(cwd), wake)
-            .map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Lancement de Pi impossible : {e}"))))
+            .map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Cannot start Pi: {e}"))))
             .ok();
         if proc.is_none() {
             t.state = State::Crashed;
         }
-        let journal = Journal::create(&journal::dir())
-            .map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Journal indisponible : {e}"))))
-            .ok();
+        let journal =
+            Journal::create(&journal::dir()).map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Journal unavailable: {e}")))).ok();
         let seen = t.state;
         let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen };
         tab.send(Command::GetState);
@@ -98,7 +97,7 @@ impl Tab {
             return shorten(name);
         }
         let Some(first) = self.t.entries.iter().find(|e| e.kind == Kind::User) else {
-            return self.label.clone().unwrap_or_else(|| "Nouvelle session".into());
+            return self.label.clone().unwrap_or_else(|| "New session".into());
         };
         shorten(first.text.lines().next().unwrap_or_default())
     }
@@ -126,7 +125,7 @@ impl Tab {
         if let Some(j) = &mut self.journal
             && let Err(e) = records.iter().try_for_each(|r| j.write(r))
         {
-            self.t.entries.push(Entry::new(Kind::Error, format!("Journal interrompu ({}) : {e}", j.path.display())));
+            self.t.entries.push(Entry::new(Kind::Error, format!("Journal stopped ({}): {e}", j.path.display())));
             self.journal = None;
         }
     }
@@ -134,10 +133,10 @@ impl Tab {
     fn send(&mut self, cmd: Command) {
         let err = match self.proc.as_mut() {
             Some(p) => p.send(&cmd).err().map(|e| e.to_string()),
-            None => Some("pas de process Pi".into()),
+            None => Some("no Pi process".into()),
         };
         if let Some(e) = err {
-            self.t.entries.push(Entry::new(Kind::Error, format!("Envoi impossible : {e}")));
+            self.t.entries.push(Entry::new(Kind::Error, format!("Cannot send: {e}")));
         }
     }
 
@@ -149,7 +148,7 @@ impl Tab {
             return;
         }
         if !self.t.supervised() {
-            self.t.entries.push(Entry::new(Kind::Error, "Envoi refusé : Pi n'est pas supervisé."));
+            self.t.entries.push(Entry::new(Kind::Error, "Not sent: Pi is not supervised."));
             return;
         }
         // While a run is going, Pi requires a streamingBehavior; steer lands after the current turn.
@@ -176,7 +175,7 @@ impl Tab {
         self.send(Command::SetThinkingLevel { level: level.to_owned() });
     }
 
-    /// Names the session (blank names are ignored); Pi keeps it in the session file, so Reprendre shows it.
+    /// Names the session (blank names are ignored); Pi keeps it in the session file, so Resume shows it.
     pub fn rename(&mut self, name: &str) {
         let name: String = name.trim().chars().take(NAME_MAX).collect();
         if !name.is_empty() {
@@ -225,7 +224,7 @@ pub struct Workspace {
     /// Project folders opened before, newest first.
     pub recent: Vec<PathBuf>,
     recent_file: PathBuf,
-    /// Session files of closed tabs whose Pi is still shutting down: still "open" for Reprendre.
+    /// Session files of closed tabs whose Pi is still shutting down: still "open" for Resume.
     closing: Arc<Mutex<Vec<PathBuf>>>,
 }
 
@@ -445,7 +444,7 @@ mod tests {
         tab.input = "rm -rf".into();
         tab.submit();
         assert_eq!(tab.input, "rm -rf", "kept for later, not sent");
-        assert_eq!(tab.t.entries.last().map(|e| e.text.as_str()), Some("Envoi refusé : Pi n'est pas supervisé."));
+        assert_eq!(tab.t.entries.last().map(|e| e.text.as_str()), Some("Not sent: Pi is not supervised."));
     }
 
     #[test]
@@ -458,7 +457,7 @@ mod tests {
         assert!(w.open_files().contains(&canonical));
         lock(&w.closing).push(canonical.clone()); // what close() does while the Pi is still shutting down
         w.tabs.clear();
-        assert!(w.open_files().contains(&canonical), "Reprendre must not reopen it yet");
+        assert!(w.open_files().contains(&canonical), "Resume must not reopen it yet");
         std::fs::remove_file(&file).unwrap();
     }
 

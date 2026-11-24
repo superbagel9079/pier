@@ -31,7 +31,7 @@ pub enum Command {
     GetSessionStats,
     /// Extension commands, prompt templates and skills; one runs by sending `/name` as a prompt.
     GetCommands,
-    /// Display name of the session, shown by Reprendre and by Pi's own /resume.
+    /// Display name of the session, shown by Resume and by Pi's own /resume.
     SetSessionName {
         name: String,
     },

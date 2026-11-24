@@ -5,17 +5,17 @@ use std::path::{Path, PathBuf};
 
 const THINKING_LEVELS: [&str; 7] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-/// Written on first "Modifier les presets…", so the file has a shape to copy.
+/// Written on first "Edit presets…", so the file has a shape to copy.
 const STARTER: &str = r#"[
   {
-    "name": "Exemple : réponses rapides",
+    "name": "Example: quick answers",
     "model": "openrouter/deepseek/deepseek-v4.1-flash",
     "thinking": "low"
   },
   {
-    "name": "Exemple : revue en lecture seule",
+    "name": "Example: read-only review",
     "tools": "read,grep,find,ls",
-    "appendSystemPrompt": "Tu relis le code sans rien modifier et tu listes les problèmes par ordre de gravité."
+    "appendSystemPrompt": "Review the code without changing anything and list the problems, most serious first."
   }
 ]
 "#;
@@ -53,22 +53,22 @@ impl Preset {
 
     fn check(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {
-            return Err("un preset n'a pas de nom".into());
+            return Err("a preset has no name".into());
         }
         if let Some(t) = &self.thinking
             && !THINKING_LEVELS.contains(&t.as_str())
         {
-            return Err(format!("« {} » : thinking « {t} » inconnu (valeurs : {})", self.name, THINKING_LEVELS.join(", ")));
+            return Err(format!("\"{}\": unknown thinking level \"{t}\" (values: {})", self.name, THINKING_LEVELS.join(", ")));
         }
         if let Some(d) = &self.cwd
             && !d.is_absolute()
         {
-            return Err(format!("« {} » : cwd doit être un chemin complet (par ex. C:\\Users\\…), pas {}", self.name, d.display()));
+            return Err(format!("\"{}\": cwd must be a full path (e.g. C:\\Users\\…), not {}", self.name, d.display()));
         }
         if let Some(d) = &self.cwd
             && !d.is_dir()
         {
-            return Err(format!("« {} » : le dossier {} n'existe pas", self.name, d.display()));
+            return Err(format!("\"{}\": folder {} does not exist", self.name, d.display()));
         }
         Ok(())
     }
@@ -83,9 +83,9 @@ pub fn load(path: &Path) -> Result<Vec<Preset>, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
-        Err(e) => return Err(format!("lecture de {} impossible : {e}", path.display())),
+        Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
     };
-    let presets: Vec<Preset> = serde_json::from_str(&text).map_err(|e| format!("{} invalide : {e}", path.display()))?;
+    let presets: Vec<Preset> = serde_json::from_str(&text).map_err(|e| format!("{} is invalid: {e}", path.display()))?;
     presets.iter().try_for_each(Preset::check)?;
     Ok(presets)
 }
@@ -125,9 +125,9 @@ mod tests {
         assert!(load(Path::new("Z:/does/not/exist.json")).unwrap().is_empty(), "no file = no presets");
         assert!(load_str(r#"[{"name":"a","modle":"x"}]"#).unwrap_err().contains("modle"), "typo in a key");
         assert!(load_str(r#"[{"name":"a","thinking":"huge"}]"#).unwrap_err().contains("huge"));
-        assert!(load_str(r#"[{"name":"a","cwd":"Z:/nope/nope"}]"#).unwrap_err().contains("n'existe pas"));
+        assert!(load_str(r#"[{"name":"a","cwd":"Z:/nope/nope"}]"#).unwrap_err().contains("does not exist"));
         assert!(load_str(r#"[{"name":" "}]"#).is_err());
-        assert!(load_str(r#"[{"name":"a","cwd":"relatif"}]"#).unwrap_err().contains("chemin complet"), "relative cwd");
+        assert!(load_str(r#"[{"name":"a","cwd":"relatif"}]"#).unwrap_err().contains("full path"), "relative cwd");
         assert!(load_str("not json").is_err());
     }
 }
