@@ -53,6 +53,11 @@ pub enum Record {
         to: String,
         undo: String,
     },
+    /// The tab switched to a fork of `from` (the new session file follows as `session_file`).
+    Forked {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        from: Option<PathBuf>,
+    },
     PiExited,
     /// The user closed the tab, which stops its Pi.
     TabClosed,

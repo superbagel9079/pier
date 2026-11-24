@@ -21,6 +21,8 @@ it. It is not the default because it froze a whole PC on window resize with an I
   `edit`, Pi's exact patch stays available in the transcript. Files changed by `bash` get no diff.
 - **Checkpoints**: before each message, the folder's files are saved (git must be installed); "Restore files…" puts
   them back as they were, and the restore itself can be undone. Pi's conversation is not rewound.
+- **Fork** from an earlier message: the tab moves to a new session holding the conversation up to just before it,
+  and the message comes back to the editor; optionally the files are restored too. The original stays in Resume.
 - **Resume** a saved Pi session, with its history. **Name** a session.
 - **Presets**: model, thinking level, tools, folder and instructions, launched in one click.
 - **Model and thinking level** switchable inside a tab, **context gauge** and session cost.

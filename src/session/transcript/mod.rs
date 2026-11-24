@@ -9,8 +9,8 @@ use super::journal::Record;
 use super::state::State;
 use crate::pi::process::Incoming;
 use crate::pi::protocol::{
-    AssistantPart, ClearedQueue, Command, Event, HistoryMessage, ModelInfo, PiCommand, Queued, Role, SessionStats, StateData, StreamEvent,
-    UiRequest, patch_of,
+    AssistantPart, ClearedQueue, Command, Event, ForkMessage, HistoryMessage, ModelInfo, PiCommand, Queued, Role, SessionStats, StateData,
+    StreamEvent, UiRequest, patch_of,
 };
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -104,6 +104,12 @@ pub struct Transcript {
     pub stats: Option<SessionStats>,
     /// Pi's `/` commands (extensions, prompt templates, skills), from `get_commands`.
     pub commands: Vec<PiCommand>,
+    /// User messages a fork can start from, from `get_fork_messages` (asked when the Fork menu opens).
+    pub fork_messages: Vec<ForkMessage>,
+    /// A fork just switched the session: the history about to load is the fork's, not a resume.
+    forked: bool,
+    /// Checkpoint entry kept across a fork (the undo point of a restore made for it), shown after the fork's history.
+    carried: Option<Entry>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
     /// State to return to once the approval queue empties (an approval can arrive outside a run).
@@ -254,6 +260,10 @@ impl Transcript {
             Event::Response { command, data, .. } if command == "get_session_stats" => {
                 self.stats = serde_json::from_value(data.clone()).ok();
             }
+            Event::Response { command, data, .. } if command == "get_fork_messages" => {
+                self.fork_messages = serde_json::from_value(data["messages"].clone()).unwrap_or_default();
+            }
+            Event::Response { command, data, .. } if command == "fork" => self.forked_to(data),
             Event::ThinkingLevelChanged { level } => self.thinking = Some(level.clone()),
             Event::SessionInfoChanged { name } => self.session_name = name.clone(),
             Event::Response { command, data, .. } if command == "get_messages" => self.load_history(&data["messages"]),
@@ -314,9 +324,36 @@ impl Transcript {
                 }
             }
         }
-        if !list.is_empty() {
+        if std::mem::take(&mut self.forked) {
+            self.push(Kind::Notice, "— forked: a new session goes on from here; the original is in Resume —");
+            self.entries.extend(self.carried.take());
+        } else if !list.is_empty() {
             self.push(Kind::Notice, "— session resumed —");
         }
+    }
+
+    /// Pi switched to a fork: the transcript starts over from the fork's history, and the message it was forked
+    /// from goes back to the editor, to be edited and sent again.
+    fn forked_to(&mut self, data: &serde_json::Value) {
+        if data["cancelled"].as_bool() == Some(true) {
+            self.push(Kind::Notice, "Fork cancelled by an extension.");
+            return;
+        }
+        self.journal.push(Record::Forked { from: self.session_file.clone() });
+        // Files restored for this fork: their undo point stays reachable.
+        // Notices (extension restarts) may follow it, but no conversation.
+        let last = self.entries.iter().rposition(|e| matches!(e.kind, Kind::Checkpoint | Kind::User | Kind::Assistant | Kind::Tool));
+        self.carried = last.filter(|&i| self.entries[i].kind == Kind::Checkpoint).map(|i| self.entries[i].clone());
+        self.entries.clear();
+        self.blocks.clear();
+        self.queued.clear();
+        self.fork_messages.clear();
+        self.stats = None;
+        self.forked = true;
+        if let Some(text) = data["text"].as_str().filter(|t| !t.is_empty()) {
+            self.restored.push(text.to_owned());
+        }
+        self.outbox.extend([Command::GetState, Command::GetMessages, Command::GetSessionStats]);
     }
 
     /// A tool finished: marks its call entry and adds a result line, both tagged with the call id. An edit's exact
@@ -491,6 +528,43 @@ mod tests {
         feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
         assert!(t.approvals.is_empty(), "an aborted run drops its pending approvals");
         assert_eq!(t.state, State::Stopped);
+    }
+
+    #[test]
+    fn a_fork_starts_the_transcript_over_and_gives_the_message_back() {
+        let mut t = Transcript::default();
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"a.jsonl"}}"#,
+                r#"{"type":"message_start","message":{"role":"user","content":"one"}}"#,
+                r#"{"type":"message_start","message":{"role":"user","content":"two"}}"#,
+                r#"{"type":"response","command":"get_fork_messages","success":true,"data":{"messages":[{"entryId":"e1","text":"one"},{"entryId":"e2","text":"two"}]}}"#,
+            ],
+        );
+        assert_eq!(t.fork_messages.iter().map(|m| m.entry_id.as_str()).collect::<Vec<_>>(), ["e1", "e2"]);
+        t.outbox.clear();
+
+        feed(&mut t, &[r#"{"type":"response","command":"fork","success":true,"data":{"text":"two","cancelled":false}}"#]);
+        assert!(t.entries.is_empty() && t.fork_messages.is_empty());
+        assert_eq!(t.restored, ["two"], "back to the editor");
+        assert_eq!(t.outbox, [Command::GetState, Command::GetMessages, Command::GetSessionStats]);
+        assert!(t.journal.contains(&Record::Forked { from: Some(PathBuf::from("a.jsonl")) }));
+
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"b.jsonl"}}"#,
+                r#"{"type":"response","command":"get_messages","success":true,"data":{"messages":[{"role":"user","content":"one"}]}}"#,
+            ],
+        );
+        assert_eq!(t.session_file, Some(PathBuf::from("b.jsonl")));
+        assert_eq!(t.entries.len(), 2);
+        assert!(t.entries[1].text.starts_with("— forked"), "not 'resumed': {:?}", t.entries[1].text);
+
+        let before = t.entries.len();
+        feed(&mut t, &[r#"{"type":"response","command":"fork","success":true,"data":{"cancelled":true}}"#]);
+        assert_eq!(t.entries.len(), before + 1, "a cancelled fork keeps everything");
     }
 
     #[test]

@@ -451,7 +451,11 @@ fn live_checkpoint_restores_a_change() {
     ws.tabs[0].input = "Use the write tool to replace the content of a.txt with: two. Do nothing else.".into();
     ws.tabs[0].submit();
     run(&mut ws, &|t| t.t.state == State::Completed);
-    assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "two", "Pi made the change");
+    assert_eq!(
+        std::fs::read_to_string(dir.join("a.txt")).unwrap().trim(),
+        "two",
+        "Pi made the change (a trailing newline is the model's choice)"
+    );
     let entries = &ws.tabs[0].t.entries;
     let saved = entries.iter().position(|e| e.kind == Kind::Checkpoint).expect("a checkpoint");
     assert!(entries[saved..].iter().any(|e| e.kind == Kind::User), "the checkpoint comes before the message");
@@ -461,5 +465,70 @@ fn live_checkpoint_restores_a_change() {
     run(&mut ws, &|t| t.can_restore());
     assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "one", "restored: {:#?}", ws.tabs[0].t.entries);
     drop(ws);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Fork from the first message with its files restored: the tab moves to a new session holding only what came
+/// before, the message returns to the editor, the file written by that message is gone, the original file stays.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_fork_with_files_restored() {
+    use pier::workspace::{Launch, Tab, Workspace};
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let dir = std::env::temp_dir().join(format!("pier-fork-live-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ws = Workspace::new(["--model", &model].map(String::from).to_vec(), dir.join("recent.json"));
+    ws.open(&dir, Launch::New, || {});
+    let run = |ws: &mut Workspace, until: &dyn Fn(&Tab) -> bool| {
+        let end = Instant::now() + Duration::from_secs(90);
+        while Instant::now() < end {
+            ws.update(Instant::now());
+            ws.flush();
+            let tab = &mut ws.tabs[0];
+            if let Some(id) = tab.t.approvals.front().map(|a| a.id.clone()) {
+                tab.approve(&id, true);
+            }
+            if until(tab) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("timed out: {:#?}", ws.tabs[0].t.entries);
+    };
+    run(&mut ws, &|t| t.t.supervised());
+    let first = "Use the write tool to create the file a.txt containing: one. Do nothing else.";
+    for (n, message) in [first, "Reply with just the word: ok"].into_iter().enumerate() {
+        ws.tabs[0].input = message.into();
+        ws.tabs[0].submit();
+        // Pi has shown the message and settled: "not busy" alone is also true just before the run starts.
+        let users = |t: &Tab| t.t.entries.iter().filter(|e| e.kind == Kind::User).count();
+        run(&mut ws, &|t| users(t) == n + 1 && t.t.state == State::Completed && !t.busy());
+    }
+    assert!(dir.join("a.txt").exists(), "Pi wrote the file");
+    let original = ws.tabs[0].t.session_file.clone().expect("a session file");
+
+    ws.tabs[0].refresh_fork_messages();
+    run(&mut ws, &|t| t.t.fork_messages.len() == 2);
+    let target = ws.tabs[0].t.fork_messages[0].clone();
+    assert_eq!(target.text, first);
+    let checkpoint = ws.tabs[0].checkpoint_before(&target.text);
+    assert!(checkpoint.is_some(), "the first message has its checkpoint");
+    ws.tabs[0].fork(&target.entry_id, checkpoint);
+    run(&mut ws, &|t| {
+        t.input == first && t.t.session_file.as_ref() != Some(&original) && t.t.entries.iter().any(|e| e.text.starts_with("— forked"))
+    });
+
+    let tab = &ws.tabs[0];
+    assert!(!dir.join("a.txt").exists(), "files restored to before the first message");
+    assert!(!tab.t.entries.iter().any(|e| e.kind == Kind::User), "nothing came before the first message: {:#?}", tab.t.entries);
+    assert!(tab.t.entries.iter().any(|e| e.kind == Kind::Checkpoint), "the restore's undo point stays reachable");
+    assert!(original.exists(), "the original session stays");
+    let fork_file = tab.t.session_file.clone().unwrap();
+    drop(ws);
+    for f in [&original, &fork_file] {
+        let _ = std::fs::remove_file(f);
+    }
+    let _ = std::fs::remove_dir(original.parent().unwrap());
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -52,6 +52,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             name_menu(tab, ui);
             model_menu(tab, ui);
             thinking_menu(tab, ui);
+            fork_menu(tab, ui);
             usage(tab, ui);
 
             if !tab.t.queued.is_empty() {
@@ -175,6 +176,56 @@ fn thinking_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     });
     if let Some(level) = pick {
         tab.set_thinking(&level);
+    }
+}
+
+/// Your earlier messages (asked from Pi when the menu opens); picking one forks the session from just before it.
+fn fork_menu(tab: &mut Tab, ui: &mut egui::Ui) {
+    const PREVIEW_CHARS: usize = 60;
+    if tab.busy() {
+        ui.add_enabled(false, egui::Button::new("Fork from…")).on_disabled_hover_text("Available once the run has ended");
+        return;
+    }
+    let (response, inner) = MenuButton::new("Fork from…").ui(ui, |ui| {
+        ui.weak("A new session goes on from just before the message you pick;\nits text comes back to the editor. This session stays in Resume.");
+        ui.separator();
+        if tab.t.fork_messages.is_empty() {
+            ui.weak("No earlier message (or loading…).");
+        }
+        let mut pick = None;
+        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
+            for m in tab.t.fork_messages.iter().rev() {
+                let first_line = m.text.lines().next().unwrap_or_default();
+                let mut preview: String = first_line.chars().take(PREVIEW_CHARS).collect();
+                if preview.len() < m.text.len() {
+                    preview.push('…');
+                }
+                let checkpoint = tab.checkpoint_before(&m.text);
+                ui.horizontal(|ui| {
+                    if ui.button("Fork").clicked() {
+                        pick = Some((m.entry_id.clone(), None));
+                    }
+                    let restore = ui
+                        .add_enabled(checkpoint.is_some(), egui::Button::new("Fork + restore files"))
+                        .on_hover_text("Also put the folder's files back as they were before this message (can be undone)")
+                        .on_disabled_hover_text("No checkpoint for this message");
+                    if restore.clicked() {
+                        pick = Some((m.entry_id.clone(), checkpoint.clone()));
+                    }
+                    ui.label(preview).on_hover_text(&m.text);
+                });
+            }
+        });
+        if pick.is_some() {
+            ui.close();
+        }
+        pick
+    });
+    if response.clicked() {
+        tab.refresh_fork_messages();
+    }
+    if let Some(Some((entry_id, restore))) = inner.map(|r| r.inner) {
+        tab.fork(&entry_id, restore);
     }
 }
 

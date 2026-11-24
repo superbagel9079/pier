@@ -35,6 +35,12 @@ pub enum Command {
     SetSessionName {
         name: String,
     },
+    /// The user messages a fork can start from (on the active branch).
+    GetForkMessages,
+    /// Switches to a new session holding the conversation up to just before this user message; the original stays.
+    Fork {
+        entry_id: String,
+    },
     /// Reply to a dialog; must echo the request id. Set `confirmed` for a confirm, `cancelled` to refuse any dialog.
     ExtensionUiResponse {
         id: String,
@@ -240,6 +246,15 @@ pub struct PiCommand {
     /// `extension`, `prompt` (template) or `skill`.
     #[serde(default)]
     pub source: String,
+}
+
+/// One entry of `get_fork_messages`.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForkMessage {
+    pub entry_id: String,
+    #[serde(default)]
+    pub text: String,
 }
 
 /// `data` of a `get_session_stats` response (only what Pier shows).
@@ -461,6 +476,9 @@ mod tests {
         let plain = Command::Prompt { message: "go".into(), streaming_behavior: None };
         assert_eq!(serde_json::to_value(plain).unwrap(), json!({"type": "prompt", "message": "go"}));
         assert_eq!(serde_json::to_value(Command::ClearQueue).unwrap(), json!({"type": "clear_queue"}));
+        let fork = Command::Fork { entry_id: "abc".into() };
+        assert_eq!(serde_json::to_value(fork).unwrap(), json!({"type": "fork", "entryId": "abc"}));
+        assert_eq!(serde_json::to_value(Command::GetForkMessages).unwrap(), json!({"type": "get_fork_messages"}));
         let refuse = Command::cancel_dialog("u1");
         assert_eq!(serde_json::to_value(refuse).unwrap(), json!({"type": "extension_ui_response", "id": "u1", "cancelled": true}));
         let allow = Command::confirm("u2", true);

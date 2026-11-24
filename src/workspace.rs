@@ -17,6 +17,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 const TITLE_CHARS: usize = 24;
+/// Text of the checkpoint taken before a message (the Fork menu pairs them by it).
+const BEFORE_MESSAGE: &str = "Files before this message";
 /// Longer names are cut: they are labels, not notes.
 pub const NAME_MAX: usize = 80;
 
@@ -60,6 +62,8 @@ pub struct Tab {
     /// Messages waiting for their checkpoint; each goes to Pi once its files are saved.
     waiting: VecDeque<Command>,
     restoring: bool,
+    /// A fork (entry id) to send once its files are restored.
+    fork_after_restore: Option<String>,
 }
 
 impl Tab {
@@ -110,6 +114,7 @@ impl Tab {
             checkpoints,
             waiting: VecDeque::new(),
             restoring: false,
+            fork_after_restore: None,
         };
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
@@ -196,9 +201,59 @@ impl Tab {
         self.input.clear();
     }
 
+    /// A run is going, or a message, a restore or a fork is on its way.
+    pub fn busy(&self) -> bool {
+        self.t.state.is_running() || !self.waiting.is_empty() || self.restoring || self.fork_after_restore.is_some()
+    }
+
     /// A checkpoint can be restored only while nothing else touches the files: no run, nothing being sent.
     pub fn can_restore(&self) -> bool {
-        self.checkpoints.is_some() && !self.t.state.is_running() && self.waiting.is_empty() && !self.restoring
+        self.checkpoints.is_some() && !self.busy()
+    }
+
+    /// Asks Pi which messages a fork can start from (the Fork menu shows them).
+    pub fn refresh_fork_messages(&mut self) {
+        self.send(Command::GetForkMessages);
+    }
+
+    /// The checkpoint taken just before the message `text` was sent in this tab, if any (the last one, if sent twice).
+    /// Checkpoints and the messages they precede come in the same order, so the n-th one belongs to the next user
+    /// message not already claimed.
+    pub fn checkpoint_before(&self, text: &str) -> Option<String> {
+        let mut pending = VecDeque::new();
+        let mut found = None;
+        for e in &self.t.entries {
+            match e.kind {
+                Kind::Checkpoint if e.text == BEFORE_MESSAGE => pending.extend(e.checkpoint.clone()),
+                Kind::User => {
+                    if let Some(id) = pending.pop_front()
+                        && e.text == text
+                    {
+                        found = Some(id);
+                    }
+                }
+                _ => {}
+            }
+        }
+        found
+    }
+
+    /// Switches the tab to a new session going on from just before the user message `entry_id` (the original stays
+    /// in Resume); its text comes back to the editor. `restore`: first put the files back as they were before it.
+    pub fn fork(&mut self, entry_id: &str, restore: Option<String>) {
+        if self.busy() {
+            self.t.entries.push(Entry::new(Kind::Error, "Not forked: wait until the run ends."));
+            return;
+        }
+        match (restore, &self.checkpoints) {
+            (Some(checkpoint), Some(w)) => {
+                if w.send(Job::Restore(checkpoint)) {
+                    self.restoring = true;
+                    self.fork_after_restore = Some(entry_id.to_owned());
+                }
+            }
+            _ => self.send(Command::Fork { entry_id: entry_id.to_owned() }),
+        }
     }
 
     /// Puts the folder's files back as they were at checkpoint `id`; the files as they are now get their own
@@ -223,7 +278,7 @@ impl Tab {
         match done {
             Done::Snapshot(result) => {
                 match result {
-                    Ok(id) => saved(&mut self.t, id, "Files before this message"),
+                    Ok(id) => saved(&mut self.t, id, BEFORE_MESSAGE),
                     Err(e) => self.t.entries.push(Entry::new(Kind::Notice, format!("No checkpoint: {e}"))),
                 }
                 // Sent even without a checkpoint: the notice says so, and holding the message back would lose it.
@@ -236,12 +291,19 @@ impl Tab {
                 if let Ok(undo) = &undo {
                     saved(&mut self.t, undo.clone(), "Files before the restore");
                 }
+                let fork = self.fork_after_restore.take();
                 match (result, undo) {
                     (Ok(()), Ok(undo)) => {
                         self.t.journal.push(Record::CheckpointRestored { to, undo });
-                        self.t.entries.push(Entry::new(Kind::Notice, "Files restored. Pi was not told; say so if it matters."));
+                        match fork {
+                            Some(entry_id) => self.send(Command::Fork { entry_id }),
+                            None => self.t.entries.push(Entry::new(Kind::Notice, "Files restored. Pi was not told; say so if it matters.")),
+                        }
                     }
-                    (Err(e), _) | (Ok(()), Err(e)) => self.t.entries.push(Entry::new(Kind::Error, format!("Restore failed: {e}"))),
+                    (Err(e), _) | (Ok(()), Err(e)) => {
+                        let what = if fork.is_some() { "Not forked: the files could not be restored" } else { "Restore failed" };
+                        self.t.entries.push(Entry::new(Kind::Error, format!("{what}: {e}")));
+                    }
                 }
             }
         }
@@ -294,6 +356,7 @@ impl Tab {
             checkpoints: None,
             waiting: VecDeque::new(),
             restoring: false,
+            fork_after_restore: None,
         }
     }
 }
@@ -591,6 +654,26 @@ mod tests {
         assert!(tab.t.journal.iter().any(|r| matches!(r, Record::CheckpointRestored { .. })));
         drop(tab);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn checkpoints_pair_with_the_messages_they_precede() {
+        let mut tab = Tab::detached("a");
+        let checkpoint = |id: &str| Entry { checkpoint: Some(id.into()), ..Entry::new(Kind::Checkpoint, BEFORE_MESSAGE) };
+        tab.t.entries = vec![
+            Entry::new(Kind::User, "resumed, no checkpoint"),
+            checkpoint("c1"),
+            checkpoint("c2"), // a steer sent before the first message showed up
+            Entry::new(Kind::User, "first"),
+            Entry::new(Kind::Assistant, "…"),
+            Entry::new(Kind::User, "steer"),
+            Entry { checkpoint: Some("undo".into()), ..Entry::new(Kind::Checkpoint, "Files before the restore") },
+            checkpoint("c3"),
+            Entry::new(Kind::User, "first"),
+        ];
+        assert_eq!(tab.checkpoint_before("steer").as_deref(), Some("c2"));
+        assert_eq!(tab.checkpoint_before("first").as_deref(), Some("c3"), "sent twice: the latest");
+        assert_eq!(tab.checkpoint_before("resumed, no checkpoint"), None);
     }
 
     #[test]
