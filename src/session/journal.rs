@@ -44,6 +44,15 @@ pub enum Record {
         id: String,
         decision: &'static str,
     },
+    /// The project's files were saved before a message (`id`: in the folder's checkpoint repository).
+    Checkpoint {
+        id: String,
+    },
+    /// The files were put back as they were at checkpoint `to`; `undo` holds them as they were just before.
+    CheckpointRestored {
+        to: String,
+        undo: String,
+    },
     PiExited,
     /// The user closed the tab, which stops its Pi.
     TabClosed,

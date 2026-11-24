@@ -44,7 +44,7 @@ fn pi_command() -> process::Command {
 const APPROVALS_EXTENSION: &str = include_str!("../../extension/pier-approvals.ts");
 
 /// FNV-1a: a stable content fingerprint (not for security, only to name the file after its content).
-fn fingerprint(bytes: &[u8]) -> u64 {
+pub(crate) fn fingerprint(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
 }
 

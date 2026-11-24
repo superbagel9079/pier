@@ -29,6 +29,8 @@ pub enum Kind {
     Tool,
     Notice,
     Error,
+    /// The project's files saved at this point (`Entry::checkpoint`), with a Restore button.
+    Checkpoint,
 }
 
 #[derive(Debug, Clone)]
@@ -41,11 +43,13 @@ pub struct Entry {
     pub ok: Option<bool>,
     /// For an `edit` that ran: the exact unified patch Pi reports.
     pub diff: Option<String>,
+    /// For a checkpoint entry: its id in the folder's checkpoint repository.
+    pub checkpoint: Option<String>,
 }
 
 impl Entry {
     pub fn new(kind: Kind, text: impl Into<String>) -> Self {
-        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None }
+        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None, checkpoint: None }
     }
 }
 

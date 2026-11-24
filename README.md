@@ -14,6 +14,8 @@ Written in Rust with egui, Pier stays light: about 90 MB of RAM at idle (measure
   the working folder, and is denied automatically after 60 s.
 - **Diff**: a `write` or `edit` shows a colored preview of the added and removed lines before you approve it; after an
   `edit`, Pi's exact patch stays available in the transcript. Files changed by `bash` get no diff.
+- **Checkpoints**: before each message, the folder's files are saved (git must be installed); "Restore files…" puts
+  them back as they were, and the restore itself can be undone. Pi's conversation is not rewound.
 - **Resume** a saved Pi session, with its history. **Name** a session.
 - **Presets**: model, thinking level, tools, folder and instructions, launched in one click.
 - **Model and thinking level** switchable inside a tab, **context gauge** and session cost.
@@ -49,6 +51,7 @@ All in `%APPDATA%\pier\`:
 | `presets.json` | Presets (created with an example by Presets › Edit presets…). An unknown key, an invalid thinking level or a missing folder is reported in the menu. |
 | `recent.json` | Recent project folders (10 at most). |
 | `journal\*.jsonl` | One journal per tab. Launch arguments are never written there. |
+| `checkpoints\<fingerprint>.git` | One shadow git repository per project folder, holding its checkpoints. The project's own git is never touched; its `.gitignore` files are honored. Never cleaned up yet: delete a folder's repository to drop its checkpoints. |
 | `pier-approvals-<fingerprint>.ts` | The approval extension, embedded in the executable; the name follows its content, so two Pier versions never share one. |
 
 Conversations stay Pi's own, in Pi's session folders.
@@ -88,6 +91,7 @@ src/
   pi/                 talking to Pi: process (Job Object, threads), protocol (serde types), sessions (on disk)
   session/            the model: transcript (stream, history, approvals), state, journal, diff
   workspace.rs        the tabs: launch, send, Stop, close, what needs the user's attention
+  checkpoint.rs       saving and restoring the folder's files (shadow git repository)
   presets.rs, recent.rs, files.rs, awake.rs
   main.rs, app/       the egui interface: it draws and asks, with no session logic
 extension/            the Pi approval extension and its self-check
@@ -102,6 +106,8 @@ Rule: all logic goes into the core, with a test; `app/` only draws.
 - Answer text is not rendered as Markdown yet (interface pass to come).
 - Extension dialogs other than "confirm" (select, input, editor) are denied.
 - Resume only reads Pi's default session folder.
+- Checkpoints cover the project folder only, not ignored files nor nested git repositories, and only messages sent
+  in this tab (not a resumed history). A checkpoint over 20,000 files or 500 MB of new content is refused.
 
 ## License
 

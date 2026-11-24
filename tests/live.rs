@@ -417,3 +417,49 @@ fn live_diff_preview_and_edit_patch() {
     let _ = std::fs::remove_file(&file);
     assert!(content.contains("gamma") && !content.contains("beta"), "file: {content:?}");
 }
+
+/// Through the real tab: the message gets a checkpoint before Pi sees it, Pi's change is undone by Restore.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_checkpoint_restores_a_change() {
+    use pier::workspace::{Launch, Workspace};
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let dir = std::env::temp_dir().join(format!("pier-checkpoint-live-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("a.txt"), "one").unwrap();
+    let mut ws = Workspace::new(["--no-session", "--model", &model].map(String::from).to_vec(), dir.join("recent.json"));
+    ws.open(&dir, Launch::New, || {});
+    let run = |ws: &mut Workspace, until: &dyn Fn(&pier::workspace::Tab) -> bool| {
+        let end = Instant::now() + Duration::from_secs(90);
+        while Instant::now() < end {
+            ws.update(Instant::now());
+            ws.flush();
+            let tab = &mut ws.tabs[0];
+            if let Some(id) = tab.t.approvals.front().map(|a| a.id.clone()) {
+                tab.approve(&id, true);
+            }
+            if until(tab) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("timed out: {:#?}", ws.tabs[0].t.entries);
+    };
+    run(&mut ws, &|t| t.t.supervised());
+
+    ws.tabs[0].input = "Use the write tool to replace the content of a.txt with: two. Do nothing else.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| t.t.state == State::Completed);
+    assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "two", "Pi made the change");
+    let entries = &ws.tabs[0].t.entries;
+    let saved = entries.iter().position(|e| e.kind == Kind::Checkpoint).expect("a checkpoint");
+    assert!(entries[saved..].iter().any(|e| e.kind == Kind::User), "the checkpoint comes before the message");
+
+    let id = entries[saved].checkpoint.clone().unwrap();
+    ws.tabs[0].restore(&id);
+    run(&mut ws, &|t| t.can_restore());
+    assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "one", "restored: {:#?}", ws.tabs[0].t.entries);
+    drop(ws);
+    let _ = std::fs::remove_dir_all(&dir);
+}
