@@ -4,6 +4,7 @@ mod approvals;
 
 pub use approvals::{ARM_DELAY, Approval};
 
+use super::diff;
 use super::journal::Record;
 use super::state::State;
 use crate::pi::process::Incoming;
@@ -48,6 +49,8 @@ impl Entry {
     }
 }
 
+/// Lines of an edit's patch kept for the whole session (the full patch stays in Pi's session file).
+const PATCH_MAX_LINES: usize = 3000;
 /// Tool call text kept for display; the full arguments (a whole written file) stay in Pi's session file.
 const TOOL_TEXT_MAX: usize = 2000;
 
@@ -324,7 +327,7 @@ impl Transcript {
         let i = self.push(Kind::Tool, format!("{tool_name} → {status}"));
         self.entries[i].tool_id = id.map(str::to_owned);
         self.entries[i].ok = Some(!is_error);
-        self.entries[i].diff = patch;
+        self.entries[i].diff = patch.map(|p| diff::cap_lines(p, PATCH_MAX_LINES));
     }
 
     fn apply_stream(&mut self, e: &StreamEvent) {

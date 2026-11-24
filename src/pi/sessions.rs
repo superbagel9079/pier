@@ -1,9 +1,14 @@
 //! Pi's saved sessions on disk (read-only): Pier lists them, Pi itself reopens them with `--session`.
 
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+
+/// Titles already read, by file and modification time: a title is found by reading the whole file (its name can
+/// be anywhere), so each file is read again only when it changed.
+pub type TitleCache = HashMap<PathBuf, (SystemTime, String)>;
 
 const TITLE_CHARS: usize = 60;
 
@@ -32,7 +37,16 @@ pub fn dir_for(cwd: &Path) -> PathBuf {
 
 /// Sessions saved for `cwd`, newest first, at most `max`.
 pub fn list(cwd: &Path, max: usize) -> Vec<SavedSession> {
-    let Ok(dir) = std::fs::read_dir(dir_for(cwd)) else { return vec![] };
+    list_cached(cwd, max, &mut TitleCache::new())
+}
+
+/// Like `list`, reading only the files that are new or changed since they went into `cache`.
+pub fn list_cached(cwd: &Path, max: usize, cache: &mut TitleCache) -> Vec<SavedSession> {
+    list_dir(&dir_for(cwd), max, cache)
+}
+
+fn list_dir(folder: &Path, max: usize, cache: &mut TitleCache) -> Vec<SavedSession> {
+    let Ok(dir) = std::fs::read_dir(folder) else { return vec![] };
     let mut files: Vec<(PathBuf, SystemTime)> = dir
         .filter_map(Result::ok)
         .map(|e| e.path())
@@ -42,7 +56,20 @@ pub fn list(cwd: &Path, max: usize) -> Vec<SavedSession> {
         .collect();
     files.sort_by_key(|f| std::cmp::Reverse(f.1));
     files.truncate(max);
-    files.into_iter().map(|(path, modified)| SavedSession { title: title_of(&path), path, modified }).collect()
+    files
+        .into_iter()
+        .map(|(path, modified)| {
+            let title = match cache.get(&path) {
+                Some((at, title)) if *at == modified => title.clone(),
+                _ => {
+                    let title = title_of(&path);
+                    cache.insert(path.clone(), (modified, title.clone()));
+                    title
+                }
+            };
+            SavedSession { title, path, modified }
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -90,6 +117,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn titles_are_cached_until_the_file_changes() {
+        let dir = std::env::temp_dir().join(format!("pier-titles-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("a.jsonl");
+        std::fs::write(&file, r#"{"type":"message","message":{"role":"user","content":"first"}}"#).unwrap();
+        let mut cache = TitleCache::new();
+        assert_eq!(list_dir(&dir, 5, &mut cache)[0].title, "first");
+
+        let at = std::fs::metadata(&file).unwrap().modified().unwrap();
+        cache.insert(file.clone(), (at, "from cache".into()));
+        assert_eq!(list_dir(&dir, 5, &mut cache)[0].title, "from cache", "unchanged file: not read again");
+
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        std::fs::write(&file, r#"{"type":"message","message":{"role":"user","content":"second"}}"#).unwrap();
+        assert_eq!(list_dir(&dir, 5, &mut cache)[0].title, "second", "changed file: read again");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
     fn dir_name_matches_pi() {
         let d = dir_for(Path::new(r"C:\Users\leo\Downloads\brainstorming\pier"));
         assert_eq!(d.file_name().unwrap(), "--C--Users-leo-Downloads-brainstorming-pier--");
@@ -128,6 +174,7 @@ mod tests {
         assert_eq!(title_of(&path), "Refonte du parseur", "the last name wins over the first prompt");
         std::fs::write(&path, r#"{"type":"session","version":3}"#).unwrap();
         assert_eq!(title_of(&path), path.file_stem().unwrap().to_string_lossy());
+
         std::fs::remove_file(&path).unwrap();
     }
 }

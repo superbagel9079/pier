@@ -234,6 +234,8 @@ pub struct Workspace {
     /// Project folders opened before, newest first.
     pub recent: Vec<PathBuf>,
     recent_file: PathBuf,
+    /// Saved-session titles already read, so opening Resume does not reread every file each time.
+    titles: sessions::TitleCache,
     /// Session files of closed tabs whose Pi is still shutting down: still "open" for Resume.
     closing: Arc<Mutex<Vec<PathBuf>>>,
 }
@@ -242,7 +244,7 @@ impl Workspace {
     /// Starts with no tab: the user picks the project folder first.
     pub fn new(pi_args: Vec<String>, recent_file: PathBuf) -> Self {
         let recent = recent::load(&recent_file);
-        Self { pi_args, tabs: vec![], active: 0, recent, recent_file, closing: Arc::default() }
+        Self { pi_args, tabs: vec![], active: 0, recent, recent_file, closing: Arc::default(), titles: Default::default() }
     }
 
     pub fn active_tab(&mut self) -> Option<&mut Tab> {
@@ -343,10 +345,10 @@ impl Workspace {
 
     /// Pi sessions saved for the active folder, newest first, each with whether a tab already has it open
     /// (it must not be opened twice: two Pi writing one file would corrupt it).
-    pub fn saved_sessions(&self, max: usize) -> Vec<(SavedSession, bool)> {
+    pub fn saved_sessions(&mut self, max: usize) -> Vec<(SavedSession, bool)> {
         let Some(folder) = self.active_folder() else { return vec![] };
         let open = self.open_files();
-        sessions::list(&folder, max)
+        sessions::list_cached(&folder, max, &mut self.titles)
             .into_iter()
             .map(|s| {
                 let is_open = std::fs::canonicalize(&s.path).is_ok_and(|p| open.contains(&p));
