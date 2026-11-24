@@ -1,6 +1,5 @@
 # Launches an app, times until its main window exists, waits, then sums RAM of its process tree minus Pi's processes.
 # Usage: .\tools\measure-ram.ps1 -Exe target\release\pier.exe -AppArgs --model,<model> -WorkDir <folder>
-eleasepier.exe -AppArgs --model,<model> -WorkDir <folder>
 param([string]$Exe, [string[]]$AppArgs = @(), [string]$WorkDir = $PWD, [int]$SettleSec = 10)
 
 function Get-Tree([int]$RootId) {

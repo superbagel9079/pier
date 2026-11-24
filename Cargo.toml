@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # glow (OpenGL) instead of the default wgpu: measured 100 MB vs 220 MB RAM idle on this machine (wgpu loads Vulkan+DX12 on both GPUs).
-eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "links", "system_fonts", "wayland", "web_screen_reader", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "links", "wgpu", "system_fonts", "wayland", "web_screen_reader", "x11"] }
 rfd = "0.18"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
