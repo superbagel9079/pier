@@ -30,8 +30,17 @@ pub enum Launch<'a> {
     Preset(&'a Preset),
 }
 
+/// Tab ids are never reused, so per-tab UI state (scroll, unfolded sections) never leaks to another tab.
+static NEXT_TAB_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_tab_id() -> u64 {
+    NEXT_TAB_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 /// One session: a `pi --mode rpc` process, its transcript and its editor text.
 pub struct Tab {
+    /// Unique for the life of Pier; keys the tab's UI state.
+    pub id: u64,
     proc: Option<Process>,
     pub t: Transcript,
     /// Editor text; a cleared steer comes back here.
@@ -80,7 +89,7 @@ impl Tab {
         let journal =
             Journal::create(&journal::dir()).map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Journal unavailable: {e}")))).ok();
         let seen = t.state;
-        let mut tab = Self { proc, t, input: String::new(), label: label.take(), journal, folder, seen };
+        let mut tab = Self { id: next_tab_id(), proc, t, input: String::new(), label: label.take(), journal, folder, seen };
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
         tab.send(Command::GetSessionStats);
@@ -193,6 +202,7 @@ impl Tab {
     #[cfg(test)]
     fn detached(folder: &str) -> Self {
         Self {
+            id: next_tab_id(),
             proc: None,
             t: Transcript::default(),
             input: String::new(),

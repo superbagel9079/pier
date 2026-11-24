@@ -6,7 +6,7 @@ use pier::session::transcript::PALETTE_MAX;
 use pier::workspace::Tab;
 
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
-    let editor_id = ui.make_persistent_id("composer_editor");
+    let editor_id = ui.make_persistent_id(("composer_editor", tab.id));
     let matches = tab.t.matching_commands(&tab.input);
     let total = matches.len();
     let suggestions: Vec<(String, Option<String>)> =

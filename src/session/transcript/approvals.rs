@@ -56,7 +56,9 @@ impl Transcript {
         let front_since = Instant::now();
         let approval = Approval { id: id.to_owned(), title: title.to_owned(), message, outside, deadline, front_since, diff };
         self.approvals.push_back(approval);
-        if self.state == State::Running {
+        // Also outside a run (an extension command can ask): the tab waits on the user either way.
+        if !matches!(self.state, State::Blocked | State::Crashed) {
+            self.blocked_from = Some(self.state);
             self.state = State::Blocked;
         }
     }
@@ -95,7 +97,7 @@ impl Transcript {
             next.front_since = Instant::now();
         }
         if self.approvals.is_empty() && self.state == State::Blocked {
-            self.state = State::Running;
+            self.state = self.blocked_from.take().unwrap_or(State::Running);
         }
     }
 

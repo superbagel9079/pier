@@ -97,7 +97,7 @@ fn name_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     let current = tab.t.session_name.clone().unwrap_or_default();
     let label = if current.is_empty() { "Name…".to_owned() } else { format!("Name: {current}") };
     let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
-    let draft_id = ui.make_persistent_id("name_draft");
+    let draft_id = ui.make_persistent_id(("name_draft", tab.id));
     let (response, inner) = MenuButton::new(label).config(config).ui(ui, |ui| {
         let mut draft: String = ui.data(|d| d.get_temp(draft_id)).unwrap_or_else(|| current.clone());
         let edit = ui.add(egui::TextEdit::singleline(&mut draft).char_limit(NAME_MAX).hint_text("Session name"));
@@ -126,7 +126,7 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     // Default menus close on any click inside, which made the search box unusable.
     let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
     // The search text is pure UI state: kept in egui's memory, not in the tab.
-    let filter_id = ui.make_persistent_id("model_filter");
+    let filter_id = ui.make_persistent_id(("model_filter", tab.id));
     let (response, inner) = MenuButton::new(format!("Model: {current}")).config(config).ui(ui, |ui| {
         let mut text: String = ui.data(|d| d.get_temp(filter_id)).unwrap_or_default();
         let search = ui.add(egui::TextEdit::singleline(&mut text).hint_text("Search models"));

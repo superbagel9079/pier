@@ -99,6 +99,8 @@ pub struct Transcript {
     pub commands: Vec<PiCommand>,
     /// contentIndex -> entry index, for the assistant message being streamed.
     blocks: HashMap<u64, usize>,
+    /// State to return to once the approval queue empties (an approval can arrive outside a run).
+    blocked_from: Option<State>,
 }
 
 fn texts(steering: &[Queued], follow_up: &[Queued]) -> Vec<String> {
@@ -164,6 +166,7 @@ impl Transcript {
         if matches!(ev, Event::AgentSettled { .. }) {
             // Pi no longer waits on these (abort or its own timeout); answering them later would be meaningless.
             self.drop_approvals(true);
+            self.blocked_from = None;
             let outcome = match self.state {
                 State::Stopped => "stopped",
                 State::Failed => "failed",
@@ -720,6 +723,25 @@ mod tests {
         let result = t.entries.iter().find(|e| e.text == "edit → ok").unwrap();
         assert_eq!(result.diff.as_deref(), Some("--- a\n+++ a\n@@ -1 +1 @@\n-b\n+B"));
         assert_eq!(t.entries.iter().find(|e| e.text == "bash → ok").unwrap().diff, None);
+    }
+
+    #[test]
+    fn an_approval_outside_a_run_blocks_then_returns_to_the_previous_state() {
+        let mut t = Transcript::default();
+        feed(&mut t, &[r#"{"type":"extension_ui_request","id":"x","method":"confirm","title":"Allow bash?","message":"ls"}"#]);
+        assert_eq!(t.state, State::Blocked, "an extension command can ask while no run is going");
+        assert!(t.answer("x", false));
+        assert_eq!(t.state, State::Ready, "back to where it was, not to Running");
+
+        feed(
+            &mut t,
+            &[
+                r#"{"type":"agent_start"}"#,
+                r#"{"type":"extension_ui_request","id":"y","method":"confirm","title":"Allow bash?","message":"ls"}"#,
+            ],
+        );
+        assert!(t.answer("y", true));
+        assert_eq!(t.state, State::Running);
     }
 
     #[test]

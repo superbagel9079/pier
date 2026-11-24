@@ -11,17 +11,18 @@ const VISIBLE_STEP: usize = 300;
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::CentralPanel::default().show(ui, |ui| {
         // How many recent entries to show: pure UI state, kept in egui's memory.
-        let shown_id = ui.make_persistent_id("transcript_shown");
+        let shown_id = ui.make_persistent_id(("transcript_shown", tab.id));
         let mut shown: usize = ui.data(|d| d.get_temp(shown_id)).unwrap_or(VISIBLE_STEP);
         let total = tab.t.entries.len();
         let first = total.saturating_sub(shown);
-        egui::ScrollArea::vertical().stick_to_bottom(true).auto_shrink(false).show(ui, |ui| {
+        // Per tab: its own scroll position and unfolded sections.
+        egui::ScrollArea::vertical().id_salt(("transcript", tab.id)).stick_to_bottom(true).auto_shrink(false).show(ui, |ui| {
             if first > 0 && ui.button(format!("Show earlier messages ({first} hidden)")).clicked() {
                 shown += VISIBLE_STEP;
             }
             for (i, e) in tab.t.entries.iter().enumerate().skip(first) {
                 // Every "Thinking" header has the same title; the index keeps their ids distinct.
-                ui.push_id(i, |ui| match e.kind {
+                ui.push_id((tab.id, i), |ui| match e.kind {
                     Kind::User => {
                         ui.add_space(6.0);
                         ui.strong(format!("You: {}", e.text));

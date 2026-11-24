@@ -16,7 +16,8 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             ui.colored_label(ui.visuals().error_fg_color, warning);
         }
         if !a.message.is_empty() {
-            egui::ScrollArea::vertical().id_salt("approval_message").max_height(150.0).show(ui, |ui| ui.monospace(&a.message));
+            // Keyed by the approval: each one opens at its first line, not where the previous one was scrolled.
+            egui::ScrollArea::vertical().id_salt(("approval_message", &a.id)).max_height(150.0).show(ui, |ui| ui.monospace(&a.message));
         }
         if let Some(diff) = &a.diff {
             ui.add_space(2.0);

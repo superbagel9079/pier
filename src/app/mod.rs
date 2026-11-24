@@ -89,7 +89,11 @@ impl PierApp {
 
     /// Flashes the taskbar when a tab the user is not looking at needs them, and counts pending approvals in the title.
     fn call_attention(&mut self, ctx: &egui::Context) {
-        let focused = ctx.input(|i| i.viewport().focused).unwrap_or(true);
+        // While hidden, `focused` keeps its last value: minimized or covered also means "not looking".
+        let focused = ctx.input(|i| {
+            let v = i.viewport();
+            v.focused.unwrap_or(true) && !v.minimized.unwrap_or(false) && !v.occluded.unwrap_or(false)
+        });
         if let Some(why) = self.ws.attention(focused) {
             let kind = match why {
                 Attention::Approval => egui::UserAttentionType::Critical,
@@ -239,12 +243,14 @@ impl PierApp {
 }
 
 impl eframe::App for PierApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    /// Runs before every frame and also while the window is minimized or covered, when `ui` does not run:
+    /// Pi's events, deadlines, taskbar alerts, keep-awake and replies to Pi must not wait for the window.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ws.update(Instant::now());
         if self.ws.any_approval_pending() {
-            ui.ctx().request_repaint_after(Duration::from_secs(1)); // countdown and expiry without input
+            ctx.request_repaint_after(Duration::from_secs(1)); // countdown and expiry without input
         }
-        self.call_attention(ui.ctx());
+        self.call_attention(ctx);
         if !self.awake_failed
             && let Err(e) = self.awake.set(self.ws.any_running())
         {
@@ -253,7 +259,10 @@ impl eframe::App for PierApp {
                 tab.t.entries.push(Entry::new(Kind::Error, format!("Could not prevent sleep: {e}")));
             }
         }
+        self.ws.flush();
+    }
 
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.tab_strip(ui);
         if let Some(tab) = self.ws.active_tab() {
             status_bar::show(tab, ui);
