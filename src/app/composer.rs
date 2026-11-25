@@ -3,11 +3,12 @@
 
 use eframe::egui;
 use pier::attach::Image;
+use pier::complete::{self, SHOWN_MAX};
 use pier::session::state::State;
-use pier::session::transcript::PALETTE_MAX;
 use pier::workspace::Tab;
 
 /// What a palette line puts in the editor.
+#[derive(Clone)]
 enum Pick {
     Command(String),
     File(String),
@@ -18,12 +19,12 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     let editor_id = ui.make_persistent_id(("composer_editor", tab.id));
 
     // One palette at a time: commands while the editor starts with `/`, files while it ends with `@partial`.
-    let commands = tab.t.matching_commands(&tab.input);
+    let commands = complete::commands(&tab.t.commands, &tab.input);
     let (header, lines): (String, Vec<(String, Option<String>, Pick)>) = if !commands.is_empty() {
         let total = commands.len();
         let lines: Vec<_> = commands
             .iter()
-            .take(PALETTE_MAX)
+            .take(SHOWN_MAX)
             .map(|c| (format!("/{}", c.name), c.description.clone(), Pick::Command(c.name.clone())))
             .collect();
         let header = if total > lines.len() {
@@ -32,7 +33,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             "Pi commands (Tab takes the first)".to_owned()
         };
         (header, lines)
-    } else if let Some((files, total)) = tab.file_suggestions(PALETTE_MAX) {
+    } else if let Some((files, total)) = tab.file_suggestions(SHOWN_MAX) {
         let header = match total {
             0 => "No matching file (ignored files are not listed)".to_owned(),
             t if t > files.len() => format!("Files: {} of {t}, type to filter (Tab takes the first)", files.len()),
@@ -49,10 +50,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         && ui.memory(|m| m.has_focus(editor_id))
         && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab))
     {
-        pick = Some(match first {
-            Pick::Command(n) => Pick::Command(n.clone()),
-            Pick::File(f) => Pick::File(f.clone()),
-        });
+        pick = Some(first.clone());
     }
 
     egui::Panel::bottom("input").show(ui, |ui| {
@@ -93,10 +91,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             for (label, description, p) in &lines {
                 ui.horizontal(|ui| {
                     if ui.button(label).clicked() {
-                        pick = Some(match p {
-                            Pick::Command(n) => Pick::Command(n.clone()),
-                            Pick::File(f) => Pick::File(f.clone()),
-                        });
+                        pick = Some(p.clone());
                     }
                     if let Some(d) = description {
                         ui.weak(d);

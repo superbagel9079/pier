@@ -181,7 +181,7 @@ impl Process {
     }
 
     /// Closes Pi's stdin, its orderly shutdown; `Drop` then waits for the exit.
-    pub fn begin_shutdown(&mut self) {
+    fn begin_shutdown(&mut self) {
         self.writer.take();
     }
 }

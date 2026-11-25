@@ -43,7 +43,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             }
 
             ui.separator();
-            let name = tab.folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| tab.folder.display().to_string());
+            let name = super::folder_name(&tab.folder);
             ui.label(format!("Folder: {name}"))
                 .on_hover_text(format!("Pi works in {}.\nOutside-folder warnings and the Resume list depend on it.", tab.folder.display()));
 
@@ -89,10 +89,7 @@ fn mode_menu(tab: &mut Tab, ui: &mut egui::Ui, current: &str) {
             let opened =
                 pier::allowlist::ensure_file(&pier::allowlist::path()).and_then(|p| super::open_in_editor(&p).map_err(|e| e.to_string()));
             if let Err(e) = opened {
-                tab.t.entries.push(pier::session::transcript::Entry::new(
-                    pier::session::transcript::Kind::Error,
-                    format!("Cannot open the allowlist: {e}"),
-                ));
+                tab.t.error(format!("Cannot open the allowlist: {e}"));
             }
             ui.close();
         }

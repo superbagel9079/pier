@@ -20,8 +20,6 @@ use std::time::Instant;
 pub const SUPERVISION_KEY: &str = "pier-supervision";
 /// Permission modes of Pier's extension: the key `/pier-mode` takes, and the label it reports as its status.
 pub const MODES: [(&str, &str); 3] = [("supervised", "Supervised"), ("accept-edits", "Accept edits"), ("plan", "Plan (read-only)")];
-/// Suggestions shown at once by the `/` palette; typing narrows the rest.
-pub const PALETTE_MAX: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Kind {
@@ -142,27 +140,19 @@ fn items(steering: &[Queued], follow_up: &[Queued]) -> Vec<QueueItem> {
 }
 
 impl Transcript {
+    /// A line telling the user something went wrong.
+    pub fn error(&mut self, text: impl Into<String>) {
+        self.push(Kind::Error, text);
+    }
+
+    /// A line telling the user what happened.
+    pub fn notice(&mut self, text: impl Into<String>) {
+        self.push(Kind::Notice, text);
+    }
+
     fn push(&mut self, kind: Kind, text: impl Into<String>) -> usize {
         self.entries.push(Entry::new(kind, text));
         self.entries.len() - 1
-    }
-
-    /// Commands matching a typed `/partial`: names starting with it first, then names containing it.
-    /// Empty once a space follows the name (the user is writing arguments).
-    pub fn matching_commands(&self, input: &str) -> Vec<&PiCommand> {
-        let Some(query) = input.strip_prefix('/') else { return vec![] };
-        if query.contains(char::is_whitespace) {
-            return vec![];
-        }
-        let q = query.to_lowercase();
-        // Pier's own commands (the mode switch) are driven from Pier's menus, not typed.
-        let (mut starts, mut contains): (Vec<_>, Vec<_>) = self
-            .commands
-            .iter()
-            .filter(|c| !c.name.starts_with("pier-") && c.name.to_lowercase().contains(&q))
-            .partition(|c| c.name.to_lowercase().starts_with(&q));
-        starts.append(&mut contains);
-        starts
     }
 
     /// True only once Pier's approval extension has reported in; until then tools may run unasked.
@@ -642,7 +632,7 @@ mod tests {
             }]
         );
         assert!(t.entries[1].text.contains("rm -rf"), "anything else stays plain text, never a decision");
-        let names: Vec<_> = t.matching_commands("/p").iter().map(|c| c.name.as_str()).collect();
+        let names: Vec<_> = crate::complete::commands(&t.commands, "/p").iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["plan"], "Pier's own command is not offered in the palette");
     }
 
@@ -923,7 +913,7 @@ mod tests {
                 {"name":"prune","source":"extension"}
             ]}}"#],
         );
-        let names = |input: &str| t.matching_commands(input).iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let names = |input: &str| crate::complete::commands(&t.commands, input).iter().map(|c| c.name.clone()).collect::<Vec<_>>();
         assert_eq!(names("/"), ["fix-tests", "prune", "skill:review"], "all, sorted");
         assert_eq!(names("/pr"), ["prune"]);
         assert_eq!(names("/RE"), ["skill:review"], "case-insensitive, matches inside the name too");

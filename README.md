@@ -116,12 +116,13 @@ src/
   lib.rs              the core, no egui
   pi/                 talking to Pi: process (Job Object, threads), protocol (serde types), sessions (on disk)
   session/            the model: transcript (stream, history, approvals), state, journal, diff
-  workspace.rs        the tabs: launch, send, Stop, close, what needs the user's attention
+  workspace/          the open tabs: tab.rs (one Pi session), browser.rs (Resume list), mod.rs (tabs together)
   checkpoint.rs       saving and restoring the folder's files (shadow git repository), file list for @
-  mention.rs, attach.rs  @ file mentions, attached images
+  complete.rs         / and @ completion in the editor
+  attach.rs           attached images
   archive.rs          sessions hidden from Resume
   allowlist.rs        the allowlist file (the extension decides)
-  presets.rs, recent.rs, files.rs, awake.rs
+  presets.rs, recent.rs, files.rs, awake.rs, text.rs
   main.rs, app/       the egui interface: it draws and asks, with no session logic
 extension/            the Pi approval extension and its self-check
 tests/live.rs         tests against the real Pi

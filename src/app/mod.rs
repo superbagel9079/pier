@@ -14,7 +14,6 @@ use pier::awake::KeepAwake;
 use pier::presets::{self, Preset};
 use pier::recent;
 use pier::session::state::Attention;
-use pier::session::transcript::{Entry, Kind};
 use pier::workspace::{Launch, Workspace};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -40,6 +39,11 @@ fn pick_folder() -> Option<PathBuf> {
 fn waker(ctx: &egui::Context) -> impl Fn() + Send + Clone + 'static {
     let ctx = ctx.clone();
     move || ctx.request_repaint()
+}
+
+/// The folder's last component, or the whole path for a drive root.
+fn folder_name(folder: &Path) -> String {
+    folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| folder.display().to_string())
 }
 
 /// "5 min ago" style age, coarse on purpose.
@@ -121,7 +125,7 @@ impl PierApp {
                 ui.add_space(16.0);
                 ui.strong("Recent");
                 for folder in &self.ws.recent {
-                    let name = folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| folder.display().to_string());
+                    let name = folder_name(folder);
                     if ui.button(name).on_hover_text(folder.display().to_string()).clicked() {
                         pick = Some(folder.clone());
                     }
@@ -233,7 +237,7 @@ impl eframe::App for PierApp {
         {
             self.awake_failed = true;
             if let Some(tab) = self.ws.active_tab() {
-                tab.t.entries.push(Entry::new(Kind::Error, format!("Could not prevent sleep: {e}")));
+                tab.t.error(format!("Could not prevent sleep: {e}"));
             }
         }
         self.ws.flush();

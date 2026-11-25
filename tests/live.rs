@@ -377,7 +377,7 @@ fn live_slash_commands_listed() {
     assert!(!t.commands.is_empty(), "this Pi install has extension commands, templates or skills");
     let first = &t.commands[0].name;
     let typed = format!("/{}", &first[..first.len().min(3)]);
-    assert!(t.matching_commands(&typed).iter().any(|c| &c.name == first), "{typed} finds {first}");
+    assert!(pier::complete::commands(&t.commands, &typed).iter().any(|c| &c.name == first), "{typed} finds {first}");
     assert!(!t.entries.iter().any(|e| e.kind == Kind::Error), "{:?}", t.entries);
 }
 

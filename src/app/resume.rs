@@ -30,7 +30,7 @@ impl ResumeWindow {
         });
         self.open = open && chosen.is_none();
         if !self.open {
-            ws.browser = Default::default(); // listed again at the next opening
+            ws.browser.clear(); // listed again at the next opening
         }
         chosen
     }
@@ -47,7 +47,7 @@ impl ResumeWindow {
             ui.checkbox(&mut self.show_archived, format!("Show archived ({archived})"));
         });
         if search_now {
-            ws.search_sessions(&self.query, super::waker(ui.ctx()));
+            ws.browser.search(&self.query, super::waker(ui.ctx()));
         }
         let query = self.query.trim().to_lowercase();
         let found = ws.browser.found.as_ref().filter(|(q, _)| self.in_messages && q.to_lowercase() == query).map(|(_, f)| f);
