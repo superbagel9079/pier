@@ -428,6 +428,18 @@ impl Tab {
         self.t.answer(id, allowed);
     }
 
+    /// Allows the shown approval and adds what its command was offered as to the allowlist, so it runs without
+    /// asking next time. Only the extension's own proposal is added, never a text from elsewhere.
+    pub fn approve_always(&mut self, id: &str) {
+        let entry = self.t.approvals.front().filter(|a| a.id == id).and_then(|a| a.allow_as.clone());
+        if let Some(entry) = entry
+            && let Err(e) = crate::allowlist::add(&crate::allowlist::path(), &entry)
+        {
+            self.t.entries.push(Entry::new(Kind::Error, format!("Not added to the allowlist: {e}")));
+        }
+        self.approve(id, true);
+    }
+
     /// Asks Pi for its model list (the model menu shows it).
     pub fn refresh_models(&mut self) {
         self.send(Command::GetAvailableModels);

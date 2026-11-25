@@ -27,6 +27,21 @@ const PREVIEW_MAX_LINES = 3000;
 // supervised: every tool that writes or runs asks. accept-edits: write/edit inside the working folder pass, the rest
 // asks. plan: everything that writes or runs is refused without asking.
 const MODES: Record<string, string> = { supervised: "Supervised", "accept-edits": "Accept edits", plan: "Plan (read-only)" };
+// Commands that pass without asking when the allowlist file does not exist yet: they only read. (Kept in step with
+// `allowlist::DEFAULTS` in Pier, which writes the file.) `git branch` is left out: with arguments it deletes.
+const DEFAULT_ALLOWED = ["ls", "dir", "pwd", "git status", "git diff", "git log", "git show", "Get-ChildItem", "Get-Location"];
+// Any of these makes a command more than one simple command (chaining, pipes, redirections, substitutions,
+// variables, PowerShell subexpressions and escapes): it then always asks, whatever the allowlist says.
+const SHELL_META = /[;&|<>`$()%!{}\r\n]/;
+// Reasons shown as a red badge; a command with one is never allowed by the allowlist. A hint, not a guarantee.
+const RISKS: [RegExp, string][] = [
+	[/\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*\s+|--recursive\b)|\bRemove-Item\b[^\n]*-Recurse|\b(del|erase|rd|rmdir)\b[^\n]*\/[sS]\b/i, "deletes recursively"],
+	[/\b(curl|wget|iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\n]*\|\s*(sh|bash|zsh|pwsh|powershell|iex|python|node)\b|\b(iex|Invoke-Expression)\b/i, "runs downloaded or generated code"],
+	[/\bgit\s+push\b[^\n]*(--force\b|-f\b|--force-with-lease\b)|\bgit\s+reset\s+--hard\b|\bgit\s+clean\b[^\n]*-[a-zA-Z]*f/i, "rewrites or discards git history"],
+	[/\b(sudo|runas|doas)\b|\bStart-Process\b[^\n]*-Verb\s+RunAs/i, "elevated"],
+	[/--output\b|\bdd\s+[^\n]*\bof=|\b(mkfs|format)\b/i, "writes to a file or a disk"],
+	[/\b(shutdown|Restart-Computer|Stop-Computer|reboot)\b/i, "stops the machine"],
+];
 // Same set as Pi's own path normalization.
 const UNICODE_SPACES = /[  -​  　﻿]/g;
 
@@ -116,7 +131,52 @@ function outsideTargets(toolName: string, input: Record<string, unknown>, cwd: s
 	return null;
 }
 
-type Patcher = (path: string, oldContent: string, newContent: string) => string;
+/** Why a shell command looks dangerous, one reason per pattern found. */
+function risks(command: string): string[] {
+	return RISKS.filter(([re]) => re.test(command)).map(([, why]) => why);
+}
+
+/** The allowlist file; `PIER_ALLOWLIST` points elsewhere (tests). */
+function allowlistPath(): string {
+	return process.env.PIER_ALLOWLIST ?? join(process.env.APPDATA ?? home(), "pier", "allowlist.json");
+}
+
+/** Allowed command prefixes, read at each call so an edit applies at once. A broken file allows nothing. */
+function allowlist(): string[] {
+	const file = allowlistPath();
+	if (!existsSync(file)) return DEFAULT_ALLOWED;
+	try {
+		const list = JSON.parse(readFileSync(file, "utf8")).commands;
+		return Array.isArray(list) ? list.filter((c: unknown) => typeof c === "string" && c.trim() !== "") : [];
+	} catch {
+		return [];
+	}
+}
+
+const words = (command: string) => command.trim().split(/\s+/).filter(Boolean);
+
+/** A single simple command, nothing risky in it, no path outside the folder: the only kind the allowlist may pass. */
+function simpleAndInside(command: string, cwd: string): boolean {
+	return !SHELL_META.test(command) && risks(command).length === 0 && !shellPaths(command).some((p) => isOutside(cwd, p));
+}
+
+/** The allowlist entry that lets `command` pass without asking, if any: it must start with the entry, word by word. */
+function allowedBy(command: string, cwd: string): string | null {
+	if (!simpleAndInside(command, cwd)) return null;
+	const have = words(command);
+	return allowlist().find((entry) => words(entry).every((w, i) => have[i] === w)) ?? null;
+}
+
+/** What "always allow" would add for this command (program, and its subcommand if it has one), or null when the
+ *  command could never be allowlisted. Shown to the user as is before anything is added. */
+function allowAs(command: string, cwd: string): string | null {
+	if (!simpleAndInside(command, cwd)) return null;
+	const [program, sub] = words(command);
+	if (!program) return null;
+	return sub && /^[a-zA-Z][\w-]*$/.test(sub) ? `${program} ${sub}` : program;
+}
+
+type Patcher =(path: string, oldContent: string, newContent: string) => string;
 let patcher: Promise<Patcher | null> | undefined;
 
 /** Pi's own diff (the same format as the patch Pi reports after an edit). Inside Pi this import maps to Pi's copy. */
@@ -213,8 +273,8 @@ function isBuiltin(pi: any, name: string): boolean {
 }
 
 /** A decision taken without asking, for Pier's transcript and journal. */
-function tellPier(ctx: any, decision: "allowed" | "denied", tool: string, what: string, mode: string) {
-	ctx.ui.notify(JSON.stringify({ pier: ENVELOPE_VERSION, auto: decision, tool, detail: what, mode: MODES[mode] }));
+function tellPier(ctx: any, decision: "allowed" | "denied", tool: string, what: string, by: string) {
+	ctx.ui.notify(JSON.stringify({ pier: ENVELOPE_VERSION, auto: decision, tool, detail: what, mode: by }));
 }
 
 export default function (pi: any) {
@@ -250,12 +310,20 @@ export default function (pi: any) {
 			const input = event.input ?? {};
 			const what = detail(event.toolName, input, true);
 			if (mode === "plan") {
-				tellPier(ctx, "denied", event.toolName, what, mode);
+				tellPier(ctx, "denied", event.toolName, what, MODES[mode]);
 				return { block: true, reason: "Plan mode in Pier: read-only. Do not change anything; describe the change instead." };
 			}
 			const isFileEdit = (event.toolName === "write" || event.toolName === "edit") && isBuiltin(pi, event.toolName);
 			if (mode === "accept-edits" && isFileEdit && outsideTargets(event.toolName, input, ctx.cwd)?.length === 0) {
-				tellPier(ctx, "allowed", event.toolName, what, mode);
+				tellPier(ctx, "allowed", event.toolName, what, MODES[mode]);
+				deepFreeze(input);
+				return undefined;
+			}
+			const shellCommand = SHELLS.has(event.toolName) && typeof input.command === "string" ? input.command : null;
+			// Only Pi's own shell tools run what the allowlist read: a replaced one may do anything with the text.
+			const ownShell = shellCommand !== null && isBuiltin(pi, event.toolName);
+			if (ownShell && allowedBy(shellCommand, ctx.cwd) !== null) {
+				tellPier(ctx, "allowed", event.toolName, what, "allowlist");
 				deepFreeze(input);
 				return undefined;
 			}
@@ -270,6 +338,9 @@ export default function (pi: any) {
 				outside: outsideTargets(event.toolName, input, ctx.cwd),
 				outsideGuessed: SHELLS.has(event.toolName),
 				diff,
+				risks: shellCommand !== null ? risks(shellCommand) : [],
+				// What Pier's "always allow" button would add; null when this command can never be allowlisted.
+				allowAs: ownShell ? allowAs(shellCommand, ctx.cwd) : null,
 			});
 			const ok = await ctx.ui.confirm(`Allow ${event.toolName}?`, message, { timeout: TIMEOUT_MS });
 			if (ok !== true) return { block: true, reason: "Denied in Pier (or timed out)" };

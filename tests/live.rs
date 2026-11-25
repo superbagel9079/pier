@@ -674,3 +674,68 @@ fn live_permission_modes() {
     drop(ws);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// The allowlist: an allowed command runs without a dialog, a chained one asks and is never offered, and
+/// "always allow" adds the offered entry so the next run passes. Uses its own allowlist file, never the user's.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_allowlist() {
+    use pier::workspace::{Launch, Tab, Workspace};
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let dir = std::env::temp_dir().join(format!("pier-allow-live-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let list = dir.join("allowlist.json");
+    std::fs::write(&list, r#"{"commands": ["git status"]}"#).unwrap();
+    // SAFETY: live tests run one at a time (--test-threads=1); Pi, started below, inherits the variable.
+    unsafe { std::env::set_var("PIER_ALLOWLIST", &list) };
+    let mut ws = Workspace::new(["--no-session", "--model", &model].map(String::from).to_vec(), dir.join("recent.json"));
+    ws.open(&dir, Launch::New, || {});
+    let run = |ws: &mut Workspace, until: &dyn Fn(&Tab) -> bool| {
+        let end = Instant::now() + Duration::from_secs(90);
+        while Instant::now() < end {
+            ws.update(Instant::now());
+            ws.flush();
+            if until(&ws.tabs[0]) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("timed out: {:#?}", ws.tabs[0].t.entries);
+    };
+    let users = |t: &Tab| t.t.entries.iter().filter(|e| e.kind == Kind::User).count();
+    let done = |n: usize| move |t: &Tab| users(t) == n && t.t.state == State::Completed && !t.busy();
+    run(&mut ws, &|t| t.t.supervised());
+
+    ws.tabs[0].input = "Use the bash tool to run exactly: git status. Do nothing else, do not retry.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| !t.t.approvals.is_empty() || done(1)(t));
+    assert!(ws.tabs[0].t.approvals.is_empty(), "git status is allowed: no dialog");
+    assert!(ws.tabs[0].t.entries.iter().any(|e| e.text.ends_with("→ allowed (allowlist)")), "{:#?}", ws.tabs[0].t.entries);
+
+    ws.tabs[0].input = "Use the bash tool to run exactly: git status; echo pier-probe. Do nothing else, do not retry.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| !t.t.approvals.is_empty());
+    let a = ws.tabs[0].t.approvals.front().unwrap().clone();
+    assert_eq!(a.allow_as, None, "a chained command is never offered for the allowlist");
+    ws.tabs[0].approve(&a.id, false);
+    run(&mut ws, &done(2));
+
+    ws.tabs[0].input = "Use the bash tool to run exactly: pwd. Do nothing else, do not retry.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| !t.t.approvals.is_empty());
+    let a = ws.tabs[0].t.approvals.front().unwrap().clone();
+    assert_eq!(a.allow_as.as_deref(), Some("pwd"));
+    std::thread::sleep(pier::session::transcript::ARM_DELAY);
+    ws.tabs[0].approve_always(&a.id);
+    run(&mut ws, &done(3));
+    assert!(std::fs::read_to_string(&list).unwrap().contains("\"pwd\""), "added to the allowlist");
+
+    ws.tabs[0].input = "Use the bash tool to run exactly: pwd. Do nothing else, do not retry.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| !t.t.approvals.is_empty() || done(4)(t));
+    assert!(ws.tabs[0].t.approvals.is_empty(), "now allowed: no dialog");
+    drop(ws);
+    unsafe { std::env::remove_var("PIER_ALLOWLIST") };
+    let _ = std::fs::remove_dir_all(&dir);
+}

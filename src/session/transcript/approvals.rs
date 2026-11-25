@@ -33,6 +33,10 @@ struct Envelope {
     outside_guessed: bool,
     #[serde(default)]
     diff: Option<String>,
+    #[serde(default)]
+    risks: Vec<String>,
+    #[serde(default)]
+    allow_as: Option<String>,
 }
 
 /// A tool call waiting for the user's decision.
@@ -57,6 +61,10 @@ pub struct Approval {
     pub front_since: Instant,
     /// Unified diff preview of a write or edit, computed by the extension before anything changes.
     pub diff: Option<String>,
+    /// Why a shell command looks dangerous, one reason per pattern found (a hint, not a guarantee).
+    pub risks: Vec<String>,
+    /// What "always allow" would add to the allowlist; `None` when this command can never be allowlisted.
+    pub allow_as: Option<String>,
 }
 
 fn outside_warning(targets: &[String], guessed: bool) -> String {
@@ -70,12 +78,12 @@ impl Transcript {
     pub(super) fn request_approval(&mut self, id: &str, title: &str, message: &str, timeout: Option<u64>, at: Instant) {
         let deadline = timeout.map(|ms| at + Duration::from_millis(ms).saturating_sub(EXPIRY_MARGIN));
         let env = serde_json::from_str::<Envelope>(message).ok().filter(|e| e.pier == ENVELOPE_VERSION);
-        let (tool, message, outside, unchecked, path, diff) = match env {
+        let (tool, message, outside, unchecked, path, diff, risks, allow_as) = match env {
             Some(e) => {
                 let outside = e.outside.as_ref().filter(|t| !t.is_empty()).map(|t| outside_warning(t, e.outside_guessed));
-                (Some(e.tool), e.detail, outside, e.outside.is_none(), e.path, e.diff)
+                (Some(e.tool), e.detail, outside, e.outside.is_none(), e.path, e.diff, e.risks, e.allow_as)
             }
-            None => (None, message.to_owned(), None, false, None, None),
+            None => (None, message.to_owned(), None, false, None, None, vec![], None),
         };
         // The journal keeps what was asked and how big the change is, not the diff (it can hold a file's old content).
         self.journal.push(Record::ApprovalRequested {
@@ -87,6 +95,7 @@ impl Transcript {
                 let (added, removed) = diff::counts(d);
                 format!("+{added} -{removed}")
             }),
+            risks: risks.clone(),
             timeout_ms: timeout,
         });
         let same_file_pending = path.is_some() && self.approvals.iter().any(|a| a.path == path);
@@ -103,6 +112,8 @@ impl Transcript {
             deadline,
             front_since,
             diff,
+            risks,
+            allow_as,
         });
         // Also outside a run (an extension command can ask): the tab waits on the user either way.
         if !matches!(self.state, State::Blocked | State::Crashed) {

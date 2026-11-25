@@ -23,6 +23,10 @@ it. It is not the default because it froze a whole PC on window resize with an I
   and `edit` inside the folder pass without asking; outside it and commands still ask), **Plan** (read-only: anything
   that writes or runs is refused without asking). Each automatic decision shows in the transcript and the journal.
   Every new tab, and every fork, starts Supervised.
+- **Allowlist** of shell commands that run without asking (except in Plan): a single simple command (no `;`, `&`,
+  `|`, redirection, `$`, backtick, parentheses or newline) that starts with an entry word by word, with no path
+  outside the folder. "Allow + always allow" adds the command's program and subcommand. **Risky** commands (recursive
+  delete, downloaded code, git history rewrite, elevation…) get a red badge and are never allowlisted.
 - **Diff**: a `write` or `edit` shows a colored preview of the added and removed lines before you approve it; after an
   `edit`, Pi's exact patch stays available in the transcript. Files changed by `bash` get no diff.
 - **Checkpoints**: before each message, the folder's files are saved (git must be installed); "Restore files…" puts
@@ -68,6 +72,7 @@ All in `%APPDATA%\pier\`:
 |---|---|
 | `presets.json` | Presets (created with an example by Presets › Edit presets…). An unknown key, an invalid thinking level or a missing folder is reported in the menu. |
 | `recent.json` | Recent project folders (10 at most). |
+| `allowlist.json` | Commands that run without asking (`{"commands": [...]}`), read by the extension at each call. Until it exists, a read-only default list applies (`ls`, `pwd`, `git status`, `git diff`, `git log`…). A broken file allows nothing. |
 | `archived.json` | Sessions hidden from Resume. Deleting it brings them all back. |
 | `journal\*.jsonl` | One journal per tab. Launch arguments are never written there. |
 | `checkpoints\<fingerprint>.git` | One shadow git repository per project folder, holding its checkpoints. The project's own git is never touched; its `.gitignore` files are honored. Never cleaned up yet: delete a folder's repository to drop its checkpoints. |
@@ -115,6 +120,7 @@ src/
   checkpoint.rs       saving and restoring the folder's files (shadow git repository), file list for @
   mention.rs, attach.rs  @ file mentions, attached images
   archive.rs          sessions hidden from Resume
+  allowlist.rs        the allowlist file (the extension decides)
   presets.rs, recent.rs, files.rs, awake.rs
   main.rs, app/       the egui interface: it draws and asks, with no session logic
 extension/            the Pi approval extension and its self-check

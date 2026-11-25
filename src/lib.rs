@@ -1,5 +1,6 @@
 //! Pier core: talking to Pi, the session model, the open tabs, presets and recent folders. Never imports egui.
 
+pub mod allowlist;
 pub mod archive;
 pub mod attach;
 pub mod awake;

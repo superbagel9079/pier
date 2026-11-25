@@ -12,6 +12,9 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::Panel::bottom("approval").show(ui, |ui| {
         ui.add_space(4.0);
         ui.strong(&a.title);
+        for why in &a.risks {
+            ui.colored_label(ui.visuals().error_fg_color, format!("⚠ Risky: {why}"));
+        }
         if let Some(warning) = &a.outside {
             ui.colored_label(ui.visuals().error_fg_color, warning);
         }
@@ -37,6 +40,13 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
                 ui.ctx().request_repaint_after(ARM_DELAY);
             }
             let allow = ui.add_enabled(armed, egui::Button::new("Allow")).clicked();
+            let always = a.allow_as.as_ref().is_some_and(|entry| {
+                ui.add_enabled(armed, egui::Button::new(format!("Allow + always allow \"{entry}\"")))
+                    .on_hover_text(format!(
+                        "Adds \"{entry}\" to the allowlist: a single command starting with it, inside the folder, will run without asking.\nEdit the list from the mode menu."
+                    ))
+                    .clicked()
+            });
             let deny = ui.add_enabled(armed, egui::Button::new("Deny")).clicked();
             if let Some(d) = a.deadline {
                 ui.weak(format!("auto-deny in {} s", d.saturating_duration_since(Instant::now()).as_secs()));
@@ -44,7 +54,9 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             if waiting > 0 {
                 ui.weak(format!("· {waiting} more waiting"));
             }
-            if allow || deny {
+            if always {
+                tab.approve_always(&a.id);
+            } else if allow || deny {
                 tab.approve(&a.id, allow);
             }
         });

@@ -81,6 +81,21 @@ fn mode_menu(tab: &mut Tab, ui: &mut egui::Ui, current: &str) {
             }
         }
         ui.weak("Back to Supervised in every new tab and after a fork.");
+        ui.separator();
+        let edit = ui.button("Edit allowed commands…").on_hover_text(
+            "Commands that run without asking (except in Plan): a single command starting with an entry, inside the folder, nothing risky.",
+        );
+        if edit.clicked() {
+            let opened =
+                pier::allowlist::ensure_file(&pier::allowlist::path()).and_then(|p| super::open_in_editor(&p).map_err(|e| e.to_string()));
+            if let Err(e) = opened {
+                tab.t.entries.push(pier::session::transcript::Entry::new(
+                    pier::session::transcript::Kind::Error,
+                    format!("Cannot open the allowlist: {e}"),
+                ));
+            }
+            ui.close();
+        }
     })
     .response
     .on_hover_text("Permission mode of this tab");

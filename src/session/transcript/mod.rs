@@ -594,6 +594,24 @@ mod tests {
     }
 
     #[test]
+    fn risks_and_the_allowlist_proposal_reach_the_approval() {
+        let mut t = Transcript::default();
+        let env = r#"{\"pier\":1,\"tool\":\"bash\",\"detail\":\"rm -rf build\",\"outside\":[],\"outsideGuessed\":true,\"diff\":null,\"risks\":[\"deletes recursively\"],\"allowAs\":null}"#;
+        let ok = r#"{\"pier\":1,\"tool\":\"bash\",\"detail\":\"cargo build\",\"outside\":[],\"diff\":null,\"risks\":[],\"allowAs\":\"cargo build\"}"#;
+        feed(
+            &mut t,
+            &[
+                &format!(r#"{{"type":"extension_ui_request","id":"a1","method":"confirm","title":"Allow bash?","message":"{env}"}}"#),
+                &format!(r#"{{"type":"extension_ui_request","id":"a2","method":"confirm","title":"Allow bash?","message":"{ok}"}}"#),
+            ],
+        );
+        assert_eq!(t.approvals[0].risks, ["deletes recursively"]);
+        assert_eq!(t.approvals[0].allow_as, None);
+        assert_eq!(t.approvals[1].allow_as.as_deref(), Some("cargo build"));
+        assert!(matches!(&t.journal[0], Record::ApprovalRequested { risks, .. } if risks == &["deletes recursively"]));
+    }
+
+    #[test]
     fn decisions_taken_by_a_mode_are_shown_and_journaled() {
         let mut t = Transcript::default();
         let auto = r#"{\"pier\":1,\"auto\":\"allowed\",\"tool\":\"write\",\"detail\":\"src/a.rs\",\"mode\":\"Accept edits\"}"#;
@@ -710,6 +728,7 @@ mod tests {
             detail: "rm x".into(),
             outside: None,
             changes: None,
+            risks: vec![],
             timeout_ms: Some(60000),
         };
         assert_eq!(
