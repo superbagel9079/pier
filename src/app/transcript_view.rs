@@ -38,7 +38,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         if (heights.width - width).abs() > 0.5 {
             heights = Heights { width, rows: Vec::new() }; // wrapping changed: every height is stale
         }
-        let entries = &tab.t.entries;
+        let entries = tab.t.entries();
         heights.rows.truncate(entries.len()); // a fork starts the transcript over
         let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
         let chars_per_line = ((width / (row * 0.5)) as usize).max(20);

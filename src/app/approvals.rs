@@ -13,8 +13,8 @@ enum Answer {
 }
 
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
-    let Some(a) = tab.t.approvals.front() else { return };
-    let waiting = tab.t.approvals.len() - 1;
+    let Some(a) = tab.t.approvals().front() else { return };
+    let waiting = tab.t.approvals().len() - 1;
     // Disabled for a moment after a new approval appears, so a click meant for the previous one cannot land here.
     let armed = tab.t.can_answer(Instant::now());
     let mut answer = None;

@@ -8,9 +8,9 @@ fn kind(after: bool) -> &'static str {
 }
 
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
-    if tab.t.queue_draft.is_some() {
+    if tab.t.queue_draft().is_some() {
         editor(tab, ui);
-    } else if !tab.t.queued.is_empty() {
+    } else if !tab.t.queued().is_empty() {
         waiting(tab, ui);
     }
 }
@@ -18,8 +18,8 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
 fn waiting(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::Panel::top("queue").show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.weak(format!("Waiting for Pi to read ({}):", tab.t.queued.len()));
-            let pending = tab.t.queue_edit_pending;
+            ui.weak(format!("Waiting for Pi to read ({}):", tab.t.queued().len()));
+            let pending = tab.t.queue_edit_pending();
             let mut edit = ui.add_enabled(!pending, egui::Button::new("Edit queue…").small());
             edit = if tab.queued_images {
                 edit.on_hover_text("A waiting message has images: editing keeps its text only, the images are lost.")
@@ -30,7 +30,7 @@ fn waiting(tab: &mut Tab, ui: &mut egui::Ui) {
                 tab.edit_queue();
             }
         });
-        for item in &tab.t.queued {
+        for item in tab.t.queued() {
             let line = item.text.lines().next().unwrap_or_default();
             ui.add(egui::Label::new(format!("{} · {line}", kind(item.after))).truncate()).on_hover_text(&item.text);
         }
@@ -42,7 +42,7 @@ fn editor(tab: &mut Tab, ui: &mut egui::Ui) {
     let (mut send, mut discard) = (false, false);
     egui::Panel::top("queue").show(ui, |ui| {
         ui.weak("Editing the queue: Pi reads none of these until you send them back. Steer: after the current tool calls. After: once Pi is done.");
-        let Some(draft) = tab.t.queue_draft.as_mut() else { return };
+        let Some(draft) = tab.t.queue_draft_mut() else { return };
         let (mut up, mut remove) = (None, None);
         let last = draft.len().saturating_sub(1);
         for (i, item) in draft.iter_mut().enumerate() {

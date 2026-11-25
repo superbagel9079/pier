@@ -70,50 +70,50 @@ fn cap(text: String) -> String {
     crate::text::cap_bytes(text, TOOL_TEXT_MAX)
 }
 
-/// The state of one Pi session, rebuilt from its events. The UI reads the fields; every change goes through a method,
-/// here or on `Tab` (the queue draft is the one thing the UI edits in place: it is a form).
+/// The state of one Pi session, rebuilt from its events. Outside the core it is read through the accessors below and
+/// changed only through methods (here or on `Tab`); the queue draft is the one thing the UI edits, as a form.
 #[derive(Default)]
 pub struct Transcript {
-    pub entries: Vec<Entry>,
-    pub state: State,
+    pub(crate) entries: Vec<Entry>,
+    pub(crate) state: State,
     /// The last assistant message of the current run ended in error.
     run_failed: bool,
     /// Messages Pi has accepted but not yet read (steer / follow-up), from `queue_update`.
-    pub queued: Vec<QueueItem>,
+    pub(crate) queued: Vec<QueueItem>,
     /// Queued texts handed back by `clear_queue`, for the UI to put back in the editor.
-    pub restored: Vec<String>,
+    pub(crate) restored: Vec<String>,
     /// The queue taken back from Pi to be edited; Pi reads none of it until it is sent back.
-    pub queue_draft: Option<Vec<QueueItem>>,
+    pub(crate) queue_draft: Option<Vec<QueueItem>>,
     /// The next `clear_queue` answer is for editing, not for the editor.
-    pub queue_edit_pending: bool,
-    pub stderr: VecDeque<String>,
+    pub(crate) queue_edit_pending: bool,
+    pub(crate) stderr: VecDeque<String>,
     /// Extension status lines (`setStatus`), keyed by statusKey.
-    pub status: std::collections::BTreeMap<String, String>,
+    pub(crate) status: std::collections::BTreeMap<String, String>,
     /// Records the transcript needs sent back to Pi (dialog replies); the UI flushes them.
-    pub outbox: Vec<Command>,
+    pub(crate) outbox: Vec<Command>,
     /// Confirm dialogs waiting for the user, oldest first.
-    pub approvals: VecDeque<Approval>,
+    pub(crate) approvals: VecDeque<Approval>,
     /// Pi's session file, from `get_state` (or the one being resumed): two Pi writing one file would corrupt it.
-    pub session_file: Option<PathBuf>,
+    pub(crate) session_file: Option<PathBuf>,
     /// Lines for the tab's journal file; the UI writes them out.
-    pub journal: Vec<Record>,
+    pub(crate) journal: Vec<Record>,
     /// Current model and thinking level, from `get_state`.
-    pub model: Option<ModelInfo>,
-    pub thinking: Option<String>,
+    pub(crate) model: Option<ModelInfo>,
+    pub(crate) thinking: Option<String>,
     /// Models Pi knows, from `get_available_models` (asked when the model menu opens).
-    pub models: Vec<ModelInfo>,
+    pub(crate) models: Vec<ModelInfo>,
     /// provider/id of each model in lowercase, for the menu's search.
-    pub model_keys: Vec<String>,
+    pub(crate) model_keys: Vec<String>,
     /// Thinking levels the current model accepts.
-    pub thinking_levels: Vec<String>,
+    pub(crate) thinking_levels: Vec<String>,
     /// The session's display name, from `get_state` and `session_info_changed`.
-    pub session_name: Option<String>,
+    pub(crate) session_name: Option<String>,
     /// Cost and context usage, refreshed after each assistant message and each model change.
-    pub stats: Option<SessionStats>,
+    pub(crate) stats: Option<SessionStats>,
     /// Pi's `/` commands (extensions, prompt templates, skills), from `get_commands`.
-    pub commands: Vec<PiCommand>,
+    pub(crate) commands: Vec<PiCommand>,
     /// User messages a fork can start from, from `get_fork_messages` (asked when the Fork menu opens).
-    pub fork_messages: Vec<ForkMessage>,
+    pub(crate) fork_messages: Vec<ForkMessage>,
     /// A fork just switched the session: the history about to load is the fork's, not a resume.
     forked: bool,
     /// Checkpoint entry kept across a fork (the undo point of a restore made for it), shown after the fork's history.
@@ -122,6 +122,81 @@ pub struct Transcript {
     blocks: HashMap<u64, usize>,
     /// State to return to once the approval queue empties (an approval can arrive outside a run).
     blocked_from: Option<State>,
+}
+
+/// Read-only view for the UI and the live tests.
+impl Transcript {
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+    pub fn state(&self) -> State {
+        self.state
+    }
+    /// Messages Pi has accepted but not yet read.
+    pub fn queued(&self) -> &[QueueItem] {
+        &self.queued
+    }
+    /// Queued texts handed back by `clear_queue`, not yet put back in the editor.
+    pub fn restored(&self) -> &[String] {
+        &self.restored
+    }
+    pub fn queue_draft(&self) -> Option<&[QueueItem]> {
+        self.queue_draft.as_deref()
+    }
+    /// The queue taken back for editing, to change in place before sending it back.
+    pub fn queue_draft_mut(&mut self) -> Option<&mut Vec<QueueItem>> {
+        self.queue_draft.as_mut()
+    }
+    pub fn queue_edit_pending(&self) -> bool {
+        self.queue_edit_pending
+    }
+    pub fn stderr(&self) -> &VecDeque<String> {
+        &self.stderr
+    }
+    pub fn status(&self) -> &std::collections::BTreeMap<String, String> {
+        &self.status
+    }
+    pub fn approvals(&self) -> &VecDeque<Approval> {
+        &self.approvals
+    }
+    pub fn session_file(&self) -> Option<&PathBuf> {
+        self.session_file.as_ref()
+    }
+    /// Journal lines not written out yet.
+    pub fn journal(&self) -> &[Record] {
+        &self.journal
+    }
+    pub fn model(&self) -> Option<&ModelInfo> {
+        self.model.as_ref()
+    }
+    pub fn thinking(&self) -> Option<&str> {
+        self.thinking.as_deref()
+    }
+    pub fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+    pub fn model_keys(&self) -> &[String] {
+        &self.model_keys
+    }
+    pub fn thinking_levels(&self) -> &[String] {
+        &self.thinking_levels
+    }
+    pub fn session_name(&self) -> Option<&str> {
+        self.session_name.as_deref()
+    }
+    pub fn stats(&self) -> Option<&SessionStats> {
+        self.stats.as_ref()
+    }
+    pub fn commands(&self) -> &[PiCommand] {
+        &self.commands
+    }
+    pub fn fork_messages(&self) -> &[ForkMessage] {
+        &self.fork_messages
+    }
+    /// The replies to send to Pi; whoever drives Pi sends them.
+    pub fn take_outbox(&mut self) -> Vec<Command> {
+        std::mem::take(&mut self.outbox)
+    }
 }
 
 fn texts(steering: &[Queued], follow_up: &[Queued]) -> Vec<String> {

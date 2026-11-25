@@ -30,14 +30,14 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     egui::Panel::top("status").show(ui, |ui| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            let (label, color) = state_style(tab.t.state, ui.visuals());
+            let (label, color) = state_style(tab.t.state(), ui.visuals());
             ui.label(RichText::new("●").color(color));
             ui.label(RichText::new(label).strong());
 
             ui.separator();
             if let Some(mode) = tab.mode().map(str::to_owned) {
                 mode_menu(tab, ui, &mode);
-            } else if tab.t.state != State::Crashed {
+            } else if tab.t.state() != State::Crashed {
                 ui.label(RichText::new("Not supervised: sending blocked").color(ui.visuals().error_fg_color))
                     .on_hover_text("Pier's approval extension has not reported in yet.");
             }
@@ -55,7 +55,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             usage(tab, ui);
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(tab.t.state.is_running(), egui::Button::new("Stop")).clicked() {
+                if ui.add_enabled(tab.t.state().is_running(), egui::Button::new("Stop")).clicked() {
                     tab.stop();
                 }
             });
@@ -103,7 +103,7 @@ fn mode_menu(tab: &mut Tab, ui: &mut egui::Ui, current: &str) {
 
 /// Context-window use and session cost, from Pi's session stats.
 fn usage(tab: &Tab, ui: &mut egui::Ui) {
-    let Some(stats) = &tab.t.stats else { return };
+    let Some(stats) = &tab.t.stats() else { return };
     ui.separator();
     if let Some(c) = &stats.context_usage {
         let v = ui.visuals();
@@ -126,7 +126,7 @@ fn usage(tab: &Tab, ui: &mut egui::Ui) {
 
 /// Session name: Pi stores it in the session file, so Resume and Pi's own /resume show it.
 fn name_menu(tab: &mut Tab, ui: &mut egui::Ui) {
-    let current = tab.t.session_name.clone().unwrap_or_default();
+    let current = tab.t.session_name().map(str::to_owned).unwrap_or_default();
     let label = if current.is_empty() { "Name…".to_owned() } else { format!("Name: {current}") };
     let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
     let draft_id = ui.make_persistent_id(("name_draft", tab.id));
@@ -154,7 +154,7 @@ fn name_menu(tab: &mut Tab, ui: &mut egui::Ui) {
 
 /// Current model; the menu lists Pi's models (asked when it opens) with a search box, since providers can have hundreds.
 fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
-    let current = tab.t.model.as_ref().map(|m| m.name.clone().unwrap_or_else(|| m.id.clone())).unwrap_or_else(|| "?".into());
+    let current = tab.t.model().map(|m| m.name.clone().unwrap_or_else(|| m.id.clone())).unwrap_or_else(|| "?".into());
     // Default menus close on any click inside, which would make the search box unusable.
     let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
     // The search text is pure UI state: kept in egui's memory, not in the tab.
@@ -169,11 +169,11 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
         ui.data_mut(|d| d.insert_temp(filter_id, text));
         let mut pick = None;
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            if tab.t.models.is_empty() {
+            if tab.t.models().is_empty() {
                 ui.weak("Loading the list…");
             }
-            let current = tab.t.model.as_ref().map(|m| m.key());
-            let matching = tab.t.models.iter().zip(&tab.t.model_keys).filter(|(_, k)| k.contains(&filter));
+            let current = tab.t.model().map(|m| m.key());
+            let matching = tab.t.models().iter().zip(tab.t.model_keys()).filter(|(_, k)| k.contains(&filter));
             for (m, _) in matching.take(MODEL_LIST_MAX) {
                 let key = m.key();
                 if ui.selectable_label(current.as_deref() == Some(&key), key).clicked() {
@@ -194,13 +194,13 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
 
 /// Thinking level, limited to what the current model accepts; hidden for models without reasoning.
 fn thinking_menu(tab: &mut Tab, ui: &mut egui::Ui) {
-    if tab.t.thinking_levels.len() < 2 {
+    if tab.t.thinking_levels().len() < 2 {
         return;
     }
-    let current = tab.t.thinking.clone().unwrap_or_else(|| "?".into());
+    let current = tab.t.thinking().map(str::to_owned).unwrap_or_else(|| "?".into());
     let mut pick = None;
     ui.menu_button(format!("Thinking: {current}"), |ui| {
-        for level in &tab.t.thinking_levels {
+        for level in tab.t.thinking_levels() {
             if ui.selectable_label(*level == current, level).clicked() {
                 pick = Some(level.clone());
                 ui.close();
@@ -222,13 +222,13 @@ fn fork_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     let (response, inner) = MenuButton::new("Fork from…").ui(ui, |ui| {
         ui.weak("A new session goes on from just before the message you pick;\nits text comes back to the editor. This session stays in Resume.");
         ui.separator();
-        if tab.t.fork_messages.is_empty() {
+        if tab.t.fork_messages().is_empty() {
             ui.weak("No earlier message (or loading…).");
         }
         let mut pick = None;
         let checkpoints = tab.checkpoints_by_message();
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            for m in tab.t.fork_messages.iter().rev() {
+            for m in tab.t.fork_messages().iter().rev() {
                 let first_line = m.text.lines().next().unwrap_or_default();
                 let mut preview: String = first_line.chars().take(PREVIEW_CHARS).collect();
                 if preview.len() < m.text.len() {
@@ -265,18 +265,18 @@ fn fork_menu(tab: &mut Tab, ui: &mut egui::Ui) {
 
 /// Extension statuses belong to the user's Pi setup, not to Pier: shown small, out of the way.
 pub fn footer(tab: &Tab, ui: &mut egui::Ui) {
-    let statuses: Vec<&str> = tab.t.status.iter().filter(|(k, _)| *k != SUPERVISION_KEY).map(|(_, v)| v.as_str()).collect();
-    if statuses.is_empty() && tab.t.stderr.is_empty() {
+    let statuses: Vec<&str> = tab.t.status().iter().filter(|(k, _)| *k != SUPERVISION_KEY).map(|(_, v)| v.as_str()).collect();
+    if statuses.is_empty() && tab.t.stderr().is_empty() {
         return;
     }
     egui::Panel::bottom("footer").show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new(statuses.join("    ")).small().weak());
-            if let Some(last) = tab.t.stderr.back() {
+            if let Some(last) = tab.t.stderr().back() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.add(egui::Label::new(RichText::new(last).small().weak()).truncate()).on_hover_ui(|ui| {
                         // Built on hover only: joining 200 lines every frame was wasted work.
-                        ui.label(tab.t.stderr.iter().map(String::as_str).collect::<Vec<_>>().join("\n"));
+                        ui.label(tab.t.stderr().iter().map(String::as_str).collect::<Vec<_>>().join("\n"));
                     });
                 });
             }

@@ -19,7 +19,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     let editor_id = ui.make_persistent_id(("composer_editor", tab.id));
 
     // One palette at a time: commands while the editor starts with `/`, files while it ends with `@partial`.
-    let commands = complete::commands(&tab.t.commands, &tab.input);
+    let commands = complete::commands(tab.t.commands(), &tab.input);
     let (header, lines): (String, Vec<(String, Option<String>, Pick)>) = if !commands.is_empty() {
         let total = commands.len();
         let lines: Vec<_> = commands
@@ -60,11 +60,11 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         attachments(tab, ui);
         ui.horizontal(|ui| {
             // Fail closed: no prompt reaches Pi before Pier's approval extension has reported in.
-            let alive = tab.t.state != State::Crashed && tab.t.supervised();
-            let label = if tab.t.state.is_running() { "Steer" } else { "Send" };
+            let alive = tab.t.state() != State::Crashed && tab.t.supervised();
+            let label = if tab.t.state().is_running() { "Steer" } else { "Send" };
             let send =
                 ui.add_enabled(alive, egui::Button::new(label)).on_hover_text("Steer: Pi reads it after the current tool calls").clicked();
-            let after = tab.t.state.is_running()
+            let after = tab.t.state().is_running()
                 && ui
                     .add_enabled(alive, egui::Button::new("Queue for after"))
                     .on_hover_text("Pi reads it once it is done with everything else")

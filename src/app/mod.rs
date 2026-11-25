@@ -208,7 +208,7 @@ impl PierApp {
             ui.horizontal_wrapped(|ui| {
                 let (mut select, mut close) = (None, None);
                 for (i, tab) in self.ws.tabs.iter().enumerate() {
-                    let (state, color) = status_bar::state_style(tab.t.state, ui.visuals());
+                    let (state, color) = status_bar::state_style(tab.t.state(), ui.visuals());
                     ui.label(RichText::new("●").color(color)).on_hover_text(state);
                     if ui.selectable_label(i == self.ws.active, tab.title()).clicked() {
                         select = Some(i);
