@@ -16,6 +16,7 @@ const TITLE_CHARS: usize = 60;
 pub struct SavedSession {
     pub path: PathBuf,
     pub modified: SystemTime,
+    pub bytes: u64,
     /// First user message, or the file name when there is none yet.
     pub title: String,
 }
@@ -47,18 +48,20 @@ pub fn list_cached(cwd: &Path, max: usize, cache: &mut TitleCache) -> Vec<SavedS
 
 fn list_dir(folder: &Path, max: usize, cache: &mut TitleCache) -> Vec<SavedSession> {
     let Ok(dir) = std::fs::read_dir(folder) else { return vec![] };
-    let mut files: Vec<(PathBuf, SystemTime)> = dir
+    let mut files: Vec<(PathBuf, SystemTime, u64)> = dir
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
-        .filter_map(|p| Some((p.metadata().ok()?.modified().ok()?, p)))
-        .map(|(m, p)| (p, m))
+        .filter_map(|p| {
+            let meta = p.metadata().ok()?;
+            Some((p, meta.modified().ok()?, meta.len()))
+        })
         .collect();
     files.sort_by_key(|f| std::cmp::Reverse(f.1));
     files.truncate(max);
     files
         .into_iter()
-        .map(|(path, modified)| {
+        .map(|(path, modified, bytes)| {
             let title = match cache.get(&path) {
                 Some((at, title)) if *at == modified => title.clone(),
                 _ => {
@@ -67,7 +70,7 @@ fn list_dir(folder: &Path, max: usize, cache: &mut TitleCache) -> Vec<SavedSessi
                     title
                 }
             };
-            SavedSession { title, path, modified }
+            SavedSession { title, path, modified, bytes }
         })
         .collect()
 }
@@ -112,6 +115,39 @@ fn title_of(path: &Path) -> String {
     name.map(|n| shorten(&n)).or(first_prompt).unwrap_or_else(fallback)
 }
 
+/// Characters shown on each side of a match.
+const SNIPPET_SIDE: usize = 40;
+
+/// The first user or assistant message of the session containing `query` (case-insensitive), as a one-line excerpt
+/// around the match; `None` when no message has it. Tool calls, tool output and thinking are not searched.
+pub fn search(path: &Path, query: &str) -> Option<String> {
+    let q = query.to_lowercase();
+    let file = std::fs::File::open(path).ok()?;
+    for line in BufReader::new(file).lines().map_while(Result::ok) {
+        if !line.contains(r#""type":"message""#) || !(line.contains(r#""role":"user""#) || line.contains(r#""role":"assistant""#)) {
+            continue;
+        }
+        let Some(m) = serde_json::from_str::<Line>(&line).ok().and_then(|l| l.message) else { continue };
+        if let Some(s) = snippet(&m.content.text(), &q) {
+            return Some(s);
+        }
+    }
+    None
+}
+
+/// `text` around the first match of the lowercase `q`, on one line.
+fn snippet(text: &str, q: &str) -> Option<String> {
+    let lower = text.to_lowercase();
+    let at = lower.find(q)?;
+    // Lowercasing rarely changes byte lengths; when it does, show the lowercase text rather than cut a char.
+    let source = if lower.len() == text.len() { text } else { lower.as_str() };
+    let before: String = source[..at].chars().rev().take(SNIPPET_SIDE).collect::<Vec<_>>().into_iter().rev().collect();
+    let rest: String = source[at..].chars().take(q.chars().count() + SNIPPET_SIDE).collect();
+    let lead = if before.chars().count() < source[..at].chars().count() { "…" } else { "" };
+    let tail = if rest.len() < source.len() - at { "…" } else { "" };
+    Some(format!("{lead}{before}{rest}{tail}").split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +169,30 @@ mod tests {
         std::fs::write(&file, r#"{"type":"message","message":{"role":"user","content":"second"}}"#).unwrap();
         assert_eq!(list_dir(&dir, 5, &mut cache)[0].title, "second", "changed file: read again");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn search_finds_messages_not_tool_output() {
+        let path = std::env::temp_dir().join(format!("pier-search-{}.jsonl", std::process::id()));
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"type":"message","message":{"role":"user","content":"Fix the PARSER please"}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"toolResult","toolName":"bash","content":[{"type":"text","text":"zebra in a log"}]}}"#,
+                "\n",
+                r#"{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Done.\nThe tokenizer now handles nested quotes, which the old parser choked on."}]}}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        assert_eq!(search(&path, "parser").as_deref(), Some("Fix the PARSER please"), "case-insensitive, first match");
+        assert_eq!(search(&path, "TOKENIZER").as_deref(), Some("Done. The tokenizer now handles nested quotes, which the ol…"));
+        assert_eq!(search(&path, "zebra"), None, "tool output is not searched");
+        let long = format!("{}needle{}", "a".repeat(100), "b".repeat(100));
+        let s = snippet(&long, "needle").unwrap();
+        assert!(s.starts_with('…') && s.ends_with('…') && s.contains("needle"), "{s}");
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

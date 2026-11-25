@@ -4,12 +4,12 @@
 mod approvals;
 mod composer;
 mod diff_view;
+mod resume;
 mod status_bar;
 mod transcript_view;
 
 use eframe::egui::{self, RichText};
 use pier::awake::KeepAwake;
-use pier::pi::sessions::SavedSession;
 use pier::presets::{self, Preset};
 use pier::recent;
 use pier::session::state::Attention;
@@ -17,8 +17,6 @@ use pier::session::transcript::{Entry, Kind};
 use pier::workspace::{Launch, Workspace};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-
-const RESUME_LIST_MAX: usize = 20;
 
 /// Opens a file with the system's default app for its type.
 fn open_in_editor(path: &Path) -> std::io::Result<()> {
@@ -56,8 +54,7 @@ fn ago(secs: u64) -> String {
 
 pub struct PierApp {
     ws: Workspace,
-    /// Saved sessions of the active folder, read when the Resume menu opens (not every frame).
-    saved: Vec<(SavedSession, bool)>,
+    resume: resume::ResumeWindow,
     /// presets.json, read when the Presets menu opens; an error is shown, not hidden.
     presets: Result<Vec<Preset>, String>,
     /// Window title last sent, so it is only re-sent when it changes.
@@ -72,7 +69,7 @@ impl PierApp {
     pub fn new(pi_args: Vec<String>) -> Self {
         Self {
             ws: Workspace::new(pi_args, recent::path()),
-            saved: vec![],
+            resume: Default::default(),
             presets: Ok(vec![]),
             title: String::new(),
             awake: KeepAwake::default(),
@@ -133,31 +130,6 @@ impl PierApp {
         });
         if let Some(folder) = pick {
             self.ws.open(&folder, Launch::New, waker(ui.ctx()));
-        }
-    }
-
-    /// Menu of Pi sessions saved for the active folder; one already open in a tab is greyed out.
-    fn resume_menu(&mut self, ui: &mut egui::Ui) {
-        let mut pick = None;
-        let r = ui.menu_button("Resume", |ui| {
-            if self.saved.is_empty() {
-                ui.weak("No saved session for this folder.");
-            }
-            for (s, is_open) in &self.saved {
-                let when = s.modified.elapsed().map(|d| ago(d.as_secs())).unwrap_or_default();
-                let label = format!("{}  ·  {when}", s.title);
-                let b = ui.add_enabled(!is_open, egui::Button::new(label));
-                if b.on_disabled_hover_text("Already open in a tab").clicked() {
-                    pick = Some(s.path.clone());
-                    ui.close();
-                }
-            }
-        });
-        if r.response.clicked() {
-            self.saved = self.ws.saved_sessions(RESUME_LIST_MAX);
-        }
-        if let Some(path) = pick {
-            self.open_here(Launch::Resume(&path), ui.ctx());
         }
     }
 
@@ -227,7 +199,12 @@ impl PierApp {
                     self.ws.open(&folder, Launch::New, waker(ui.ctx()));
                 }
                 self.presets_menu(ui);
-                self.resume_menu(ui);
+                if ui.add_enabled(!self.ws.tabs.is_empty(), egui::Button::new("Resume…")).clicked() {
+                    self.resume.open = !self.resume.open;
+                    if self.resume.open {
+                        self.ws.load_sessions(waker(ui.ctx()));
+                    }
+                }
                 if self.awake.is_on() {
                     ui.weak("Sleep blocked").on_hover_text("A run is in progress: Windows will not sleep until it ends.");
                 }
@@ -272,6 +249,9 @@ impl eframe::App for PierApp {
             transcript_view::show(tab, ui);
         } else {
             self.start_screen(ui);
+        }
+        if let Some(path) = self.resume.show(&mut self.ws, ui.ctx()) {
+            self.open_here(Launch::Resume(&path), ui.ctx());
         }
 
         // After the panels, so a click's answer leaves in the same frame.

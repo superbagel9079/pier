@@ -23,7 +23,9 @@ it. It is not the default because it froze a whole PC on window resize with an I
   them back as they were, and the restore itself can be undone. Pi's conversation is not rewound.
 - **Fork** from an earlier message: the tab moves to a new session holding the conversation up to just before it,
   and the message comes back to the editor; optionally the files are restored too. The original stays in Resume.
-- **Resume** a saved Pi session, with its history. **Name** a session.
+- **Resume** a saved Pi session, with its history, from a window listing every session of the folder: search the
+  titles, or the messages too; **archive** a session to hide it (Pier's list only: Pi's file is not touched).
+  **Name** a session.
 - **Presets**: model, thinking level, tools, folder and instructions, launched in one click.
 - **Model and thinking level** switchable inside a tab, **context gauge** and session cost.
 - **`/` palette** of Pi's commands, prompt templates and skills.
@@ -60,6 +62,7 @@ All in `%APPDATA%\pier\`:
 |---|---|
 | `presets.json` | Presets (created with an example by Presets › Edit presets…). An unknown key, an invalid thinking level or a missing folder is reported in the menu. |
 | `recent.json` | Recent project folders (10 at most). |
+| `archived.json` | Sessions hidden from Resume. Deleting it brings them all back. |
 | `journal\*.jsonl` | One journal per tab. Launch arguments are never written there. |
 | `checkpoints\<fingerprint>.git` | One shadow git repository per project folder, holding its checkpoints. The project's own git is never touched; its `.gitignore` files are honored. Never cleaned up yet: delete a folder's repository to drop its checkpoints. |
 | `pier-approvals-<fingerprint>.ts` | The approval extension, embedded in the executable; the name follows its content, so two Pier versions never share one. |
@@ -103,6 +106,7 @@ src/
   workspace.rs        the tabs: launch, send, Stop, close, what needs the user's attention
   checkpoint.rs       saving and restoring the folder's files (shadow git repository), file list for @
   mention.rs, attach.rs  @ file mentions, attached images
+  archive.rs          sessions hidden from Resume
   presets.rs, recent.rs, files.rs, awake.rs
   main.rs, app/       the egui interface: it draws and asks, with no session logic
 extension/            the Pi approval extension and its self-check

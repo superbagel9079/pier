@@ -1,6 +1,7 @@
 //! The open tabs and what they do, without any UI: launching Pi in a folder, sending, stopping, closing,
 //! recent folders, and which state changes need the user. The egui layer only draws this and asks the user.
 
+use crate::archive::Archive;
 use crate::attach::Image;
 use crate::checkpoint::{self, Done, Job, Repo, Worker};
 use crate::mention;
@@ -12,9 +13,10 @@ use crate::recent;
 use crate::session::journal::{self, Journal, Record};
 use crate::session::state::{Attention, State};
 use crate::session::transcript::{Entry, Kind, Transcript};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -435,16 +437,91 @@ pub struct Workspace {
     pub recent: Vec<PathBuf>,
     recent_file: PathBuf,
     /// Saved-session titles already read, so opening Resume does not reread every file each time.
-    titles: sessions::TitleCache,
+    titles: Arc<Mutex<sessions::TitleCache>>,
     /// Session files of closed tabs whose Pi is still shutting down: still "open" for Resume.
     closing: Arc<Mutex<Vec<PathBuf>>>,
+    /// What the Resume window shows.
+    pub browser: Browser,
+    browser_tx: Sender<Browsed>,
+    browser_rx: Receiver<Browsed>,
+    /// Sessions hidden from Resume.
+    pub archive: Archive,
+}
+
+/// The Resume window's sessions for one folder, listed and searched off the UI thread (a folder can hold hundreds
+/// of sessions, some several MB).
+#[derive(Default)]
+pub struct Browser {
+    pub folder: Option<PathBuf>,
+    /// Newest first, each with its canonical path (to tell whether a tab has it open).
+    pub sessions: Vec<(SavedSession, Option<PathBuf>)>,
+    pub loading: bool,
+    /// The last message search: its query, and the matching sessions with an excerpt.
+    pub found: Option<(String, HashMap<PathBuf, String>)>,
+    pub searching: bool,
+    pub error: Option<String>,
+}
+
+enum Browsed {
+    Listed(PathBuf, Vec<(SavedSession, Option<PathBuf>)>),
+    Found(String, HashMap<PathBuf, String>),
 }
 
 impl Workspace {
-    /// Starts with no tab: the user picks the project folder first.
+    /// Starts with no tab: the user picks the project folder first. Pier's other lists (archived sessions) live
+    /// next to `recent_file`.
     pub fn new(pi_args: Vec<String>, recent_file: PathBuf) -> Self {
         let recent = recent::load(&recent_file);
-        Self { pi_args, tabs: vec![], active: 0, recent, recent_file, closing: Arc::default(), titles: Default::default() }
+        let archive = Archive::load(recent_file.with_file_name("archived.json"));
+        let (browser_tx, browser_rx) = channel();
+        Self {
+            pi_args,
+            tabs: vec![],
+            active: 0,
+            recent,
+            recent_file,
+            closing: Arc::default(),
+            titles: Arc::default(),
+            browser: Browser::default(),
+            browser_tx,
+            browser_rx,
+            archive,
+        }
+    }
+
+    /// Lists every session saved for the active folder, in the background; `wake` repaints when done.
+    pub fn load_sessions(&mut self, wake: impl Fn() + Send + 'static) {
+        let Some(folder) = self.active_folder() else { return };
+        self.browser = Browser { folder: Some(folder.clone()), loading: true, ..Browser::default() };
+        let (titles, tx) = (Arc::clone(&self.titles), self.browser_tx.clone());
+        std::thread::spawn(move || {
+            let list = sessions::list_cached(&folder, usize::MAX, &mut lock(&titles));
+            let list = list.into_iter().map(|s| (std::fs::canonicalize(&s.path).ok(), s)).map(|(c, s)| (s, c)).collect();
+            let _ = tx.send(Browsed::Listed(folder, list));
+            wake();
+        });
+    }
+
+    /// Searches the listed sessions' messages for `query`, in the background; `wake` repaints when done.
+    pub fn search_sessions(&mut self, query: &str, wake: impl Fn() + Send + 'static) {
+        let query = query.trim().to_owned();
+        if query.is_empty() {
+            self.browser.found = None;
+            return;
+        }
+        self.browser.searching = true;
+        let paths: Vec<PathBuf> = self.browser.sessions.iter().map(|(s, _)| s.path.clone()).collect();
+        let tx = self.browser_tx.clone();
+        std::thread::spawn(move || {
+            let found = paths.into_iter().filter_map(|p| sessions::search(&p, &query).map(|s| (p, s))).collect();
+            let _ = tx.send(Browsed::Found(query, found));
+            wake();
+        });
+    }
+
+    /// Hides a session from Resume, or brings it back; Pi's file is not touched.
+    pub fn set_archived(&mut self, session: &Path, archived: bool) {
+        self.browser.error = self.archive.set(session, archived).err().map(|e| format!("Archive list not saved: {e}"));
     }
 
     pub fn active_tab(&mut self) -> Option<&mut Tab> {
@@ -497,6 +574,20 @@ impl Workspace {
         for tab in &mut self.tabs {
             tab.update(now);
         }
+        while let Ok(msg) = self.browser_rx.try_recv() {
+            match msg {
+                // A listing for a folder the window no longer shows is dropped.
+                Browsed::Listed(folder, list) if self.browser.folder.as_ref() == Some(&folder) => {
+                    self.browser.sessions = list;
+                    self.browser.loading = false;
+                }
+                Browsed::Listed(..) => {}
+                Browsed::Found(query, found) => {
+                    self.browser.found = Some((query, found));
+                    self.browser.searching = false;
+                }
+            }
+        }
     }
 
     pub fn flush(&mut self) {
@@ -535,26 +626,13 @@ impl Workspace {
         strongest
     }
 
-    /// Session files open in a tab, canonical so that Pi's spelling of a path matches the listing's.
-    fn open_files(&self) -> Vec<PathBuf> {
+    /// Session files open in a tab (or still closing), canonical so that Pi's spelling of a path matches the
+    /// listing's. A session must not be opened twice: two Pi writing one file would corrupt it.
+    pub fn open_files(&self) -> Vec<PathBuf> {
         let mut open: Vec<PathBuf> =
             self.tabs.iter().filter_map(|t| t.t.session_file.as_ref()).filter_map(|p| std::fs::canonicalize(p).ok()).collect();
         open.extend(lock(&self.closing).iter().cloned());
         open
-    }
-
-    /// Pi sessions saved for the active folder, newest first, each with whether a tab already has it open
-    /// (it must not be opened twice: two Pi writing one file would corrupt it).
-    pub fn saved_sessions(&mut self, max: usize) -> Vec<(SavedSession, bool)> {
-        let Some(folder) = self.active_folder() else { return vec![] };
-        let open = self.open_files();
-        sessions::list_cached(&folder, max, &mut self.titles)
-            .into_iter()
-            .map(|s| {
-                let is_open = std::fs::canonicalize(&s.path).is_ok_and(|p| open.contains(&p));
-                (s, is_open)
-            })
-            .collect()
     }
 }
 
@@ -783,8 +861,32 @@ mod tests {
         w.push(Tab::detached(root.to_str().unwrap()));
         assert_eq!(w.recent, std::slice::from_ref(&root));
         assert_eq!(w.active, 0);
-        assert!(w.saved_sessions(5).iter().all(|(_, open)| !open));
+
+        // Resume lists the folder's sessions in the background; archiving hides one, next to recent.json.
+        let sessions_dir = sessions::dir_for(&root);
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+        let file = sessions_dir.join(format!("pier-ws-{}.jsonl", std::process::id()));
+        std::fs::write(&file, r#"{"type":"message","message":{"role":"user","content":"find the zebra"}}"#).unwrap();
+        let settle = |w: &mut Workspace| {
+            for _ in 0..100 {
+                w.update(Instant::now());
+                if !w.browser.loading && !w.browser.searching {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        w.load_sessions(|| {});
+        settle(&mut w);
+        assert_eq!(w.browser.sessions.len(), 1);
+        assert_eq!(w.browser.sessions[0].0.title, "find the zebra");
+        w.search_sessions("ZEBRA", || {});
+        settle(&mut w);
+        assert!(w.browser.found.as_ref().is_some_and(|(_, f)| f.contains_key(&file)));
+        w.set_archived(&file, true);
+        assert!(Archive::load(root.join("archived.json")).contains(&file), "saved next to recent.json");
         drop(w);
+        std::fs::remove_dir_all(&sessions_dir).unwrap();
         std::fs::remove_dir_all(&root).unwrap();
     }
 }
