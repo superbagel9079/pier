@@ -1,7 +1,7 @@
 // Pier's Pi extension: every tool call that is not a genuine built-in read-only tool waits for an approval in Pier.
 // Embedded in the Pier binary and loaded with `-e`; Pier only reports "Supervised" while this extension is active.
 
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,10 +34,12 @@ const DEFAULT_ALLOWED = ["ls", "dir", "pwd", "git status", "git diff", "git log"
 // variables, PowerShell subexpressions and escapes): it then always asks, whatever the allowlist says.
 const SHELL_META = /[;&|<>`$()%!{}\r\n]/;
 // Reasons shown as a red badge; a command with one is never allowed by the allowlist. A hint, not a guarantee.
+// Checked on the command with dashes made plain (`–Recurse` with an en dash is still `-Recurse` to PowerShell).
 const RISKS: [RegExp, string][] = [
-	[/\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*\s+|--recursive\b)|\bRemove-Item\b[^\n]*-Recurse|\b(del|erase|rd|rmdir)\b[^\n]*\/[sS]\b/i, "deletes recursively"],
+	[/\brm\b[^\n]*\s(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\b|\bRemove-Item\b[^\n]*-Recurse|\b(del|erase|rd|rmdir)\b[^\n]*\/[sS]\b/i, "deletes recursively"],
 	[/\b(curl|wget|iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\n]*\|\s*(sh|bash|zsh|pwsh|powershell|iex|python|node)\b|\b(iex|Invoke-Expression)\b/i, "runs downloaded or generated code"],
-	[/\bgit\s+push\b[^\n]*(--force\b|-f\b|--force-with-lease\b)|\bgit\s+reset\s+--hard\b|\bgit\s+clean\b[^\n]*-[a-zA-Z]*f/i, "rewrites or discards git history"],
+	[/\bgit\s+push\b[^\n]*(--force\b|\s-f\b|--force-with-lease\b|\s\+\S)|\bgit\s+reset\s+--hard\b|\bgit\s+clean\b[^\n]*-[a-zA-Z]*f/i, "rewrites or discards git history"],
+	[/[​-‏‪-‮⁠-⁤⁦-⁩﻿]/, "hidden or direction-changing characters: what runs may differ from what you read"],
 	[/\b(sudo|runas|doas)\b|\bStart-Process\b[^\n]*-Verb\s+RunAs/i, "elevated"],
 	[/--output\b|\bdd\s+[^\n]*\bof=|\b(mkfs|format)\b/i, "writes to a file or a disk"],
 	[/\b(shutdown|Restart-Computer|Stop-Computer|reboot)\b/i, "stops the machine"],
@@ -69,36 +71,41 @@ function normalize(p: string): string {
 	if (n.startsWith("@")) n = n.slice(1);
 	n = n.replace(/^(\$HOME|\$\{HOME\}|\$env:USERPROFILE|\$env:HOME|%USERPROFILE%|%HOME%)(?=$|[\\/])/i, "~");
 	const drive = /^\/(?:mnt\/|cygdrive\/)?([a-zA-Z])(\/.*)?$/.exec(n); // Git Bash, MSYS, Cygwin, WSL
-	if (drive && !n.startsWith("//")) n = `${drive[1].toUpperCase()}:${drive[2] ?? "/"}`;
+	// Like Pi: a path with a backslash is not a POSIX drive path (`/c/x\y` stays as is for Pi too).
+	if (drive && !n.startsWith("//") && !n.includes("\\")) n = `${drive[1].toUpperCase()}:${drive[2] ?? "/"}`;
 	if (n === "~") return home();
 	if (n.startsWith("~/") || n.startsWith("~\\")) return join(home(), n.slice(2));
 	if (/^file:\/\//.test(n)) return fileURLToPath(n);
 	return n;
 }
 
-/** Real location, following junctions and links through the part of the path that exists. */
+/** Whether something is at `p`, a dangling link included (`existsSync` follows links and says no). */
+const present = (p: string) => lstatSync(p, { throwIfNoEntry: false }) !== undefined;
+
+/** Real location, following junctions and links through the part of the path that exists. Throws when a link
+ *  there cannot be resolved (dangling): where it would write is unknown. */
 function real(p: string): string {
 	let head = p;
 	const tail: string[] = [];
-	while (!existsSync(head)) {
+	while (!present(head)) {
 		const parent = dirname(head);
 		if (parent === head) return p;
 		tail.unshift(basename(head));
 		head = parent;
 	}
-	try {
-		return join(realpathSync.native(head), ...tail);
-	} catch {
-		return p;
-	}
+	return join(realpathSync.native(head), ...tail);
 }
 
 function isOutside(cwd: string, target: string): boolean {
 	if (isNetworkPath(normalize(target))) return true; // outside by definition, and not probed
-	const base = real(resolve(cwd));
-	const rel = relative(base, real(resolve(base, normalize(target))));
-	// Different drive or UNC share gives an absolute `rel`; a parent gives a leading "..".
-	return rel === ".." || rel.startsWith("../") || rel.startsWith("..\\") || isAbsolute(rel);
+	try {
+		const base = real(resolve(cwd));
+		const rel = relative(base, real(resolve(base, normalize(target))));
+		// Different drive or UNC share gives an absolute `rel`; a parent gives a leading "..".
+		return rel === ".." || rel.startsWith("../") || rel.startsWith("..\\") || isAbsolute(rel);
+	} catch {
+		return true; // a link that cannot be followed: treated as outside
+	}
 }
 
 /** Words of a shell command that look like paths. A heuristic: a warning, never a guarantee. */
@@ -131,9 +138,30 @@ function outsideTargets(toolName: string, input: Record<string, unknown>, cwd: s
 	return null;
 }
 
-/** Why a shell command looks dangerous, one reason per pattern found. */
+/** Why a shell command looks dangerous, one reason per pattern found. Paths are not involved: see `isProtected`. */
 function risks(command: string): string[] {
-	return RISKS.filter(([re]) => re.test(command)).map(([, why]) => why);
+	const plain = command.replace(/[‐-―−]/g, "-");
+	return RISKS.filter(([re]) => re.test(plain)).map(([, why]) => why);
+}
+
+// Places whose content makes later commands run code (git config and hooks, Pi's project extensions and settings),
+// and Pier's own lists: a write there always asks, even in Accept edits.
+const PROTECTED_DIRS = new Set([".git", ".pi", ".agents"]);
+const PROTECTED_FILES = new Set([".gitattributes", ".gitmodules", ".gitconfig"]);
+
+/** Whether `path` (as the agent wrote it) lands in a protected place. Windows ignores case, trailing dots and
+ *  spaces, and `:stream` suffixes in names, so `.GIT.`, `.git::$INDEX_ALLOCATION` are `.git` too. */
+function isProtected(cwd: string, path: string): boolean {
+	let target: string;
+	try {
+		target = real(resolve(cwd, normalize(path)));
+	} catch {
+		return true; // a link that cannot be followed: where it writes is unknown
+	}
+	const names = target.split(/[\\/]/).map((n) => n.split(":")[0].replace(/[. ]+$/, "").toLowerCase());
+	if (names.some((n) => PROTECTED_DIRS.has(n)) || PROTECTED_FILES.has(names.at(-1) ?? "")) return true;
+	const pierDir = dirname(allowlistPath()).toLowerCase();
+	return target.toLowerCase().startsWith(pierDir + "\\") || target.toLowerCase().startsWith(pierDir + "/");
 }
 
 /** The allowlist file; `PIER_ALLOWLIST` points elsewhere (tests). */
@@ -160,20 +188,37 @@ function simpleAndInside(command: string, cwd: string): boolean {
 	return !SHELL_META.test(command) && risks(command).length === 0 && !shellPaths(command).some((p) => isOutside(cwd, p));
 }
 
-/** The allowlist entry that lets `command` pass without asking, if any: it must start with the entry, word by word. */
+/** An argument after an allowlisted prefix: plain characters only. No `\` (bash escapes such as `\/\/host`), no `:`
+ *  (`-Path:\\host`, `FileSystem::`), no leading `/` and no `..`: anything else makes the command ask. */
+function plainArgument(arg: string): boolean {
+	return /^[A-Za-z0-9_.,+=@\/-]+$/.test(arg) && !arg.startsWith("/") && !arg.split("/").includes("..");
+}
+
+/** The allowlist entry that lets `command` pass without asking, if any: it must start with the entry, word by word,
+ *  and every following word must be a plain argument. */
 function allowedBy(command: string, cwd: string): string | null {
 	if (!simpleAndInside(command, cwd)) return null;
 	const have = words(command);
-	return allowlist().find((entry) => words(entry).every((w, i) => have[i] === w)) ?? null;
+	const entry = allowlist().find((e) => words(e).every((w, i) => have[i] === w));
+	return entry !== undefined && have.slice(words(entry).length).every(plainArgument) ? entry : null;
 }
 
-/** What "always allow" would add for this command (program, and its subcommand if it has one), or null when the
- *  command could never be allowlisted. Shown to the user as is before anything is added. */
+// Programs that run whatever their arguments say: never offered for the allowlist, alone or with a subcommand.
+const RUNNERS = new Set(["cmd", "powershell", "pwsh", "bash", "sh", "zsh", "wsl", "python", "python3", "py", "node", "deno",
+	"bun", "npx", "ruby", "perl", "php", "env", "xargs", "start", "invoke-expression", "iex", "sudo", "runas"]);
+// Programs that only list, offered alone even with flags (`ls -la` → `ls`).
+const LISTERS = new Set(["ls", "dir", "pwd", "get-childitem", "gci", "get-location"]);
+
+/** What "always allow" would add: the program and its subcommand (`cargo build`), a lister alone, or nothing when the
+ *  command could never be allowlisted or the program alone would allow too much (`git --no-pager log` → nothing,
+ *  since `git` alone would also allow `git -c core.fsmonitor=… status`). Shown to the user as is. */
 function allowAs(command: string, cwd: string): string | null {
 	if (!simpleAndInside(command, cwd)) return null;
-	const [program, sub] = words(command);
-	if (!program) return null;
-	return sub && /^[a-zA-Z][\w-]*$/.test(sub) ? `${program} ${sub}` : program;
+	const all = words(command);
+	const [program, sub] = all;
+	if (!program || RUNNERS.has(program.toLowerCase()) || !all.slice(1).every(plainArgument)) return null;
+	if (LISTERS.has(program.toLowerCase())) return program;
+	return sub && /^[a-zA-Z][\w-]*$/.test(sub) ? `${program} ${sub}` : null;
 }
 
 type Patcher =(path: string, oldContent: string, newContent: string) => string;
@@ -306,15 +351,19 @@ export default function (pi: any) {
 
 	pi.on("tool_call", async (event: any, ctx: any) => {
 		try {
-			if (READ_ONLY.has(event.toolName) && isBuiltin(pi, event.toolName)) return undefined;
 			const input = event.input ?? {};
+			// A read of a network path asks: just touching `\\host\x` can send the user's credentials to that host.
+			const networkRead = typeof input.path === "string" && isNetworkPath(normalize(input.path));
+			if (READ_ONLY.has(event.toolName) && isBuiltin(pi, event.toolName) && !networkRead) return undefined;
 			const what = detail(event.toolName, input, true);
 			if (mode === "plan") {
 				tellPier(ctx, "denied", event.toolName, what, MODES[mode]);
 				return { block: true, reason: "Plan mode in Pier: read-only. Do not change anything; describe the change instead." };
 			}
 			const isFileEdit = (event.toolName === "write" || event.toolName === "edit") && isBuiltin(pi, event.toolName);
-			if (mode === "accept-edits" && isFileEdit && outsideTargets(event.toolName, input, ctx.cwd)?.length === 0) {
+			// Not in .git, .pi and the like: a write there would make a later allowed command (git status) run code.
+			const plainEdit = isFileEdit && outsideTargets(event.toolName, input, ctx.cwd)?.length === 0 && !isProtected(ctx.cwd, input.path);
+			if (mode === "accept-edits" && plainEdit) {
 				tellPier(ctx, "allowed", event.toolName, what, MODES[mode]);
 				deepFreeze(input);
 				return undefined;

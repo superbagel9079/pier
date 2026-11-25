@@ -286,6 +286,78 @@ r = await call("bash", { command: "npm test && rm x" });
 check(r.env.allowAs === null, "a chained command is never offered");
 r = await call("write", { path: "x.txt", content: "x" });
 check(Array.isArray(r.env.risks) && r.env.risks.length === 0 && r.env.allowAs === null, "write: no risks, nothing to allowlist");
+// Third audit: what got past the checks above.
+writeFileSync(process.env.PIER_ALLOWLIST, JSON.stringify({ commands: ["git status", "ls", "git diff"] }));
+for (const command of [
+  String.raw`ls \/\/attacker/share`,
+  String.raw`ls \/c/Users/leo/.ssh`,
+  String.raw`ls .\./`,
+  String.raw`git diff --no-index a \/\/attacker/s/x`,
+  String.raw`ls -Path:\\attacker\share`,
+  String.raw`ls FileSystem::\\attacker\share`,
+  "ls -Path:C:/Users/leo/.ssh",
+  "ls ../x",
+  "git status\u200B",
+]) {
+  m = await modeCall("bash", { command });
+  check(m.asked, `allowlist: ${JSON.stringify(command)} asks (escape, colon, parent, hidden character)`);
+}
+m = await modeCall("bash", { command: "ls -la src/app" });
+check(!m.asked, "allowlist: plain arguments inside the folder still pass");
+m = await modeCall("powershell", { command: "ls -Path:C:/Users/leo/.ssh" });
+check(m.asked, "allowlist: a PowerShell colon-bound path asks");
+
+// Accept edits never writes alone where content makes later commands run code.
+await commands["pier-mode"].handler("accept-edits", mctx);
+for (const path of [".git/config", ".GIT/CONFIG", ".git::$INDEX_ALLOCATION/config", ".git./hooks/pre-commit", ".pi/extensions/x.ts", ".pi/settings.json", "sub/.gitattributes", ".gitmodules", ".agents/x"]) {
+  m = await modeCall("write", { path, content: "x" });
+  check(m.asked, `accept edits: ${path} asks`);
+}
+m = await modeCall("write", { path: "src/fine.txt", content: "x" });
+check(!m.asked, "accept edits: an ordinary file still passes");
+await commands["pier-mode"].handler("supervised", mctx);
+
+// Built-in reads of a network path ask; local ones do not.
+for (const [tool, input] of [["read", { path: String.raw`\\attacker\x` }], ["grep", { pattern: "x", path: "//attacker/x" }], ["ls", { path: String.raw`\\?\UNC\attacker\x` }]]) {
+  m = await modeCall(tool, input);
+  check(m.asked, `${tool} of a network path asks`);
+}
+m = await modeCall("read", { path: "src/x.rs" });
+check(!m.asked, "read of a local file: no dialog");
+
+// "Always allow" never offers what would allow too much (empty list, so each command shows its dialog).
+writeFileSync(process.env.PIER_ALLOWLIST, JSON.stringify({ commands: [] }));
+for (const [command, offer] of [
+  ["git --no-pager log -1", null],
+  ["python -m pytest", null],
+  ["python script.py", null],
+  ["cmd /c dir", null],
+  ["powershell -NoProfile -Command x", null],
+  ["npm -s test", null],
+  ["npm test", "npm test"],
+  ["cargo build --release", "cargo build"],
+  ["ls -la", "ls"],
+  ["Get-ChildItem -Force", "Get-ChildItem"],
+  [String.raw`git diff \/\/x`, null],
+]) {
+  r = await call("bash", { command });
+  check(r.env.allowAs === offer, `always allow ${JSON.stringify(command)} -> ${JSON.stringify(offer)} (got ${JSON.stringify(r.env.allowAs)})`);
+}
+
+// Badges the first version missed.
+for (const [command, why] of [
+  ["rm -v -rf build", "deletes recursively"],
+  ["Remove-Item x \u2013Recurse", "deletes recursively"],
+  ["git push origin +main", "rewrites or discards git history"],
+  ["echo \u202Eevil", "hidden or direction-changing characters"],
+]) {
+  r = await call("bash", { command });
+  check(r.env.risks.some((x) => x.startsWith(why)), `badge: ${JSON.stringify(command)} -> ${why}`);
+}
+
+// A path with a backslash is not a POSIX drive path, as in Pi: `/c/…\x` is not "inside" a C: folder.
+r = await call("write", { path: "/c/Users/leo/Downloads/brainstorming\\x.txt", content: "x" });
+check(r.env.outside?.length === 1, "/c/…\\x is read as Pi reads it (not mapped to C:)");
 rmSync(allowDir, { recursive: true, force: true });
 
 console.log(bad === 0 ? "all checks passed" : `${bad} check(s) failed`);
