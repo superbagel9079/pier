@@ -107,7 +107,8 @@ $env:PIER_TEST_MODEL = 'openrouter/deepseek/deepseek-v4.1-flash'
 cargo test --test live -- --ignored --test-threads=1
 ```
 
-Before each commit: `cargo fmt`, `cargo clippy --all-targets`, `cargo test`, then the live tests.
+Before each commit: `cargo fmt`, `cargo clippy --all-targets`, `cargo test`, then the live tests. GitHub Actions runs
+everything but the live tests on each push (`.github/workflows/ci.yml`).
 
 ## Code layout
 

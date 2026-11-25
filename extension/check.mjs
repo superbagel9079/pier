@@ -7,9 +7,10 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-// Inside Pi, `@earendil-works/pi-coding-agent` maps to Pi's own copy. Here, point it at the installed Pi (newest release).
+// Inside Pi, `@earendil-works/pi-coding-agent` maps to Pi's own copy. Here, point it at the installed Pi (newest release),
+// or at the package PIER_PI_PACKAGE names (its dist/index.js), as CI does.
 const releases = join(process.env.USERPROFILE ?? homedir(), ".pi/agent/install/releases");
-const pkg = (existsSync(releases) ? readdirSync(releases) : [])
+const pkg = process.env.PIER_PI_PACKAGE ?? (existsSync(releases) ? readdirSync(releases) : [])
   .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
   .map((v) => join(releases, v, "node_modules/@earendil-works/pi-coding-agent/dist/index.js"))
   .find(existsSync);

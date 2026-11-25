@@ -1,0 +1,45 @@
+# Every push and pull request: formatting, lints, unit tests and the extension self-check, on Windows (Pier uses
+# Job Objects and the Windows power API). The live tests call a paid model and stay manual.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Lints
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Unit tests
+        run: cargo test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The self-check needs Pi's own diff code: the version Pier is tested with, from npm.
+      - name: Extension self-check
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP\pi" --no-audit --no-fund --ignore-scripts @earendil-works/pi-coding-agent@1.5.2
+          $env:PIER_PI_PACKAGE = "$env:RUNNER_TEMP\pi\node_modules\@earendil-works\pi-coding-agent\dist\index.js"
+          node --experimental-strip-types extension/check.mjs
