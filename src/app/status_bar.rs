@@ -227,6 +227,7 @@ fn fork_menu(tab: &mut Tab, ui: &mut egui::Ui) {
             ui.weak("No earlier message (or loading…).");
         }
         let mut pick = None;
+        let checkpoints = tab.checkpoints_by_message();
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
             for m in tab.t.fork_messages.iter().rev() {
                 let first_line = m.text.lines().next().unwrap_or_default();
@@ -234,7 +235,7 @@ fn fork_menu(tab: &mut Tab, ui: &mut egui::Ui) {
                 if preview.len() < m.text.len() {
                     preview.push('…');
                 }
-                let checkpoint = tab.checkpoint_before(&m.text);
+                let checkpoint = checkpoints.get(m.text.trim()).map(|c| c.to_string());
                 ui.horizontal(|ui| {
                     if ui.button("Fork").clicked() {
                         pick = Some((m.entry_id.clone(), None));

@@ -29,8 +29,9 @@ impl Archive {
         self.sessions.is_empty()
     }
 
-    /// Archives or brings back `session`, and saves the list.
+    /// Archives or brings back `session`, and saves the list. Reread first: another Pier window may have changed it.
     pub fn set(&mut self, session: &Path, archived: bool) -> std::io::Result<()> {
+        self.sessions = Self::load(self.file.clone()).sessions;
         let changed = if archived { self.sessions.insert(session.to_path_buf()) } else { self.sessions.remove(session) };
         if !changed {
             return Ok(());

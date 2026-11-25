@@ -3,7 +3,7 @@
 
 use crate::archive::Archive;
 use crate::attach::Image;
-use crate::checkpoint::{self, Done, Job, Repo, Worker};
+use crate::checkpoint::{self, Done, Job, Repo, Saved, Worker};
 use crate::mention;
 use crate::pi::process::Process;
 use crate::pi::protocol::{Command, ModelInfo, StreamingBehavior};
@@ -17,7 +17,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Instant;
 
 const TITLE_CHARS: usize = 24;
@@ -45,6 +45,24 @@ fn next_tab_id() -> u64 {
     NEXT_TAB_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
+/// A tab's line to its folder's checkpoint worker (shared with the other tabs on that folder): answers come back here.
+struct Checkpoints {
+    worker: Arc<Worker>,
+    reply: Sender<Done>,
+    done: Receiver<Done>,
+}
+
+impl Checkpoints {
+    fn new(worker: Arc<Worker>) -> Self {
+        let (reply, done) = channel();
+        Self { worker, reply, done }
+    }
+
+    fn send(&self, job: Job) -> bool {
+        self.worker.send(job, &self.reply)
+    }
+}
+
 /// One session: a `pi --mode rpc` process, its transcript and its editor text.
 pub struct Tab {
     /// Unique for the life of Pier; keys the tab's UI state.
@@ -62,9 +80,15 @@ pub struct Tab {
     /// State when last checked, to notice the changes that need the user.
     seen: State,
     /// Saves and restores the folder's files, off the UI thread. `None` without a Pi.
-    checkpoints: Option<Worker>,
+    checkpoints: Option<Checkpoints>,
+    /// Another tab on the same folder is running or sending: restoring here would change files under its feet.
+    pub folder_busy_elsewhere: bool,
     /// Messages waiting for their checkpoint; each goes to Pi once its files are saved.
     waiting: VecDeque<Command>,
+    /// Checkpoints still to come for messages Stop took back.
+    orphan_snapshots: usize,
+    /// The last `@` query and its matches, so typing elsewhere does not filter 20 000 paths each frame.
+    file_matches: Option<(String, Vec<String>, usize)>,
     restoring: bool,
     /// A fork (entry id) to send once its files are restored.
     fork_after_restore: Option<String>,
@@ -79,7 +103,14 @@ pub struct Tab {
 
 impl Tab {
     /// `folder`: where Pi works, unless a preset names its own. `wake`: called when Pi sends something.
-    fn new(pi_args: &[String], folder: &Path, launch: Launch, wake: impl Fn() + Send + Clone + 'static) -> Self {
+    /// `worker`: the checkpoint worker of the folder the tab ends up in.
+    fn new(
+        pi_args: &[String],
+        folder: &Path,
+        launch: Launch,
+        wake: impl Fn() + Send + Clone + 'static,
+        worker: impl FnOnce(&Path) -> Arc<Worker>,
+    ) -> Self {
         let mut t = Transcript::default();
         let mut args: Vec<OsString> = pi_args.iter().map(OsString::from).collect();
         let (mut cwd, mut label) = (folder, None);
@@ -102,7 +133,6 @@ impl Tab {
             resumed: resumed.then(|| t.session_file.clone()).flatten(),
             cwd: folder.clone(),
         });
-        let checkpoint_wake = wake.clone();
         let proc = Process::spawn_in(&args, Some(cwd), wake)
             .map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Cannot start Pi: {e}"))))
             .ok();
@@ -112,7 +142,7 @@ impl Tab {
         let journal =
             Journal::create(&journal::dir()).map_err(|e| t.entries.push(Entry::new(Kind::Error, format!("Journal unavailable: {e}")))).ok();
         let seen = t.state;
-        let checkpoints = proc.is_some().then(|| Worker::start(Repo::new(&checkpoint::dir(), &folder), checkpoint_wake));
+        let checkpoints = proc.is_some().then(|| Checkpoints::new(worker(&folder)));
         let mut tab = Self {
             id: next_tab_id(),
             proc,
@@ -123,7 +153,10 @@ impl Tab {
             folder,
             seen,
             checkpoints,
+            folder_busy_elsewhere: false,
             waiting: VecDeque::new(),
+            orphan_snapshots: 0,
+            file_matches: None,
             restoring: false,
             fork_after_restore: None,
             images: vec![],
@@ -294,8 +327,12 @@ impl Tab {
                 w.send(Job::ListFiles);
             }
         }
-        let found = mention::matching(&self.files, query);
-        Some((found.iter().take(max).map(|s| s.to_string()).collect(), found.len()))
+        if self.file_matches.as_ref().is_none_or(|(q, ..)| q != query) {
+            let found = mention::matching(&self.files, query);
+            let first = found.iter().take(max).map(|s| s.to_string()).collect();
+            self.file_matches = Some((query.to_owned(), first, found.len()));
+        }
+        self.file_matches.as_ref().map(|(_, first, total)| (first.clone(), *total))
     }
 
     /// Replaces the trailing `@partial` with the picked file.
@@ -316,9 +353,15 @@ impl Tab {
         self.t.state.is_running() || !self.waiting.is_empty() || self.restoring || self.fork_after_restore.is_some()
     }
 
-    /// A checkpoint can be restored only while nothing else touches the files: no run, nothing being sent.
+    /// A checkpoint can be restored only while nothing else touches the files: no run, nothing being sent, in this
+    /// tab or in another tab on the same folder.
     pub fn can_restore(&self) -> bool {
-        self.checkpoints.is_some() && !self.busy()
+        self.checkpoints.is_some() && !self.busy() && !self.folder_busy_elsewhere
+    }
+
+    /// A message waits for its files to be saved before it goes to Pi.
+    pub fn saving(&self) -> bool {
+        !self.waiting.is_empty()
     }
 
     /// Asks Pi which messages a fork can start from (the Fork menu shows them).
@@ -326,28 +369,16 @@ impl Tab {
         self.send(Command::GetForkMessages);
     }
 
-    /// The checkpoint taken just before the message `text` was sent in this tab, if any (the last one, if sent twice).
-    /// Checkpoints and the messages they precede come in the same order, so the n-th one belongs to the next user
-    /// message not already claimed.
-    pub fn checkpoint_before(&self, text: &str) -> Option<String> {
-        let mut pending = VecDeque::new();
-        let mut found = None;
-        for e in &self.t.entries {
-            match e.kind {
-                Kind::Checkpoint if e.text == BEFORE_MESSAGE => pending.extend(e.checkpoint.clone()),
-                Kind::User => {
-                    // Pi's fork list gives the text alone; the transcript may add " (+1 image)".
-                    let same = e.text.strip_prefix(text).is_some_and(|rest| rest.is_empty() || rest.starts_with(" (+"));
-                    if let Some(id) = pending.pop_front()
-                        && same
-                    {
-                        found = Some(id);
-                    }
-                }
-                _ => {}
-            }
-        }
-        found
+    /// For each message sent in this tab, the checkpoint taken just before it (the last one, if sent twice). Each
+    /// checkpoint keeps the text of its message, so a steer taken back by Stop or a dropped queued message cannot
+    /// shift the pairs. Built once per use: the Fork menu asks for many messages at once.
+    pub fn checkpoints_by_message(&self) -> HashMap<&str, &str> {
+        self.t
+            .entries
+            .iter()
+            .filter(|e| e.kind == Kind::Checkpoint)
+            .filter_map(|e| Some((e.before.as_deref()?.trim(), e.checkpoint.as_deref()?)))
+            .collect()
     }
 
     /// Switches the tab to a new session going on from just before the user message `entry_id` (the original stays
@@ -358,6 +389,9 @@ impl Tab {
             return;
         }
         match (restore, &self.checkpoints) {
+            (Some(_), _) if self.folder_busy_elsewhere => {
+                self.t.entries.push(Entry::new(Kind::Error, "Not forked: another tab on this folder is running."));
+            }
             (Some(checkpoint), Some(w)) => {
                 if w.send(Job::Restore(checkpoint)) {
                     self.restoring = true;
@@ -372,7 +406,8 @@ impl Tab {
     /// checkpoint first, so the restore can be undone.
     pub fn restore(&mut self, id: &str) {
         if !self.can_restore() {
-            self.t.entries.push(Entry::new(Kind::Error, "Not restored: wait until the run ends."));
+            let why = if self.folder_busy_elsewhere { "another tab on this folder is running" } else { "wait until the run ends" };
+            self.t.entries.push(Entry::new(Kind::Error, format!("Not restored: {why}.")));
             return;
         }
         if let Some(w) = &self.checkpoints
@@ -383,38 +418,62 @@ impl Tab {
     }
 
     fn checkpoint_done(&mut self, done: Done) {
-        let saved = |t: &mut Transcript, id: String, text: &str| {
-            t.journal.push(Record::Checkpoint { id: id.clone() });
-            t.entries.push(Entry { checkpoint: Some(id), ..Entry::new(Kind::Checkpoint, text) });
+        let saved = |t: &mut Transcript, saved: &Saved, text: &str, before: Option<String>| {
+            t.journal.push(Record::Checkpoint { id: saved.id.clone() });
+            t.entries.push(Entry { checkpoint: Some(saved.id.clone()), before, ..Entry::new(Kind::Checkpoint, text) });
+            if !saved.locked.is_empty() {
+                let msg = format!("Not in this checkpoint (locked by another program): {}", saved.locked.join(", "));
+                t.entries.push(Entry::new(Kind::Notice, msg));
+            }
         };
         match done {
-            Done::Files(Ok(files)) => self.files = files,
+            Done::Files(Ok(files)) => {
+                self.files = files;
+                self.file_matches = None;
+            }
             Done::Files(Err(e)) => self.t.entries.push(Entry::new(Kind::Notice, format!("File list unavailable for @: {e}"))),
             Done::Snapshot(result) => {
-                match result {
-                    Ok(id) => saved(&mut self.t, id, BEFORE_MESSAGE),
+                // Stop may have taken the message back meanwhile: the checkpoint then belongs to no message.
+                let prompt = if self.orphan_snapshots > 0 {
+                    self.orphan_snapshots -= 1;
+                    None
+                } else {
+                    self.waiting.pop_front()
+                };
+                let text = match &prompt {
+                    Some(Command::Prompt { message, .. }) => Some(message.clone()),
+                    _ => None,
+                };
+                match &result {
+                    Ok(s) => saved(&mut self.t, s, if text.is_some() { BEFORE_MESSAGE } else { "Files saved (message not sent)" }, text),
                     Err(e) => self.t.entries.push(Entry::new(Kind::Notice, format!("No checkpoint: {e}"))),
                 }
                 // Sent even without a checkpoint: the notice says so, and holding the message back would lose it.
-                if let Some(prompt) = self.waiting.pop_front() {
+                if let Some(prompt) = prompt {
                     self.send(prompt);
                 }
             }
             Done::Restored { to, undo, result } => {
                 self.restoring = false;
                 if let Ok(undo) = &undo {
-                    saved(&mut self.t, undo.clone(), "Files before the restore");
+                    saved(&mut self.t, undo, "Files before the restore", None);
                 }
                 let fork = self.fork_after_restore.take();
                 match (result, undo) {
-                    (Ok(()), Ok(undo)) => {
-                        self.t.journal.push(Record::CheckpointRestored { to, undo });
+                    (Ok(kept), Ok(undo)) => {
+                        self.t.journal.push(Record::CheckpointRestored { to, undo: undo.id });
+                        if !kept.is_empty() {
+                            self.t.entries.push(Entry::new(Kind::Notice, format!("Left as they are: {}", kept.join("; "))));
+                        }
                         match fork {
-                            Some(entry_id) => self.send(Command::Fork { entry_id }),
+                            Some(entry_id) => {
+                                self.t.entries.push(Entry::new(Kind::Notice, "Files restored; forking…"));
+                                self.send(Command::Fork { entry_id });
+                            }
                             None => self.t.entries.push(Entry::new(Kind::Notice, "Files restored. Pi was not told; say so if it matters.")),
                         }
                     }
-                    (Err(e), _) | (Ok(()), Err(e)) => {
+                    (Err(e), _) | (Ok(_), Err(e)) => {
                         let what = if fork.is_some() { "Not forked: the files could not be restored" } else { "Restore failed" };
                         self.t.entries.push(Entry::new(Kind::Error, format!("{what}: {e}")));
                     }
@@ -464,6 +523,19 @@ impl Tab {
     /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
     pub fn stop(&mut self) {
         self.t.journal.push(Record::StopRequested);
+        // Messages still waiting for their checkpoint have not reached Pi: they come back to the editor too, or they
+        // would start a new run right after the Stop.
+        let held: Vec<String> = self
+            .waiting
+            .drain(..)
+            .filter_map(|c| match c {
+                Command::Prompt { message, .. } => Some(message),
+                _ => None,
+            })
+            .collect();
+        // Their checkpoints still come back, in order: they must not take the next message's place.
+        self.orphan_snapshots += held.len();
+        self.t.restored.extend(held);
         self.send(Command::ClearQueue);
         self.send(Command::Abort);
     }
@@ -480,7 +552,10 @@ impl Tab {
             folder: folder.into(),
             seen: State::Ready,
             checkpoints: None,
+            folder_busy_elsewhere: false,
             waiting: VecDeque::new(),
+            orphan_snapshots: 0,
+            file_matches: None,
             restoring: false,
             fork_after_restore: None,
             images: vec![],
@@ -521,6 +596,23 @@ pub struct Workspace {
     browser_rx: Receiver<Browsed>,
     /// Sessions hidden from Resume.
     pub archive: Archive,
+    /// Bumped by each message search; only the latest one's results are kept.
+    search_generation: u64,
+    /// The checkpoint worker of each folder, by shadow repository, while a tab uses it.
+    workers: HashMap<PathBuf, Weak<Worker>>,
+}
+
+/// The checkpoint worker of `folder`, shared with the tabs already on it, or a new one.
+fn worker_for(workers: &mut HashMap<PathBuf, Weak<Worker>>, folder: &Path, wake: impl Fn() + Send + 'static) -> Arc<Worker> {
+    let repo = Repo::new(&checkpoint::dir(), folder);
+    let key = repo.git_dir().to_path_buf();
+    if let Some(w) = workers.get(&key).and_then(Weak::upgrade) {
+        return w;
+    }
+    workers.retain(|_, w| w.strong_count() > 0);
+    let w = Worker::start(repo, wake);
+    workers.insert(key, Arc::downgrade(&w));
+    w
 }
 
 /// The Resume window's sessions for one folder, listed and searched off the UI thread (a folder can hold hundreds
@@ -539,7 +631,7 @@ pub struct Browser {
 
 enum Browsed {
     Listed(PathBuf, Vec<(SavedSession, Option<PathBuf>)>),
-    Found(String, HashMap<PathBuf, String>),
+    Found(u64, String, HashMap<PathBuf, String>),
 }
 
 impl Workspace {
@@ -561,6 +653,8 @@ impl Workspace {
             browser_tx,
             browser_rx,
             archive,
+            search_generation: 0,
+            workers: HashMap::new(),
         }
     }
 
@@ -585,11 +679,13 @@ impl Workspace {
             return;
         }
         self.browser.searching = true;
+        self.search_generation += 1;
+        let generation = self.search_generation;
         let paths: Vec<PathBuf> = self.browser.sessions.iter().map(|(s, _)| s.path.clone()).collect();
         let tx = self.browser_tx.clone();
         std::thread::spawn(move || {
             let found = paths.into_iter().filter_map(|p| sessions::search(&p, &query).map(|s| (p, s))).collect();
-            let _ = tx.send(Browsed::Found(query, found));
+            let _ = tx.send(Browsed::Found(generation, query, found));
             wake();
         });
     }
@@ -609,7 +705,9 @@ impl Workspace {
 
     /// Opens a tab running Pi in `folder` and makes it active; the folder goes to the top of the recent list.
     pub fn open(&mut self, folder: &Path, launch: Launch, wake: impl Fn() + Send + Clone + 'static) {
-        let tab = Tab::new(&self.pi_args, folder, launch, wake);
+        let workers = &mut self.workers;
+        let worker_wake = wake.clone();
+        let tab = Tab::new(&self.pi_args, folder, launch, wake, |f| worker_for(workers, f, worker_wake));
         self.push(tab);
     }
 
@@ -649,6 +747,13 @@ impl Workspace {
         for tab in &mut self.tabs {
             tab.update(now);
         }
+        // Tabs on one folder share its checkpoint worker: a restore in one waits for the others to be idle.
+        let busy: Vec<(Option<*const Worker>, bool)> =
+            self.tabs.iter().map(|t| (t.checkpoints.as_ref().map(|c| Arc::as_ptr(&c.worker)), t.busy())).collect();
+        for (i, tab) in self.tabs.iter_mut().enumerate() {
+            let mine = busy[i].0;
+            tab.folder_busy_elsewhere = mine.is_some() && busy.iter().enumerate().any(|(j, (w, b))| j != i && *w == mine && *b);
+        }
         while let Ok(msg) = self.browser_rx.try_recv() {
             match msg {
                 // A listing for a folder the window no longer shows is dropped.
@@ -657,10 +762,12 @@ impl Workspace {
                     self.browser.loading = false;
                 }
                 Browsed::Listed(..) => {}
-                Browsed::Found(query, found) => {
+                // Only the latest search counts: an older, slower one must not overwrite it.
+                Browsed::Found(generation, query, found) if generation == self.search_generation => {
                     self.browser.found = Some((query, found));
                     self.browser.searching = false;
                 }
+                Browsed::Found(..) => {}
             }
         }
     }
@@ -820,7 +927,7 @@ mod tests {
         std::fs::create_dir_all(&work).unwrap();
         std::fs::write(work.join("a.txt"), "one").unwrap();
         let mut tab = Tab::detached(work.to_str().unwrap());
-        tab.checkpoints = Some(Worker::start(Repo::new(&root.join("shadow"), &work), || {}));
+        tab.checkpoints = Some(Checkpoints::new(Worker::start(Repo::new(&root.join("shadow"), &work), || {})));
         tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
         let settle = |tab: &mut Tab| {
             for _ in 0..200 {
@@ -902,7 +1009,7 @@ mod tests {
         std::fs::create_dir_all(&work).unwrap();
         let mut tab = Tab::detached(work.to_str().unwrap());
         // A checkpoint worker holds each message in `waiting`, where the test can read what would go to Pi.
-        tab.checkpoints = Some(Worker::start(Repo::new(&root.join("shadow"), &work), || {}));
+        tab.checkpoints = Some(Checkpoints::new(Worker::start(Repo::new(&root.join("shadow"), &work), || {})));
         tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
         tab.t.state = State::Running;
         tab.input = "after you're done".into();
@@ -941,23 +1048,45 @@ mod tests {
     }
 
     #[test]
-    fn checkpoints_pair_with_the_messages_they_precede() {
-        let mut tab = Tab::detached("a");
-        let checkpoint = |id: &str| Entry { checkpoint: Some(id.into()), ..Entry::new(Kind::Checkpoint, BEFORE_MESSAGE) };
-        tab.t.entries = vec![
-            Entry::new(Kind::User, "resumed, no checkpoint"),
-            checkpoint("c1"),
-            checkpoint("c2"), // a steer sent before the first message showed up
-            Entry::new(Kind::User, "first"),
-            Entry::new(Kind::Assistant, "…"),
-            Entry::new(Kind::User, "steer"),
-            Entry { checkpoint: Some("undo".into()), ..Entry::new(Kind::Checkpoint, "Files before the restore") },
-            checkpoint("c3"),
-            Entry::new(Kind::User, "first"),
-        ];
-        assert_eq!(tab.checkpoint_before("steer").as_deref(), Some("c2"));
-        assert_eq!(tab.checkpoint_before("first").as_deref(), Some("c3"), "sent twice: the latest");
-        assert_eq!(tab.checkpoint_before("resumed, no checkpoint"), None);
+    fn checkpoints_pair_with_their_message_by_text_even_after_stop() {
+        let root = std::env::temp_dir().join(format!("pier-ws-pairing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let work = root.join("project");
+        std::fs::create_dir_all(&work).unwrap();
+        let mut tab = Tab::detached(work.to_str().unwrap());
+        tab.checkpoints = Some(Checkpoints::new(Worker::start(Repo::new(&root.join("shadow"), &work), || {})));
+        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
+        let settle = |tab: &mut Tab| {
+            for _ in 0..300 {
+                tab.update(Instant::now());
+                if tab.waiting.is_empty() && tab.orphan_snapshots == 0 {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            panic!("checkpoints never came back");
+        };
+        tab.t.state = State::Running;
+        tab.input = "X".into();
+        tab.submit(); // a steer…
+        tab.stop(); // …taken back before it reached Pi
+        assert!(tab.waiting.is_empty() && tab.t.restored == ["X"], "back to the editor, not sent after the Stop");
+        tab.t.state = State::Stopped;
+        tab.t.restored.clear();
+        for text in ["A", "B"] {
+            tab.input = text.into();
+            tab.submit();
+            settle(&mut tab);
+        }
+        let pairs = tab.checkpoints_by_message();
+        let a = pairs.get("A").copied().expect("A has its checkpoint");
+        let b = pairs.get("B").copied().expect("B has its checkpoint");
+        assert_ne!(a, b, "B is not paired with A's checkpoint");
+        assert!(!pairs.contains_key("X"), "the message taken back owns no checkpoint");
+        let orphan = tab.t.entries.iter().filter(|e| e.text == "Files saved (message not sent)").count();
+        assert_eq!(orphan, 1);
+        drop(tab);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

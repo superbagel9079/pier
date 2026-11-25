@@ -56,6 +56,9 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
     }
 
     egui::Panel::bottom("input").show(ui, |ui| {
+        if tab.saving() {
+            ui.weak("Saving the folder's files (checkpoint) before sending…");
+        }
         attachments(tab, ui);
         ui.horizontal(|ui| {
             // Fail closed: no prompt reaches Pi before Pier's approval extension has reported in.

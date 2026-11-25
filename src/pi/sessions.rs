@@ -139,8 +139,13 @@ pub fn search(path: &Path, query: &str) -> Option<String> {
 fn snippet(text: &str, q: &str) -> Option<String> {
     let lower = text.to_lowercase();
     let at = lower.find(q)?;
-    // Lowercasing rarely changes byte lengths; when it does, show the lowercase text rather than cut a char.
-    let source = if lower.len() == text.len() { text } else { lower.as_str() };
+    // Positions in `lower` are positions in `text` only if every character keeps its byte length when lowercased
+    // (equal total lengths are not enough); otherwise the excerpt is shown in lowercase rather than cut a character.
+    let same_offsets = text.chars().all(|c| {
+        let mut l = c.to_lowercase();
+        matches!((l.next(), l.next()), (Some(x), None) if x.len_utf8() == c.len_utf8())
+    });
+    let source = if same_offsets { text } else { lower.as_str() };
     let before: String = source[..at].chars().rev().take(SNIPPET_SIDE).collect::<Vec<_>>().into_iter().rev().collect();
     let rest: String = source[at..].chars().take(q.chars().count() + SNIPPET_SIDE).collect();
     let lead = if before.chars().count() < source[..at].chars().count() { "…" } else { "" };
@@ -190,6 +195,8 @@ mod tests {
         assert_eq!(search(&path, "TOKENIZER").as_deref(), Some("Done. The tokenizer now handles nested quotes, which the ol…"));
         assert_eq!(search(&path, "zebra"), None, "tool output is not searched");
         let long = format!("{}needle{}", "a".repeat(100), "b".repeat(100));
+        // 'ẞ' (3 bytes) lowercases to 'ß' (2) and 'İ' (2) to 'i̇' (3): same total length, shifted positions.
+        assert!(snippet("ẞİ needle", "needle").unwrap().contains("needle"), "no panic on shifted positions");
         let s = snippet(&long, "needle").unwrap();
         assert!(s.starts_with('…') && s.ends_with('…') && s.contains("needle"), "{s}");
         std::fs::remove_file(&path).unwrap();

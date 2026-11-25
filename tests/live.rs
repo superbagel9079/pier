@@ -512,7 +512,7 @@ fn live_fork_with_files_restored() {
     run(&mut ws, &|t| t.t.fork_messages.len() == 2);
     let target = ws.tabs[0].t.fork_messages[0].clone();
     assert_eq!(target.text, first);
-    let checkpoint = ws.tabs[0].checkpoint_before(&target.text);
+    let checkpoint = ws.tabs[0].checkpoints_by_message().get(target.text.trim()).map(|c| c.to_string());
     assert!(checkpoint.is_some(), "the first message has its checkpoint");
     ws.tabs[0].fork(&target.entry_id, checkpoint);
     run(&mut ws, &|t| {

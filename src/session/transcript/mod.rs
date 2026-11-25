@@ -47,11 +47,13 @@ pub struct Entry {
     pub diff: Option<String>,
     /// For a checkpoint entry: its id in the folder's checkpoint repository.
     pub checkpoint: Option<String>,
+    /// For a checkpoint taken before a message: that message's text (what Fork pairs it by).
+    pub before: Option<String>,
 }
 
 impl Entry {
     pub fn new(kind: Kind, text: impl Into<String>) -> Self {
-        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None, checkpoint: None }
+        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None, checkpoint: None, before: None }
     }
 }
 
@@ -243,6 +245,9 @@ impl Transcript {
                 self.push(Kind::Notice, format!("Retry {attempt}…"));
             }
             Event::Response { command, success: false, error, .. } => {
+                if command == "clear_queue" {
+                    self.queue_edit_pending = false; // or Edit queue stays disabled, and the next Stop goes astray
+                }
                 let err = error.as_deref().unwrap_or("failed");
                 self.push(Kind::Error, format!("{command}: {err}"));
             }
@@ -536,8 +541,11 @@ mod tests {
         assert!(t.restored.is_empty() && !t.queue_edit_pending);
         feed(&mut t, &[r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["c"]}}"#]);
         assert_eq!(t.restored, ["c"], "a later Stop goes back to the editor as before");
+        t.queue_edit_pending = true;
+        feed(&mut t, &[r#"{"type":"response","command":"clear_queue","success":false,"error":"busy"}"#]);
+        assert!(!t.queue_edit_pending, "a failed take-back does not leave Edit queue stuck");
         let errs: Vec<_> = t.entries.iter().filter(|e| e.kind == Kind::Error).map(|e| e.text.as_str()).collect();
-        assert_eq!(errs, ["prompt: busy", "403"]);
+        assert_eq!(errs, ["prompt: busy", "403", "clear_queue: busy"]);
         assert_eq!(t.state, State::Failed, "a run ending on a provider error is not 'completed'");
     }
 
