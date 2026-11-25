@@ -6,9 +6,18 @@ use pier::session::transcript::ARM_DELAY;
 use pier::workspace::Tab;
 use std::time::Instant;
 
+enum Answer {
+    Allow,
+    AllowAlways,
+    Deny,
+}
+
 pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
-    let Some(a) = tab.t.approvals.front().cloned() else { return };
+    let Some(a) = tab.t.approvals.front() else { return };
     let waiting = tab.t.approvals.len() - 1;
+    // Disabled for a moment after a new approval appears, so a click meant for the previous one cannot land here.
+    let armed = tab.t.can_answer(Instant::now());
+    let mut answer = None;
     egui::Panel::bottom("approval").show(ui, |ui| {
         ui.add_space(4.0);
         ui.strong(&a.title);
@@ -27,39 +36,45 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         }
         if let Some(diff) = &a.diff {
             ui.add_space(2.0);
-            ui.weak(format!("Planned changes ({}), against the file as it was when asked", diff_view::summary(diff)));
+            let (added, removed) = a.diff_counts;
+            ui.weak(format!("Planned changes (+{added} −{removed}), against the file as it was when asked"));
             if a.same_file_pending {
                 ui.colored_label(ui.visuals().warn_fg_color, "Another pending change targets this file; this preview does not include it.");
             }
             diff_view::show(ui, ("approval_diff", &a.id), diff, 300.0);
         }
         ui.horizontal(|ui| {
-            // Disabled for a moment after a new approval appears, so a click meant for the previous one cannot land here.
-            let armed = tab.t.can_answer(Instant::now());
             if !armed {
                 ui.ctx().request_repaint_after(ARM_DELAY);
             }
-            let allow = ui.add_enabled(armed, egui::Button::new("Allow")).clicked();
-            let always = a.allow_as.as_ref().is_some_and(|entry| {
-                ui.add_enabled(armed, egui::Button::new(format!("Allow + always allow \"{entry}\"")))
-                    .on_hover_text(format!(
-                        "Adds \"{entry}\" to the allowlist: a single command starting with it, inside the folder, will run without asking.\nEdit the list from the mode menu."
-                    ))
-                    .clicked()
-            });
-            let deny = ui.add_enabled(armed, egui::Button::new("Deny")).clicked();
+            if ui.add_enabled(armed, egui::Button::new("Allow")).clicked() {
+                answer = Some(Answer::Allow);
+            }
+            if let Some(entry) = &a.allow_as {
+                let hint = format!(
+                    "Adds \"{entry}\" to the allowlist: a single command starting with it, inside the folder, will run without asking.\nEdit the list from the mode menu."
+                );
+                if ui.add_enabled(armed, egui::Button::new(format!("Allow + always allow \"{entry}\""))).on_hover_text(hint).clicked() {
+                    answer = Some(Answer::AllowAlways);
+                }
+            }
+            if ui.add_enabled(armed, egui::Button::new("Deny")).clicked() {
+                answer = Some(Answer::Deny);
+            }
             if let Some(d) = a.deadline {
                 ui.weak(format!("auto-deny in {} s", d.saturating_duration_since(Instant::now()).as_secs()));
             }
             if waiting > 0 {
                 ui.weak(format!("· {waiting} more waiting"));
             }
-            if always {
-                tab.approve_always(&a.id);
-            } else if allow || deny {
-                tab.approve(&a.id, allow);
-            }
         });
         ui.add_space(4.0);
     });
+    let Some(answer) = answer else { return };
+    let id = a.id.clone();
+    match answer {
+        Answer::Allow => tab.approve(&id, true),
+        Answer::AllowAlways => tab.approve_always(&id),
+        Answer::Deny => tab.approve(&id, false),
+    }
 }

@@ -1,7 +1,7 @@
 //! A `pi --mode rpc` process spoken to in JSONL over stdio: launch, framing, orderly shutdown.
 //! Threads per process: stdout reader, stderr reader, stdin writer. The UI thread never blocks on Pi.
 
-use super::protocol::{Command, Event};
+use super::protocol::{Command, Event, read_event};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 use std::ffi::OsStr;
@@ -108,7 +108,7 @@ impl Process {
                 match reader.read_until(b'\n', &mut buf) {
                     Ok(0) | Err(_) => break,
                     Ok(_) => {
-                        let msg = match parse_line(&buf) {
+                        let msg = match frame(&buf).map(read_event) {
                             None => continue,
                             Some(Ok(v)) => Incoming::Event(v, Instant::now()),
                             // Not silent: a shape Pier misreads shows up in the status bar.
@@ -288,13 +288,14 @@ mod job {
 }
 
 /// Split on LF only (never U+2028/U+2029), strip an optional CR, skip blank lines.
-pub fn parse_line<T: DeserializeOwned>(raw: &[u8]) -> Option<serde_json::Result<T>> {
+fn frame(raw: &[u8]) -> Option<&[u8]> {
     let line = raw.strip_suffix(b"\n").unwrap_or(raw);
     let line = line.strip_suffix(b"\r").unwrap_or(line);
-    if line.iter().all(u8::is_ascii_whitespace) {
-        return None;
-    }
-    Some(serde_json::from_slice(line))
+    (!line.iter().all(u8::is_ascii_whitespace)).then_some(line)
+}
+
+pub fn parse_line<T: DeserializeOwned>(raw: &[u8]) -> Option<serde_json::Result<T>> {
+    frame(raw).map(serde_json::from_slice)
 }
 
 #[cfg(test)]

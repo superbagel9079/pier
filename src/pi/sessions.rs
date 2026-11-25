@@ -86,7 +86,7 @@ struct Line {
 
 fn shorten(text: &str) -> String {
     let first = text.lines().find(|l| !l.trim().is_empty()).unwrap_or_default().trim();
-    if first.chars().count() > TITLE_CHARS { format!("{}…", first.chars().take(TITLE_CHARS).collect::<String>()) } else { first.into() }
+    crate::text::shorten(first, TITLE_CHARS)
 }
 
 /// The session's name (its last `session_info` entry) if it has one, else its first user message.

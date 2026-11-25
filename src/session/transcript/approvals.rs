@@ -61,6 +61,8 @@ pub struct Approval {
     pub front_since: Instant,
     /// Unified diff preview of a write or edit, computed by the extension before anything changes.
     pub diff: Option<String>,
+    /// Lines added and removed in `diff`, counted once.
+    pub diff_counts: (usize, usize),
     /// Why a shell command looks dangerous, one reason per pattern found (a hint, not a guarantee).
     pub risks: Vec<String>,
     /// What "always allow" would add to the allowlist; `None` when this command can never be allowlisted.
@@ -85,16 +87,16 @@ impl Transcript {
             }
             None => (None, message.to_owned(), None, false, None, None, vec![], None),
         };
+        // Bounded like an edit's patch: the extension already cuts at 3000 lines, another sender may not.
+        let diff = diff.map(|d| diff::cap_lines(d, super::PATCH_MAX_LINES));
+        let diff_counts = diff.as_deref().map(diff::counts).unwrap_or_default();
         // The journal keeps what was asked and how big the change is, not the diff (it can hold a file's old content).
         self.journal.push(Record::ApprovalRequested {
             id: id.to_owned(),
             title: title.to_owned(),
             detail: message.clone(),
             outside: outside.clone(),
-            changes: diff.as_deref().map(|d| {
-                let (added, removed) = diff::counts(d);
-                format!("+{added} -{removed}")
-            }),
+            changes: diff.as_ref().map(|_| format!("+{} -{}", diff_counts.0, diff_counts.1)),
             risks: risks.clone(),
             timeout_ms: timeout,
         });
@@ -112,6 +114,7 @@ impl Transcript {
             deadline,
             front_since,
             diff,
+            diff_counts,
             risks,
             allow_as,
         });

@@ -1,15 +1,9 @@
 //! A unified diff drawn line by line: added in green, removed in red, hunk headers in the link color.
 
 use eframe::egui::{self, Color32, RichText};
-use pier::session::diff::{LineKind, classify, counts};
+use pier::session::diff::{LineKind, classify};
 
 const ADDED: Color32 = Color32::from_rgb(90, 170, 90);
-
-/// `+3 −1`, for a header line or a collapsed section.
-pub fn summary(diff: &str) -> String {
-    let (added, removed) = counts(diff);
-    format!("+{added} −{removed}")
-}
 
 /// Scrolls past `max_height`; only the visible lines are laid out, so a long diff costs little per frame.
 /// `id`: distinct per diff on screen, so each keeps its own scroll position.

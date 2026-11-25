@@ -45,6 +45,8 @@ pub struct Entry {
     pub ok: Option<bool>,
     /// For an `edit` that ran: the exact unified patch Pi reports.
     pub diff: Option<String>,
+    /// Lines added and removed in diff, counted once.
+    pub diff_counts: (usize, usize),
     /// For a checkpoint entry: its id in the folder's checkpoint repository.
     pub checkpoint: Option<String>,
     /// For a checkpoint taken before a message: that message's text (what Fork pairs it by).
@@ -53,7 +55,7 @@ pub struct Entry {
 
 impl Entry {
     pub fn new(kind: Kind, text: impl Into<String>) -> Self {
-        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None, checkpoint: None, before: None }
+        Self { kind, text: text.into(), tool_id: None, ok: None, diff: None, diff_counts: (0, 0), checkpoint: None, before: None }
     }
 }
 
@@ -62,16 +64,12 @@ const PATCH_MAX_LINES: usize = 3000;
 /// Tool call text kept for display; the full arguments (a whole written file) stay in Pi's session file.
 const TOOL_TEXT_MAX: usize = 2000;
 
-fn cap(mut text: String) -> String {
-    if text.len() > TOOL_TEXT_MAX {
-        let mut end = TOOL_TEXT_MAX;
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        text.truncate(end);
-        text.push_str(" …");
-    }
-    text
+/// Stderr lines kept, and the length of one: an unreadable event is logged whole.
+const STDERR_LINES: usize = 200;
+const STDERR_LINE_MAX: usize = 2000;
+
+fn cap(text: String) -> String {
+    crate::text::cap_bytes(text, TOOL_TEXT_MAX)
 }
 
 #[derive(Default)]
@@ -88,7 +86,7 @@ pub struct Transcript {
     pub queue_draft: Option<Vec<QueueItem>>,
     /// The next `clear_queue` answer is for editing, not for the editor.
     pub queue_edit_pending: bool,
-    pub stderr: Vec<String>,
+    pub stderr: VecDeque<String>,
     /// Extension status lines (`setStatus`), keyed by statusKey.
     pub status: std::collections::BTreeMap<String, String>,
     /// Records the transcript needs sent back to Pi (dialog replies); the UI flushes them.
@@ -104,6 +102,8 @@ pub struct Transcript {
     pub thinking: Option<String>,
     /// Models Pi knows, from `get_available_models` (asked when the model menu opens).
     pub models: Vec<ModelInfo>,
+    /// provider/id of each model in lowercase, for the menu's search.
+    pub model_keys: Vec<String>,
     /// Thinking levels the current model accepts.
     pub thinking_levels: Vec<String>,
     /// The session's display name, from `get_state` and `session_info_changed`.
@@ -174,9 +174,9 @@ impl Transcript {
         match msg {
             Incoming::Event(ev, at) => self.apply_event_at(&ev, at),
             Incoming::Stderr(line) => {
-                self.stderr.push(line);
-                if self.stderr.len() > 200 {
-                    self.stderr.remove(0);
+                self.stderr.push_back(crate::text::cap_bytes(line, STDERR_LINE_MAX));
+                if self.stderr.len() > STDERR_LINES {
+                    self.stderr.pop_front();
                 }
             }
             Incoming::Exited => {
@@ -279,6 +279,7 @@ impl Transcript {
             Event::Response { command, data, .. } if command == "get_available_models" => {
                 self.models = serde_json::from_value(data["models"].clone()).unwrap_or_default();
                 self.models.sort_by_key(ModelInfo::key);
+                self.model_keys = self.models.iter().map(|m| m.key().to_lowercase()).collect();
             }
             Event::Response { command, data, .. } if command == "get_available_thinking_levels" => {
                 self.thinking_levels = serde_json::from_value(data["levels"].clone()).unwrap_or_default();
@@ -327,7 +328,7 @@ impl Transcript {
     fn load_history(&mut self, messages: &serde_json::Value) {
         let list = messages.as_array().map(Vec::as_slice).unwrap_or_default();
         for raw in list {
-            match serde_json::from_value::<HistoryMessage>(raw.clone()) {
+            match <HistoryMessage as serde::Deserialize>::deserialize(raw) {
                 Ok(HistoryMessage::User { content }) => {
                     self.push(Kind::User, content.text_and_images());
                 }
@@ -423,7 +424,9 @@ impl Transcript {
         let i = self.push(Kind::Tool, format!("{tool_name} → {status}"));
         self.entries[i].tool_id = id.map(str::to_owned);
         self.entries[i].ok = Some(!is_error);
-        self.entries[i].diff = patch.map(|p| diff::cap_lines(p, PATCH_MAX_LINES));
+        let patch = patch.map(|p| diff::cap_lines(p, PATCH_MAX_LINES));
+        self.entries[i].diff_counts = patch.as_deref().map(diff::counts).unwrap_or_default();
+        self.entries[i].diff = patch;
     }
 
     fn apply_stream(&mut self, e: &StreamEvent) {

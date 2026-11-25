@@ -29,6 +29,9 @@ impl ResumeWindow {
             chosen = self.contents(ws, ui);
         });
         self.open = open && chosen.is_none();
+        if !self.open {
+            ws.browser = Default::default(); // listed again at the next opening
+        }
         chosen
     }
 
@@ -66,9 +69,9 @@ impl ResumeWindow {
         let open_now = ws.open_files();
         let rows: Vec<usize> = (0..ws.browser.sessions.len())
             .filter(|&i| {
-                let s = &ws.browser.sessions[i].0;
+                let (s, title) = (&ws.browser.sessions[i].session, &ws.browser.sessions[i].title_lower);
                 (self.show_archived || !ws.archive.contains(&s.path))
-                    && (query.is_empty() || s.title.to_lowercase().contains(&query) || found.is_some_and(|f| f.contains_key(&s.path)))
+                    && (query.is_empty() || title.contains(&query) || found.is_some_and(|f| f.contains_key(&s.path)))
             })
             .collect();
         if rows.is_empty() {
@@ -78,7 +81,7 @@ impl ResumeWindow {
         let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
         egui::ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show_rows(ui, row_height, rows.len(), |ui, range| {
             for &i in &rows[range] {
-                let (s, canonical) = &ws.browser.sessions[i];
+                let (s, canonical) = (&ws.browser.sessions[i].session, &ws.browser.sessions[i].canonical);
                 let is_open = canonical.as_ref().is_some_and(|c| open_now.contains(c));
                 let archived = ws.archive.contains(&s.path);
                 ui.horizontal(|ui| {

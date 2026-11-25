@@ -13,6 +13,7 @@ use crate::recent;
 use crate::session::journal::{self, Journal, Record};
 use crate::session::state::{Attention, State};
 use crate::session::transcript::{Entry, Kind, Transcript};
+use crate::text;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -25,10 +26,6 @@ const TITLE_CHARS: usize = 24;
 const BEFORE_MESSAGE: &str = "Files before this message";
 /// Longer names are cut: they are labels, not notes.
 pub const NAME_MAX: usize = 80;
-
-fn shorten(line: &str) -> String {
-    if line.chars().count() > TITLE_CHARS { format!("{}…", line.chars().take(TITLE_CHARS).collect::<String>()) } else { line.into() }
-}
 
 /// What a new tab starts from.
 pub enum Launch<'a> {
@@ -99,6 +96,8 @@ pub struct Tab {
     files_asked: bool,
     /// A message waiting in Pi's queue carries images (editing the queue would lose them).
     pub queued_images: bool,
+    /// The session file as Pi names it and its canonical form, resolved once per change rather than per frame.
+    canonical_session: Option<(PathBuf, PathBuf)>,
 }
 
 impl Tab {
@@ -163,6 +162,7 @@ impl Tab {
             files: vec![],
             files_asked: false,
             queued_images: false,
+            canonical_session: None,
         };
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
@@ -177,12 +177,12 @@ impl Tab {
     /// The session name, else the first prompt, so tabs can be told apart.
     pub fn title(&self) -> String {
         if let Some(name) = &self.t.session_name {
-            return shorten(name);
+            return text::shorten(name, TITLE_CHARS);
         }
         let Some(first) = self.t.entries.iter().find(|e| e.kind == Kind::User) else {
             return self.label.clone().unwrap_or_else(|| "New session".into());
         };
-        shorten(first.text.lines().next().unwrap_or_default())
+        text::shorten(first.text.lines().next().unwrap_or_default(), TITLE_CHARS)
     }
 
     /// Runs every frame for every tab, visible or not: background sessions keep streaming, answering and expiring.
@@ -198,6 +198,9 @@ impl Tab {
             }
         }
         self.t.expire(now);
+        if self.t.session_file.as_ref() != self.canonical_session.as_ref().map(|(raw, _)| raw) {
+            self.canonical_session = self.t.session_file.as_ref().and_then(|p| Some((p.clone(), std::fs::canonicalize(p).ok()?)));
+        }
         if !self.run_going() {
             self.queued_images = false; // the run is over: nothing waits in Pi's queue any more
         }
@@ -317,7 +320,10 @@ impl Tab {
     /// The file list is asked for once per mention, so files created meanwhile show up next time.
     pub fn file_suggestions(&mut self, max: usize) -> Option<(Vec<String>, usize)> {
         let Some(query) = mention::query(&self.input) else {
+            // Mention over: the list (up to 20 000 paths) is freed and read again at the next `@`.
             self.files_asked = false;
+            self.files = Vec::new();
+            self.file_matches = None;
             return None;
         };
         if !self.files_asked {
@@ -557,6 +563,7 @@ impl Tab {
             files: vec![],
             files_asked: false,
             queued_images: false,
+            canonical_session: None,
         }
     }
 }
@@ -615,7 +622,7 @@ fn worker_for(workers: &mut HashMap<PathBuf, Weak<Worker>>, folder: &Path, wake:
 pub struct Browser {
     pub folder: Option<PathBuf>,
     /// Newest first, each with its canonical path (to tell whether a tab has it open).
-    pub sessions: Vec<(SavedSession, Option<PathBuf>)>,
+    pub sessions: Vec<Listed>,
     pub loading: bool,
     /// The last message search: its query, and the matching sessions with an excerpt.
     pub found: Option<(String, HashMap<PathBuf, String>)>,
@@ -623,8 +630,23 @@ pub struct Browser {
     pub error: Option<String>,
 }
 
+/// A saved session as the Resume window lists it, with what it needs prepared once.
+pub struct Listed {
+    pub session: SavedSession,
+    /// To tell whether a tab has it open.
+    pub canonical: Option<PathBuf>,
+    /// For the title filter.
+    pub title_lower: String,
+}
+
+impl Listed {
+    fn new(session: SavedSession) -> Self {
+        Self { canonical: std::fs::canonicalize(&session.path).ok(), title_lower: session.title.to_lowercase(), session }
+    }
+}
+
 enum Browsed {
-    Listed(PathBuf, Vec<(SavedSession, Option<PathBuf>)>),
+    Listed(PathBuf, Vec<Listed>),
     Found(u64, String, HashMap<PathBuf, String>),
 }
 
@@ -659,7 +681,7 @@ impl Workspace {
         let (titles, tx) = (Arc::clone(&self.titles), self.browser_tx.clone());
         std::thread::spawn(move || {
             let list = sessions::list_cached(&folder, usize::MAX, &mut lock(&titles));
-            let list = list.into_iter().map(|s| (std::fs::canonicalize(&s.path).ok(), s)).map(|(c, s)| (s, c)).collect();
+            let list = list.into_iter().map(Listed::new).collect();
             let _ = tx.send(Browsed::Listed(folder, list));
             wake();
         });
@@ -675,7 +697,7 @@ impl Workspace {
         self.browser.searching = true;
         self.search_generation += 1;
         let generation = self.search_generation;
-        let paths: Vec<PathBuf> = self.browser.sessions.iter().map(|(s, _)| s.path.clone()).collect();
+        let paths: Vec<PathBuf> = self.browser.sessions.iter().map(|l| l.session.path.clone()).collect();
         let tx = self.browser_tx.clone();
         std::thread::spawn(move || {
             let found = paths.into_iter().filter_map(|p| sessions::search(&p, &query).map(|s| (p, s))).collect();
@@ -805,8 +827,7 @@ impl Workspace {
     /// Session files open in a tab (or still closing), canonical so that Pi's spelling of a path matches the
     /// listing's. A session must not be opened twice: two Pi writing one file would corrupt it.
     pub fn open_files(&self) -> Vec<PathBuf> {
-        let mut open: Vec<PathBuf> =
-            self.tabs.iter().filter_map(|t| t.t.session_file.as_ref()).filter_map(|p| std::fs::canonicalize(p).ok()).collect();
+        let mut open: Vec<PathBuf> = self.tabs.iter().filter_map(|t| t.canonical_session.as_ref().map(|(_, c)| c.clone())).collect();
         open.extend(lock(&self.closing).iter().cloned());
         open
     }
@@ -1089,6 +1110,7 @@ mod tests {
         std::fs::write(&file, "").unwrap();
         let mut w = ws(&["a"], 0);
         w.tabs[0].t.session_file = Some(file.clone());
+        w.update(Instant::now()); // where the tab resolves its canonical path
         let canonical = std::fs::canonicalize(&file).unwrap();
         assert!(w.open_files().contains(&canonical));
         lock(&w.closing).push(canonical.clone()); // what close() does while the Pi is still shutting down
@@ -1123,7 +1145,7 @@ mod tests {
         w.load_sessions(|| {});
         settle(&mut w);
         assert_eq!(w.browser.sessions.len(), 1);
-        assert_eq!(w.browser.sessions[0].0.title, "find the zebra");
+        assert_eq!(w.browser.sessions[0].session.title, "find the zebra");
         w.search_sessions("ZEBRA", || {});
         settle(&mut w);
         assert!(w.browser.found.as_ref().is_some_and(|(_, f)| f.contains_key(&file)));

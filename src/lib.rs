@@ -11,4 +11,5 @@ pub mod pi;
 pub mod presets;
 pub mod recent;
 pub mod session;
+pub mod text;
 pub mod workspace;

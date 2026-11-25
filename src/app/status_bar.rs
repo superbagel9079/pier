@@ -176,8 +176,10 @@ fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
                 ui.weak("Loading the list…");
             }
             let current = tab.t.model.as_ref().map(|m| m.key());
-            for m in tab.t.models.iter().filter(|m| m.key().to_lowercase().contains(&filter)).take(MODEL_LIST_MAX) {
-                if ui.selectable_label(current.as_deref() == Some(&m.key()), m.key()).clicked() {
+            let matching = tab.t.models.iter().zip(&tab.t.model_keys).filter(|(_, k)| k.contains(&filter));
+            for (m, _) in matching.take(MODEL_LIST_MAX) {
+                let key = m.key();
+                if ui.selectable_label(current.as_deref() == Some(&key), key).clicked() {
                     pick = Some(m.clone());
                     ui.close();
                 }
@@ -273,9 +275,12 @@ pub fn footer(tab: &Tab, ui: &mut egui::Ui) {
     egui::Panel::bottom("footer").show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new(statuses.join("    ")).small().weak());
-            if let Some(last) = tab.t.stderr.last() {
+            if let Some(last) = tab.t.stderr.back() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(egui::Label::new(RichText::new(last).small().weak()).truncate()).on_hover_text(tab.t.stderr.join("\n"));
+                    ui.add(egui::Label::new(RichText::new(last).small().weak()).truncate()).on_hover_ui(|ui| {
+                        // Built on hover only: joining 200 lines every frame was wasted work.
+                        ui.label(tab.t.stderr.iter().map(String::as_str).collect::<Vec<_>>().join("\n"));
+                    });
                 });
             }
         });

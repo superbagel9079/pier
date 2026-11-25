@@ -150,6 +150,23 @@ pub enum Event {
     Unknown,
 }
 
+/// One line from Pi. A `message_update` line also carries the whole partial message: only its delta is read, so
+/// streaming an answer does not cost a copy of the answer so far for every token.
+pub fn read_event(line: &[u8]) -> serde_json::Result<Event> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Update {
+        assistant_message_event: StreamEvent,
+    }
+    const UPDATE: &[u8] = br#""type":"message_update""#;
+    if line.windows(UPDATE.len()).any(|w| w == UPDATE)
+        && let Ok(u) = serde_json::from_slice::<Update>(line)
+    {
+        return Ok(Event::MessageUpdate { assistant_message_event: u.assistant_message_event });
+    }
+    serde_json::from_slice(line)
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
@@ -503,6 +520,14 @@ mod tests {
 
     fn ev(s: &str) -> Event {
         serde_json::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn a_streamed_update_reads_like_the_generic_parse() {
+        let line = br#"{"type":"message_update","message":{"role":"assistant","content":[{"type":"text","text":"a long answer so far"}]},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"far"}}"#;
+        assert_eq!(read_event(line).unwrap(), serde_json::from_slice::<Event>(line).unwrap());
+        let other = br#"{"type":"agent_settled","aborted":true}"#;
+        assert_eq!(read_event(other).unwrap(), Event::AgentSettled { aborted: true });
     }
 
     #[test]
