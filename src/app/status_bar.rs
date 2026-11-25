@@ -3,7 +3,7 @@
 use eframe::egui::containers::menu::{MenuButton, MenuConfig};
 use eframe::egui::{self, Color32, PopupCloseBehavior, RichText};
 use pier::session::state::State;
-use pier::session::transcript::SUPERVISION_KEY;
+use pier::session::transcript::{MODES, SUPERVISION_KEY};
 use pier::workspace::{NAME_MAX, Tab};
 
 const OK_GREEN: Color32 = Color32::from_rgb(110, 180, 110);
@@ -35,9 +35,8 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             ui.label(RichText::new(label).strong());
 
             ui.separator();
-            if tab.t.supervised() {
-                ui.label(RichText::new("Supervised").color(OK_GREEN))
-                    .on_hover_text("Every tool that writes or runs waits for your approval.");
+            if let Some(mode) = tab.mode().map(str::to_owned) {
+                mode_menu(tab, ui, &mode);
             } else if tab.t.state != State::Crashed {
                 ui.label(RichText::new("Not supervised — sending blocked").color(ui.visuals().error_fg_color))
                     .on_hover_text("Pier's approval extension has not reported in yet.");
@@ -63,6 +62,31 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
         });
         ui.add_space(4.0);
     });
+}
+
+/// The permission mode Pier's extension reports, and the menu to switch it (applied at once, even during a run).
+fn mode_menu(tab: &mut Tab, ui: &mut egui::Ui, current: &str) {
+    let color = if current == MODES[0].1 { OK_GREEN } else { ui.visuals().warn_fg_color };
+    let mut pick = None;
+    ui.menu_button(RichText::new(current).color(color), |ui| {
+        let help = [
+            "Every tool that writes or runs waits for your approval.",
+            "write and edit inside the folder pass without asking; outside it, and commands, still ask.",
+            "Read-only: everything that writes or runs is refused without asking.",
+        ];
+        for ((key, label), help) in MODES.iter().zip(help) {
+            if ui.selectable_label(*label == current, *label).on_hover_text(help).clicked() {
+                pick = Some(*key);
+                ui.close();
+            }
+        }
+        ui.weak("Back to Supervised in every new tab and after a fork.");
+    })
+    .response
+    .on_hover_text("Permission mode of this tab");
+    if let Some(key) = pick {
+        tab.set_mode(key);
+    }
 }
 
 /// Context-window use and session cost, from Pi's session stats.

@@ -23,6 +23,10 @@ const PREVIEW_MAX_BYTES = 2_000_000;
 const DIFF_MAX_FILE_LINES = 2000;
 // A longer diff is cut, and says so: the rest is not shown, never silently dropped.
 const PREVIEW_MAX_LINES = 3000;
+// Permission modes, set by Pier with `/pier-mode <key>`; the label is the status Pier shows (and reads back).
+// supervised: every tool that writes or runs asks. accept-edits: write/edit inside the working folder pass, the rest
+// asks. plan: everything that writes or runs is refused without asking.
+const MODES: Record<string, string> = { supervised: "Supervised", "accept-edits": "Accept edits", plan: "Plan (read-only)" };
 // Same set as Pi's own path normalization.
 const UNICODE_SPACES = /[  -​  　﻿]/g;
 
@@ -208,19 +212,53 @@ function isBuiltin(pi: any, name: string): boolean {
 	return tool?.sourceInfo?.source === "builtin";
 }
 
+/** A decision taken without asking, for Pier's transcript and journal. */
+function tellPier(ctx: any, decision: "allowed" | "denied", tool: string, what: string, mode: string) {
+	ctx.ui.notify(JSON.stringify({ pier: ENVELOPE_VERSION, auto: decision, tool, detail: what, mode: MODES[mode] }));
+}
+
 export default function (pi: any) {
+	// Each session (a new one, a fork) starts supervised: a mode never outlives the session it was set in.
+	let mode = "supervised";
+
 	pi.on("session_start", async (_event: any, ctx: any) => {
-		ctx.ui.setStatus("pier-supervision", "Supervised");
+		mode = "supervised";
+		ctx.ui.setStatus("pier-supervision", MODES[mode]);
 	});
 
 	pi.on("session_shutdown", async (_event: any, ctx: any) => {
 		ctx.ui.setStatus("pier-supervision", undefined);
 	});
 
+	// Only a prompt can run a command: the model cannot change the mode.
+	pi.registerCommand("pier-mode", {
+		description: "Pier: permission mode (set from Pier's mode menu)",
+		handler: async (args: string, ctx: any) => {
+			const wanted = String(args ?? "").trim();
+			if (!(wanted in MODES)) {
+				ctx.ui.notify(`Unknown mode "${wanted}"; the mode stays ${MODES[mode]}.`);
+				return;
+			}
+			mode = wanted;
+			ctx.ui.setStatus("pier-supervision", MODES[mode]);
+		},
+	});
+
 	pi.on("tool_call", async (event: any, ctx: any) => {
 		try {
 			if (READ_ONLY.has(event.toolName) && isBuiltin(pi, event.toolName)) return undefined;
 			const input = event.input ?? {};
+			const what = detail(event.toolName, input, true);
+			if (mode === "plan") {
+				tellPier(ctx, "denied", event.toolName, what, mode);
+				return { block: true, reason: "Plan mode in Pier: read-only. Do not change anything; describe the change instead." };
+			}
+			const isFileEdit = (event.toolName === "write" || event.toolName === "edit") && isBuiltin(pi, event.toolName);
+			if (mode === "accept-edits" && isFileEdit && outsideTargets(event.toolName, input, ctx.cwd)?.length === 0) {
+				tellPier(ctx, "allowed", event.toolName, what, mode);
+				deepFreeze(input);
+				return undefined;
+			}
 			const diff = await preview(event.toolName, input, ctx.cwd);
 			// Structured, so no text in a command (a marker, a fake warning line) can pass for something else.
 			const message = JSON.stringify({

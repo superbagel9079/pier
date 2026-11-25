@@ -13,7 +13,7 @@ const EXPIRY_MARGIN: Duration = Duration::from_secs(1);
 /// A new approval at the front ignores clicks this long, so a double-click meant for the previous one cannot approve it.
 pub const ARM_DELAY: Duration = Duration::from_millis(400);
 /// Version of the structured message Pier's extension puts in the dialog.
-const ENVELOPE_VERSION: u32 = 1;
+pub(super) const ENVELOPE_VERSION: u32 = 1;
 
 /// The structured dialog message of Pier's extension. Each part has its own field, so nothing in a command
 /// (a fake warning line, a fake diff marker) can pass for something else.

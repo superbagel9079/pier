@@ -19,6 +19,10 @@ it. It is not the default because it froze a whole PC on window resize with an I
 - **Project folder**: Pier starts without a folder; you open one, or a recent one.
 - **Approvals**: every tool call that is not read-only shows the whole command, a warning when the target is outside
   the working folder, and is denied automatically after 60 s.
+- **Permission modes** per tab, from the mode menu in the top bar: **Supervised** (default), **Accept edits** (`write`
+  and `edit` inside the folder pass without asking; outside it and commands still ask), **Plan** (read-only: anything
+  that writes or runs is refused without asking). Each automatic decision shows in the transcript and the journal.
+  Every new tab, and every fork, starts Supervised.
 - **Diff**: a `write` or `edit` shows a colored preview of the added and removed lines before you approve it; after an
   `edit`, Pi's exact patch stays available in the transcript. Files changed by `bash` get no diff.
 - **Checkpoints**: before each message, the folder's files are saved (git must be installed); "Restore files…" puts
@@ -75,6 +79,8 @@ Conversations stay Pi's own, in Pi's session folders.
 
 - Pi always loads Pier's extension (`-e`), even with `--no-extensions`. Until it reports in, Pier refuses to send
   anything ("Not supervised").
+- The mode is switched by Pier with `/pier-mode`, an extension command that runs on a prompt only: the model cannot
+  change it. Pier shows the mode the extension reports, not the one it asked for.
 - The extension fails closed: an error, a timeout or a closed window means denied. After your approval the tool input
   is frozen, so no other extension can change it.
 - `read`, `grep`, `find` and `ls` skip approval only when they are Pi's own built-in tools.

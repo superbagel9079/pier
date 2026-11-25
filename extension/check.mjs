@@ -27,10 +27,12 @@ register(
 
 const mod = await import(new URL("./pier-approvals.ts", import.meta.url));
 const handlers = {};
+const commands = {};
 let toolSource = "builtin";
 mod.default({
   on: (name, fn) => (handlers[name] = fn),
-  getAllTools: () => ["read", "grep", "find", "ls", "bash", "write"].map((name) => ({ name, sourceInfo: { source: toolSource } })),
+  registerCommand: (name, spec) => (commands[name] = spec),
+  getAllTools: () => ["read", "grep", "find", "ls", "bash", "write", "edit"].map((name) => ({ name, sourceInfo: { source: toolSource } })),
 });
 const cwd = String.raw`C:\Users\leo\Downloads\brainstorming`;
 let bad = 0;
@@ -183,6 +185,38 @@ check(
   statuses[0]?.[1] === "Supervised" && statuses[1]?.[0] === "pier-supervision" && statuses[1]?.[1] === undefined,
   "Supervised set on start, cleared on shutdown",
 );
+
+// Permission modes: switched by /pier-mode, reported in the status, every automatic decision told to Pier.
+const said = [];
+const mctx = { cwd, ui: { setStatus: (k, v) => statuses.push([k, v]), notify: (m) => said.push(m), confirm: async () => false } };
+const modeCall = async (toolName, input) => {
+  said.length = 0;
+  let asked = false;
+  const result = await handlers.tool_call({ toolName, input }, { ...mctx, ui: { ...mctx.ui, confirm: async () => ((asked = true), false) } });
+  return { result, asked, auto: said[0] ? JSON.parse(said[0]) : null };
+};
+await commands["pier-mode"].handler("accept-edits", mctx);
+check(statuses.at(-1)?.[1] === "Accept edits", "/pier-mode accept-edits: status says so");
+let m = await modeCall("write", { path: "notes.txt", content: "x" });
+check(m.result === undefined && !m.asked && m.auto?.auto === "allowed" && m.auto.detail === "notes.txt", "accept edits: write inside passes, told to Pier");
+m = await modeCall("edit", { path: String.raw`..\outside.txt`, edits: [] });
+check(m.result?.block === true && m.asked, "accept edits: an edit outside the folder still asks");
+m = await modeCall("bash", { command: "ls" });
+check(m.asked, "accept edits: bash still asks");
+toolSource = "extension";
+m = await modeCall("write", { path: "notes.txt", content: "x" });
+check(m.asked, "accept edits: a write tool replaced by an extension still asks");
+toolSource = "builtin";
+await commands["pier-mode"].handler("plan", mctx);
+m = await modeCall("write", { path: "notes.txt", content: "x" });
+check(m.result?.block === true && !m.asked && m.result.reason.includes("Plan mode") && m.auto?.auto === "denied", "plan: write refused without asking");
+m = await modeCall("read", { path: "x" });
+check(m.result === undefined && m.auto === null, "plan: built-in read still passes");
+await commands["pier-mode"].handler("everything", mctx);
+check(statuses.at(-1)?.[1] === "Plan (read-only)" && said.at(-1)?.includes("Unknown mode"), "unknown mode: refused, mode unchanged");
+await handlers.session_start({}, mctx);
+m = await modeCall("bash", { command: "ls" });
+check(statuses.at(-1)?.[1] === "Supervised" && m.asked, "a new session starts supervised");
 
 console.log(bad === 0 ? "all checks passed" : `${bad} check(s) failed`);
 process.exit(bad);

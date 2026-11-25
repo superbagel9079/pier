@@ -617,3 +617,60 @@ fn live_queue_edit_and_send_back() {
     drop(ws);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Permission modes: Accept edits writes inside the folder without asking, Plan refuses without asking, and the mode
+/// can be switched back during a run. Nothing is approved by the test: any dialog would leave the file unwritten.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_permission_modes() {
+    use pier::workspace::{Launch, Tab, Workspace};
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let dir = std::env::temp_dir().join(format!("pier-modes-live-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ws = Workspace::new(["--no-session", "--model", &model].map(String::from).to_vec(), dir.join("recent.json"));
+    ws.open(&dir, Launch::New, || {});
+    let run = |ws: &mut Workspace, until: &dyn Fn(&Tab) -> bool| {
+        let end = Instant::now() + Duration::from_secs(90);
+        while Instant::now() < end {
+            ws.update(Instant::now());
+            ws.flush();
+            assert!(ws.tabs[0].t.approvals.is_empty(), "no dialog in these modes: {:?}", ws.tabs[0].t.approvals.front().map(|a| &a.title));
+            if until(&ws.tabs[0]) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("timed out: mode {:?} entries {:#?}", ws.tabs[0].mode(), ws.tabs[0].t.entries);
+    };
+    run(&mut ws, &|t| t.mode() == Some("Supervised"));
+    let users = |t: &Tab| t.t.entries.iter().filter(|e| e.kind == Kind::User).count();
+
+    ws.tabs[0].set_mode("accept-edits");
+    run(&mut ws, &|t| t.mode() == Some("Accept edits"));
+    ws.tabs[0].input = "Use the write tool to create the file a.txt containing: x. Do nothing else.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| users(t) == 1 && t.t.state == State::Completed && !t.busy());
+    assert!(dir.join("a.txt").exists(), "written without asking: {:#?}", ws.tabs[0].t.entries);
+    assert!(ws.tabs[0].t.entries.iter().any(|e| e.text.ends_with("→ allowed (Accept edits)")));
+
+    ws.tabs[0].set_mode("plan");
+    run(&mut ws, &|t| t.mode() == Some("Plan (read-only)"));
+    ws.tabs[0].input = "Use the write tool to create the file b.txt containing: y. If refused, just say so.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| users(t) == 2 && t.t.state == State::Completed && !t.busy());
+    assert!(!dir.join("b.txt").exists(), "plan mode refused the write");
+    assert!(ws.tabs[0].t.entries.iter().any(|e| e.text.ends_with("→ denied (Plan (read-only))")));
+
+    // Switching during a run: the command runs at once, it does not wait in the queue.
+    ws.tabs[0].input = "Count from 1 to 3000 in words, one per line. Use no tools.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| t.t.state.is_running() && t.t.entries.last().is_some_and(|e| e.text.len() > 100));
+    ws.tabs[0].set_mode("supervised");
+    run(&mut ws, &|t| t.mode() == Some("Supervised"));
+    assert!(ws.tabs[0].t.state.is_running(), "switched while the run was still going");
+    ws.tabs[0].stop();
+    run(&mut ws, &|t| !t.t.state.is_running());
+    drop(ws);
+    let _ = std::fs::remove_dir_all(&dir);
+}

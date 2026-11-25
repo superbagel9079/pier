@@ -53,6 +53,13 @@ pub enum Record {
         to: String,
         undo: String,
     },
+    /// Decided by the permission mode, without asking: `auto-allowed` or `auto-denied`.
+    AutoDecided {
+        tool: String,
+        detail: String,
+        decision: &'static str,
+        mode: String,
+    },
     /// The tab switched to a fork of `from` (the new session file follows as `session_file`).
     Forked {
         #[serde(skip_serializing_if = "Option::is_none")]

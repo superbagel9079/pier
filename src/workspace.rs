@@ -245,6 +245,17 @@ impl Tab {
         self.input.clear();
     }
 
+    /// The permission mode Pier's extension reports (its label), once supervised.
+    pub fn mode(&self) -> Option<&str> {
+        self.t.status.get(crate::session::transcript::SUPERVISION_KEY).map(String::as_str)
+    }
+
+    /// Asks Pier's extension to switch mode (a `MODES` key). An extension command runs at once, even during a run,
+    /// and never reaches the model; the status shows the mode once the extension has applied it.
+    pub fn set_mode(&mut self, key: &str) {
+        self.send(Command::prompt(format!("/pier-mode {key}"), None));
+    }
+
     /// Takes the waiting messages back from Pi to edit them (Pi reads none of them meanwhile).
     pub fn edit_queue(&mut self) {
         if self.t.queued.is_empty() || self.t.queue_edit_pending {

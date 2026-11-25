@@ -18,6 +18,8 @@ use std::time::Instant;
 
 /// Status key set by Pier's approval extension once it is active in Pi.
 pub const SUPERVISION_KEY: &str = "pier-supervision";
+/// Permission modes of Pier's extension: the key `/pier-mode` takes, and the label it reports as its status.
+pub const MODES: [(&str, &str); 3] = [("supervised", "Supervised"), ("accept-edits", "Accept edits"), ("plan", "Plan (read-only)")];
 /// Suggestions shown at once by the `/` palette; typing narrows the rest.
 pub const PALETTE_MAX: usize = 8;
 
@@ -152,8 +154,12 @@ impl Transcript {
             return vec![];
         }
         let q = query.to_lowercase();
-        let (mut starts, mut contains): (Vec<_>, Vec<_>) =
-            self.commands.iter().filter(|c| c.name.to_lowercase().contains(&q)).partition(|c| c.name.to_lowercase().starts_with(&q));
+        // Pier's own commands (the mode switch) are driven from Pier's menus, not typed.
+        let (mut starts, mut contains): (Vec<_>, Vec<_>) = self
+            .commands
+            .iter()
+            .filter(|c| !c.name.starts_with("pier-") && c.name.to_lowercase().contains(&q))
+            .partition(|c| c.name.to_lowercase().starts_with(&q));
         starts.append(&mut contains);
         starts
     }
@@ -307,9 +313,7 @@ impl Transcript {
                         None => self.status.remove(status_key),
                     };
                 }
-                UiRequest::Notify { message } => {
-                    self.push(Kind::Notice, message.clone());
-                }
+                UiRequest::Notify { message } => self.notified(message),
                 UiRequest::Other => {}
             },
             _ => {}
@@ -355,6 +359,29 @@ impl Transcript {
             self.entries.extend(self.carried.take());
         } else if !list.is_empty() {
             self.push(Kind::Notice, "— session resumed —");
+        }
+    }
+
+    /// A notification: a decision Pier's extension took without asking (a permission mode), or plain text.
+    fn notified(&mut self, message: &str) {
+        #[derive(serde::Deserialize)]
+        struct Auto {
+            pier: u32,
+            auto: String,
+            tool: String,
+            detail: String,
+            mode: String,
+        }
+        match serde_json::from_str::<Auto>(message) {
+            Ok(a) if a.pier == approvals::ENVELOPE_VERSION && (a.auto == "allowed" || a.auto == "denied") => {
+                let first = a.detail.lines().next().unwrap_or_default();
+                self.push(Kind::Notice, cap(format!("{} {first} → {} ({})", a.tool, a.auto, a.mode)));
+                let decision = if a.auto == "allowed" { "auto-allowed" } else { "auto-denied" };
+                self.journal.push(Record::AutoDecided { tool: a.tool, detail: a.detail, decision, mode: a.mode });
+            }
+            _ => {
+                self.push(Kind::Notice, message);
+            }
         }
     }
 
@@ -564,6 +591,33 @@ mod tests {
         feed(&mut t, &[r#"{"type":"agent_settled","aborted":true}"#]);
         assert!(t.approvals.is_empty(), "an aborted run drops its pending approvals");
         assert_eq!(t.state, State::Stopped);
+    }
+
+    #[test]
+    fn decisions_taken_by_a_mode_are_shown_and_journaled() {
+        let mut t = Transcript::default();
+        let auto = r#"{\"pier\":1,\"auto\":\"allowed\",\"tool\":\"write\",\"detail\":\"src/a.rs\",\"mode\":\"Accept edits\"}"#;
+        feed(
+            &mut t,
+            &[
+                &format!(r#"{{"type":"extension_ui_request","id":"n1","method":"notify","message":"{auto}"}}"#),
+                r#"{"type":"extension_ui_request","id":"n2","method":"notify","message":"{\"pier\":1,\"auto\":\"rm -rf\"}"}"#,
+                r#"{"type":"response","command":"get_commands","success":true,"data":{"commands":[{"name":"pier-mode","source":"extension"},{"name":"plan","source":"prompt"}]}}"#,
+            ],
+        );
+        assert_eq!(t.entries[0].text, "write src/a.rs → allowed (Accept edits)");
+        assert_eq!(
+            t.journal,
+            [Record::AutoDecided {
+                tool: "write".into(),
+                detail: "src/a.rs".into(),
+                decision: "auto-allowed",
+                mode: "Accept edits".into()
+            }]
+        );
+        assert!(t.entries[1].text.contains("rm -rf"), "anything else stays plain text, never a decision");
+        let names: Vec<_> = t.matching_commands("/p").iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["plan"], "Pier's own command is not offered in the palette");
     }
 
     #[test]
