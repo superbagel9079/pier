@@ -29,8 +29,7 @@ pub struct Process {
     _job: Option<job::Job>,
 }
 
-/// `pi` on Windows is a .ps1/.cmd shim; we run node + the launcher directly so no
-/// cmd.exe sits between us and Pi.
+/// `pi` on Windows is a .ps1/.cmd shim: run node and the launcher directly so no cmd.exe sits in between.
 // shortcut: paths are the default managed-install ones, add a setting when another install layout shows up.
 fn pi_command() -> process::Command {
     let home = super::sessions::home();
@@ -48,9 +47,8 @@ pub(crate) fn fingerprint(bytes: &[u8]) -> u64 {
     bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))
 }
 
-/// Writes Pier's approval extension where Pi can load it. The name carries a fingerprint of the content, so two
-/// Pier builds running side by side never overwrite each other's file (their markers may differ).
-// shortcut: old versions' files stay in the folder (a few KB each); prune them if the folder ever matters.
+/// Writes Pier's approval extension where Pi can load it, named by content hash so two Pier builds never clash.
+// shortcut: old versions' files are never pruned, prune them if the folder ever matters.
 fn approvals_extension() -> std::io::Result<PathBuf> {
     let dir = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("pier");
     std::fs::create_dir_all(&dir)?;
@@ -86,7 +84,7 @@ impl Process {
             cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
         }
         let mut child = cmd.spawn()?;
-        // shortcut: assigned right after spawn, before node has booted far enough to start Pi; a suspended start would close that gap.
+        // shortcut: assigned right after spawn, before node starts Pi, use a suspended start if that gap ever matters.
         #[cfg(windows)]
         let job = job::Job::new().and_then(|j| j.assign(&child).map(|()| j));
         #[cfg(windows)]

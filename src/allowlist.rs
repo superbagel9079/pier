@@ -1,11 +1,10 @@
-//! Shell commands that run without asking, in `%APPDATA%\pier\allowlist.json` (`{"commands": [...]}`). Pier's
-//! extension reads the file at each call and decides; Pier only adds entries ("always allow") and opens the file.
-//! An entry matches a command that starts with it, word by word, and only a single simple command (see the extension).
+//! Shell commands that run without asking, in `%APPDATA%\pier\allowlist.json` (`{"commands": [...]}`).
+//! Pier only adds entries and opens the file; the extension reads it on each call and does the matching.
 
 use crate::files::write_atomic;
 use std::path::{Path, PathBuf};
 
-/// Used while the file does not exist: commands that only read. Same list as `DEFAULT_ALLOWED` in the extension.
+/// Read-only commands used while the file does not exist. Keep in sync with `DEFAULT_ALLOWED` in the extension.
 pub const DEFAULTS: [&str; 9] = ["ls", "dir", "pwd", "git status", "git diff", "git log", "git show", "Get-ChildItem", "Get-Location"];
 
 /// `PIER_ALLOWLIST` points elsewhere (tests); the extension honors the same variable.

@@ -2,8 +2,7 @@
 
 use std::path::Path;
 
-/// Writes to a temporary file next to `path`, then renames it over `path`: a reader sees the old or the new
-/// content, never half of it.
+/// Writes a temp file next to `path` and renames it over `path`, so a reader never sees half a file.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));

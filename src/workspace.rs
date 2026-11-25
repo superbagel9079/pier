@@ -283,8 +283,8 @@ impl Tab {
         self.t.status.get(crate::session::transcript::SUPERVISION_KEY).map(String::as_str)
     }
 
-    /// Asks Pier's extension to switch mode (a `MODES` key). An extension command runs at once, even during a run,
-    /// and never reaches the model; the status shows the mode once the extension has applied it.
+    /// Asks Pier's extension to switch mode (a `MODES` key). Runs at once, even during a run, and never reaches the
+    /// model; the status shows the new mode once the extension has applied it.
     pub fn set_mode(&mut self, key: &str) {
         self.send(Command::prompt(format!("/pier-mode {key}"), None));
     }
@@ -299,8 +299,7 @@ impl Tab {
         self.send(Command::ClearQueue);
     }
 
-    /// Sends the edited queue back in its order; empty messages are dropped. If the run ended meanwhile, the first
-    /// one starts a new run.
+    /// Sends the edited queue back in order, dropping empty messages; if the run ended, the first starts a new run.
     pub fn send_queue_back(&mut self) {
         let Some(draft) = self.t.queue_draft.take() else { return };
         if !self.t.supervised() {
@@ -353,8 +352,7 @@ impl Tab {
         self.t.state.is_running() || !self.waiting.is_empty() || self.restoring || self.fork_after_restore.is_some()
     }
 
-    /// A checkpoint can be restored only while nothing else touches the files: no run, nothing being sent, in this
-    /// tab or in another tab on the same folder.
+    /// Restorable only while nothing touches the files: no run or send in this tab or any tab on the same folder.
     pub fn can_restore(&self) -> bool {
         self.checkpoints.is_some() && !self.busy() && !self.folder_busy_elsewhere
     }
@@ -369,9 +367,8 @@ impl Tab {
         self.send(Command::GetForkMessages);
     }
 
-    /// For each message sent in this tab, the checkpoint taken just before it (the last one, if sent twice). Each
-    /// checkpoint keeps the text of its message, so a steer taken back by Stop or a dropped queued message cannot
-    /// shift the pairs. Built once per use: the Fork menu asks for many messages at once.
+    /// For each message sent in this tab, the checkpoint taken just before it (the last, if sent twice), paired by
+    /// message text so a steer taken back by Stop cannot shift the pairs. Build once per Fork menu, not per message.
     pub fn checkpoints_by_message(&self) -> HashMap<&str, &str> {
         self.t
             .entries
@@ -402,8 +399,7 @@ impl Tab {
         }
     }
 
-    /// Puts the folder's files back as they were at checkpoint `id`; the files as they are now get their own
-    /// checkpoint first, so the restore can be undone.
+    /// Restores the files to checkpoint `id`, checkpointing the current files first so the restore can be undone.
     pub fn restore(&mut self, id: &str) {
         if !self.can_restore() {
             let why = if self.folder_busy_elsewhere { "another tab on this folder is running" } else { "wait until the run ends" };
@@ -523,8 +519,7 @@ impl Tab {
     /// Like Pi's Esc: take queued messages back (they return to the editor), then abort.
     pub fn stop(&mut self) {
         self.t.journal.push(Record::StopRequested);
-        // Messages still waiting for their checkpoint have not reached Pi: they come back to the editor too, or they
-        // would start a new run right after the Stop.
+        // Messages still waiting for a checkpoint come back to the editor too, or they would start a new run after Stop.
         let held: Vec<String> = self
             .waiting
             .drain(..)
@@ -615,8 +610,7 @@ fn worker_for(workers: &mut HashMap<PathBuf, Weak<Worker>>, folder: &Path, wake:
     w
 }
 
-/// The Resume window's sessions for one folder, listed and searched off the UI thread (a folder can hold hundreds
-/// of sessions, some several MB).
+/// The Resume window's sessions for one folder, listed and searched off the UI thread: there can be hundreds.
 #[derive(Default)]
 pub struct Browser {
     pub folder: Option<PathBuf>,
@@ -888,14 +882,14 @@ mod tests {
         use crate::pi::process::parse_line;
         let mut tab = Tab::detached("a");
         let feed = |tab: &mut Tab, line: &str| tab.t.apply_event(&parse_line(line.as_bytes()).unwrap().unwrap());
-        feed(&mut tab, r#"{"type":"message_start","message":{"role":"user","content":"lance les tests"}}"#);
-        assert_eq!(tab.title(), "lance les tests");
-        feed(&mut tab, r#"{"type":"response","command":"get_state","success":true,"data":{"sessionName":"Tests du parseur"}}"#);
-        assert_eq!(tab.title(), "Tests du parseur", "a name beats the first prompt");
-        feed(&mut tab, r#"{"type":"session_info_changed","name":"Un nom vraiment beaucoup trop long pour un onglet"}"#);
-        assert_eq!(tab.title(), "Un nom vraiment beaucoup…");
+        feed(&mut tab, r#"{"type":"message_start","message":{"role":"user","content":"run the tests"}}"#);
+        assert_eq!(tab.title(), "run the tests");
+        feed(&mut tab, r#"{"type":"response","command":"get_state","success":true,"data":{"sessionName":"Parser tests"}}"#);
+        assert_eq!(tab.title(), "Parser tests", "a name beats the first prompt");
+        feed(&mut tab, r#"{"type":"session_info_changed","name":"A name that is far too long for a tab"}"#);
+        assert_eq!(tab.title(), "A name that is far too l…");
         feed(&mut tab, r#"{"type":"session_info_changed"}"#);
-        assert_eq!(tab.title(), "lance les tests", "cleared name: back to the prompt");
+        assert_eq!(tab.title(), "run the tests", "cleared name: back to the prompt");
         feed(&mut tab, r#"{"type":"response","command":"set_session_name","success":true}"#);
         assert_eq!(tab.t.outbox, [Command::GetState], "the name is read back from Pi");
     }

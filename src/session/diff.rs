@@ -60,8 +60,7 @@ pub fn classify(diff: &str) -> Vec<(LineKind, &str)> {
         .collect()
 }
 
-/// Keeps the first `max` lines of a patch, and says how many were dropped: a patch kept in memory for the whole
-/// session must stay bounded (a regenerated file can be thousands of lines).
+/// Keeps the first `max` lines of a patch and returns how many were dropped: patches stay in memory all session.
 pub fn cap_lines(patch: String, max: usize) -> String {
     let total = patch.lines().count();
     if total <= max {

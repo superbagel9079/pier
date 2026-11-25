@@ -1,4 +1,4 @@
-//! Session presets (B.8): a name plus Pi launch options, read from `%APPDATA%\pier\presets.json`.
+//! Session presets: a name plus Pi launch options, read from `%APPDATA%\pier\presets.json`.
 
 use serde::Deserialize;
 use std::path::{Path, PathBuf};

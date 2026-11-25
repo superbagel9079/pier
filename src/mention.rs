@@ -1,8 +1,7 @@
 //! `@file` mentions in the editor: what is being typed, which project files match, and the text once one is picked.
 //! As in Pi's own editor, only the path goes into the message; the model reads the file itself.
 
-// shortcut: only a mention at the end of the text is completed (where one types); upgrade to the cursor position
-// if mid-text completion is missed.
+// shortcut: only a mention at the end of the text is completed, track the cursor if mid-text completion is missed.
 /// The partial path after a trailing `@`, if the editor ends with one (`fix @src/ma` → `src/ma`).
 pub fn query(input: &str) -> Option<&str> {
     let start = input.rfind(|c: char| c.is_whitespace()).map_or(0, |i| i + 1);

@@ -6,8 +6,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// Titles already read, by file and modification time: a title is found by reading the whole file (its name can
-/// be anywhere), so each file is read again only when it changed.
+/// Titles already read, by file and modification time: finding one reads the whole file, so only changed files are reread.
 pub type TitleCache = HashMap<PathBuf, (SystemTime, String)>;
 
 const TITLE_CHARS: usize = 60;
@@ -26,11 +25,10 @@ pub fn home() -> PathBuf {
 }
 
 /// Pi's folder name for a cwd: separators and `:` become `-`, wrapped in `--`.
-// shortcut: default session dir only, ignores `--session-dir` and settings; read Pi's setting if someone moves it.
+// shortcut: default session dir only (ignores `--session-dir` and settings), read Pi's setting if someone moves it.
 pub fn dir_for(cwd: &Path) -> PathBuf {
     let s = cwd.to_string_lossy();
-    // Pi names the folder after its plain cwd: no verbatim `\\?\` prefix, no trailing separator.
-    // (Case does not matter: Windows folder names are case-insensitive.)
+    // Pi names the folder after its plain cwd: no verbatim `\\?\` prefix, no trailing separator. Case does not matter.
     let s = s.strip_prefix(r"\\?\").unwrap_or(&s).trim_end_matches(['/', '\\']);
     let name: String = s.trim_start_matches(['/', '\\']).chars().map(|c| if matches!(c, '/' | '\\' | ':') { '-' } else { c }).collect();
     home().join(".pi/agent/sessions").join(format!("--{name}--"))
@@ -139,8 +137,8 @@ pub fn search(path: &Path, query: &str) -> Option<String> {
 fn snippet(text: &str, q: &str) -> Option<String> {
     let lower = text.to_lowercase();
     let at = lower.find(q)?;
-    // Positions in `lower` are positions in `text` only if every character keeps its byte length when lowercased
-    // (equal total lengths are not enough); otherwise the excerpt is shown in lowercase rather than cut a character.
+    // Positions in `lower` match `text` only if every character keeps its byte length when lowercased.
+    // Otherwise the excerpt is shown in lowercase rather than cut mid-character.
     let same_offsets = text.chars().all(|c| {
         let mut l = c.to_lowercase();
         matches!((l.next(), l.next()), (Some(x), None) if x.len_utf8() == c.len_utf8())
@@ -230,15 +228,15 @@ mod tests {
         let named = concat!(
             r#"{"type":"message","message":{"role":"user","content":"ls"}}"#,
             "\n",
-            r#"{"type":"session_info","id":"a","name":"Ancien nom"}"#,
+            r#"{"type":"session_info","id":"a","name":"Old name"}"#,
             "\n",
-            r#"{"type":"message","message":{"role":"user","content":"encore"}}"#,
+            r#"{"type":"message","message":{"role":"user","content":"again"}}"#,
             "\n",
-            r#"{"type":"session_info","id":"b","name":"Refonte du parseur"}"#,
+            r#"{"type":"session_info","id":"b","name":"Parser rewrite"}"#,
             "\n",
         );
         std::fs::write(&path, named).unwrap();
-        assert_eq!(title_of(&path), "Refonte du parseur", "the last name wins over the first prompt");
+        assert_eq!(title_of(&path), "Parser rewrite", "the last name wins over the first prompt");
         std::fs::write(&path, r#"{"type":"session","version":3}"#).unwrap();
         assert_eq!(title_of(&path), path.file_stem().unwrap().to_string_lossy());
 

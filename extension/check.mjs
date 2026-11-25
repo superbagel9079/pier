@@ -286,7 +286,7 @@ r = await call("bash", { command: "npm test && rm x" });
 check(r.env.allowAs === null, "a chained command is never offered");
 r = await call("write", { path: "x.txt", content: "x" });
 check(Array.isArray(r.env.risks) && r.env.risks.length === 0 && r.env.allowAs === null, "write: no risks, nothing to allowlist");
-// Third audit: what got past the checks above.
+// Allowlist bypasses: escapes, colon-bound paths, parent paths, hidden characters.
 writeFileSync(process.env.PIER_ALLOWLIST, JSON.stringify({ commands: ["git status", "ls", "git diff"] }));
 for (const command of [
   String.raw`ls \/\/attacker/share`,
@@ -344,7 +344,7 @@ for (const [command, offer] of [
   check(r.env.allowAs === offer, `always allow ${JSON.stringify(command)} -> ${JSON.stringify(offer)} (got ${JSON.stringify(r.env.allowAs)})`);
 }
 
-// Badges the first version missed.
+// Risk badges for flag order, Unicode dashes, force pushes and direction-changing characters.
 for (const [command, why] of [
   ["rm -v -rf build", "deletes recursively"],
   ["Remove-Item x \u2013Recurse", "deletes recursively"],

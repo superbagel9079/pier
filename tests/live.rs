@@ -1,6 +1,5 @@
-//! Tests against the real Pi over the network, ignored by default (each costs a little):
+//! Tests against the real Pi over the network, ignored by default (each costs a little). Run one at a time:
 //! `$env:PIER_TEST_MODEL='openrouter/...'; cargo test --test live -- --ignored --test-threads=1`.
-//! Run one at a time: several Pi starting together compete for the same session folder and the network.
 
 use pier::pi::process::Process;
 use pier::pi::protocol::{Command, StreamingBehavior};
@@ -17,10 +16,10 @@ fn live_prompt_steer_and_stop() {
     let mut p = Process::spawn(&args, || {}).unwrap();
     let mut t = Transcript::default();
 
-    p.send(&prompt("Reply with exactly the word: bonjour")).unwrap();
+    p.send(&prompt("Reply with exactly the word: pineapple")).unwrap();
     pump(&mut p, &mut t, &|t| t.entries.iter().any(|e| e.kind == Kind::Assistant) && !t.state.is_running(), 60);
     let reply: String = t.entries.iter().filter(|e| e.kind == Kind::Assistant).map(|e| e.text.clone()).collect();
-    assert!(reply.to_lowercase().contains("bonjour"), "reply: {reply:?} errors: {:?}", t.entries);
+    assert!(reply.to_lowercase().contains("pineapple"), "reply: {reply:?} errors: {:?}", t.entries);
 
     p.send(&prompt("Count from 1 to 3000 in words, one per line.")).unwrap();
     pump(&mut p, &mut t, &|t| t.state.is_running() && t.entries.last().is_some_and(|e| e.text.len() > 200), 60);
@@ -154,7 +153,7 @@ fn live_resume_session() {
     let resume = [&args[..], &["--session".into(), file.to_string_lossy().into_owned()]].concat();
     let (mut p, mut t) = (Process::spawn(&resume, || {}).unwrap(), Transcript::default());
     p.send(&Command::GetMessages).unwrap();
-    pump(&mut p, &mut t, &|t| t.supervised() && t.entries.iter().any(|e| e.text == "— session resumed —"), 30);
+    pump(&mut p, &mut t, &|t| t.supervised() && t.entries.iter().any(|e| e.text == "Session resumed."), 30);
     assert!(t.entries.iter().any(|e| e.kind == Kind::User && e.text.contains("zebra-42")), "history: {:#?}", t.entries);
 
     p.send(&prompt("What was the code word? Reply with it only.")).unwrap();
@@ -382,8 +381,7 @@ fn live_slash_commands_listed() {
     assert!(!t.entries.iter().any(|e| e.kind == Kind::Error), "{:?}", t.entries);
 }
 
-/// Write then edit a file: each approval carries a diff preview, and the edit's exact patch from Pi lands in the
-/// transcript.
+/// Write then edit a file: each approval carries a diff preview, and Pi's exact edit patch lands in the transcript.
 #[test]
 #[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
 fn live_diff_preview_and_edit_patch() {
@@ -516,7 +514,7 @@ fn live_fork_with_files_restored() {
     assert!(checkpoint.is_some(), "the first message has its checkpoint");
     ws.tabs[0].fork(&target.entry_id, checkpoint);
     run(&mut ws, &|t| {
-        t.input == first && t.t.session_file.as_ref() != Some(&original) && t.t.entries.iter().any(|e| e.text.starts_with("— forked"))
+        t.input == first && t.t.session_file.as_ref() != Some(&original) && t.t.entries.iter().any(|e| e.text.starts_with("Forked"))
     });
 
     let tab = &ws.tabs[0];

@@ -39,7 +39,7 @@ pub enum Kind {
 pub struct Entry {
     pub kind: Kind,
     pub text: String,
-    /// For tool entries: the call id, linking a call to its result (for tool cards later).
+    /// For tool entries: the call id, linking a call to its result.
     pub tool_id: Option<String>,
     /// For a tool call: `Some(true)` once it ran fine, `Some(false)` if it failed or was refused.
     pub ok: Option<bool>,
@@ -97,7 +97,7 @@ pub struct Transcript {
     pub approvals: VecDeque<Approval>,
     /// Pi's session file, from `get_state` (or the one being resumed): two Pi writing one file would corrupt it.
     pub session_file: Option<PathBuf>,
-    /// Lines for the tab's journal file (G.34); the UI writes them out.
+    /// Lines for the tab's journal file; the UI writes them out.
     pub journal: Vec<Record>,
     /// Current model and thinking level, from `get_state`.
     pub model: Option<ModelInfo>,
@@ -147,9 +147,8 @@ impl Transcript {
         self.entries.len() - 1
     }
 
-    /// Commands matching what is typed while the editor holds only `/` and a partial name: names starting with it
-    /// first, then names containing it. Empty once a space follows the name (the user is writing arguments).
-    /// All matches: the palette shows the first `PALETTE_MAX` and says how many there are.
+    /// Commands matching a typed `/partial`: names starting with it first, then names containing it.
+    /// Empty once a space follows the name (the user is writing arguments).
     pub fn matching_commands(&self, input: &str) -> Vec<&PiCommand> {
         let Some(query) = input.strip_prefix('/') else { return vec![] };
         if query.contains(char::is_whitespace) {
@@ -285,8 +284,7 @@ impl Transcript {
                 self.thinking_levels = serde_json::from_value(data["levels"].clone()).unwrap_or_default();
             }
             Event::Response { command, .. } if command == "set_model" || command == "set_thinking_level" => {
-                // Pi may clamp the thinking level to the new model: read both back instead of guessing.
-                // A new model also has a new context window.
+                // Pi may clamp the thinking level and the context window changes: read both back.
                 self.outbox.extend([Command::GetState, Command::GetAvailableThinkingLevels, Command::GetSessionStats]);
             }
             Event::Response { command, .. } if command == "set_session_name" => self.outbox.push(Command::GetState),
@@ -307,7 +305,7 @@ impl Transcript {
             Event::ExtensionUiRequest(req) => match req {
                 // Dialogs block Pi until answered.
                 UiRequest::Confirm { id, title, message, timeout } => self.request_approval(id, title, message, *timeout, at),
-                // shortcut: other dialogs are refused (fail-closed); add them when an extension Pier relies on needs them.
+                // shortcut: other dialogs are refused (fail-closed), add them when an extension Pier relies on needs them.
                 UiRequest::Select { id, title } | UiRequest::Input { id, title } | UiRequest::Editor { id, title } => {
                     self.push(Kind::Notice, format!("Dialog \"{title}\" denied (type not handled by Pier)."));
                     self.outbox.push(Command::cancel_dialog(id));
@@ -360,10 +358,10 @@ impl Transcript {
             }
         }
         if std::mem::take(&mut self.forked) {
-            self.push(Kind::Notice, "— forked: a new session goes on from here; the original is in Resume —");
+            self.push(Kind::Notice, "Forked: a new session goes on from here; the original is in Resume.");
             self.entries.extend(self.carried.take());
         } else if !list.is_empty() {
-            self.push(Kind::Notice, "— session resumed —");
+            self.push(Kind::Notice, "Session resumed.");
         }
     }
 
@@ -398,8 +396,7 @@ impl Transcript {
             return;
         }
         self.journal.push(Record::Forked { from: self.session_file.clone() });
-        // Files restored for this fork: their undo point stays reachable.
-        // Notices (extension restarts) may follow it, but no conversation.
+        // Files restored for this fork keep their undo point; only notices, no conversation, may follow it.
         let last = self.entries.iter().rposition(|e| matches!(e.kind, Kind::Checkpoint | Kind::User | Kind::Assistant | Kind::Tool));
         self.carried = last.filter(|&i| self.entries[i].kind == Kind::Checkpoint).map(|i| self.entries[i].clone());
         self.entries.clear();
@@ -414,8 +411,8 @@ impl Transcript {
         self.outbox.extend([Command::GetState, Command::GetMessages, Command::GetSessionStats]);
     }
 
-    /// A tool finished: marks its call entry and adds a result line, both tagged with the call id. An edit's exact
-    /// patch goes on the result line, where the transcript shows it.
+    /// A tool finished: marks its call entry and adds a result line tagged with the call id.
+    /// An edit's exact patch goes on the result line, where the transcript shows it.
     fn tool_result(&mut self, id: Option<&str>, tool_name: &str, is_error: bool, patch: Option<String>) {
         if let Some(id) = id
             && let Some(call) = self.entries.iter_mut().rev().find(|e| e.tool_id.as_deref() == Some(id) && e.ok.is_none())
@@ -490,28 +487,28 @@ mod tests {
             &mut t,
             &[
                 r#"{"type":"agent_start"}"#,
-                r#"{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"salut"}]}}"#,
+                r#"{"type":"message_start","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#,
                 r#"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
                 r#"{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}"#,
                 r#"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"hmm"}}"#,
                 r#"{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":1}}"#,
-                r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Bon"}}"#,
-                r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"jour"}}"#,
+                r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Hel"}}"#,
+                r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"lo"}}"#,
             ],
         );
         assert_eq!(t.state, State::Running);
         let kinds: Vec<_> = t.entries.iter().map(|e| (e.kind, e.text.as_str())).collect();
-        assert_eq!(kinds, [(Kind::User, "salut"), (Kind::Thinking, "hmm"), (Kind::Assistant, "Bonjour")]);
+        assert_eq!(kinds, [(Kind::User, "hello"), (Kind::Thinking, "hmm"), (Kind::Assistant, "Hello")]);
 
         feed(
             &mut t,
             &[
-                r#"{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":1,"content":"Bonjour !"}}"#,
+                r#"{"type":"message_update","assistantMessageEvent":{"type":"text_end","contentIndex":1,"content":"Hello!"}}"#,
                 r#"{"type":"agent_settled","aborted":true}"#,
             ],
         );
         assert_eq!(t.state, State::Stopped);
-        assert_eq!(t.entries[2].text, "Bonjour !");
+        assert_eq!(t.entries[2].text, "Hello!");
         assert_eq!(t.entries.last().unwrap().kind, Kind::Notice);
     }
 
@@ -523,14 +520,14 @@ mod tests {
             &[
                 r#"{"type":"agent_start"}"#,
                 r#"{"type":"queue_update","steering":["stop"],"followUp":[]}"#,
-                r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["stop"],"followUp":["ensuite"]}}"#,
+                r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["stop"],"followUp":["then this"]}}"#,
                 r#"{"type":"response","command":"prompt","success":false,"error":"busy"}"#,
                 r#"{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"403"}}"#,
                 r#"{"type":"agent_settled"}"#,
             ],
         );
         assert_eq!(t.queued, [QueueItem { text: "stop".into(), after: false }]);
-        assert_eq!(t.restored, ["stop", "ensuite"]);
+        assert_eq!(t.restored, ["stop", "then this"]);
 
         // Taken back for editing: kept apart, with each message's kind, not dumped into the editor.
         t.restored.clear();
@@ -676,7 +673,7 @@ mod tests {
         );
         assert_eq!(t.session_file, Some(PathBuf::from("b.jsonl")));
         assert_eq!(t.entries.len(), 2);
-        assert!(t.entries[1].text.starts_with("— forked"), "not 'resumed': {:?}", t.entries[1].text);
+        assert!(t.entries[1].text.starts_with("Forked"), "not 'resumed': {:?}", t.entries[1].text);
 
         let before = t.entries.len();
         feed(&mut t, &[r#"{"type":"response","command":"fork","success":true,"data":{"cancelled":true}}"#]);
@@ -692,10 +689,10 @@ mod tests {
                 r#"{"type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:/s/a.jsonl","isStreaming":false}}"#,
                 r#"{"type":"response","command":"get_messages","success":true,"data":{"messages":[
                     {"role":"system","content":""},
-                    {"role":"user","content":"ls stp","timestamp":1},
+                    {"role":"user","content":"ls please","timestamp":1},
                     {"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"stopReason":"toolUse"},
                     {"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[],"isError":false},
-                    {"role":"assistant","content":[{"type":"text","text":"voilà"}],"stopReason":"error","errorMessage":"403"},
+                    {"role":"assistant","content":[{"type":"text","text":"there you go"}],"stopReason":"error","errorMessage":"403"},
                     {"role":"bashExecution","command":"x"}
                 ]}}"#,
             ],
@@ -705,13 +702,13 @@ mod tests {
         assert_eq!(
             got,
             [
-                (Kind::User, "ls stp"),
+                (Kind::User, "ls please"),
                 (Kind::Thinking, "hmm"),
                 (Kind::Tool, r#"bash {"command":"ls"}"#),
                 (Kind::Tool, "bash → ok"),
-                (Kind::Assistant, "voilà"),
+                (Kind::Assistant, "there you go"),
                 (Kind::Error, "403"),
-                (Kind::Notice, "— session resumed —"),
+                (Kind::Notice, "Session resumed."),
             ]
         );
         assert_eq!(t.state, State::Ready, "loading history starts no run");
@@ -881,11 +878,11 @@ mod tests {
         feed(
             &mut t,
             &[
-                r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["garde-moi"],"followUp":[]}}"#,
+                r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["keep me"],"followUp":[]}}"#,
                 r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":[],"followUp":[]}}"#,
             ],
         );
-        assert_eq!(t.restored, ["garde-moi"]);
+        assert_eq!(t.restored, ["keep me"]);
     }
 
     #[test]

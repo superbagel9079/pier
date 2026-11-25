@@ -93,7 +93,7 @@ impl ResumeWindow {
                     let when = s.modified.elapsed().map(|d| ago(d.as_secs())).unwrap_or_default();
                     let mut text = format!("{}  ·  {when}  ·  {} KB", s.title, s.bytes.div_ceil(1024));
                     if let Some(excerpt) = found.and_then(|f| f.get(&s.path)) {
-                        text.push_str(&format!("  —  {excerpt}"));
+                        text.push_str(&format!("  ·  {excerpt}"));
                     }
                     let label = egui::Label::new(if archived { egui::RichText::new(text).weak() } else { text.into() }).truncate();
                     ui.add(label).on_hover_text(s.path.display().to_string());

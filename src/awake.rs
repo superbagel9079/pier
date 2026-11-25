@@ -8,7 +8,7 @@ pub struct KeepAwake {
 }
 
 impl KeepAwake {
-    /// Asks for (or releases) the hold only when it changes. A failure is returned, not hidden.
+    /// Calls Windows only when the hold changes. A failure is returned, not hidden.
     pub fn set(&mut self, on: bool) -> std::io::Result<()> {
         if on != self.on {
             request(on)?;
@@ -41,7 +41,7 @@ fn request(on: bool) -> std::io::Result<()> {
     Ok(())
 }
 
-// shortcut: no-op outside Windows (Pier targets Windows); use the platform's inhibitor if it ever ships elsewhere.
+// shortcut: no-op outside Windows, use the platform's sleep inhibitor if Pier ships elsewhere.
 #[cfg(not(windows))]
 fn request(_on: bool) -> std::io::Result<()> {
     Ok(())

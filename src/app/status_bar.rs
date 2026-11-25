@@ -38,7 +38,7 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             if let Some(mode) = tab.mode().map(str::to_owned) {
                 mode_menu(tab, ui, &mode);
             } else if tab.t.state != State::Crashed {
-                ui.label(RichText::new("Not supervised — sending blocked").color(ui.visuals().error_fg_color))
+                ui.label(RichText::new("Not supervised: sending blocked").color(ui.visuals().error_fg_color))
                     .on_hover_text("Pier's approval extension has not reported in yet.");
             }
 
@@ -158,7 +158,7 @@ fn name_menu(tab: &mut Tab, ui: &mut egui::Ui) {
 /// Current model; the menu lists Pi's models (asked when it opens) with a search box, since providers can have hundreds.
 fn model_menu(tab: &mut Tab, ui: &mut egui::Ui) {
     let current = tab.t.model.as_ref().map(|m| m.name.clone().unwrap_or_else(|| m.id.clone())).unwrap_or_else(|| "?".into());
-    // Default menus close on any click inside, which made the search box unusable.
+    // Default menus close on any click inside, which would make the search box unusable.
     let config = MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside);
     // The search text is pure UI state: kept in egui's memory, not in the tab.
     let filter_id = ui.make_persistent_id(("model_filter", tab.id));

@@ -12,29 +12,28 @@ const READ_ONLY = new Set(["read", "grep", "find", "ls"]);
 const SHELLS = new Set(["bash", "powershell"]);
 // Pi auto-resolves the dialog to "not confirmed" after this; Pier shows the countdown.
 const TIMEOUT_MS = 60_000;
-// Version of the structured message Pier reads (the dialog message is this JSON, not decorated text).
+// Version of the structured JSON dialog message Pier reads.
 const ENVELOPE_VERSION = 1;
 // Shell paths that are not files the agent writes to.
 const HARMLESS = new Set(["/dev/null", "nul", "NUL", "$null"]);
 // Bigger files get no preview (they may be binary, and the dialog must stay responsive).
 const PREVIEW_MAX_BYTES = 2_000_000;
-// Pi's whole-file diff is synchronous and slows down sharply on large rewrites (3 s at 5000 lines, 63 s at 20000):
-// past this many lines on either side, write gets no preview and edit is previewed around its changes only.
+// Pi's whole-file diff is synchronous and slow on large rewrites: past this many lines on either side, write gets
+// no preview and edit is previewed around its changes only.
 const DIFF_MAX_FILE_LINES = 2000;
 // A longer diff is cut, and says so: the rest is not shown, never silently dropped.
 const PREVIEW_MAX_LINES = 3000;
-// Permission modes, set by Pier with `/pier-mode <key>`; the label is the status Pier shows (and reads back).
-// supervised: every tool that writes or runs asks. accept-edits: write/edit inside the working folder pass, the rest
-// asks. plan: everything that writes or runs is refused without asking.
+// Permission modes set by Pier with `/pier-mode <key>`; the label is the status Pier shows and reads back.
+// supervised: writes and runs ask. accept-edits: write/edit inside the folder pass. plan: writes and runs are refused.
 const MODES: Record<string, string> = { supervised: "Supervised", "accept-edits": "Accept edits", plan: "Plan (read-only)" };
-// Commands that pass without asking when the allowlist file does not exist yet: they only read. (Kept in step with
-// `allowlist::DEFAULTS` in Pier, which writes the file.) `git branch` is left out: with arguments it deletes.
+// Read-only commands allowed while the allowlist file does not exist; keep in sync with `allowlist::DEFAULTS`.
+// `git branch` is left out: with arguments it deletes.
 const DEFAULT_ALLOWED = ["ls", "dir", "pwd", "git status", "git diff", "git log", "git show", "Get-ChildItem", "Get-Location"];
 // Any of these makes a command more than one simple command (chaining, pipes, redirections, substitutions,
 // variables, PowerShell subexpressions and escapes): it then always asks, whatever the allowlist says.
 const SHELL_META = /[;&|<>`$()%!{}\r\n]/;
 // Reasons shown as a red badge; a command with one is never allowed by the allowlist. A hint, not a guarantee.
-// Checked on the command with dashes made plain (`–Recurse` with an en dash is still `-Recurse` to PowerShell).
+// Checked with Unicode dashes replaced by `-`, since PowerShell accepts them in parameter names.
 const RISKS: [RegExp, string][] = [
 	[/\brm\b[^\n]*\s(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)\b|\bRemove-Item\b[^\n]*-Recurse|\b(del|erase|rd|rmdir)\b[^\n]*\/[sS]\b/i, "deletes recursively"],
 	[/\b(curl|wget|iwr|Invoke-WebRequest|irm|Invoke-RestMethod)\b[^\n]*\|\s*(sh|bash|zsh|pwsh|powershell|iex|python|node)\b|\b(iex|Invoke-Expression)\b/i, "runs downloaded or generated code"],
@@ -51,8 +50,8 @@ function home(): string {
 	return process.env.USERPROFILE ?? process.env.HOME ?? homedir();
 }
 
-/** What the user reads to decide. The whole text, never cut: a harmless start must not hide the end.
- *  The path alone only for a write/edit whose real diff is shown next to it; any other tool shows all its arguments. */
+/** What the user reads to decide, never cut so a harmless start cannot hide the end. Only a write/edit with its
+ *  diff shown gets the path alone; any other tool shows all its arguments. */
 function detail(toolName: string, input: Record<string, unknown>, hasDiff: boolean): string {
 	if (SHELLS.has(toolName) && typeof input.command === "string") return input.command;
 	if ((toolName === "write" || toolName === "edit") && hasDiff && typeof input.path === "string") return input.path;
@@ -209,9 +208,8 @@ const RUNNERS = new Set(["cmd", "powershell", "pwsh", "bash", "sh", "zsh", "wsl"
 // Programs that only list, offered alone even with flags (`ls -la` → `ls`).
 const LISTERS = new Set(["ls", "dir", "pwd", "get-childitem", "gci", "get-location"]);
 
-/** What "always allow" would add: the program and its subcommand (`cargo build`), a lister alone, or nothing when the
- *  command could never be allowlisted or the program alone would allow too much (`git --no-pager log` → nothing,
- *  since `git` alone would also allow `git -c core.fsmonitor=… status`). Shown to the user as is. */
+/** What "always allow" would add: program and subcommand (`cargo build`), a lister alone, or nothing when the
+ *  program alone would allow too much (`git` would also allow `git -c core.fsmonitor=… status`). */
 function allowAs(command: string, cwd: string): string | null {
 	if (!simpleAndInside(command, cwd)) return null;
 	const all = words(command);

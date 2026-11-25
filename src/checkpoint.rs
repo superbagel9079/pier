@@ -1,11 +1,5 @@
-//! Checkpoints: the project folder's files saved before each message, to put them back later.
-//!
-//! A shadow git repository per folder, in `%APPDATA%\pier\checkpoints\`, with the folder as its work tree: the
-//! project's own git (branches, index, refs) is never touched, and folders without git work too. The project's
-//! `.gitignore` files are honored, so build output is not saved. Git must be installed.
-//!
-//! One `Worker` thread per folder, shared by every tab open on it: git operations on one shadow repository never
-//! run at the same time.
+//! Checkpoints: the project's files saved before each message, in a shadow git repository per folder under
+//! `%APPDATA%\pier\checkpoints\`. The project's own git is never touched; `.gitignore` is honored; git must be installed.
 
 use crate::pi::process::fingerprint;
 use std::io::Write;
@@ -101,8 +95,7 @@ impl Repo {
         Ok(out)
     }
 
-    /// `git add` that skips files another program holds open (a database, a running program) instead of failing:
-    /// returns the output and the files left out.
+    /// `git add` that skips files another program holds open instead of failing; returns the output and the skipped files.
     fn add(&self, args: &[&str]) -> Result<(Vec<u8>, Vec<String>), String> {
         let (ok, out, err) = self.run(args, None)?;
         let locked: Vec<String> =
@@ -188,10 +181,8 @@ impl Repo {
         Ok(Saved { id, locked })
     }
 
-    /// Puts the folder's files back as they were at `to`. `now`: a checkpoint of the current files, taken just
-    /// before (it is what lets the restore be undone). Files created since are removed, except nested repositories
-    /// and files under a `.gitignore` that changed since `to` (they may have existed, only ignored then). Every
-    /// file is tried; returns what was left as is, and fails only if the files could not be put back at all.
+    /// Puts the files back as at `to`; `now` is the undo checkpoint taken just before. Newer files are removed, except
+    /// nested repositories and files under a changed `.gitignore`. Best effort: returns the files left as is.
     pub fn restore(&self, to: &str, now: &str) -> Result<Vec<String>, String> {
         let raw = self.git(&["diff", "--raw", "-z", "--no-renames", "--no-abbrev", to, now], None)?;
         // `-z --raw`: ":<old mode> <new mode> <old id> <new id> <status>\0<path>\0" per change.
@@ -248,12 +239,11 @@ pub enum Job {
     ListFiles,
 }
 
-/// What it did.
+/// The checkpoint thread's answer to a `Job`.
 #[derive(Debug)]
 pub enum Done {
     Snapshot(Result<Saved, String>),
-    /// `undo`: the checkpoint of the files just before the restore. No restore happens without it. `result`: the
-    /// files left as they were.
+    /// `undo`: checkpoint of the files just before the restore (no restore without it). `result`: files left as is.
     Restored {
         to: String,
         undo: Result<Saved, String>,
@@ -262,8 +252,8 @@ pub enum Done {
     Files(Result<Vec<String>, String>),
 }
 
-/// The thread doing the git work of one folder, so a large folder never freezes the window. Jobs run in order,
-/// whichever tab sent them; each answer goes back to the tab that asked. The thread ends with the last `Arc`.
+/// One git thread per folder, shared by its tabs: jobs never overlap on one shadow repository and the window never
+/// freezes. Each answer goes back to the tab that asked; the thread ends with the last `Arc`.
 pub struct Worker {
     jobs: Sender<(Job, Sender<Done>)>,
 }

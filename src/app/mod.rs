@@ -31,8 +31,7 @@ fn open_in_editor(path: &Path) -> std::io::Result<()> {
     std::process::Command::new(opener).arg(path).spawn().map(drop)
 }
 
-/// Native folder dialog.
-// shortcut: blocks the window while open (tabs catch up right after; approval deadlines still apply), move to a thread if that bothers.
+// shortcut: blocks the window while open (approval deadlines still run), move to a thread if that bothers.
 fn pick_folder() -> Option<PathBuf> {
     rfd::FileDialog::new().set_title("Choose the project folder").pick_folder()
 }
@@ -134,7 +133,7 @@ impl PierApp {
         }
     }
 
-    /// One click = a new tab launched with the preset (B.10).
+    /// One click opens a new tab launched with the preset.
     fn presets_menu(&mut self, ui: &mut egui::Ui) {
         let mut pick = None;
         let r = ui.menu_button("Presets", |ui| {

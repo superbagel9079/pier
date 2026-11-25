@@ -15,12 +15,11 @@ fn main() -> eframe::Result {
         let args = pi_args.clone();
         eframe::run_native("Pier", options, Box::new(move |_cc| Ok(Box::new(app::PierApp::new(args)))))
     };
-    // OpenGL uses about 90 MB instead of 220, but it froze a whole PC on window resize (Intel Arc driver),
-    // so it is only the fallback, or a choice: PIER_RENDERER=glow.
+    // OpenGL uses less RAM but froze a whole PC on resize (Intel Arc driver): fallback or PIER_RENDERER=glow only.
     if std::env::var("PIER_RENDERER").is_ok_and(|r| r.eq_ignore_ascii_case("glow")) {
         return run(Renderer::Glow);
     }
-    // wgpu needs DirectX 12, Vulkan or OpenGL 3.3; older graphics get egui's own OpenGL renderer (2.0 and up).
+    // wgpu needs DirectX 12, Vulkan or OpenGL 3.3; older GPUs fall back to egui's OpenGL 2.0 renderer.
     run(Renderer::Wgpu).or_else(|e| {
         eprintln!("wgpu renderer failed ({e}); falling back to OpenGL");
         run(Renderer::Glow)

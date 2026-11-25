@@ -1,5 +1,5 @@
-//! Archived sessions: hidden from Pier's Resume window, kept in `%APPDATA%\pier\archived.json`. Pi's session files
-//! are never moved or changed, so Pi's own /resume still lists them.
+//! Archived sessions, hidden from Pier's Resume window and listed in `%APPDATA%\pier\archived.json`.
+//! Pi's session files are never touched, so Pi's own /resume still lists them.
 
 use crate::files::write_atomic;
 use std::collections::BTreeSet;
@@ -29,7 +29,7 @@ impl Archive {
         self.sessions.is_empty()
     }
 
-    /// Archives or brings back `session`, and saves the list. Reread first: another Pier window may have changed it.
+    /// Archives or restores `session` and saves. Rereads first: another Pier window may have changed the list.
     pub fn set(&mut self, session: &Path, archived: bool) -> std::io::Result<()> {
         self.sessions = Self::load(self.file.clone()).sessions;
         let changed = if archived { self.sessions.insert(session.to_path_buf()) } else { self.sessions.remove(session) };

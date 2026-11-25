@@ -1,4 +1,4 @@
-//! Per-tab JSONL journal (G.34): what Pi's own session file does not hold, above all the approval decisions.
+//! Per-tab JSONL journal of what Pi's session file does not hold, above all the approval decisions.
 
 use serde::Serialize;
 use std::fs::{File, OpenOptions};
@@ -82,7 +82,7 @@ fn now_ms() -> u128 {
 }
 
 /// One file per tab, written line by line and unbuffered so a crash loses nothing already logged.
-// shortcut: files are never rotated or pruned; they stay small (no stream text), add cleanup if the folder grows.
+// shortcut: journal files are never rotated or pruned, add cleanup if the folder grows.
 pub struct Journal {
     file: File,
     pub path: PathBuf,

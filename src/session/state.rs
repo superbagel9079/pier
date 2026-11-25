@@ -2,7 +2,7 @@
 
 use crate::pi::protocol::Event;
 
-/// shortcut: no `Spawned` (Pi sends no ready event); add it with tabs.
+/// shortcut: no `Spawned` state since Pi sends no ready event, add it with tabs.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum State {
     /// Waiting for a first prompt.
