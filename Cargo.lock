@@ -2411,6 +2411,7 @@ name = "pier"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "png",
  "rfd",
  "serde",
  "serde_json",

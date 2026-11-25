@@ -196,7 +196,7 @@ impl Transcript {
             Event::MessageStart { message } => match message.role {
                 // User messages appear when Pi actually reads them, so a queued steer shows up at the right place.
                 Role::User => {
-                    self.push(Kind::User, message.content.text());
+                    self.push(Kind::User, message.content.text_and_images());
                 }
                 Role::Assistant => self.blocks.clear(),
                 Role::Other => {}
@@ -296,7 +296,7 @@ impl Transcript {
         for raw in list {
             match serde_json::from_value::<HistoryMessage>(raw.clone()) {
                 Ok(HistoryMessage::User { content }) => {
-                    self.push(Kind::User, content.text());
+                    self.push(Kind::User, content.text_and_images());
                 }
                 Ok(HistoryMessage::Assistant { content, stop_reason, error_message }) => {
                     for part in content {

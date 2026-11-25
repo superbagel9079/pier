@@ -1,7 +1,9 @@
 //! The open tabs and what they do, without any UI: launching Pi in a folder, sending, stopping, closing,
 //! recent folders, and which state changes need the user. The egui layer only draws this and asks the user.
 
+use crate::attach::Image;
 use crate::checkpoint::{self, Done, Job, Repo, Worker};
+use crate::mention;
 use crate::pi::process::Process;
 use crate::pi::protocol::{Command, ModelInfo, StreamingBehavior};
 use crate::pi::sessions::{self, SavedSession};
@@ -64,6 +66,11 @@ pub struct Tab {
     restoring: bool,
     /// A fork (entry id) to send once its files are restored.
     fork_after_restore: Option<String>,
+    /// Images to send with the next message.
+    pub images: Vec<Image>,
+    /// The project's files, for `@` mentions; reread each time a new mention starts.
+    files: Vec<String>,
+    files_asked: bool,
 }
 
 impl Tab {
@@ -115,6 +122,9 @@ impl Tab {
             waiting: VecDeque::new(),
             restoring: false,
             fork_after_restore: None,
+            images: vec![],
+            files: vec![],
+            files_asked: false,
         };
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
@@ -184,21 +194,57 @@ impl Tab {
     /// Refused until Pier's approval extension has reported in: without it, tools would run unasked.
     pub fn submit(&mut self) {
         let text = self.input.trim().to_owned();
-        if text.is_empty() {
+        if text.is_empty() && self.images.is_empty() {
             return;
         }
         if !self.t.supervised() {
             self.t.entries.push(Entry::new(Kind::Error, "Not sent: Pi is not supervised."));
             return;
         }
+        if let Some(m) = self.t.model.as_ref().filter(|m| !self.images.is_empty() && !m.takes_images()) {
+            let msg = format!("Not sent: {} does not read images. Remove them or pick another model.", m.key());
+            self.t.entries.push(Entry::new(Kind::Error, msg));
+            return;
+        }
         // While a run is going (or about to), Pi requires a streamingBehavior; steer lands after the current turn.
         let running = self.t.state.is_running() || !self.waiting.is_empty();
-        let prompt = Command::Prompt { message: text, streaming_behavior: running.then_some(StreamingBehavior::Steer) };
+        let images = std::mem::take(&mut self.images).iter().map(Image::to_content).collect();
+        let prompt = Command::Prompt { message: text, streaming_behavior: running.then_some(StreamingBehavior::Steer), images };
         match &self.checkpoints {
             Some(w) if w.send(Job::Snapshot) => self.waiting.push_back(prompt),
             _ => self.send(prompt),
         }
         self.input.clear();
+    }
+
+    /// While the editor ends with `@partial`: matching project files (the first `max`) and how many match in all.
+    /// The file list is asked for once per mention, so files created meanwhile show up next time.
+    pub fn file_suggestions(&mut self, max: usize) -> Option<(Vec<String>, usize)> {
+        let Some(query) = mention::query(&self.input) else {
+            self.files_asked = false;
+            return None;
+        };
+        if !self.files_asked {
+            self.files_asked = true;
+            if let Some(w) = &self.checkpoints {
+                w.send(Job::ListFiles);
+            }
+        }
+        let found = mention::matching(&self.files, query);
+        Some((found.iter().take(max).map(|s| s.to_string()).collect(), found.len()))
+    }
+
+    /// Replaces the trailing `@partial` with the picked file.
+    pub fn mention(&mut self, path: &str) {
+        self.input = mention::insert(&self.input, path);
+    }
+
+    /// Adds an image to the next message; a refused one is said in the transcript.
+    pub fn attach(&mut self, image: Result<Image, String>) {
+        match image {
+            Ok(i) => self.images.push(i),
+            Err(e) => self.t.entries.push(Entry::new(Kind::Error, format!("Image not attached: {e}"))),
+        }
     }
 
     /// A run is going, or a message, a restore or a fork is on its way.
@@ -226,8 +272,10 @@ impl Tab {
             match e.kind {
                 Kind::Checkpoint if e.text == BEFORE_MESSAGE => pending.extend(e.checkpoint.clone()),
                 Kind::User => {
+                    // Pi's fork list gives the text alone; the transcript may add " (+1 image)".
+                    let same = e.text.strip_prefix(text).is_some_and(|rest| rest.is_empty() || rest.starts_with(" (+"));
                     if let Some(id) = pending.pop_front()
-                        && e.text == text
+                        && same
                     {
                         found = Some(id);
                     }
@@ -276,6 +324,8 @@ impl Tab {
             t.entries.push(Entry { checkpoint: Some(id), ..Entry::new(Kind::Checkpoint, text) });
         };
         match done {
+            Done::Files(Ok(files)) => self.files = files,
+            Done::Files(Err(e)) => self.t.entries.push(Entry::new(Kind::Notice, format!("File list unavailable for @: {e}"))),
             Done::Snapshot(result) => {
                 match result {
                     Ok(id) => saved(&mut self.t, id, BEFORE_MESSAGE),
@@ -357,6 +407,9 @@ impl Tab {
             waiting: VecDeque::new(),
             restoring: false,
             fork_after_restore: None,
+            images: vec![],
+            files: vec![],
+            files_asked: false,
         }
     }
 }
@@ -654,6 +707,38 @@ mod tests {
         assert!(tab.t.journal.iter().any(|r| matches!(r, Record::CheckpointRestored { .. })));
         drop(tab);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn images_wait_for_a_model_that_reads_them_and_mentions_complete() {
+        use crate::pi::protocol::ModelInfo;
+        let mut tab = Tab::detached("a");
+        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
+        let model = |input: &[&str]| ModelInfo {
+            id: "m".into(),
+            provider: "p".into(),
+            name: None,
+            reasoning: false,
+            input: input.iter().map(|s| s.to_string()).collect(),
+        };
+        tab.t.model = Some(model(&["text"]));
+        tab.attach(Image::from_rgba(1, 1, &[0, 0, 0, 255]));
+        tab.attach(Err("big.png: too big".into()));
+        assert_eq!(tab.images.len(), 1);
+        tab.submit();
+        assert_eq!(tab.images.len(), 1, "kept: the model would not see it");
+        assert!(tab.t.entries.last().unwrap().text.contains("does not read images"));
+        tab.t.model = Some(model(&["text", "image"]));
+        tab.submit();
+        assert!(tab.images.is_empty(), "an image alone, without text, is a message too");
+
+        tab.files = ["src/main.rs", "src/app/mod.rs"].map(String::from).to_vec();
+        tab.input = "look at @mai".into();
+        assert_eq!(tab.file_suggestions(8), Some((vec!["src/main.rs".to_owned()], 1)));
+        tab.mention("src/main.rs");
+        assert_eq!(tab.input, "look at @src/main.rs ");
+        assert_eq!(tab.file_suggestions(8), None);
+        assert!(!tab.files_asked, "the next @ asks for a fresh list");
     }
 
     #[test]

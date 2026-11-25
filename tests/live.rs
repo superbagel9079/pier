@@ -24,7 +24,7 @@ fn live_prompt_steer_and_stop() {
 
     p.send(&prompt("Count from 1 to 3000 in words, one per line.")).unwrap();
     pump(&mut p, &mut t, &|t| t.state.is_running() && t.entries.last().is_some_and(|e| e.text.len() > 200), 60);
-    p.send(&Command::Prompt { message: "STEER-MARK".into(), streaming_behavior: Some(StreamingBehavior::Steer) }).unwrap();
+    p.send(&Command::prompt("STEER-MARK", Some(StreamingBehavior::Steer))).unwrap();
     pump(&mut p, &mut t, &|t| !t.queued.is_empty(), 15);
     assert_eq!(t.queued, ["STEER-MARK"], "steer should be visible as queued");
 
@@ -40,7 +40,7 @@ fn live_prompt_steer_and_stop() {
 }
 
 fn prompt(message: &str) -> Command {
-    Command::Prompt { message: message.into(), streaming_behavior: None }
+    Command::prompt(message, None)
 }
 
 /// Pier's extension is active, an allowed bash call runs, a refused one does not.
@@ -530,5 +530,42 @@ fn live_fork_with_files_restored() {
         let _ = std::fs::remove_file(f);
     }
     let _ = std::fs::remove_dir(original.parent().unwrap());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A pasted image reaches the model: a plain red square is described as red, and the message shows it carried one.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_image_reaches_the_model() {
+    use pier::attach::Image;
+    use pier::workspace::{Launch, Tab, Workspace};
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL (a model that reads images)");
+    let dir = std::env::temp_dir().join(format!("pier-image-live-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ws = Workspace::new(["--no-session", "--model", &model].map(String::from).to_vec(), dir.join("recent.json"));
+    ws.open(&dir, Launch::New, || {});
+    let run = |ws: &mut Workspace, until: &dyn Fn(&Tab) -> bool| {
+        let end = Instant::now() + Duration::from_secs(90);
+        while Instant::now() < end {
+            ws.update(Instant::now());
+            ws.flush();
+            if until(&ws.tabs[0]) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("timed out: {:#?}", ws.tabs[0].t.entries);
+    };
+    run(&mut ws, &|t| t.t.supervised() && t.t.model.is_some());
+    let red: Vec<u8> = (0..32 * 32).flat_map(|_| [220, 20, 20, 255]).collect();
+    ws.tabs[0].attach(Image::from_rgba(32, 32, &red));
+    ws.tabs[0].input = "What is the main color of this image? Answer with one word.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| t.t.state == State::Completed && t.t.entries.iter().any(|e| e.kind == Kind::Assistant));
+    let t = &ws.tabs[0].t;
+    assert!(t.entries.iter().any(|e| e.kind == Kind::User && e.text.ends_with("(+1 image)")), "{:#?}", t.entries);
+    let reply: String = t.entries.iter().filter(|e| e.kind == Kind::Assistant).map(|e| e.text.to_lowercase()).collect();
+    assert!(reply.contains("red"), "the model saw the image: {reply:?}");
+    drop(ws);
     let _ = std::fs::remove_dir_all(&dir);
 }

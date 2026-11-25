@@ -116,6 +116,22 @@ impl Repo {
         Ok(())
     }
 
+    /// The folder's files, `/`-separated and sorted, without ignored ones (for `@` mentions); at most `MAX_FILES`.
+    pub fn list_files(&self) -> Result<Vec<String>, String> {
+        self.init()?;
+        // Saved by the last checkpoint, or new since; a file deleted since the checkpoint is filtered out below.
+        let out = self.git(&["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"], None)?;
+        let mut files: Vec<String> = out
+            .split(|b| *b == 0)
+            .filter(|p| !p.is_empty())
+            .map(|p| String::from_utf8_lossy(p).into_owned())
+            .filter(|p| self.work.join(p).is_file())
+            .take(MAX_FILES)
+            .collect();
+        files.sort();
+        Ok(files)
+    }
+
     /// Saves the folder's files as they are now; returns the checkpoint id.
     pub fn snapshot(&self) -> Result<String, String> {
         self.init()?;
@@ -159,6 +175,8 @@ pub enum Job {
     Snapshot,
     /// Restore to this checkpoint, after saving the current files.
     Restore(String),
+    /// List the folder's files, for `@` mentions.
+    ListFiles,
 }
 
 /// What it did.
@@ -171,6 +189,7 @@ pub enum Done {
         undo: Result<String, String>,
         result: Result<(), String>,
     },
+    Files(Result<Vec<String>, String>),
 }
 
 /// A thread per tab doing the git work, so a large folder never freezes the window. Jobs run in order.
@@ -196,6 +215,7 @@ impl Worker {
                         };
                         Done::Restored { to, undo, result }
                     }
+                    Job::ListFiles => Done::Files(repo.list_files()),
                 };
                 if finished.send(result).is_err() {
                     break;
@@ -255,6 +275,13 @@ mod tests {
         repo.restore(&after, &now).unwrap();
         assert_eq!(fs::read_to_string(w.join("a.txt")).unwrap(), "two", "undo");
         assert!(w.join("src/new [1].rs").exists() && !w.join("gone.txt").exists());
+
+        fs::write(w.join("fresh.md"), "not in any checkpoint").unwrap();
+        assert_eq!(
+            repo.list_files().unwrap(),
+            [".gitignore", "a.txt", "fresh.md", "src/b.rs", "src/new [1].rs"],
+            "new files in, deleted and ignored ones out"
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 

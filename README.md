@@ -27,6 +27,9 @@ it. It is not the default because it froze a whole PC on window resize with an I
 - **Presets**: model, thinking level, tools, folder and instructions, launched in one click.
 - **Model and thinking level** switchable inside a tab, **context gauge** and session cost.
 - **`/` palette** of Pi's commands, prompt templates and skills.
+- **`@` mentions** of the project's files (ignored files left out): as in Pi, only the path goes into the message.
+- **Images**: paste a screenshot (Ctrl+V), drop an image file on the window, or Attach image… (PNG, JPEG, GIF,
+  WebP, 10 MB at most). Sending is refused when the model does not read images.
 - **Journal**: one JSONL file per tab: tab opened, runs, every approval requested and decided.
 - The taskbar flashes when a background tab waits for an approval; Windows does not sleep while a run is going.
 
@@ -98,7 +101,8 @@ src/
   pi/                 talking to Pi: process (Job Object, threads), protocol (serde types), sessions (on disk)
   session/            the model: transcript (stream, history, approvals), state, journal, diff
   workspace.rs        the tabs: launch, send, Stop, close, what needs the user's attention
-  checkpoint.rs       saving and restoring the folder's files (shadow git repository)
+  checkpoint.rs       saving and restoring the folder's files (shadow git repository), file list for @
+  mention.rs, attach.rs  @ file mentions, attached images
   presets.rs, recent.rs, files.rs, awake.rs
   main.rs, app/       the egui interface: it draws and asks, with no session logic
 extension/            the Pi approval extension and its self-check

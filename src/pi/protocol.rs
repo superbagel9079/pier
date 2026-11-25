@@ -11,6 +11,8 @@ pub enum Command {
         message: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         streaming_behavior: Option<StreamingBehavior>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        images: Vec<ImageContent>,
     },
     ClearQueue,
     Abort,
@@ -59,6 +61,24 @@ impl Command {
     pub fn cancel_dialog(id: &str) -> Self {
         Command::ExtensionUiResponse { id: id.to_owned(), confirmed: None, cancelled: Some(true) }
     }
+}
+
+impl Command {
+    /// A prompt with text only.
+    pub fn prompt(message: impl Into<String>, streaming_behavior: Option<StreamingBehavior>) -> Self {
+        Command::Prompt { message: message.into(), streaming_behavior, images: vec![] }
+    }
+}
+
+/// An image sent with a prompt (Pi's `ImageContent`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageContent {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    /// Base64.
+    pub data: String,
+    pub mime_type: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -176,10 +196,25 @@ impl Content {
             Content::Parts(parts) => parts.iter().filter_map(|p| p.text.as_deref()).collect(),
         }
     }
+
+    /// The text, with ` (+N images)` when images came with it.
+    pub fn text_and_images(&self) -> String {
+        let images = match self {
+            Content::Text(_) => 0,
+            Content::Parts(parts) => parts.iter().filter(|p| p.kind == "image").count(),
+        };
+        match images {
+            0 => self.text(),
+            1 => format!("{} (+1 image)", self.text()),
+            n => format!("{} (+{n} images)", self.text()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Part {
+    #[serde(rename = "type", default)]
+    pub kind: String,
     #[serde(default)]
     pub text: Option<String>,
 }
@@ -291,9 +326,17 @@ pub struct ModelInfo {
     /// Supports thinking levels beyond `off`.
     #[serde(default)]
     pub reasoning: bool,
+    /// What the model reads: `text`, `image`.
+    #[serde(default)]
+    pub input: Vec<String>,
 }
 
 impl ModelInfo {
+    /// Unknown (no `input` list) counts as yes: Pi or the provider will say if not.
+    pub fn takes_images(&self) -> bool {
+        self.input.is_empty() || self.input.iter().any(|i| i == "image")
+    }
+
     /// `provider/id`, the form `--model` takes.
     pub fn key(&self) -> String {
         format!("{}/{}", self.provider, self.id)
@@ -471,10 +514,16 @@ mod tests {
 
     #[test]
     fn commands_serialize_to_pi_shapes() {
-        let steer = Command::Prompt { message: "go".into(), streaming_behavior: Some(StreamingBehavior::Steer) };
+        let steer = Command::prompt("go", Some(StreamingBehavior::Steer));
         assert_eq!(serde_json::to_value(steer).unwrap(), json!({"type": "prompt", "message": "go", "streamingBehavior": "steer"}));
-        let plain = Command::Prompt { message: "go".into(), streaming_behavior: None };
+        let plain = Command::prompt("go", None);
         assert_eq!(serde_json::to_value(plain).unwrap(), json!({"type": "prompt", "message": "go"}));
+        let image = ImageContent { kind: "image", data: "AAA=".into(), mime_type: "image/png".into() };
+        let with_image = Command::Prompt { message: "look".into(), streaming_behavior: None, images: vec![image] };
+        assert_eq!(
+            serde_json::to_value(with_image).unwrap(),
+            json!({"type": "prompt", "message": "look", "images": [{"type": "image", "data": "AAA=", "mimeType": "image/png"}]})
+        );
         assert_eq!(serde_json::to_value(Command::ClearQueue).unwrap(), json!({"type": "clear_queue"}));
         let fork = Command::Fork { entry_id: "abc".into() };
         assert_eq!(serde_json::to_value(fork).unwrap(), json!({"type": "fork", "entryId": "abc"}));
@@ -505,6 +554,7 @@ mod tests {
             panic!()
         };
         assert_eq!(message.content.text(), "ab");
+        assert_eq!(message.content.text_and_images(), "ab (+1 image)");
         assert_eq!(
             ev(r#"{"type":"message_update","assistantMessageEvent":{"type":"start"}}"#),
             Event::MessageUpdate { assistant_message_event: StreamEvent::Other }
