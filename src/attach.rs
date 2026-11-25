@@ -1,4 +1,5 @@
 //! Images attached to a message: from a file (picked or dropped) or pasted from the clipboard, sent to Pi as base64.
+//! Reading, PNG encoding and base64 run on a short thread, so a large screenshot never stalls the window.
 
 use crate::pi::protocol::ImageContent;
 use std::path::Path;
@@ -10,8 +11,10 @@ pub const MAX_BYTES: usize = 10 * 1024 * 1024;
 pub struct Image {
     /// File name, or "pasted image".
     pub name: String,
-    pub mime: &'static str,
-    pub data: Vec<u8>,
+    /// Size of the image file, for display.
+    pub bytes: usize,
+    /// Ready to send: encoded once, when attached.
+    pub content: ImageContent,
 }
 
 /// The image type, read from the file's first bytes (an extension can lie).
@@ -25,16 +28,24 @@ fn sniff(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
+fn too_big(name: &str, bytes: usize) -> String {
+    format!("{name}: {} MB, more than {} MB", bytes / (1024 * 1024), MAX_BYTES / (1024 * 1024))
+}
+
 impl Image {
+    fn new(name: String, mime: &'static str, data: &[u8]) -> Self {
+        Self { name, bytes: data.len(), content: ImageContent { kind: "image", data: base64(data), mime_type: mime.into() } }
+    }
+
     pub fn from_file(path: &Path) -> Result<Self, String> {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.display().to_string());
         let size = std::fs::metadata(path).map_err(|e| format!("{name}: {e}"))?.len();
         if size > MAX_BYTES as u64 {
-            return Err(format!("{name}: {} MB, more than {} MB", size / (1024 * 1024), MAX_BYTES / (1024 * 1024)));
+            return Err(too_big(&name, size as usize));
         }
         let data = std::fs::read(path).map_err(|e| format!("{name}: {e}"))?;
         let mime = sniff(&data).ok_or_else(|| format!("{name}: not a PNG, JPEG, GIF or WebP image"))?;
-        Ok(Self { name, mime, data })
+        Ok(Self::new(name, mime, &data))
     }
 
     /// A pasted image, as egui gives it: `width` × `height` RGBA pixels, encoded to PNG.
@@ -45,17 +56,9 @@ impl Image {
         encoder.set_depth(png::BitDepth::Eight);
         encoder.write_header().and_then(|mut w| w.write_image_data(rgba)).map_err(|e| format!("pasted image: {e}"))?;
         if data.len() > MAX_BYTES {
-            return Err(format!(
-                "pasted image: {} MB once encoded, more than {} MB",
-                data.len() / (1024 * 1024),
-                MAX_BYTES / (1024 * 1024)
-            ));
+            return Err(too_big("pasted image", data.len()));
         }
-        Ok(Self { name: "pasted image".into(), mime: "image/png", data })
-    }
-
-    pub fn to_content(&self) -> ImageContent {
-        ImageContent { kind: "image", data: base64(&self.data), mime_type: self.mime.into() }
+        Ok(Self::new("pasted image".into(), "image/png", &data))
     }
 }
 
@@ -89,14 +92,16 @@ mod tests {
     #[test]
     fn pasted_pixels_become_a_png_and_files_are_checked() {
         let img = Image::from_rgba(2, 1, &[255, 0, 0, 255, 0, 255, 0, 255]).unwrap();
-        assert_eq!(sniff(&img.data), Some("image/png"));
-        assert_eq!(img.to_content().mime_type, "image/png");
+        assert_eq!(img.content.mime_type, "image/png");
+        assert!(img.content.data.starts_with("iVBORw0KGgo"), "a PNG signature, in base64");
 
         let dir = std::env::temp_dir().join(format!("pier-attach-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let png = dir.join("shot.png");
-        std::fs::write(&png, &img.data).unwrap();
-        assert_eq!(Image::from_file(&png).unwrap().data, img.data);
+        let raw = [0x89, b'P', b'N', b'G', 1, 2, 3];
+        std::fs::write(&png, raw).unwrap();
+        let from_file = Image::from_file(&png).unwrap();
+        assert_eq!((from_file.bytes, from_file.content.data), (raw.len(), base64(&raw)));
         let fake = dir.join("notes.png");
         std::fs::write(&fake, "just text").unwrap();
         assert!(Image::from_file(&fake).unwrap_err().contains("not a PNG"), "the content decides, not the extension");

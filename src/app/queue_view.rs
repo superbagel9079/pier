@@ -77,6 +77,6 @@ fn editor(tab: &mut Tab, ui: &mut egui::Ui) {
     if send {
         tab.send_queue_back();
     } else if discard {
-        tab.t.queue_draft = None;
+        tab.discard_queue();
     }
 }

@@ -116,7 +116,7 @@ src/
   lib.rs              the core, no egui
   pi/                 talking to Pi: process (Job Object, threads), protocol (serde types), sessions (on disk)
   session/            the model: transcript (stream, history, approvals), state, journal, diff
-  workspace/          the open tabs: tab.rs (one Pi session), browser.rs (Resume list), mod.rs (tabs together)
+  workspace/          the open tabs: tab/ (one Pi session, its checkpoints), browser.rs (Resume list), mod.rs
   checkpoint.rs       saving and restoring the folder's files (shadow git repository), file list for @
   complete.rs         / and @ completion in the editor
   attach.rs           attached images

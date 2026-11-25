@@ -93,6 +93,7 @@ pub struct PierApp {
 
 impl PierApp {
     pub fn new(pi_args: Vec<String>) -> Self {
+        std::thread::spawn(|| pier::checkpoint::prune(&pier::checkpoint::dir(), pier::checkpoint::KEPT_FOR));
         Self {
             ws: Workspace::new(pi_args, recent::path()),
             resume: Default::default(),

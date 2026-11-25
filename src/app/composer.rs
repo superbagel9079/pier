@@ -130,12 +130,17 @@ fn take_images(tab: &mut Tab, ui: &egui::Ui) {
         (pasted, i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect::<Vec<_>>())
     });
     for img in pasted {
-        // egui keeps premultiplied colors; PNG wants them straight.
-        let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
-        tab.attach(Image::from_rgba(img.size[0] as u32, img.size[1] as u32, &rgba));
+        tab.attach_later(move || {
+            // egui keeps premultiplied colors; PNG wants them straight.
+            let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
+            Image::from_rgba(img.size[0] as u32, img.size[1] as u32, &rgba)
+        });
     }
     for path in dropped {
-        tab.attach(Image::from_file(&path));
+        tab.attach_later(move || Image::from_file(&path));
+    }
+    if tab.preparing_images() > 0 {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(50)); // to show it once ready
     }
 }
 
@@ -144,7 +149,7 @@ fn attachments(tab: &mut Tab, ui: &mut egui::Ui) {
     ui.horizontal_wrapped(|ui| {
         let mut remove = None;
         for (i, img) in tab.images.iter().enumerate() {
-            let kb = img.data.len().div_ceil(1024);
+            let kb = img.bytes.div_ceil(1024);
             ui.label(format!("🖼 {} ({kb} KB)", img.name));
             if ui.small_button("×").on_hover_text("Remove this image").clicked() {
                 remove = Some(i);
@@ -158,8 +163,11 @@ fn attachments(tab: &mut Tab, ui: &mut egui::Ui) {
             // shortcut: blocks the window while open, like the folder picker.
             let picked = rfd::FileDialog::new().add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"]).pick_files();
             for path in picked.unwrap_or_default() {
-                tab.attach(Image::from_file(&path));
+                tab.attach_later(move || Image::from_file(&path));
             }
+        }
+        if tab.preparing_images() > 0 {
+            ui.weak("Preparing image…");
         }
     });
 }

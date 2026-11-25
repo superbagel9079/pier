@@ -20,6 +20,25 @@ const HEAD_REF: &str = "refs/pier/checkpoints";
 /// A gitlink: a nested repository, recorded as a commit id, not as files.
 const GITLINK_MODE: &str = "160000";
 
+/// A folder's checkpoints are dropped once it has gone this long without one: they are for undoing recent work.
+pub const KEPT_FOR: Duration = Duration::from_secs(30 * 24 * 3600);
+
+/// Deletes the shadow repositories under `root` whose last checkpoint is older than `max_age`; returns how many.
+/// Run at start, before any tab opens one.
+pub fn prune(root: &Path, max_age: Duration) -> usize {
+    let Ok(dirs) = std::fs::read_dir(root) else { return 0 };
+    dirs.filter_map(Result::ok)
+        .map(|d| d.path())
+        .filter(|repo| repo.extension().is_some_and(|x| x == "git"))
+        .filter(|repo| {
+            // update-ref rewrites this file at every checkpoint; a repository that never got one falls back to HEAD.
+            let last = [repo.join(HEAD_REF), repo.join("HEAD")].iter().find_map(|f| f.metadata().and_then(|m| m.modified()).ok());
+            last.and_then(|t| t.elapsed().ok()).is_some_and(|age| age > max_age)
+        })
+        .filter(|repo| std::fs::remove_dir_all(repo).is_ok())
+        .count()
+}
+
 pub fn dir() -> PathBuf {
     std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("pier").join("checkpoints")
 }
@@ -411,6 +430,24 @@ mod tests {
         assert_eq!(to, first.id);
         assert_eq!(fs::read_to_string(w.join("a.txt")).unwrap(), "one");
         drop(worker);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn repositories_unused_for_long_are_pruned() {
+        let (root, repo) = folder("prune");
+        fs::write(repo.work.join("a.txt"), "a").unwrap();
+        repo.snapshot().unwrap();
+        let shadow = root.join("shadow");
+        let stale = shadow.join("0000000000000000.git");
+        fs::create_dir_all(stale.join("refs/pier")).unwrap();
+        let old = std::time::SystemTime::now() - Duration::from_secs(40 * 24 * 3600);
+        fs::File::create(stale.join("HEAD")).unwrap().set_modified(old).unwrap();
+        fs::File::create(stale.join(HEAD_REF)).unwrap().set_modified(old).unwrap();
+        fs::write(shadow.join("notes.txt"), "not a repository").unwrap();
+
+        assert_eq!(prune(&shadow, KEPT_FOR), 1);
+        assert!(!stale.exists() && repo.git_dir.exists() && shadow.join("notes.txt").exists(), "only the stale repository goes");
         fs::remove_dir_all(&root).unwrap();
     }
 

@@ -1,16 +1,19 @@
 //! One tab: a Pi process, its transcript, and what goes through it (messages, checkpoints, forks, approvals).
 
+mod checkpoints;
+
 use crate::attach::Image;
-use crate::checkpoint::{Done, Job, Saved, Worker};
+use crate::checkpoint::{Done, Job, Worker};
 use crate::complete;
 use crate::pi::process::Process;
 use crate::pi::protocol::{Command, ModelInfo, StreamingBehavior};
 use crate::presets::Preset;
 use crate::session::journal::{self, Journal, Record};
 use crate::session::state::State;
-use crate::session::transcript::{Entry, Kind, Transcript};
+use crate::session::transcript::{Kind, Transcript};
 use crate::text;
-use std::collections::{HashMap, VecDeque};
+use checkpoints::Checkpoints;
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -36,24 +39,6 @@ static NEXT_TAB_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 
 fn next_tab_id() -> u64 {
     NEXT_TAB_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-}
-
-/// A tab's line to its folder's checkpoint worker (shared with the other tabs on that folder): answers come back here.
-pub(super) struct Checkpoints {
-    pub(super) worker: Arc<Worker>,
-    reply: Sender<Done>,
-    done: Receiver<Done>,
-}
-
-impl Checkpoints {
-    fn new(worker: Arc<Worker>) -> Self {
-        let (reply, done) = channel();
-        Self { worker, reply, done }
-    }
-
-    fn send(&self, job: Job) -> bool {
-        self.worker.send(job, &self.reply)
-    }
 }
 
 /// One session: a `pi --mode rpc` process, its transcript and its editor text.
@@ -92,6 +77,10 @@ pub struct Tab {
     files_asked: bool,
     /// A message waiting in Pi's queue carries images (editing the queue would lose them).
     pub queued_images: bool,
+    /// Images being prepared on their own thread, and where they arrive.
+    preparing_images: usize,
+    image_tx: Sender<Result<Image, String>>,
+    image_rx: Receiver<Result<Image, String>>,
     /// The session file as Pi names it and its canonical form, resolved once per change rather than per frame.
     pub(super) canonical_session: Option<(PathBuf, PathBuf)>,
 }
@@ -135,6 +124,7 @@ impl Tab {
         let journal = Journal::create(&journal::dir()).map_err(|e| t.error(format!("Journal unavailable: {e}"))).ok();
         let seen = t.state;
         let checkpoints = proc.is_some().then(|| Checkpoints::new(worker(&folder)));
+        let image_channel = channel();
         let mut tab = Self {
             id: next_tab_id(),
             proc,
@@ -155,6 +145,9 @@ impl Tab {
             files: vec![],
             files_asked: false,
             queued_images: false,
+            preparing_images: 0,
+            image_tx: image_channel.0.clone(),
+            image_rx: image_channel.1,
             canonical_session: None,
         };
         tab.send(Command::GetState);
@@ -191,6 +184,10 @@ impl Tab {
             }
         }
         self.t.expire(now);
+        while let Ok(image) = self.image_rx.try_recv() {
+            self.preparing_images -= 1;
+            self.attach(image);
+        }
         if self.t.session_file.as_ref() != self.canonical_session.as_ref().map(|(raw, _)| raw) {
             self.canonical_session = self.t.session_file.as_ref().and_then(|p| Some((p.clone(), std::fs::canonicalize(p).ok()?)));
         }
@@ -260,6 +257,10 @@ impl Tab {
             self.t.error("Not sent: Pi is not supervised.");
             return;
         }
+        if self.preparing_images > 0 {
+            self.t.error("Not sent yet: an image is still being prepared. Send again in a moment.");
+            return;
+        }
         if let Some(m) = self.t.model.as_ref().filter(|m| !self.images.is_empty() && !m.takes_images()) {
             let msg = format!("Not sent: {} does not read images. Remove them or pick another model.", m.key());
             self.t.error(msg);
@@ -267,7 +268,7 @@ impl Tab {
         }
         // While a run is going (or about to), Pi requires a streamingBehavior; steer lands after the current turn.
         let behavior = self.run_going().then_some(if after { StreamingBehavior::FollowUp } else { StreamingBehavior::Steer });
-        let images: Vec<_> = std::mem::take(&mut self.images).iter().map(Image::to_content).collect();
+        let images: Vec<_> = std::mem::take(&mut self.images).into_iter().map(|i| i.content).collect();
         // Editing the queue gives back text only: remember that a waiting message carries images.
         self.queued_images |= behavior.is_some() && !images.is_empty();
         self.dispatch(Command::Prompt { message: text, streaming_behavior: behavior, images });
@@ -309,6 +310,11 @@ impl Tab {
         }
     }
 
+    /// Drops the messages taken back for editing: Pi never reads them.
+    pub fn discard_queue(&mut self) {
+        self.t.queue_draft = None;
+    }
+
     /// While the editor ends with `@partial`: matching project files (the first `max`) and how many match in all.
     /// The file list is asked for once per mention, so files created meanwhile show up next time.
     pub fn file_suggestions(&mut self, max: usize) -> Option<(Vec<String>, usize)> {
@@ -346,135 +352,23 @@ impl Tab {
         }
     }
 
+    /// Prepares an image (read, encode) on its own thread; it joins the next message when ready.
+    pub fn attach_later(&mut self, prepare: impl FnOnce() -> Result<Image, String> + Send + 'static) {
+        self.preparing_images += 1;
+        let ready = self.image_tx.clone();
+        std::thread::spawn(move || {
+            let _ = ready.send(prepare());
+        });
+    }
+
+    /// Images still being prepared: the UI keeps repainting until they arrive.
+    pub fn preparing_images(&self) -> usize {
+        self.preparing_images
+    }
+
     /// A run is going, or a message, a restore or a fork is on its way.
     pub fn busy(&self) -> bool {
         self.t.state.is_running() || !self.waiting.is_empty() || self.restoring || self.fork_after_restore.is_some()
-    }
-
-    /// Restorable only while nothing touches the files: no run or send in this tab or any tab on the same folder.
-    pub fn can_restore(&self) -> bool {
-        self.checkpoints.is_some() && !self.busy() && !self.folder_busy_elsewhere
-    }
-
-    /// A message waits for its files to be saved before it goes to Pi.
-    pub fn saving(&self) -> bool {
-        !self.waiting.is_empty()
-    }
-
-    /// Asks Pi which messages a fork can start from (the Fork menu shows them).
-    pub fn refresh_fork_messages(&mut self) {
-        self.send(Command::GetForkMessages);
-    }
-
-    /// For each message sent in this tab, the checkpoint taken just before it (the last, if sent twice), paired by
-    /// message text so a steer taken back by Stop cannot shift the pairs. Build once per Fork menu, not per message.
-    pub fn checkpoints_by_message(&self) -> HashMap<&str, &str> {
-        self.t
-            .entries
-            .iter()
-            .filter(|e| e.kind == Kind::Checkpoint)
-            .filter_map(|e| Some((e.before.as_deref()?.trim(), e.checkpoint.as_deref()?)))
-            .collect()
-    }
-
-    /// Switches the tab to a new session going on from just before the user message `entry_id` (the original stays
-    /// in Resume); its text comes back to the editor. `restore`: first put the files back as they were before it.
-    pub fn fork(&mut self, entry_id: &str, restore: Option<String>) {
-        if self.busy() {
-            self.t.error("Not forked: wait until the run ends.");
-            return;
-        }
-        match (restore, &self.checkpoints) {
-            (Some(_), _) if self.folder_busy_elsewhere => {
-                self.t.error("Not forked: another tab on this folder is running.");
-            }
-            (Some(checkpoint), Some(w)) => {
-                if w.send(Job::Restore(checkpoint)) {
-                    self.restoring = true;
-                    self.fork_after_restore = Some(entry_id.to_owned());
-                }
-            }
-            _ => self.send(Command::Fork { entry_id: entry_id.to_owned() }),
-        }
-    }
-
-    /// Restores the files to checkpoint `id`, checkpointing the current files first so the restore can be undone.
-    pub fn restore(&mut self, id: &str) {
-        if !self.can_restore() {
-            let why = if self.folder_busy_elsewhere { "another tab on this folder is running" } else { "wait until the run ends" };
-            self.t.error(format!("Not restored: {why}."));
-            return;
-        }
-        if let Some(w) = &self.checkpoints
-            && w.send(Job::Restore(id.to_owned()))
-        {
-            self.restoring = true;
-        }
-    }
-
-    fn checkpoint_done(&mut self, done: Done) {
-        let saved = |t: &mut Transcript, saved: &Saved, text: &str, before: Option<String>| {
-            t.journal.push(Record::Checkpoint { id: saved.id.clone() });
-            t.entries.push(Entry { checkpoint: Some(saved.id.clone()), before, ..Entry::new(Kind::Checkpoint, text) });
-            if !saved.locked.is_empty() {
-                let msg = format!("Not in this checkpoint (locked by another program): {}", saved.locked.join(", "));
-                t.notice(msg);
-            }
-        };
-        match done {
-            Done::Files(Ok(files)) => {
-                self.files = files;
-                self.file_matches = None;
-            }
-            Done::Files(Err(e)) => self.t.notice(format!("File list unavailable for @: {e}")),
-            Done::Snapshot(result) => {
-                // Stop may have taken the message back meanwhile: the checkpoint then belongs to no message.
-                let prompt = if self.orphan_snapshots > 0 {
-                    self.orphan_snapshots -= 1;
-                    None
-                } else {
-                    self.waiting.pop_front()
-                };
-                let text = match &prompt {
-                    Some(Command::Prompt { message, .. }) => Some(message.clone()),
-                    _ => None,
-                };
-                match &result {
-                    Ok(s) => saved(&mut self.t, s, if text.is_some() { BEFORE_MESSAGE } else { "Files saved (message not sent)" }, text),
-                    Err(e) => self.t.notice(format!("No checkpoint: {e}")),
-                }
-                // Sent even without a checkpoint: the notice says so, and holding the message back would lose it.
-                if let Some(prompt) = prompt {
-                    self.send(prompt);
-                }
-            }
-            Done::Restored { to, undo, result } => {
-                self.restoring = false;
-                if let Ok(undo) = &undo {
-                    saved(&mut self.t, undo, "Files before the restore", None);
-                }
-                let fork = self.fork_after_restore.take();
-                match (result, undo) {
-                    (Ok(kept), Ok(undo)) => {
-                        self.t.journal.push(Record::CheckpointRestored { to, undo: undo.id });
-                        if !kept.is_empty() {
-                            self.t.notice(format!("Left as they are: {}", kept.join("; ")));
-                        }
-                        match fork {
-                            Some(entry_id) => {
-                                self.t.notice("Files restored; forking…");
-                                self.send(Command::Fork { entry_id });
-                            }
-                            None => self.t.notice("Files restored. Pi was not told; say so if it matters."),
-                        }
-                    }
-                    (Err(e), _) | (Ok(_), Err(e)) => {
-                        let what = if fork.is_some() { "Not forked: the files could not be restored" } else { "Restore failed" };
-                        self.t.error(format!("{what}: {e}"));
-                    }
-                }
-            }
-        }
     }
 
     /// Answers the approval the user saw (by id), if it is still the one shown.
@@ -536,6 +430,7 @@ impl Tab {
 
     #[cfg(test)]
     pub(super) fn detached(folder: &str) -> Self {
+        let image_channel = channel();
         Self {
             id: next_tab_id(),
             proc: None,
@@ -556,6 +451,9 @@ impl Tab {
             files: vec![],
             files_asked: false,
             queued_images: false,
+            preparing_images: 0,
+            image_tx: image_channel.0.clone(),
+            image_rx: image_channel.1,
             canonical_session: None,
         }
     }
@@ -574,203 +472,4 @@ impl Drop for Tab {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::checkpoint::Repo;
-
-    #[test]
-    fn the_session_name_titles_the_tab() {
-        use crate::pi::process::parse_line;
-        let mut tab = Tab::detached("a");
-        let feed = |tab: &mut Tab, line: &str| tab.t.apply_event(&parse_line(line.as_bytes()).unwrap().unwrap());
-        feed(&mut tab, r#"{"type":"message_start","message":{"role":"user","content":"run the tests"}}"#);
-        assert_eq!(tab.title(), "run the tests");
-        feed(&mut tab, r#"{"type":"response","command":"get_state","success":true,"data":{"sessionName":"Parser tests"}}"#);
-        assert_eq!(tab.title(), "Parser tests", "a name beats the first prompt");
-        feed(&mut tab, r#"{"type":"session_info_changed","name":"A name that is far too long for a tab"}"#);
-        assert_eq!(tab.title(), "A name that is far too l…");
-        feed(&mut tab, r#"{"type":"session_info_changed"}"#);
-        assert_eq!(tab.title(), "run the tests", "cleared name: back to the prompt");
-        feed(&mut tab, r#"{"type":"response","command":"set_session_name","success":true}"#);
-        assert_eq!(tab.t.outbox, [Command::GetState], "the name is read back from Pi");
-    }
-
-    #[test]
-    fn nothing_is_sent_before_supervision() {
-        let mut tab = Tab::detached("a");
-        tab.input = "rm -rf".into();
-        tab.submit();
-        assert_eq!(tab.input, "rm -rf", "kept for later, not sent");
-        assert_eq!(tab.t.entries.last().map(|e| e.text.as_str()), Some("Not sent: Pi is not supervised."));
-    }
-
-    #[test]
-    fn a_message_waits_for_its_checkpoint_and_restore_waits_for_the_run() {
-        let root = std::env::temp_dir().join(format!("pier-ws-checkpoint-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let work = root.join("project");
-        std::fs::create_dir_all(&work).unwrap();
-        std::fs::write(work.join("a.txt"), "one").unwrap();
-        let mut tab = Tab::detached(work.to_str().unwrap());
-        tab.checkpoints = Some(Checkpoints::new(Worker::start(Repo::new(&root.join("shadow"), &work), || {})));
-        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
-        let settle = |tab: &mut Tab| {
-            for _ in 0..200 {
-                tab.update(Instant::now());
-                if tab.waiting.is_empty() && !tab.restoring {
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-            panic!("checkpoint never finished");
-        };
-
-        tab.input = "change a.txt".into();
-        tab.submit();
-        assert_eq!(tab.waiting.len(), 1, "held until the files are saved");
-        tab.input = "and b".into();
-        tab.submit();
-        assert!(
-            matches!(tab.waiting.back(), Some(Command::Prompt { streaming_behavior: Some(_), .. })),
-            "a second message before the first reached Pi is a steer"
-        );
-        settle(&mut tab);
-        let saved: Vec<_> = tab.t.entries.iter().filter_map(|e| e.checkpoint.clone()).collect();
-        assert_eq!(saved.len(), 2);
-
-        std::fs::write(work.join("a.txt"), "two").unwrap();
-        tab.t.state = State::Running;
-        tab.restore(&saved[0]);
-        assert!(!tab.restoring, "refused during a run");
-        assert_eq!(std::fs::read_to_string(work.join("a.txt")).unwrap(), "two");
-
-        tab.t.state = State::Completed;
-        tab.restore(&saved[0]);
-        settle(&mut tab);
-        assert_eq!(std::fs::read_to_string(work.join("a.txt")).unwrap(), "one");
-        assert_eq!(tab.t.entries.iter().filter(|e| e.kind == Kind::Checkpoint).count(), 3, "plus the undo point");
-        assert!(tab.t.journal.iter().any(|r| matches!(r, Record::CheckpointRestored { .. })));
-        drop(tab);
-        std::fs::remove_dir_all(&root).unwrap();
-    }
-
-    #[test]
-    fn images_wait_for_a_model_that_reads_them_and_mentions_complete() {
-        use crate::pi::protocol::ModelInfo;
-        let mut tab = Tab::detached("a");
-        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
-        let model = |input: &[&str]| ModelInfo {
-            id: "m".into(),
-            provider: "p".into(),
-            name: None,
-            reasoning: false,
-            input: input.iter().map(|s| s.to_string()).collect(),
-        };
-        tab.t.model = Some(model(&["text"]));
-        tab.attach(Image::from_rgba(1, 1, &[0, 0, 0, 255]));
-        tab.attach(Err("big.png: too big".into()));
-        assert_eq!(tab.images.len(), 1);
-        tab.submit();
-        assert_eq!(tab.images.len(), 1, "kept: the model would not see it");
-        assert!(tab.t.entries.last().unwrap().text.contains("does not read images"));
-        tab.t.model = Some(model(&["text", "image"]));
-        tab.submit();
-        assert!(tab.images.is_empty(), "an image alone, without text, is a message too");
-
-        tab.files = ["src/main.rs", "src/app/mod.rs"].map(String::from).to_vec();
-        tab.input = "look at @mai".into();
-        assert_eq!(tab.file_suggestions(8), Some((vec!["src/main.rs".to_owned()], 1)));
-        tab.mention("src/main.rs");
-        assert_eq!(tab.input, "look at @src/main.rs ");
-        assert_eq!(tab.file_suggestions(8), None);
-        assert!(!tab.files_asked, "the next @ asks for a fresh list");
-    }
-
-    #[test]
-    fn the_queue_is_edited_away_from_pi_and_sent_back_in_order() {
-        use crate::session::transcript::QueueItem;
-        let root = std::env::temp_dir().join(format!("pier-ws-queue-{}", std::process::id()));
-        let work = root.join("project");
-        std::fs::create_dir_all(&work).unwrap();
-        let mut tab = Tab::detached(work.to_str().unwrap());
-        // A checkpoint worker holds each message in `waiting`, where the test can read what would go to Pi.
-        tab.checkpoints = Some(Checkpoints::new(Worker::start(Repo::new(&root.join("shadow"), &work), || {})));
-        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
-        tab.t.state = State::Running;
-        tab.input = "after you're done".into();
-        tab.queue_after();
-        assert!(matches!(tab.waiting.back(), Some(Command::Prompt { streaming_behavior: Some(StreamingBehavior::FollowUp), .. })));
-
-        tab.t.queued = vec![QueueItem { text: "x".into(), after: false }];
-        tab.edit_queue();
-        assert!(tab.t.queue_edit_pending);
-        for _ in 0..200 {
-            tab.update(Instant::now());
-            if tab.waiting.is_empty() {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        tab.t.state = State::Completed; // the run ended while the user was editing
-        tab.t.queue_draft = Some(vec![
-            QueueItem { text: "first".into(), after: false },
-            QueueItem { text: "  ".into(), after: false },
-            QueueItem { text: "last".into(), after: true },
-        ]);
-        tab.send_queue_back();
-        let sent: Vec<_> = tab
-            .waiting
-            .iter()
-            .map(|c| match c {
-                Command::Prompt { message, streaming_behavior, .. } => (message.as_str(), *streaming_behavior),
-                _ => unreachable!(),
-            })
-            .collect();
-        assert_eq!(sent, [("first", None), ("last", Some(StreamingBehavior::FollowUp))], "blank dropped; the first starts a run");
-        assert!(tab.t.queue_draft.is_none());
-        drop(tab);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn checkpoints_pair_with_their_message_by_text_even_after_stop() {
-        let root = std::env::temp_dir().join(format!("pier-ws-pairing-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        let work = root.join("project");
-        std::fs::create_dir_all(&work).unwrap();
-        let mut tab = Tab::detached(work.to_str().unwrap());
-        tab.checkpoints = Some(Checkpoints::new(Worker::start(Repo::new(&root.join("shadow"), &work), || {})));
-        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
-        let settle = |tab: &mut Tab| {
-            for _ in 0..300 {
-                tab.update(Instant::now());
-                if tab.waiting.is_empty() && tab.orphan_snapshots == 0 {
-                    return;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(20));
-            }
-            panic!("checkpoints never came back");
-        };
-        tab.t.state = State::Running;
-        tab.input = "X".into();
-        tab.submit(); // a steer…
-        tab.stop(); // …taken back before it reached Pi
-        assert!(tab.waiting.is_empty() && tab.t.restored == ["X"], "back to the editor, not sent after the Stop");
-        tab.t.state = State::Stopped;
-        tab.t.restored.clear();
-        for text in ["A", "B"] {
-            tab.input = text.into();
-            tab.submit();
-            settle(&mut tab);
-        }
-        let pairs = tab.checkpoints_by_message();
-        let a = pairs.get("A").copied().expect("A has its checkpoint");
-        let b = pairs.get("B").copied().expect("B has its checkpoint");
-        assert_ne!(a, b, "B is not paired with A's checkpoint");
-        assert!(!pairs.contains_key("X"), "the message taken back owns no checkpoint");
-        let orphan = tab.t.entries.iter().filter(|e| e.text == "Files saved (message not sent)").count();
-        assert_eq!(orphan, 1);
-        drop(tab);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-}
+mod tests;
