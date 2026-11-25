@@ -41,6 +41,26 @@ fn waker(ctx: &egui::Context) -> impl Fn() + Send + Clone + 'static {
     move || ctx.request_repaint()
 }
 
+/// Windows paints a newly exposed area of the window (while it is being resized, before Pier draws) with the window
+/// class brush; winit sets none, so it showed black. Same color as Pier's panels, so the gap does not show.
+#[cfg(windows)]
+fn window_background(frame: &eframe::Frame, color: egui::Color32) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::Graphics::Gdi::CreateSolidBrush;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GCLP_HBRBACKGROUND, SetClassLongPtrW};
+    let Ok(handle) = frame.window_handle() else { return };
+    let RawWindowHandle::Win32(w) = handle.as_raw() else { return };
+    let rgb = u32::from(color.r()) | u32::from(color.g()) << 8 | u32::from(color.b()) << 16; // COLORREF is 0x00BBGGRR
+    // SAFETY: plain Win32 calls on Pier's own live window; the brush lives as long as the window class.
+    unsafe {
+        let brush = CreateSolidBrush(rgb);
+        SetClassLongPtrW(w.hwnd.get() as _, GCLP_HBRBACKGROUND, brush as isize);
+    }
+}
+
+#[cfg(not(windows))]
+fn window_background(_frame: &eframe::Frame, _color: egui::Color32) {}
+
 /// The folder's last component, or the whole path for a drive root.
 fn folder_name(folder: &Path) -> String {
     folder.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| folder.display().to_string())
@@ -67,6 +87,8 @@ pub struct PierApp {
     awake: KeepAwake,
     /// Set once Windows refused the hold: reported once, not retried every frame.
     awake_failed: bool,
+    /// The window's own background is set once, on the first frame.
+    background_set: bool,
 }
 
 impl PierApp {
@@ -78,6 +100,7 @@ impl PierApp {
             title: String::new(),
             awake: KeepAwake::default(),
             awake_failed: false,
+            background_set: false,
         }
     }
 
@@ -243,7 +266,11 @@ impl eframe::App for PierApp {
         self.ws.flush();
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if !self.background_set {
+            self.background_set = true;
+            window_background(frame, ui.visuals().panel_fill);
+        }
         self.tab_strip(ui);
         if let Some(tab) = self.ws.active_tab() {
             status_bar::show(tab, ui);
