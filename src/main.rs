@@ -19,7 +19,7 @@ fn main() -> eframe::Result {
     if std::env::var("PIER_RENDERER").is_ok_and(|r| r.eq_ignore_ascii_case("glow")) {
         return run(Renderer::Glow);
     }
-    // wgpu needs DirectX 12, Vulkan or OpenGL 3.3; older GPUs fall back to egui's OpenGL 2.0 renderer.
+    // wgpu is built with DirectX 12 only; GPUs without it fall back to egui's OpenGL 2.0 renderer.
     run(Renderer::Wgpu).or_else(|e| {
         eprintln!("wgpu renderer failed ({e}); falling back to OpenGL");
         run(Renderer::Glow)
