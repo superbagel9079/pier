@@ -61,7 +61,13 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             // Fail closed: no prompt reaches Pi before Pier's approval extension has reported in.
             let alive = tab.t.state != State::Crashed && tab.t.supervised();
             let label = if tab.t.state.is_running() { "Steer" } else { "Send" };
-            let send = ui.add_enabled(alive, egui::Button::new(label)).clicked();
+            let send =
+                ui.add_enabled(alive, egui::Button::new(label)).on_hover_text("Steer: Pi reads it after the current tool calls").clicked();
+            let after = tab.t.state.is_running()
+                && ui
+                    .add_enabled(alive, egui::Button::new("Queue for after"))
+                    .on_hover_text("Pi reads it once it is done with everything else")
+                    .clicked();
             let edit = ui.add_sized(
                 [ui.available_width(), 60.0],
                 egui::TextEdit::multiline(&mut tab.input)
@@ -71,6 +77,8 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             let ctrl_enter = edit.has_focus() && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter));
             if (send || ctrl_enter) && alive {
                 tab.submit();
+            } else if after && alive {
+                tab.queue_after();
             }
         });
     });

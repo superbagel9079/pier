@@ -1,4 +1,4 @@
-//! Top bar (session state, supervision, queued steers, Stop) and footer (extension statuses, last stderr line).
+//! Top bar (session state, supervision, model, Stop) and footer (extension statuses, last stderr line).
 
 use eframe::egui::containers::menu::{MenuButton, MenuConfig};
 use eframe::egui::{self, Color32, PopupCloseBehavior, RichText};
@@ -54,11 +54,6 @@ pub fn show(tab: &mut Tab, ui: &mut egui::Ui) {
             thinking_menu(tab, ui);
             fork_menu(tab, ui);
             usage(tab, ui);
-
-            if !tab.t.queued.is_empty() {
-                ui.separator();
-                ui.label(format!("{} message(s) waiting for Pi to read", tab.t.queued.len())).on_hover_text(tab.t.queued.join("\n"));
-            }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add_enabled(tab.t.state.is_running(), egui::Button::new("Stop")).clicked() {

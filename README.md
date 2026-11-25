@@ -14,6 +14,8 @@ it. It is not the default because it froze a whole PC on window resize with an I
 ## What Pier does
 
 - **Tabs**: one `pi --mode rpc` process per tab. Background tabs keep running.
+- **Steer or queue for after** while a run is going; **Edit queue…** takes the waiting messages back from Pi to
+  change, reorder or drop them, then sends them back (text only: images in a waiting message are lost).
 - **Project folder**: Pier starts without a folder; you open one, or a recent one.
 - **Approvals**: every tool call that is not read-only shows the whole command, a warning when the target is outside
   the working folder, and is denied automatically after 60 s.

@@ -86,6 +86,8 @@ pub struct ImageContent {
 pub enum StreamingBehavior {
     /// Delivered after the current turn's tool calls.
     Steer,
+    /// Delivered once Pi has nothing else to do (no tool calls, no steer left).
+    FollowUp,
 }
 
 /// Events read from Pi's stdout.
@@ -516,6 +518,8 @@ mod tests {
     fn commands_serialize_to_pi_shapes() {
         let steer = Command::prompt("go", Some(StreamingBehavior::Steer));
         assert_eq!(serde_json::to_value(steer).unwrap(), json!({"type": "prompt", "message": "go", "streamingBehavior": "steer"}));
+        let after = Command::prompt("go", Some(StreamingBehavior::FollowUp));
+        assert_eq!(serde_json::to_value(after).unwrap(), json!({"type": "prompt", "message": "go", "streamingBehavior": "followUp"}));
         let plain = Command::prompt("go", None);
         assert_eq!(serde_json::to_value(plain).unwrap(), json!({"type": "prompt", "message": "go"}));
         let image = ImageContent { kind: "image", data: "AAA=".into(), mime_type: "image/png".into() };

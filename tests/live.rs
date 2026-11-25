@@ -26,7 +26,7 @@ fn live_prompt_steer_and_stop() {
     pump(&mut p, &mut t, &|t| t.state.is_running() && t.entries.last().is_some_and(|e| e.text.len() > 200), 60);
     p.send(&Command::prompt("STEER-MARK", Some(StreamingBehavior::Steer))).unwrap();
     pump(&mut p, &mut t, &|t| !t.queued.is_empty(), 15);
-    assert_eq!(t.queued, ["STEER-MARK"], "steer should be visible as queued");
+    assert_eq!(t.queued.iter().map(|q| q.text.as_str()).collect::<Vec<_>>(), ["STEER-MARK"], "steer should be visible as queued");
 
     p.send(&Command::ClearQueue).unwrap();
     p.send(&Command::Abort).unwrap();
@@ -566,6 +566,54 @@ fn live_image_reaches_the_model() {
     assert!(t.entries.iter().any(|e| e.kind == Kind::User && e.text.ends_with("(+1 image)")), "{:#?}", t.entries);
     let reply: String = t.entries.iter().filter(|e| e.kind == Kind::Assistant).map(|e| e.text.to_lowercase()).collect();
     assert!(reply.contains("red"), "the model saw the image: {reply:?}");
+    drop(ws);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Queue a steer and a follow-up during a long answer, take them back, edit one, send them back: Pi's queue holds
+/// the edited text with each kind kept.
+#[test]
+#[ignore = "calls a real, paid model: set PIER_TEST_MODEL and run with --ignored"]
+fn live_queue_edit_and_send_back() {
+    use pier::workspace::{Launch, Tab, Workspace};
+    let model = std::env::var("PIER_TEST_MODEL").expect("set PIER_TEST_MODEL");
+    let dir = std::env::temp_dir().join(format!("pier-queue-live-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut ws = Workspace::new(["--no-session", "--no-tools", "--model", &model].map(String::from).to_vec(), dir.join("recent.json"));
+    ws.open(&dir, Launch::New, || {});
+    let run = |ws: &mut Workspace, until: &dyn Fn(&Tab) -> bool| {
+        let end = Instant::now() + Duration::from_secs(60);
+        while Instant::now() < end {
+            ws.update(Instant::now());
+            ws.flush();
+            if until(&ws.tabs[0]) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("timed out: queued {:?} draft {:?} entries {:#?}", ws.tabs[0].t.queued, ws.tabs[0].t.queue_draft, ws.tabs[0].t.entries);
+    };
+    run(&mut ws, &|t| t.t.supervised());
+    ws.tabs[0].input = "Count from 1 to 3000 in words, one per line.".into();
+    ws.tabs[0].submit();
+    run(&mut ws, &|t| t.t.state.is_running() && t.t.entries.last().is_some_and(|e| e.text.len() > 200));
+    ws.tabs[0].input = "STEER-A".into();
+    ws.tabs[0].submit();
+    ws.tabs[0].input = "AFTER-B".into();
+    ws.tabs[0].queue_after();
+    run(&mut ws, &|t| t.t.queued.len() == 2);
+
+    ws.tabs[0].edit_queue();
+    run(&mut ws, &|t| t.t.queue_draft.is_some() && t.t.queued.is_empty());
+    let draft = ws.tabs[0].t.queue_draft.as_mut().unwrap();
+    assert_eq!(draft.iter().map(|q| (q.text.as_str(), q.after)).collect::<Vec<_>>(), [("STEER-A", false), ("AFTER-B", true)]);
+    draft[0].text = "STEER-EDITED".into();
+    ws.tabs[0].send_queue_back();
+    run(&mut ws, &|t| t.t.queued.len() == 2);
+    let back: Vec<_> = ws.tabs[0].t.queued.iter().map(|q| (q.text.clone(), q.after)).collect();
+    assert_eq!(back, [("STEER-EDITED".to_owned(), false), ("AFTER-B".to_owned(), true)]);
+    ws.tabs[0].stop();
+    run(&mut ws, &|t| !t.t.state.is_running());
     drop(ws);
     let _ = std::fs::remove_dir_all(&dir);
 }

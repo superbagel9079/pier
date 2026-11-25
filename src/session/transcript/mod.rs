@@ -77,9 +77,13 @@ pub struct Transcript {
     /// The last assistant message of the current run ended in error.
     run_failed: bool,
     /// Messages Pi has accepted but not yet read (steer / follow-up), from `queue_update`.
-    pub queued: Vec<String>,
+    pub queued: Vec<QueueItem>,
     /// Queued texts handed back by `clear_queue`, for the UI to put back in the editor.
     pub restored: Vec<String>,
+    /// The queue taken back from Pi to be edited; Pi reads none of it until it is sent back.
+    pub queue_draft: Option<Vec<QueueItem>>,
+    /// The next `clear_queue` answer is for editing, not for the editor.
+    pub queue_edit_pending: bool,
     pub stderr: Vec<String>,
     /// Extension status lines (`setStatus`), keyed by statusKey.
     pub status: std::collections::BTreeMap<String, String>,
@@ -118,6 +122,19 @@ pub struct Transcript {
 
 fn texts(steering: &[Queued], follow_up: &[Queued]) -> Vec<String> {
     steering.iter().chain(follow_up).map(Queued::text).collect()
+}
+
+/// A message waiting in Pi's queue.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueueItem {
+    pub text: String,
+    /// A follow-up (read when Pi is done), not a steer (read after the current tool calls).
+    pub after: bool,
+}
+
+fn items(steering: &[Queued], follow_up: &[Queued]) -> Vec<QueueItem> {
+    let steers = steering.iter().map(|q| QueueItem { text: q.text(), after: false });
+    steers.chain(follow_up.iter().map(|q| QueueItem { text: q.text(), after: true })).collect()
 }
 
 impl Transcript {
@@ -215,7 +232,7 @@ impl Transcript {
                 let patch = result.as_ref().and_then(|r| patch_of(&r.details));
                 self.tool_result(tool_call_id.as_deref(), tool_name, *is_error, patch);
             }
-            Event::QueueUpdate { steering, follow_up } => self.queued = texts(steering, follow_up),
+            Event::QueueUpdate { steering, follow_up } => self.queued = items(steering, follow_up),
             Event::AutoRetryStart { attempt } => {
                 self.push(Kind::Notice, format!("Retry {attempt}…"));
             }
@@ -225,8 +242,17 @@ impl Transcript {
             }
             Event::Response { command, data, .. } if command == "clear_queue" => {
                 let q: ClearedQueue = serde_json::from_value(data.clone()).unwrap_or_default();
-                // Appended: a second Stop's empty answer must not erase what the first one gave back.
-                self.restored.extend(texts(&q.steering, &q.follow_up));
+                if std::mem::take(&mut self.queue_edit_pending) {
+                    let taken = items(&q.steering, &q.follow_up);
+                    if taken.is_empty() {
+                        self.push(Kind::Notice, "Nothing left to edit: Pi had already read the queue.");
+                    } else {
+                        self.queue_draft.get_or_insert_default().extend(taken);
+                    }
+                } else {
+                    // Appended: a second Stop's empty answer must not erase what the first one gave back.
+                    self.restored.extend(texts(&q.steering, &q.follow_up));
+                }
             }
             Event::Response { command, data, .. } if command == "get_state" => {
                 let s: StateData = serde_json::from_value(data.clone()).unwrap_or_default();
@@ -471,8 +497,18 @@ mod tests {
                 r#"{"type":"agent_settled"}"#,
             ],
         );
-        assert_eq!(t.queued, ["stop"]);
+        assert_eq!(t.queued, [QueueItem { text: "stop".into(), after: false }]);
         assert_eq!(t.restored, ["stop", "ensuite"]);
+
+        // Taken back for editing: kept apart, with each message's kind, not dumped into the editor.
+        t.restored.clear();
+        t.queue_edit_pending = true;
+        feed(&mut t, &[r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["a"],"followUp":["b"]}}"#]);
+        let draft = t.queue_draft.clone().unwrap();
+        assert_eq!(draft, [QueueItem { text: "a".into(), after: false }, QueueItem { text: "b".into(), after: true }]);
+        assert!(t.restored.is_empty() && !t.queue_edit_pending);
+        feed(&mut t, &[r#"{"type":"response","command":"clear_queue","success":true,"data":{"steering":["c"]}}"#]);
+        assert_eq!(t.restored, ["c"], "a later Stop goes back to the editor as before");
         let errs: Vec<_> = t.entries.iter().filter(|e| e.kind == Kind::Error).map(|e| e.text.as_str()).collect();
         assert_eq!(errs, ["prompt: busy", "403"]);
         assert_eq!(t.state, State::Failed, "a run ending on a provider error is not 'completed'");

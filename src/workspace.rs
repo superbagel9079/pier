@@ -73,6 +73,8 @@ pub struct Tab {
     /// The project's files, for `@` mentions; reread each time a new mention starts.
     files: Vec<String>,
     files_asked: bool,
+    /// A message waiting in Pi's queue carries images (editing the queue would lose them).
+    pub queued_images: bool,
 }
 
 impl Tab {
@@ -127,6 +129,7 @@ impl Tab {
             images: vec![],
             files: vec![],
             files_asked: false,
+            queued_images: false,
         };
         tab.send(Command::GetState);
         tab.send(Command::GetAvailableThinkingLevels);
@@ -162,6 +165,9 @@ impl Tab {
             }
         }
         self.t.expire(now);
+        if !self.run_going() {
+            self.queued_images = false; // the run is over: nothing waits in Pi's queue any more
+        }
         if !self.t.restored.is_empty() {
             let back = std::mem::take(&mut self.t.restored).join("\n");
             self.input = if self.input.is_empty() { back } else { format!("{back}\n{}", self.input) };
@@ -195,6 +201,28 @@ impl Tab {
     /// Sends the editor text: a prompt, or a steer while a run is going.
     /// Refused until Pier's approval extension has reported in: without it, tools would run unasked.
     pub fn submit(&mut self) {
+        self.send_input(false);
+    }
+
+    /// Like `submit`, but while a run is going the message waits until Pi is done (a follow-up), not a steer.
+    pub fn queue_after(&mut self) {
+        self.send_input(true);
+    }
+
+    /// Whether a run is going or about to start (a message waits for its checkpoint).
+    fn run_going(&self) -> bool {
+        self.t.state.is_running() || !self.waiting.is_empty()
+    }
+
+    /// Sends a prompt once its checkpoint is taken (directly when there are no checkpoints).
+    fn dispatch(&mut self, prompt: Command) {
+        match &self.checkpoints {
+            Some(w) if w.send(Job::Snapshot) => self.waiting.push_back(prompt),
+            _ => self.send(prompt),
+        }
+    }
+
+    fn send_input(&mut self, after: bool) {
         let text = self.input.trim().to_owned();
         if text.is_empty() && self.images.is_empty() {
             return;
@@ -209,14 +237,37 @@ impl Tab {
             return;
         }
         // While a run is going (or about to), Pi requires a streamingBehavior; steer lands after the current turn.
-        let running = self.t.state.is_running() || !self.waiting.is_empty();
-        let images = std::mem::take(&mut self.images).iter().map(Image::to_content).collect();
-        let prompt = Command::Prompt { message: text, streaming_behavior: running.then_some(StreamingBehavior::Steer), images };
-        match &self.checkpoints {
-            Some(w) if w.send(Job::Snapshot) => self.waiting.push_back(prompt),
-            _ => self.send(prompt),
-        }
+        let behavior = self.run_going().then_some(if after { StreamingBehavior::FollowUp } else { StreamingBehavior::Steer });
+        let images: Vec<_> = std::mem::take(&mut self.images).iter().map(Image::to_content).collect();
+        // Editing the queue gives back text only: remember that a waiting message carries images.
+        self.queued_images |= behavior.is_some() && !images.is_empty();
+        self.dispatch(Command::Prompt { message: text, streaming_behavior: behavior, images });
         self.input.clear();
+    }
+
+    /// Takes the waiting messages back from Pi to edit them (Pi reads none of them meanwhile).
+    pub fn edit_queue(&mut self) {
+        if self.t.queued.is_empty() || self.t.queue_edit_pending {
+            return;
+        }
+        self.t.queue_edit_pending = true;
+        self.queued_images = false; // they are lost from here on; the warning was shown before the click
+        self.send(Command::ClearQueue);
+    }
+
+    /// Sends the edited queue back in its order; empty messages are dropped. If the run ended meanwhile, the first
+    /// one starts a new run.
+    pub fn send_queue_back(&mut self) {
+        let Some(draft) = self.t.queue_draft.take() else { return };
+        if !self.t.supervised() {
+            self.t.queue_draft = Some(draft);
+            self.t.entries.push(Entry::new(Kind::Error, "Not sent: Pi is not supervised."));
+            return;
+        }
+        for item in draft.into_iter().filter(|i| !i.text.trim().is_empty()) {
+            let behavior = self.run_going().then_some(if item.after { StreamingBehavior::FollowUp } else { StreamingBehavior::Steer });
+            self.dispatch(Command::prompt(item.text.trim(), behavior));
+        }
     }
 
     /// While the editor ends with `@partial`: matching project files (the first `max`) and how many match in all.
@@ -412,6 +463,7 @@ impl Tab {
             images: vec![],
             files: vec![],
             files_asked: false,
+            queued_images: false,
         }
     }
 }
@@ -817,6 +869,52 @@ mod tests {
         assert_eq!(tab.input, "look at @src/main.rs ");
         assert_eq!(tab.file_suggestions(8), None);
         assert!(!tab.files_asked, "the next @ asks for a fresh list");
+    }
+
+    #[test]
+    fn the_queue_is_edited_away_from_pi_and_sent_back_in_order() {
+        use crate::session::transcript::QueueItem;
+        let root = std::env::temp_dir().join(format!("pier-ws-queue-{}", std::process::id()));
+        let work = root.join("project");
+        std::fs::create_dir_all(&work).unwrap();
+        let mut tab = Tab::detached(work.to_str().unwrap());
+        // A checkpoint worker holds each message in `waiting`, where the test can read what would go to Pi.
+        tab.checkpoints = Some(Worker::start(Repo::new(&root.join("shadow"), &work), || {}));
+        tab.t.status.insert(crate::session::transcript::SUPERVISION_KEY.into(), "Supervised".into());
+        tab.t.state = State::Running;
+        tab.input = "after you're done".into();
+        tab.queue_after();
+        assert!(matches!(tab.waiting.back(), Some(Command::Prompt { streaming_behavior: Some(StreamingBehavior::FollowUp), .. })));
+
+        tab.t.queued = vec![QueueItem { text: "x".into(), after: false }];
+        tab.edit_queue();
+        assert!(tab.t.queue_edit_pending);
+        for _ in 0..200 {
+            tab.update(Instant::now());
+            if tab.waiting.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        tab.t.state = State::Completed; // the run ended while the user was editing
+        tab.t.queue_draft = Some(vec![
+            QueueItem { text: "first".into(), after: false },
+            QueueItem { text: "  ".into(), after: false },
+            QueueItem { text: "last".into(), after: true },
+        ]);
+        tab.send_queue_back();
+        let sent: Vec<_> = tab
+            .waiting
+            .iter()
+            .map(|c| match c {
+                Command::Prompt { message, streaming_behavior, .. } => (message.as_str(), *streaming_behavior),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(sent, [("first", None), ("last", Some(StreamingBehavior::FollowUp))], "blank dropped; the first starts a run");
+        assert!(tab.t.queue_draft.is_none());
+        drop(tab);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

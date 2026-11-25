@@ -4,6 +4,7 @@
 mod approvals;
 mod composer;
 mod diff_view;
+mod queue_view;
 mod resume;
 mod status_bar;
 mod transcript_view;
@@ -243,6 +244,7 @@ impl eframe::App for PierApp {
         self.tab_strip(ui);
         if let Some(tab) = self.ws.active_tab() {
             status_bar::show(tab, ui);
+            queue_view::show(tab, ui);
             status_bar::footer(tab, ui);
             composer::show(tab, ui);
             approvals::show(tab, ui);
